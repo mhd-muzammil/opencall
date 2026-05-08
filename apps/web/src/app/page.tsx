@@ -40,6 +40,7 @@ import {
 type SourceKey = "FLEX_WIP" | "RENDERWAYS" | "CALL_PLAN";
 type FileField = "flexWipReport" | "renderwaysReport" | "callPlan";
 type ChangeType = "NEW" | "CLOSED" | "CARRIED" | "UPDATED";
+type ReportRow = GeneratedReportResponse["rows"][number];
 type ManualCarryForwardField =
   | "rtpl_status"
   | "segment"
@@ -144,6 +145,10 @@ function todayIsoDate(): string {
   return new Date().toISOString().slice(0, 10);
 }
 
+function formatNumber(value: number): string {
+  return new Intl.NumberFormat("en-IN").format(value);
+}
+
 function batchIdBySource(
   batches: readonly UploadBatch[],
   sourceType: SourceKey,
@@ -172,6 +177,8 @@ function Metric({
   onClick?: () => void;
   isActive?: boolean;
 }>) {
+  const displayValue = typeof value === "number" ? formatNumber(value) : value;
+
   return (
     <div
       className="metric"
@@ -188,7 +195,35 @@ function Metric({
       role={onClick ? "button" : undefined}
     >
       <span>{label}</span>
-      <strong>{value}</strong>
+      <strong>{displayValue}</strong>
+    </div>
+  );
+}
+
+function OverviewStat({
+  label,
+  value,
+  detail,
+  tone = "accent",
+  onClick,
+  isActive,
+}: Readonly<{
+  label: string;
+  value: number;
+  detail: string;
+  tone?: "accent" | "blue" | "warn" | "danger";
+  onClick?: () => void;
+  isActive?: boolean;
+}>) {
+  return (
+    <div
+      className={`overviewStat ${tone} ${isActive ? "active" : ""}`}
+      onClick={onClick}
+      role={onClick ? "button" : undefined}
+    >
+      <span>{label}</span>
+      <strong>{formatNumber(value)}</strong>
+      <small>{detail}</small>
     </div>
   );
 }
@@ -205,6 +240,15 @@ function formatFieldList(fields: readonly string[]): string {
   return fields
     .map((field) => MANUAL_FIELD_LABELS[field as ManualCarryForwardField] ?? field)
     .join(", ");
+}
+
+function countManualRequiredCells(rows: readonly ReportRow[]): number {
+  return rows.reduce((count, row) => {
+    const outputMissingCount = Object.values(row.output).filter(
+      (value) => value === MANUAL_ENTRY_REQUIRED,
+    ).length;
+    return count + Math.max(outputMissingCount, row.carryForward.manualFieldsMissing.length);
+  }, 0);
 }
 
 function ChangeTypeBadge({
@@ -411,12 +455,15 @@ export default function DashboardPage() {
   const [selectedWoOtcCode, setSelectedWoOtcCode] = useState<string | null>(null);
   const [selectedRtplRegion, setSelectedRtplRegion] = useState<string>(ALL_REGIONS_FILTER);
   const [showCissOnly, setShowCissOnly] = useState(false);
+  const [showClosedOnly, setShowClosedOnly] = useState(false);
+  const [workspaceView, setWorkspaceView] = useState<"overview" | "records">("overview");
 
   useEffect(() => {
     setSelectedRegion(null);
     setSelectedWoOtcCode(null);
     setSelectedRtplRegion(ALL_REGIONS_FILTER);
     setShowCissOnly(false);
+    setShowClosedOnly(false);
   }, [report?.reportId]);
 
   const cissRows = useMemo(() => {
@@ -424,10 +471,17 @@ export default function DashboardPage() {
     return report.rows.filter(isCissCase);
   }, [report]);
 
+  const closedRows = useMemo(() => {
+    if (!report) return [];
+    return report.rows.filter((row) => row.carryForward.closedSyntheticRow);
+  }, [report]);
+
   const tableBaseRows = useMemo(() => {
     if (!report) return [];
-    return showCissOnly ? cissRows : report.rows;
-  }, [cissRows, report, showCissOnly]);
+    if (showClosedOnly) return closedRows;
+    if (showCissOnly) return cissRows;
+    return report.rows;
+  }, [cissRows, closedRows, report, showCissOnly, showClosedOnly]);
 
   const regionFilteredRows = useMemo(() => {
     if (!report) return [];
@@ -624,6 +678,7 @@ export default function DashboardPage() {
       setEditingSerialNo(null);
       setSavingSerialNo(null);
       setDraftOutput({});
+      setWorkspaceView("overview");
       
       // Refresh history to get the draft
       getReportHistory(session.token).then(setHistorySessions).catch(console.error);
@@ -655,14 +710,14 @@ export default function DashboardPage() {
     }
 
     await runAction(async () => {
-      setReport(
-        await generateReport({
-          token: session.token,
-          regionId,
-          reportDate,
-          ...batchIds,
-        }),
-      );
+      const generated = await generateReport({
+        token: session.token,
+        regionId,
+        reportDate,
+        ...batchIds,
+      });
+      setReport(generated);
+      setWorkspaceView("overview");
       setEditingSerialNo(null);
       setSavingSerialNo(null);
       setDraftOutput({});
@@ -683,6 +738,7 @@ export default function DashboardPage() {
     setSavingSerialNo(null);
     setDraftOutput({});
     setSelectedPreviewCategory(null);
+    setWorkspaceView("overview");
   }
 
   async function handleHistoryOpen(historySession: ReportHistorySession) {
@@ -760,12 +816,7 @@ export default function DashboardPage() {
 
   const canUseBatches = Boolean(batchIds.flexUploadBatchId);
   const incompleteCellCount = useMemo(() => {
-    return report?.rows.reduce((count, row) => {
-      const outputMissingCount = Object.values(row.output).filter(
-        (value) => value === MANUAL_ENTRY_REQUIRED,
-      ).length;
-      return count + Math.max(outputMissingCount, row.carryForward.manualFieldsMissing.length);
-    }, 0) ?? 0;
+    return report ? countManualRequiredCells(report.rows) : 0;
   }, [report]);
 
   function startEditing(row: GeneratedReportResponse["rows"][number]) {
@@ -918,37 +969,110 @@ export default function DashboardPage() {
       return;
     }
 
+    const scopedRows = (rows: readonly ReportRow[]): ReportRow[] =>
+      rows.filter((row) => {
+        const matchRegion =
+          selectedRegion === "ALL" ||
+          !selectedRegion ||
+          row.output["Work Location"] === selectedRegion;
+        const matchCode = !selectedWoOtcCode || row.output["WO OTC CODE"] === selectedWoOtcCode;
+        return matchRegion && matchCode;
+      });
+
+    const hasExistingExportFilter = Boolean(selectedRegion || selectedWoOtcCode);
+    const hasColumnFilter = colFilters.activeFilterCount > 0;
+    const hasCissFilter = showCissOnly;
+    const hasClosedFilter = showClosedOnly;
+    const isRtplRegionFiltered = selectedRtplRegion !== ALL_REGIONS_FILTER;
+
+    let exportRows: ReportRow[] | null = null;
+
+    if (hasClosedFilter) {
+      const scopedClosedRows = scopedRows(closedRows);
+      exportRows = hasColumnFilter ? colFilters.filteredRows(scopedClosedRows) : scopedClosedRows;
+    } else if (hasCissFilter) {
+      const scopedCissRows = scopedRows(cissRows);
+      exportRows = hasColumnFilter ? colFilters.filteredRows(scopedCissRows) : scopedCissRows;
+    } else if (isRtplRegionFiltered && !hasExistingExportFilter && !hasColumnFilter) {
+      exportRows = rtplAnalyticsRows;
+    } else if (hasExistingExportFilter || hasColumnFilter) {
+      exportRows = filteredRows;
+    }
+
+    const rowsToExport = exportRows ?? report.rows;
+
+    if (rowsToExport.length === 0) {
+      setMessage("Export skipped: the active filters do not contain any records.");
+      return;
+    }
+
+    const exportIncompleteCellCount = countManualRequiredCells(rowsToExport);
+
     if (
-      incompleteCellCount > 0 &&
+      exportIncompleteCellCount > 0 &&
       !window.confirm(
-        `${incompleteCellCount} field(s) still require manual entry. Export anyway?`,
+        `${exportIncompleteCellCount} field(s) still require manual entry in this export. Export anyway?`,
       )
     ) {
       setMessage("Export paused: complete highlighted manual-entry fields first.");
       return;
     }
 
-    const isRtplRegionFiltered = selectedRtplRegion !== ALL_REGIONS_FILTER;
-    const hasExistingExportFilter = Boolean(selectedRegion || selectedWoOtcCode);
-    const hasColumnFilter = colFilters.activeFilterCount > 0;
-    const hasCissFilter = showCissOnly;
-    const exportRows = isRtplRegionFiltered
-      ? rtplAnalyticsRows
-      : (hasExistingExportFilter || hasColumnFilter || hasCissFilter)
-        ? filteredRows
-        : null;
-
-    download(exportRows ? reportWithRows(report, exportRows) : report);
+    download(exportRows ? reportWithRows(report, rowsToExport) : report);
   }
+
+  function openRecordsWithFilter({
+    region,
+    woOtcCode,
+    cissOnly = false,
+    closedOnly = false,
+  }: Readonly<{
+    region?: string | null;
+    woOtcCode?: string | null;
+    cissOnly?: boolean;
+    closedOnly?: boolean;
+  }>) {
+    setSelectedRegion(region ?? null);
+    setSelectedWoOtcCode(woOtcCode ?? null);
+    setShowCissOnly(cissOnly);
+    setShowClosedOnly(closedOnly);
+    setSelectedRtplRegion(region && region !== "ALL" ? region : ALL_REGIONS_FILTER);
+    colFilters.resetAll();
+    setWorkspaceView("records");
+  }
+
+  const recordsFilterLabel = [
+    showClosedOnly ? "Closed calls" : null,
+    showCissOnly ? "CISS cases" : null,
+    selectedRegion && selectedRegion !== "ALL" ? selectedRegion : null,
+    selectedWoOtcCode ? selectedWoOtcCode : null,
+  ].filter(Boolean).join(" / ");
 
   return (
     <main className="appShell">
       <header className="topBar">
         <div>
           <p className="eyebrow">OpenCall</p>
-          <h1>Daily Call Plan</h1>
+          <h1>{workspaceView === "records" ? "Records Workspace" : "Operational Overview"}</h1>
         </div>
         <div className="topActions">
+          <div className="workspaceTabs" aria-label="Workspace view">
+            <button
+              className={workspaceView === "overview" ? "active" : ""}
+              type="button"
+              onClick={() => setWorkspaceView("overview")}
+            >
+              Dashboard
+            </button>
+            <button
+              className={workspaceView === "records" ? "active" : ""}
+              type="button"
+              disabled={!report}
+              onClick={() => setWorkspaceView("records")}
+            >
+              Records
+            </button>
+          </div>
           <StatusPill tone={dbHealth?.connected ? "good" : "bad"}>
             DB {dbHealth?.status ?? "checking"}
           </StatusPill>
@@ -968,7 +1092,7 @@ export default function DashboardPage() {
 
       {message ? <div className="alert">{message}</div> : null}
 
-      <section className={`workspace ${session && isHistoryPanelOpen ? "withHistory" : ""}`}>
+      <section className={`workspace ${workspaceView === "records" ? "recordsMode" : "overviewMode"} ${session && isHistoryPanelOpen ? "withHistory" : ""}`}>
         <aside className="sidebar">
           <form className="panel" onSubmit={(event) => void handleLogin(event)}>
             <h2>Access</h2>
@@ -1186,21 +1310,43 @@ export default function DashboardPage() {
 
           {report ? (
             <section className="panel reportPanel">
+              <div className="overviewReportContent">
               <div className="sectionHeader">
                 <div>
                   <h2>Generated Report</h2>
                   <p>{report.reportId}</p>
                 </div>
-                <div className="reportStats">
-                  <Metric label="Total Calls" value={report.totalRows} />
-                  <Metric
+                <div className="overviewStatsGrid">
+                  <OverviewStat
+                    label="Total Records"
+                    value={report.totalRows}
+                    detail="Open all records"
+                    onClick={() => openRecordsWithFilter({ region: null })}
+                  />
+                  <OverviewStat
                     label="CISS Cases"
                     value={cissRows.length}
-                    onClick={() => setShowCissOnly((current) => !current)}
+                    detail={showCissOnly ? "Filter active" : "Open matching records"}
+                    tone="blue"
+                    onClick={() => openRecordsWithFilter({ cissOnly: true })}
                     isActive={showCissOnly}
                   />
-                  <Metric label="Duplicates" value={report.duplicateTicketCount} />
-                  <Metric label="Manual Required" value={incompleteCellCount} />
+                  <OverviewStat
+                    label="Closed Calls"
+                    value={closedRows.length}
+                    detail="Open closed records"
+                    tone="danger"
+                    onClick={() => openRecordsWithFilter({ closedOnly: true })}
+                    isActive={showClosedOnly}
+                  />
+                  <OverviewStat label="Duplicates" value={report.duplicateTicketCount} detail="Needs review" tone="warn" />
+                  <OverviewStat
+                    label="Manual Required"
+                    value={incompleteCellCount}
+                    detail={incompleteCellCount > 0 ? "Open records to edit" : "All manual fields clear"}
+                    tone={incompleteCellCount > 0 ? "danger" : "accent"}
+                    onClick={() => openRecordsWithFilter({ region: null })}
+                  />
                 </div>
               </div>
               {incompleteCellCount > 0 ? (
@@ -1220,6 +1366,8 @@ export default function DashboardPage() {
                       onClick={() => {
                         setSelectedRegion(null);
                         setSelectedWoOtcCode(null);
+                        setShowClosedOnly(false);
+                        setShowCissOnly(false);
                       }}
                       style={{ minHeight: '32px', padding: '0 12px', fontSize: '12px' }}
                     >
@@ -1230,15 +1378,8 @@ export default function DashboardPage() {
                 <div className="regionGrid">
                   <div 
                     className={`regionMetric ${selectedRegion === "ALL" && !selectedWoOtcCode ? "active" : ""}`}
-                    onClick={() => {
-                      if (selectedRegion === "ALL" && !selectedWoOtcCode) {
-                        setSelectedRegion(null);
-                      } else {
-                        setSelectedRegion("ALL");
-                        setSelectedWoOtcCode(null);
-                      }
-                    }}
-                    style={{ cursor: "pointer", border: "2px solid var(--accent)", background: "rgba(18, 143, 143, 0.05)" }}
+                    onClick={() => openRecordsWithFilter({ region: "ALL" })}
+                    style={{ cursor: "pointer", border: "2px solid var(--accent)", background: "var(--accent-tint)" }}
                   >
                     <div className="regionMetricHeader">
                         <div className="regionMetricValue">{report.rows.length}</div>
@@ -1254,13 +1395,7 @@ export default function DashboardPage() {
                             className={`regionWoOtcItem ${(selectedRegion === "ALL" || !selectedRegion) && selectedWoOtcCode === woCode.code ? "active" : ""}`}
                             onClick={(e) => {
                               e.stopPropagation();
-                              if ((selectedRegion === "ALL" || !selectedRegion) && selectedWoOtcCode === woCode.code) {
-                                setSelectedWoOtcCode(null);
-                                setSelectedRegion(null);
-                              } else {
-                                setSelectedRegion("ALL");
-                                setSelectedWoOtcCode(woCode.code);
-                              }
+                              openRecordsWithFilter({ region: "ALL", woOtcCode: woCode.code });
                             }}
                           >
                             <span className="regionWoOtcCode">{woCode.code}</span>
@@ -1275,14 +1410,7 @@ export default function DashboardPage() {
                     <div 
                       key={entry.aspCode} 
                       className={`regionMetric ${selectedRegion === entry.aspCode && !selectedWoOtcCode ? "active" : ""}`}
-                      onClick={() => {
-                        if (selectedRegion === entry.aspCode && !selectedWoOtcCode) {
-                          setSelectedRegion(null);
-                        } else {
-                          setSelectedRegion(entry.aspCode);
-                          setSelectedWoOtcCode(null);
-                        }
-                      }}
+                      onClick={() => openRecordsWithFilter({ region: entry.aspCode })}
                       style={{ cursor: "pointer" }}
                     >
                       <div className="regionMetricHeader">
@@ -1299,13 +1427,7 @@ export default function DashboardPage() {
                               className={`regionWoOtcItem ${selectedRegion === entry.aspCode && selectedWoOtcCode === woCode.code ? "active" : ""}`}
                               onClick={(e) => {
                                 e.stopPropagation();
-                                if (selectedRegion === entry.aspCode && selectedWoOtcCode === woCode.code) {
-                                  // Deselect WO code, but keep region selected
-                                  setSelectedWoOtcCode(null);
-                                } else {
-                                  setSelectedRegion(entry.aspCode);
-                                  setSelectedWoOtcCode(woCode.code);
-                                }
+                                openRecordsWithFilter({ region: entry.aspCode, woOtcCode: woCode.code });
                               }}
                             >
                               <span className="regionWoOtcCode">{woCode.code}</span>
@@ -1359,6 +1481,41 @@ export default function DashboardPage() {
                 )}
               </div>
 
+              <div className="recordsCta">
+                <div>
+                  <h3>Records Workspace</h3>
+                  <p>Open the full Excel-style table on its own screen for filtering, editing, and export.</p>
+                </div>
+                <button type="button" onClick={() => setWorkspaceView("records")}>
+                  Open Records
+                </button>
+              </div>
+              </div>
+
+              <div className="recordsArea">
+                <div className="recordsHero">
+                  <div>
+                    <p className="eyebrow">OpenCall</p>
+                    <h2>Records Workspace</h2>
+                    <p>
+                      {formatNumber(filteredRows.length)} of {formatNumber(regionFilteredRows.length)} records shown
+                      {recordsFilterLabel ? ` for ${recordsFilterLabel}` : ""}
+                    </p>
+                  </div>
+                  <div className="recordsHeroStats">
+                    <OverviewStat label="Visible" value={filteredRows.length} detail="After filters" />
+                    <OverviewStat label="Total" value={report.totalRows} detail="Generated records" tone="blue" />
+                    <OverviewStat
+                      label="Closed"
+                      value={closedRows.length}
+                      detail="Closed calls"
+                      tone="danger"
+                      onClick={() => openRecordsWithFilter({ closedOnly: true })}
+                      isActive={showClosedOnly}
+                    />
+                    <OverviewStat label="Manual" value={incompleteCellCount} detail="Fields to complete" tone={incompleteCellCount > 0 ? "danger" : "accent"} />
+                  </div>
+                </div>
               <div className="downloadActions">
                 <button
                   className="downloadBtn excelBtn"
@@ -1386,6 +1543,24 @@ export default function DashboardPage() {
                   <button type="button" onClick={colFilters.resetAll}>Clear All Filters</button>
                 </div>
               )}
+              {(selectedRegion || selectedWoOtcCode) && (
+                <div className="colFilterSummary">
+                  <span>
+                    {recordsFilterLabel || "Region filter"} active
+                    {" Â· "}
+                    {filteredRows.length} of {regionFilteredRows.length} rows shown
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSelectedRegion(null);
+                      setSelectedWoOtcCode(null);
+                    }}
+                  >
+                    Show All Regions
+                  </button>
+                </div>
+              )}
               {showCissOnly && (
                 <div className="colFilterSummary">
                   <span>
@@ -1394,6 +1569,16 @@ export default function DashboardPage() {
                     {filteredRows.length} of {regionFilteredRows.length} rows shown
                   </span>
                   <button type="button" onClick={() => setShowCissOnly(false)}>Show All Cases</button>
+                </div>
+              )}
+              {showClosedOnly && (
+                <div className="colFilterSummary">
+                  <span>
+                    Closed Calls active
+                    {" Â· "}
+                    {filteredRows.length} of {regionFilteredRows.length} rows shown
+                  </span>
+                  <button type="button" onClick={() => setShowClosedOnly(false)}>Show All Calls</button>
                 </div>
               )}
               <div className="tableWrap">
@@ -1605,6 +1790,7 @@ export default function DashboardPage() {
                     })}
                   </tbody>
                 </table>
+              </div>
               </div>
             </section>
           ) : null}

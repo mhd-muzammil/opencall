@@ -139,4 +139,29 @@ describe("buildReportExportMatrix", () => {
     expect(closedRow?.[1]).toBe("WO-999");
     expect(closedRow?.[7]).toBe("Alex");
   });
+
+  it("keeps closed synthetic rows visible even when output cells are blank", () => {
+    const report = reportFixture();
+    const closedFixtureRow = report.rows[1];
+
+    if (!closedFixtureRow) {
+      throw new Error("Expected closed fixture row");
+    }
+
+    report.rows = [
+      {
+        ...closedFixtureRow,
+        serialNo: 78,
+        output: outputRow(),
+      },
+    ];
+
+    const matrix = buildReportExportMatrix(report);
+    const closedRow = matrix[1];
+
+    expect(closedRow?.[0]).toBe(78);
+    expect(closedRow?.[4]).toBe("5");
+    expect(closedRow?.[5]).toBe("Pending");
+    expect(closedRow?.[11]).toBe("Open");
+  });
 });

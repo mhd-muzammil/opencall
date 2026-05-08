@@ -75,7 +75,35 @@ function manualEntryRequiredColumns(
 export function mapRowToStandardExport(
   row: GeneratedReportResponse["rows"][number],
 ): ExportCellValue[] {
-  return STANDARD_EXPORT_COLUMNS.map((col) => row.output[col] ?? "");
+  return STANDARD_EXPORT_COLUMNS.map((col) => {
+    const value = row.output[col];
+
+    if (value !== null && value !== undefined && value !== "") {
+      return value;
+    }
+
+    if (!row.carryForward.closedSyntheticRow) {
+      return "";
+    }
+
+    if (col === "S.no") {
+      return row.serialNo;
+    }
+
+    if (col === "Flex Status") {
+      return row.comparison?.previousFlexStatus ?? "CLOSED";
+    }
+
+    if (col === "RTPL status") {
+      return row.comparison?.previousRtplStatus ?? "CLOSED";
+    }
+
+    if (col === "WIP aging") {
+      return row.comparison?.previousWipAging ?? "";
+    }
+
+    return "";
+  });
 }
 
 export function buildReportExportMatrix(

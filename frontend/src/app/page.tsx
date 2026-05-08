@@ -166,6 +166,18 @@ function StatusPill({
   return <span className={`statusPill ${tone}`}>{children}</span>;
 }
 
+function formatRoleLabel(role: LoginResponse["user"]["role"]): string {
+  return role
+    .split("_")
+    .map((part) => part.charAt(0) + part.slice(1).toLowerCase())
+    .join(" ");
+}
+
+function displayNameFromEmail(email: string): string {
+  const [localPart] = email.split("@");
+  return localPart || email;
+}
+
 function Metric({
   label,
   value,
@@ -1047,13 +1059,18 @@ export default function DashboardPage() {
     selectedRegion && selectedRegion !== "ALL" ? selectedRegion : null,
     selectedWoOtcCode ? selectedWoOtcCode : null,
   ].filter(Boolean).join(" / ");
+  const userDisplayName = session ? displayNameFromEmail(session.user.email) : "Guest";
+  const userInitial = userDisplayName.charAt(0).toUpperCase();
 
   return (
     <main className="appShell">
       <header className="topBar">
-        <div>
-          <p className="eyebrow">OpenCall</p>
-          <h1>{workspaceView === "records" ? "Records Workspace" : "Operational Overview"}</h1>
+        <div className="brandBlock">
+          <div className="brandMark" aria-hidden="true">OC</div>
+          <div>
+            <p className="eyebrow">Open Call</p>
+            <h1>{workspaceView === "records" ? "Records Workspace" : "Operational Overview"}</h1>
+          </div>
         </div>
         <div className="topActions">
           <div className="workspaceTabs" aria-label="Workspace view">
@@ -1074,19 +1091,41 @@ export default function DashboardPage() {
             </button>
           </div>
           <StatusPill tone={dbHealth?.connected ? "good" : "bad"}>
-            DB {dbHealth?.status ?? "checking"}
+            DB {dbHealth?.connected ? "connected" : dbHealth?.status ?? "checking"}
           </StatusPill>
           <StatusPill tone={runtimeHealth?.ok ? "good" : "bad"}>
-            Runtime {runtimeHealth?.status ?? "checking"}
+            Runtime {runtimeHealth?.ok ? "ready" : runtimeHealth?.status ?? "checking"}
           </StatusPill>
-          <button className="iconButton" type="button" onClick={() => void refreshHealth()}>
+          <button className="iconButton topIconButton refreshAction" type="button" onClick={() => void refreshHealth()} title="Refresh health">
+            <span aria-hidden="true">↻</span>
             Refresh
           </button>
           {session && (
-            <button className="iconButton" type="button" onClick={() => setIsHistoryPanelOpen(!isHistoryPanelOpen)}>
+            <button className="iconButton topIconButton historyAction" type="button" onClick={() => setIsHistoryPanelOpen(!isHistoryPanelOpen)} title="Report history">
+              <span aria-hidden="true">◷</span>
               {isHistoryPanelOpen ? "Close History" : "History"}
             </button>
           )}
+          <details className="profileMenu">
+            <summary aria-label="Open profile menu">
+              <span className="profileAvatar" aria-hidden="true">{userInitial}</span>
+            </summary>
+            <div className="profileDropdown">
+              <div className="profileIdentity">
+                <strong>{userDisplayName}</strong>
+                <span>{session?.user.email ?? "Not signed in"}</span>
+                {session ? <em>{formatRoleLabel(session.user.role)}</em> : null}
+              </div>
+              <button className="profileMenuItem" type="button">
+                Settings
+              </button>
+              {session ? (
+                <button className="profileMenuItem danger" type="button" onClick={handleLogout}>
+                  Log out
+                </button>
+              ) : null}
+            </div>
+          </details>
         </div>
       </header>
 

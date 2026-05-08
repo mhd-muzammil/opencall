@@ -46,6 +46,8 @@ type ManualCarryForwardField =
   | "segment"
   | "engineer"
   | "location"
+  | "case_created_time"
+  | "wip_aging"
   | "customer_mail"
   | "rca";
 
@@ -98,6 +100,8 @@ const MANUAL_FIELD_BY_COLUMN: Partial<Record<string, ManualCarryForwardField>> =
   Segment: "segment",
   Engineer: "engineer",
   Location: "location",
+  "Case Created Time": "case_created_time",
+  "WIP aging": "wip_aging",
   "Customer Mail": "customer_mail",
   RCA: "rca",
 };
@@ -107,6 +111,8 @@ const MANUAL_FIELD_LABELS: Record<ManualCarryForwardField, string> = {
   segment: "Segment",
   engineer: "Engineer",
   location: "Location",
+  case_created_time: "Case Created Time",
+  wip_aging: "WIP aging",
   customer_mail: "Customer Mail",
   rca: "RCA",
 };
@@ -116,6 +122,8 @@ const EDITABLE_COLUMN_API_FIELD: Partial<Record<string, string>> = {
   Segment: "segment",
   Engineer: "engineer",
   Location: "location",
+  "Case Created Time": "case_created_time",
+  "WIP aging": "wip_aging",
   "Customer Mail": "customer_mail",
   RCA: "rca",
 };

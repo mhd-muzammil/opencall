@@ -17,6 +17,8 @@ export const MANUAL_CARRY_FORWARD_FIELDS = [
   "segment",
   "engineer",
   "location",
+  "case_created_time",
+  "wip_aging",
   "customer_mail",
   "rca",
 ] as const;

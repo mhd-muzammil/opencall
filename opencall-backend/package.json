@@ -1,0 +1,20 @@
+{
+  "name": "opencall-backend",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Open Call backend API and deployment infrastructure.",
+  "packageManager": "pnpm@9.15.0",
+  "scripts": {
+    "dev": "pnpm --filter @opencall/shared build && pnpm --filter @opencall/api dev",
+    "db:check": "pnpm --filter @opencall/api db:check",
+    "build": "pnpm --filter @opencall/shared build && pnpm --filter @opencall/api build",
+    "start": "pnpm --filter @opencall/api start",
+    "typecheck": "pnpm --filter @opencall/shared build && pnpm --filter @opencall/api typecheck",
+    "lint": "pnpm --filter @opencall/api lint",
+    "test": "pnpm --filter @opencall/api test"
+  },
+  "engines": {
+    "node": ">=20.11.0",
+    "pnpm": ">=9.0.0"
+  }
+}

@@ -1365,9 +1365,6 @@ export default function DashboardPage() {
                   Click any highlighted "Manual Entry Required" cell or the row Edit button to enter manual data.
                 </p>
               ) : null}
-              <CarryForwardSummaryPanel report={report} />
-              <ComparisonSummaryPanel report={report} />
-
               <div className="regionBreakdownSection">
                 <div className="sectionHeader">
                   <h3>Region-wise Breakdown</h3>
@@ -1451,6 +1448,9 @@ export default function DashboardPage() {
                   ))}
                 </div>
               </div>
+
+              <CarryForwardSummaryPanel report={report} />
+              <ComparisonSummaryPanel report={report} />
 
               <div className="rtplAnalyticsSection">
                 <div className="sectionHeader rtplAnalyticsHeader">

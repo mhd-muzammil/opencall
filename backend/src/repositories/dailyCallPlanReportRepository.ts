@@ -24,10 +24,33 @@ export interface PersistedReportRowMetadata {
   updatedBy: string | null;
 }
 
-interface PersistedReportRowMetadataDbRow {
+export interface PersistedReportRowSnapshot extends PersistedReportRowMetadata {
+  rtplStatus: string | null;
+  segment: string | null;
+  engineer: string | null;
+  location: string | null;
+  customerMail: string | null;
+  rca: string | null;
+  remarks: string | null;
+  manualNotes: string | null;
+  manualFieldsCompleted: boolean;
+  manualFieldsMissing: ManualCarryForwardField[];
+}
+
+interface PersistedReportRowSnapshotDbRow {
   id: string;
   serial_no: number;
   ticket_id: string;
+  rtpl_status: string | null;
+  segment: string | null;
+  engineer: string | null;
+  location: string | null;
+  customer_mail: string | null;
+  rca: string | null;
+  remarks: string | null;
+  manual_notes: string | null;
+  manual_fields_completed: boolean;
+  manual_fields_missing: ManualCarryForwardField[];
   updated_at: string | null;
   updated_by: string | null;
 }
@@ -204,12 +227,22 @@ function mapEditedReportRow(row: EditedReportRowDbRow): EditedReportRow {
 }
 
 function mapPersistedReportRowMetadata(
-  row: PersistedReportRowMetadataDbRow,
-): PersistedReportRowMetadata {
+  row: PersistedReportRowSnapshotDbRow,
+): PersistedReportRowSnapshot {
   return {
     id: row.id,
     serialNo: row.serial_no,
     ticketId: row.ticket_id,
+    rtplStatus: row.rtpl_status,
+    segment: row.segment,
+    engineer: row.engineer,
+    location: row.location,
+    customerMail: row.customer_mail,
+    rca: row.rca,
+    remarks: row.remarks,
+    manualNotes: row.manual_notes,
+    manualFieldsCompleted: row.manual_fields_completed,
+    manualFieldsMissing: row.manual_fields_missing,
     updatedAt: row.updated_at,
     updatedBy: row.updated_by,
   };
@@ -411,13 +444,23 @@ export async function findFinalReportRowsForManualCarryForwardBySessionId(
 export async function findDailyCallPlanReportRowMetadataByReportId(
   client: PoolClient,
   reportId: string,
-): Promise<PersistedReportRowMetadata[]> {
-  const result = await client.query<PersistedReportRowMetadataDbRow>(
+): Promise<PersistedReportRowSnapshot[]> {
+  const result = await client.query<PersistedReportRowSnapshotDbRow>(
     `
       SELECT
         id,
         serial_no,
         ticket_id,
+        rtpl_status,
+        segment,
+        engineer,
+        location,
+        customer_mail,
+        rca,
+        remarks,
+        manual_notes,
+        manual_fields_completed,
+        manual_fields_missing,
         updated_at::TEXT AS updated_at,
         updated_by::TEXT AS updated_by
       FROM daily_call_plan_report_rows

@@ -228,6 +228,20 @@ async function applyPersistedRowMetadata(
     row.id = persisted.id;
     row.updatedAt = persisted.updatedAt;
     row.updatedBy = persisted.updatedBy;
+    row.enriched.rtpl_status = persisted.rtplStatus ?? "";
+    row.enriched.segment = persisted.segment ?? "";
+    row.enriched.engineer = persisted.engineer;
+    row.enriched.location = persisted.location;
+    row.enriched.customer_mail = persisted.customerMail;
+    row.enriched.rca = persisted.rca;
+    row.enriched.remarks = persisted.remarks;
+    row.enriched.manual_notes = persisted.manualNotes;
+    row.match.enrichedRow = row.enriched;
+    row.carryForward.manualFieldsCompleted = persisted.manualFieldsCompleted;
+    row.carryForward.manualFieldsMissing = persisted.manualFieldsMissing;
+    row.output = orderedDailyCallPlanRow(
+      formatDailyCallPlanRow(row.serialNo, row.enriched),
+    );
   }
 }
 

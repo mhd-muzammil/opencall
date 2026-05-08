@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 import type { EnrichedCallPlanRow, MatchedCallPlanRecord } from "../types/matching.js";
 import type { GeneratedDailyCallPlanRow } from "../types/reportGeneration.js";
 import {
+  findDailyCallPlanReportRowMetadataByReportId,
   insertDailyCallPlanReportRows,
   updateDailyCallPlanReportRowManualFields,
 } from "./dailyCallPlanReportRepository.js";
@@ -125,6 +126,40 @@ describe("insertDailyCallPlanReportRows", () => {
     expect(values[30]).toBe(JSON.stringify(["engineer", "customer_mail"]));
     expect(values[31]).toBe(true);
     expect(values[32]).toEqual([]);
+  });
+
+  it("loads persisted manual fields for regenerated history reports", async () => {
+    const query = vi.fn().mockResolvedValue({
+      rows: [
+        {
+          id: "row-1",
+          serial_no: 1,
+          ticket_id: "WO-123",
+          rtpl_status: "Pending customer",
+          segment: "Enterprise",
+          engineer: "Priya",
+          location: "Chennai",
+          customer_mail: "customer@example.com",
+          rca: "Awaiting part",
+          remarks: null,
+          manual_notes: null,
+          manual_fields_completed: true,
+          manual_fields_missing: [],
+          updated_at: "2026-05-07T00:00:00.000Z",
+          updated_by: "user-1",
+        },
+      ],
+    });
+    const client = { query } as unknown as PoolClient;
+
+    const rows = await findDailyCallPlanReportRowMetadataByReportId(client, "report-1");
+    const [sql] = query.mock.calls[0] as [string, unknown[]];
+
+    expect(sql).toContain("rtpl_status");
+    expect(sql).toContain("manual_fields_missing");
+    expect(rows[0]?.rtplStatus).toBe("Pending customer");
+    expect(rows[0]?.manualFieldsCompleted).toBe(true);
+    expect(rows[0]?.manualFieldsMissing).toEqual([]);
   });
 
   it("updates only the addressed report row for persisted manual edits", async () => {

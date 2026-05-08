@@ -1,4 +1,4 @@
-import { query, closeDatabasePool } from './apps/api/src/config/database.js';
+import { query, closeDatabasePool } from './backend/src/config/database.js';
 
 async function run() {
   try {

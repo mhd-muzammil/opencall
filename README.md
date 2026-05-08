@@ -13,9 +13,9 @@ This repository currently contains the foundational monorepo structure, shared T
 ## Workspace
 
 ```txt
-apps/api        Node.js + Express backend
-apps/web        Next.js frontend
-packages/shared Shared report, RBAC, and source-type contracts
+backend         Node.js + Express backend
+frontend        Next.js frontend
+shared          Shared report, RBAC, and source-type contracts
 infra/postgres  PostgreSQL migrations and seeds
 ```
 
@@ -24,7 +24,7 @@ infra/postgres  PostgreSQL migrations and seeds
 The Daily Call Plan Report must always emit exactly 21 columns in the order defined in:
 
 ```txt
-packages/shared/src/constants/reportColumns.ts
+shared/src/constants/reportColumns.ts
 ```
 
 ## Database
@@ -48,7 +48,7 @@ infra/postgres/seeds/001_region_mapping.sql
 Backend entrypoint:
 
 ```txt
-apps/api/src/server.ts
+backend/src/server.ts
 ```
 
 ## RBAC

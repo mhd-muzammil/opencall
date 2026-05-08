@@ -20,8 +20,8 @@ node_modules
 **/.env.*
 !.env.example
 
-apps/api/storage
-apps/api/.adminjs
+backend/storage
+backend/.adminjs
 
 **/*.test.ts
 **/*.test.tsx

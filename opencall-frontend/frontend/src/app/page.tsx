@@ -1116,14 +1116,29 @@ export default function DashboardPage() {
                 <span>{session?.user.email ?? "Not signed in"}</span>
                 {session ? <em>{formatRoleLabel(session.user.role)}</em> : null}
               </div>
-              <button className="profileMenuItem" type="button">
-                Settings
-              </button>
-              {session ? (
-                <button className="profileMenuItem danger" type="button" onClick={handleLogout}>
-                  Log out
-                </button>
-              ) : null}
+              {!session ? (
+                <form onSubmit={(e) => void handleLogin(e)} style={{ padding: "8px 16px", display: "flex", flexDirection: "column", gap: "8px", borderTop: "1px solid var(--border)" }}>
+                  <input
+                    type="email"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    placeholder="admin@example.com"
+                    style={{ padding: "8px", borderRadius: "4px", border: "1px solid var(--border)", fontSize: "14px", width: "100%", boxSizing: "border-box", background: "var(--bg)", color: "var(--fg)" }}
+                  />
+                  <button type="submit" disabled={isBusy || !email.trim()} style={{ padding: "8px", borderRadius: "4px", background: "var(--accent)", color: "var(--bg)", border: "none", cursor: "pointer", fontWeight: "600" }}>
+                    Login
+                  </button>
+                </form>
+              ) : (
+                <>
+                  <button className="profileMenuItem" type="button">
+                    Settings
+                  </button>
+                  <button className="profileMenuItem danger" type="button" onClick={handleLogout}>
+                    Log out
+                  </button>
+                </>
+              )}
             </div>
           </details>
         </div>
@@ -1133,62 +1148,6 @@ export default function DashboardPage() {
 
       <section className={`workspace ${workspaceView === "records" ? "recordsMode" : "overviewMode"} ${session && isHistoryPanelOpen ? "withHistory" : ""}`}>
         <aside className="sidebar">
-          <form className="panel" onSubmit={(event) => void handleLogin(event)}>
-            <h2>Access</h2>
-            <label>
-              Email
-              <input
-                type="email"
-                value={email}
-                onChange={(event) => setEmail(event.target.value)}
-                placeholder="admin@example.com"
-              />
-            </label>
-            <button type="submit" disabled={isBusy || !email.trim()}>
-              Login
-            </button>
-            {session ? (
-              <div className="sessionBox">
-                <strong>{session.user.email}</strong>
-                <span>{session.user.role}</span>
-                <button type="button" className="secondaryButton" onClick={handleLogout}>
-                  Logout
-                </button>
-              </div>
-            ) : null}
-          </form>
-
-          <div className="panel">
-            <h2>Scope</h2>
-            <label>
-              Region ID
-              <input
-                value={regionId}
-                onChange={(event) => setRegionId(event.target.value)}
-                placeholder="Optional for SUPER_ADMIN"
-              />
-            </label>
-            <label>
-              Report Date
-              <input
-                type="date"
-                value={reportDate}
-                onChange={(event) => setReportDate(event.target.value)}
-              />
-            </label>
-          </div>
-
-          {session && isHistoryPanelOpen && (
-            <ReportHistoryPanel 
-              sessions={historySessions}
-              onOpen={handleHistoryOpen}
-              onRename={handleHistoryRename}
-              onDelete={handleHistoryDelete}
-            />
-          )}
-        </aside>
-
-        <section className="mainGrid">
           <form className="panel uploadPanel" onSubmit={(event) => void handleUpload(event)}>
             <div className="sectionHeader">
               <h2>Source Files</h2>
@@ -1196,7 +1155,7 @@ export default function DashboardPage() {
                 Upload
               </button>
             </div>
-            <div className="fileGrid">
+            <div className="fileGrid" style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
               {FILE_FIELDS.map((item) => (
                 <label className="fileDrop" key={item.field}>
                   <span>
@@ -1224,6 +1183,19 @@ export default function DashboardPage() {
               ))}
             </div>
           </form>
+
+          {session && isHistoryPanelOpen && (
+            <ReportHistoryPanel 
+              sessions={historySessions}
+              onOpen={handleHistoryOpen}
+              onRename={handleHistoryRename}
+              onDelete={handleHistoryDelete}
+            />
+          )}
+        </aside>
+
+        <section className="mainGrid">
+          
 
           {upload ? (
             <section className="panel">

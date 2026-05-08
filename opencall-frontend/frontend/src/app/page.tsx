@@ -1195,130 +1195,6 @@ export default function DashboardPage() {
         </aside>
 
         <section className="mainGrid">
-          
-
-          {upload ? (
-            <section className="panel">
-              <div className="sectionHeader">
-                <h2>Upload Batches</h2>
-                <button type="button" disabled={isBusy || !canUseBatches} onClick={() => void handlePreview()}>
-                  Preview Matches
-                </button>
-              </div>
-              <div className="batchGrid">
-                {upload.batches.map((batch) => {
-                  const validation = upload.validations.find((v) => v.sourceType === batch.sourceType);
-                  const hasMissingColumns = validation && !validation.isValid && validation.missingColumns.length > 0;
-                  return (
-                    <div className="batchCard" key={batch.id}>
-                      <span>{SOURCE_LABELS[batch.sourceType]}</span>
-                      <strong>{batch.rowCount} rows</strong>
-                      <code>{batch.id}</code>
-                      <StatusPill tone={batch.errorCount === 0 && !hasMissingColumns ? "good" : "warn"}>
-                        {batch.status}
-                      </StatusPill>
-                      {hasMissingColumns && (
-                        <div style={{ color: "var(--danger)", fontSize: "11px", fontWeight: "bold", marginTop: "4px" }}>
-                          Missing columns: {validation.missingColumns.join(", ")}
-                        </div>
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
-            </section>
-          ) : null}
-
-          {preview ? (
-            <section className="panel">
-              <div className="sectionHeader">
-                <h2>Match Preview</h2>
-                <button type="button" disabled={isBusy || !canUseBatches} onClick={() => void handleGenerate()}>
-                  Generate Report
-                </button>
-              </div>
-              <div className="metricGrid">
-                <Metric
-                  label="Flex WIP rows"
-                  value={preview.totalFlexRows ?? 0}
-                  onClick={() =>
-                    setSelectedPreviewCategory(
-                      selectedPreviewCategory === "Renderways" ? null : "Renderways"
-                    )
-                  }
-                  isActive={selectedPreviewCategory === "Renderways"}
-                />
-                <Metric
-                  label="Flex matched"
-                  value={preview.flexMatchedRows}
-                  onClick={() =>
-                    setSelectedPreviewCategory(
-                      selectedPreviewCategory === "Flex matched" ? null : "Flex matched"
-                    )
-                  }
-                  isActive={selectedPreviewCategory === "Flex matched"}
-                />
-                <Metric
-                  label="Call Plan matched"
-                  value={preview.callPlanMatchedRows}
-                  onClick={() =>
-                    setSelectedPreviewCategory(
-                      selectedPreviewCategory === "Call Plan matched" ? null : "Call Plan matched"
-                    )
-                  }
-                  isActive={selectedPreviewCategory === "Call Plan matched"}
-                />
-                <Metric
-                  label="Flex missing"
-                  value={preview.unmatchedFlexRows}
-                  onClick={() =>
-                    setSelectedPreviewCategory(
-                      selectedPreviewCategory === "Flex missing" ? null : "Flex missing"
-                    )
-                  }
-                  isActive={selectedPreviewCategory === "Flex missing"}
-                />
-                <Metric
-                  label="Call Plan missing"
-                  value={preview.unmatchedCallPlanRows}
-                  onClick={() =>
-                    setSelectedPreviewCategory(
-                      selectedPreviewCategory === "Call Plan missing" ? null : "Call Plan missing"
-                    )
-                  }
-                  isActive={selectedPreviewCategory === "Call Plan missing"}
-                />
-              </div>
-              {selectedPreviewCategory && selectedRecords && selectedRecords.length > 0 && (
-                <div style={{ marginTop: "16px", minWidth: 0 }}>
-                  <h3 style={{ fontSize: "15px", marginBottom: "12px" }}>
-                    {selectedPreviewCategory} Records
-                  </h3>
-                  <div className="tableWrap" style={{ maxHeight: "400px" }}>
-                    <table>
-                      <thead>
-                        <tr>
-                          {Object.keys(selectedRecords[0] ?? {}).map((key) => (
-                            <th key={key}>{key}</th>
-                          ))}
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {selectedRecords.map((row, i) => (
-                          <tr key={i}>
-                            {Object.values(row).map((val, j) => (
-                              <td key={j}>{String(val ?? "")}</td>
-                            ))}
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                </div>
-              )}
-            </section>
-          ) : null}
-
           {report ? (
             <section className="panel reportPanel">
               <div className="overviewReportContent">
@@ -1449,9 +1325,6 @@ export default function DashboardPage() {
                 </div>
               </div>
 
-              <CarryForwardSummaryPanel report={report} />
-              <ComparisonSummaryPanel report={report} />
-
               <div className="rtplAnalyticsSection">
                 <div className="sectionHeader rtplAnalyticsHeader">
                   <div>
@@ -1491,6 +1364,10 @@ export default function DashboardPage() {
                   </div>
                 )}
               </div>
+
+              <ComparisonSummaryPanel report={report} />
+              <CarryForwardSummaryPanel report={report} />
+
 
               <div className="recordsCta">
                 <div>
@@ -1803,6 +1680,128 @@ export default function DashboardPage() {
                 </table>
               </div>
               </div>
+            </section>
+          ) : null}
+
+          {upload ? (
+            <section className="panel">
+              <div className="sectionHeader">
+                <h2>Upload Batches</h2>
+                <button type="button" disabled={isBusy || !canUseBatches} onClick={() => void handlePreview()}>
+                  Preview Matches
+                </button>
+              </div>
+              <div className="batchGrid">
+                {upload.batches.map((batch) => {
+                  const validation = upload.validations.find((v) => v.sourceType === batch.sourceType);
+                  const hasMissingColumns = validation && !validation.isValid && validation.missingColumns.length > 0;
+                  return (
+                    <div className="batchCard" key={batch.id}>
+                      <span>{SOURCE_LABELS[batch.sourceType]}</span>
+                      <strong>{batch.rowCount} rows</strong>
+                      <code>{batch.id}</code>
+                      <StatusPill tone={batch.errorCount === 0 && !hasMissingColumns ? "good" : "warn"}>
+                        {batch.status}
+                      </StatusPill>
+                      {hasMissingColumns && (
+                        <div style={{ color: "var(--danger)", fontSize: "11px", fontWeight: "bold", marginTop: "4px" }}>
+                          Missing columns: {validation.missingColumns.join(", ")}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </section>
+          ) : null}
+
+          {preview ? (
+            <section className="panel">
+              <div className="sectionHeader">
+                <h2>Match Preview</h2>
+                <button type="button" disabled={isBusy || !canUseBatches} onClick={() => void handleGenerate()}>
+                  Generate Report
+                </button>
+              </div>
+              <div className="metricGrid">
+                <Metric
+                  label="Flex WIP rows"
+                  value={preview.totalFlexRows ?? 0}
+                  onClick={() =>
+                    setSelectedPreviewCategory(
+                      selectedPreviewCategory === "Renderways" ? null : "Renderways"
+                    )
+                  }
+                  isActive={selectedPreviewCategory === "Renderways"}
+                />
+                <Metric
+                  label="Flex matched"
+                  value={preview.flexMatchedRows}
+                  onClick={() =>
+                    setSelectedPreviewCategory(
+                      selectedPreviewCategory === "Flex matched" ? null : "Flex matched"
+                    )
+                  }
+                  isActive={selectedPreviewCategory === "Flex matched"}
+                />
+                <Metric
+                  label="Call Plan matched"
+                  value={preview.callPlanMatchedRows}
+                  onClick={() =>
+                    setSelectedPreviewCategory(
+                      selectedPreviewCategory === "Call Plan matched" ? null : "Call Plan matched"
+                    )
+                  }
+                  isActive={selectedPreviewCategory === "Call Plan matched"}
+                />
+                <Metric
+                  label="Flex missing"
+                  value={preview.unmatchedFlexRows}
+                  onClick={() =>
+                    setSelectedPreviewCategory(
+                      selectedPreviewCategory === "Flex missing" ? null : "Flex missing"
+                    )
+                  }
+                  isActive={selectedPreviewCategory === "Flex missing"}
+                />
+                <Metric
+                  label="Call Plan missing"
+                  value={preview.unmatchedCallPlanRows}
+                  onClick={() =>
+                    setSelectedPreviewCategory(
+                      selectedPreviewCategory === "Call Plan missing" ? null : "Call Plan missing"
+                    )
+                  }
+                  isActive={selectedPreviewCategory === "Call Plan missing"}
+                />
+              </div>
+              {selectedPreviewCategory && selectedRecords && selectedRecords.length > 0 && (
+                <div style={{ marginTop: "16px", minWidth: 0 }}>
+                  <h3 style={{ fontSize: "15px", marginBottom: "12px" }}>
+                    {selectedPreviewCategory} Records
+                  </h3>
+                  <div className="tableWrap" style={{ maxHeight: "400px" }}>
+                    <table>
+                      <thead>
+                        <tr>
+                          {Object.keys(selectedRecords[0] ?? {}).map((key) => (
+                            <th key={key}>{key}</th>
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {selectedRecords.map((row, i) => (
+                          <tr key={i}>
+                            {Object.values(row).map((val, j) => (
+                              <td key={j}>{String(val ?? "")}</td>
+                            ))}
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
             </section>
           ) : null}
         </section>

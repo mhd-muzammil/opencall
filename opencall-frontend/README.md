@@ -25,6 +25,12 @@ Set `NEXT_PUBLIC_API_BASE_URL` to the backend API origin, for example:
 NEXT_PUBLIC_API_BASE_URL=http://localhost:4000
 ```
 
+For the hosted backend, use:
+
+```bash
+NEXT_PUBLIC_API_BASE_URL=https://open.bazhilgroups.in
+```
+
 ## Environment Files
 
 ```text
@@ -42,6 +48,16 @@ Do not commit `.env`, `.env.local`, or `.env.production.local`. `NEXT_PUBLIC_API
 copy .env.production.example .env
 # edit .env and set NEXT_PUBLIC_API_BASE_URL
 docker compose up -d --build
+```
+
+## Vercel Deploy
+
+Use `opencall-frontend` as the Vercel project root so the `shared` workspace package is available during the build. The included `vercel.json` builds `@opencall/shared` first, then `@opencall/web`.
+
+Set this environment variable for Production, Preview, and Development:
+
+```bash
+NEXT_PUBLIC_API_BASE_URL=https://open.bazhilgroups.in
 ```
 
 ## Checks

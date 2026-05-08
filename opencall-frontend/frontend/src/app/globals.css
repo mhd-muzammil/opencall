@@ -872,13 +872,13 @@ th.stickyActionColumn {
 }
 
 .changeBadge.updated {
-  background: #fff3dd;
-  color: var(--warning);
+  background: var(--accent-soft);
+  color: black;
 }
 
 .changeBadge.carried {
   background: var(--accent-soft);
-  color: var(--success);
+  color: black;
 }
 
 .changeBadge.none {
@@ -908,7 +908,7 @@ th.stickyActionColumn {
 .opsBadge.carried,
 .opsBadge.complete {
   background: var(--accent-soft);
-  color: var(--success);
+  color: black;
 }
 
 .opsBadge.new {
@@ -922,8 +922,8 @@ th.stickyActionColumn {
 }
 
 .opsBadge.manual {
-  background: #fff3dd;
-  color: var(--warning);
+  background: var(--accent-soft);
+  color: black;
 }
 
 .manualCount {
@@ -992,19 +992,19 @@ th.stickyActionColumn {
 }
 
 td.missingCell {
-  background: #fff3dd;
-  color: #7b4300;
+  background: var(--accent-soft);
+  color: black;
   font-weight: 800;
 }
 
 td.carriedForwardCell {
   background: var(--accent-soft);
-  color: var(--accent-strong);
+  color: black;
   font-weight: 800;
 }
 
 td.missingCell.carriedForwardCell {
-  background: #fff8e8;
+  background: var(--accent-soft);
 }
 
 .cellValueWrap {

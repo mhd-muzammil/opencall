@@ -1041,11 +1041,13 @@ export default function DashboardPage() {
   function openRecordsWithFilter({
     region,
     woOtcCode,
+    rtplStatus,
     cissOnly = false,
     closedOnly = false,
   }: Readonly<{
     region?: string | null;
     woOtcCode?: string | null;
+    rtplStatus?: string | null;
     cissOnly?: boolean;
     closedOnly?: boolean;
   }>) {
@@ -1055,14 +1057,32 @@ export default function DashboardPage() {
     setShowClosedOnly(closedOnly);
     setSelectedRtplRegion(region && region !== "ALL" ? region : ALL_REGIONS_FILTER);
     colFilters.resetAll();
+    if (rtplStatus) {
+      colFilters.setColumnFilter("RTPL status", new Set([rtplStatus]));
+    }
     setWorkspaceView("records");
   }
+
+  const selectedRtplStatusFilter = (() => {
+    const values = colFilters.filters["RTPL status"];
+
+    if (!values || values.size === 0) {
+      return null;
+    }
+
+    if (values.size === 1) {
+      return Array.from(values)[0];
+    }
+
+    return `${values.size} RTPL statuses`;
+  })();
 
   const recordsFilterLabel = [
     showClosedOnly ? "Closed calls" : null,
     showCissOnly ? "CISS cases" : null,
     selectedRegion && selectedRegion !== "ALL" ? selectedRegion : null,
     selectedWoOtcCode ? selectedWoOtcCode : null,
+    selectedRtplStatusFilter,
   ].filter(Boolean).join(" / ");
   if (!isSessionLoaded) {
     return <SessionLoadingScreen />;
@@ -1307,10 +1327,24 @@ export default function DashboardPage() {
                 {rtplStatusMetrics.length > 0 ? (
                   <div className="rtplMetricGrid">
                     {rtplStatusMetrics.map((metric) => (
-                      <div className="rtplMetricCard" key={metric.status}>
+                      <button
+                        className="rtplMetricCard"
+                        key={metric.status}
+                        type="button"
+                        onClick={() =>
+                          openRecordsWithFilter({
+                            region:
+                              selectedRtplRegion === ALL_REGIONS_FILTER
+                                ? null
+                                : selectedRtplRegion,
+                            rtplStatus: metric.status,
+                          })
+                        }
+                        title={`Open ${metric.status} records`}
+                      >
                         <span>{metric.status}</span>
                         <strong>{metric.count}</strong>
-                      </div>
+                      </button>
                     ))}
                   </div>
                 ) : (

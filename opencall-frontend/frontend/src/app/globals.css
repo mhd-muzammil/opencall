@@ -1610,6 +1610,23 @@ td.missingCell.carriedForwardCell {
   border: 1px solid var(--border);
   border-radius: 8px;
   background: #f8fbff;
+  color: inherit;
+  cursor: pointer;
+  font: inherit;
+  text-align: left;
+  transition: border-color 120ms ease, box-shadow 120ms ease, transform 120ms ease;
+}
+
+.rtplMetricCard:hover {
+  border-color: var(--accent);
+  box-shadow: 0 12px 24px rgba(68, 62, 230, 0.12);
+  transform: translateY(-1px);
+}
+
+.rtplMetricCard:focus-visible {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(68, 62, 230, 0.16);
+  outline: none;
 }
 
 .rtplMetricCard span {

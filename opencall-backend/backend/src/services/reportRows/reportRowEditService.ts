@@ -37,6 +37,8 @@ const REQUIRED_MANUAL_FIELD_VALUE_BY_RESPONSE_FIELD: Record<
     | "segment"
     | "engineer"
     | "location"
+    | "caseCreatedTime"
+    | "wipAging"
     | "customerMail"
     | "rca"
   >
@@ -45,6 +47,8 @@ const REQUIRED_MANUAL_FIELD_VALUE_BY_RESPONSE_FIELD: Record<
   segment: "segment",
   engineer: "engineer",
   location: "location",
+  case_created_time: "caseCreatedTime",
+  wip_aging: "wipAging",
   customer_mail: "customerMail",
   rca: "rca",
 };

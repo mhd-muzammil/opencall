@@ -73,6 +73,8 @@ export interface EditedReportRow {
   id: string;
   reportId: string;
   regionId: string | null;
+  caseCreatedTime: string | null;
+  wipAging: string | null;
   engineer: string | null;
   rtplStatus: string | null;
   customerMail: string | null;
@@ -93,6 +95,8 @@ interface EditedReportRowDbRow {
   id: string;
   report_id: string;
   region_id: string | null;
+  case_created_time: string | null;
+  wip_aging: string | null;
   engineer: string | null;
   rtpl_status: string | null;
   customer_mail: string | null;
@@ -209,6 +213,8 @@ function mapEditedReportRow(row: EditedReportRowDbRow): EditedReportRow {
     id: row.id,
     reportId: row.report_id,
     regionId: row.region_id,
+    caseCreatedTime: row.case_created_time,
+    wipAging: row.wip_aging,
     engineer: row.engineer,
     rtplStatus: row.rtpl_status,
     customerMail: row.customer_mail,
@@ -558,6 +564,8 @@ export async function updateDailyCallPlanReportRowManualFields(
         rows.id,
         rows.report_id,
         reports.region_id::TEXT AS region_id,
+        rows.case_created_time::TEXT AS case_created_time,
+        rows.wip_aging,
         rows.engineer,
         rows.rtpl_status,
         rows.customer_mail,
@@ -600,6 +608,8 @@ export async function findDailyCallPlanReportRowForEdit(
         rows.id,
         rows.report_id,
         reports.region_id::TEXT AS region_id,
+        rows.case_created_time::TEXT AS case_created_time,
+        rows.wip_aging,
         rows.engineer,
         rows.rtpl_status,
         rows.customer_mail,

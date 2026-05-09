@@ -49,7 +49,7 @@ debug_match.ts
 test.xls
 
 # unused admin template app
-admin/
+/admin/
 
 # uploads
 backend/storage/uploads/

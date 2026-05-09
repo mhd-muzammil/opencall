@@ -10,8 +10,17 @@ const MAX_FILE_SIZE_BYTES = 25 * 1024 * 1024;
 
 const storage = multer.diskStorage({
   destination: (_request, _file, callback) => {
-    fs.mkdirSync(env.UPLOAD_DIR, { recursive: true });
-    callback(null, env.UPLOAD_DIR);
+    try {
+      fs.mkdirSync(env.UPLOAD_DIR, { recursive: true });
+      callback(null, env.UPLOAD_DIR);
+    } catch (error) {
+      callback(
+        error instanceof Error
+          ? error
+          : new Error("Unable to create upload directory"),
+        env.UPLOAD_DIR,
+      );
+    }
   },
   filename: (_request, file, callback) => {
     const extension = path.extname(file.originalname).toLowerCase();

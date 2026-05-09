@@ -147,6 +147,77 @@ code {
   box-shadow: 0 12px 22px rgba(79, 70, 229, 0.22);
 }
 
+.brandMark.large {
+  width: 58px;
+  height: 58px;
+  flex-basis: 58px;
+  border-radius: 10px;
+  font-size: 18px;
+}
+
+.loginShell {
+  display: grid;
+  min-height: 100vh;
+  place-items: center;
+  background:
+    linear-gradient(180deg, rgba(238, 242, 255, 0.8), rgba(248, 250, 252, 0.94)),
+    var(--background);
+  padding: 22px;
+}
+
+.loginCard {
+  display: grid;
+  width: min(440px, 100%);
+  gap: 20px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.94);
+  box-shadow: 0 24px 70px rgba(15, 23, 42, 0.12);
+  padding: 26px;
+}
+
+.loginCard.loading {
+  width: min(360px, 100%);
+}
+
+.loginBrand {
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+}
+
+.loginBrand h1,
+.loginCard h1 {
+  margin: 0;
+  font-size: 28px;
+  line-height: 1.1;
+}
+
+.loginBrand p:not(.eyebrow) {
+  margin: 8px 0 0;
+  color: var(--muted);
+  font-size: 14px;
+  line-height: 1.45;
+  font-weight: 650;
+}
+
+.loginForm {
+  display: grid;
+  gap: 14px;
+}
+
+.loginForm button {
+  min-height: 46px;
+}
+
+.loginStatusGrid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  border-top: 1px solid var(--border);
+  padding-top: 16px;
+}
+
 .eyebrow {
   margin: 0 0 4px;
   color: var(--accent);

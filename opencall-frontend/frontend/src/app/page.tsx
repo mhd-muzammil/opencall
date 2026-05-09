@@ -3,6 +3,8 @@
 import { DAILY_CALL_PLAN_COLUMNS, RTPL_STATUS_OPTIONS } from "@opencall/shared";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { ColumnFilterDropdown } from "../components/ColumnFilterDropdown";
+import { AppHeader } from "../components/AppHeader";
+import { StatusPill } from "../components/StatusPill";
 import { useColumnFilters } from "../lib/useColumnFilters";
 import { FILTERABLE_COLUMNS } from "../lib/columnFilter";
 import {
@@ -28,6 +30,7 @@ import {
   deleteReportHistory,
 } from "../lib/apiClient";
 import { ReportHistoryPanel } from "../components/ReportHistoryPanel";
+import { LoginScreen, SessionLoadingScreen } from "../features/auth/LoginScreen";
 import { downloadReportAsXlsx, downloadReportAsExcel } from "../lib/excelExport";
 import {
   ALL_REGIONS_FILTER,
@@ -162,28 +165,6 @@ function batchIdBySource(
   sourceType: SourceKey,
 ): string {
   return batches.find((batch) => batch.sourceType === sourceType)?.id ?? "";
-}
-
-function StatusPill({
-  tone,
-  children,
-}: Readonly<{
-  tone: "good" | "warn" | "bad" | "neutral";
-  children: React.ReactNode;
-}>) {
-  return <span className={`statusPill ${tone}`}>{children}</span>;
-}
-
-function formatRoleLabel(role: LoginResponse["user"]["role"]): string {
-  return role
-    .split("_")
-    .map((part) => part.charAt(0) + part.slice(1).toLowerCase())
-    .join(" ");
-}
-
-function displayNameFromEmail(email: string): string {
-  const [localPart] = email.split("@");
-  return localPart || email;
 }
 
 function Metric({
@@ -465,6 +446,7 @@ export default function DashboardPage() {
   const [dbHealth, setDbHealth] = useState<DatabaseHealthResponse | null>(null);
   const [runtimeHealth, setRuntimeHealth] =
     useState<RuntimeHealthResponse | null>(null);
+  const [isSessionLoaded, setIsSessionLoaded] = useState(false);
   const [isBusy, setIsBusy] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [selectedPreviewCategory, setSelectedPreviewCategory] = useState<string | null>(null);
@@ -614,12 +596,18 @@ export default function DashboardPage() {
     const user = window.localStorage.getItem("opencall.user");
 
     if (token && user) {
-      setSession({
-        token,
-        user: JSON.parse(user) as LoginResponse["user"],
-      });
+      try {
+        setSession({
+          token,
+          user: JSON.parse(user) as LoginResponse["user"],
+        });
+      } catch {
+        window.localStorage.removeItem("opencall.token");
+        window.localStorage.removeItem("opencall.user");
+      }
     }
 
+    setIsSessionLoaded(true);
     void refreshHealth();
   }, []);
 
@@ -658,12 +646,19 @@ export default function DashboardPage() {
 
   async function handleLogin(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    const loginEmail = email.trim();
+    if (!loginEmail) {
+      setMessage("Enter your work email to continue.");
+      return;
+    }
+
     await runAction(async () => {
-      const nextSession = await login(email);
+      const nextSession = await login(loginEmail);
       window.localStorage.setItem("opencall.token", nextSession.token);
       window.localStorage.setItem("opencall.user", JSON.stringify(nextSession.user));
       setSession(nextSession);
       setRegionId(nextSession.user.regionId ?? "");
+      setEmail("");
     });
   }
 
@@ -1067,90 +1062,38 @@ export default function DashboardPage() {
     selectedRegion && selectedRegion !== "ALL" ? selectedRegion : null,
     selectedWoOtcCode ? selectedWoOtcCode : null,
   ].filter(Boolean).join(" / ");
-  const userDisplayName = session ? displayNameFromEmail(session.user.email) : "Guest";
-  const userInitial = userDisplayName.charAt(0).toUpperCase();
+  if (!isSessionLoaded) {
+    return <SessionLoadingScreen />;
+  }
+
+  if (!session) {
+    return (
+      <LoginScreen
+        email={email}
+        isBusy={isBusy}
+        message={message}
+        dbHealth={dbHealth}
+        runtimeHealth={runtimeHealth}
+        onEmailChange={setEmail}
+        onSubmit={(event) => void handleLogin(event)}
+      />
+    );
+  }
 
   return (
     <main className="appShell">
-      <header className="topBar">
-        <div className="brandBlock">
-          <div className="brandMark" aria-hidden="true">OC</div>
-          <div>
-            <p className="eyebrow">Open Call</p>
-            <h1>{workspaceView === "records" ? "Records Workspace" : "Operational Overview"}</h1>
-          </div>
-        </div>
-        <div className="topActions">
-          <div className="workspaceTabs" aria-label="Workspace view">
-            <button
-              className={workspaceView === "overview" ? "active" : ""}
-              type="button"
-              onClick={() => setWorkspaceView("overview")}
-            >
-              Dashboard
-            </button>
-            <button
-              className={workspaceView === "records" ? "active" : ""}
-              type="button"
-              disabled={!report}
-              onClick={() => setWorkspaceView("records")}
-            >
-              Records
-            </button>
-          </div>
-          <StatusPill tone={dbHealth?.connected ? "good" : "bad"}>
-            DB {dbHealth?.connected ? "connected" : dbHealth?.status ?? "checking"}
-          </StatusPill>
-          <StatusPill tone={runtimeHealth?.ok ? "good" : "bad"}>
-            Runtime {runtimeHealth?.ok ? "ready" : runtimeHealth?.status ?? "checking"}
-          </StatusPill>
-          <button className="iconButton topIconButton refreshAction" type="button" onClick={() => void refreshHealth()} title="Refresh health">
-            <span aria-hidden="true">↻</span>
-            Refresh
-          </button>
-          {session && (
-            <button className="iconButton topIconButton historyAction" type="button" onClick={() => setIsHistoryPanelOpen(!isHistoryPanelOpen)} title="Report history">
-              <span aria-hidden="true">◷</span>
-              {isHistoryPanelOpen ? "Close History" : "History"}
-            </button>
-          )}
-          <details className="profileMenu">
-            <summary aria-label="Open profile menu">
-              <span className="profileAvatar" aria-hidden="true">{userInitial}</span>
-            </summary>
-            <div className="profileDropdown">
-              <div className="profileIdentity">
-                <strong>{userDisplayName}</strong>
-                <span>{session?.user.email ?? "Not signed in"}</span>
-                {session ? <em>{formatRoleLabel(session.user.role)}</em> : null}
-              </div>
-              {!session ? (
-                <form onSubmit={(e) => void handleLogin(e)} style={{ padding: "8px 16px", display: "flex", flexDirection: "column", gap: "8px", borderTop: "1px solid var(--border)" }}>
-                  <input
-                    type="email"
-                    value={email}
-                    onChange={(e) => setEmail(e.target.value)}
-                    placeholder="admin@example.com"
-                    style={{ padding: "8px", borderRadius: "4px", border: "1px solid var(--border)", fontSize: "14px", width: "100%", boxSizing: "border-box", background: "var(--bg)", color: "var(--fg)" }}
-                  />
-                  <button type="submit" disabled={isBusy || !email.trim()} style={{ padding: "8px", borderRadius: "4px", background: "var(--accent)", color: "var(--bg)", border: "none", cursor: "pointer", fontWeight: "600" }}>
-                    Login
-                  </button>
-                </form>
-              ) : (
-                <>
-                  <button className="profileMenuItem" type="button">
-                    Settings
-                  </button>
-                  <button className="profileMenuItem danger" type="button" onClick={handleLogout}>
-                    Log out
-                  </button>
-                </>
-              )}
-            </div>
-          </details>
-        </div>
-      </header>
+      <AppHeader
+        workspaceView={workspaceView}
+        hasReport={Boolean(report)}
+        dbHealth={dbHealth}
+        runtimeHealth={runtimeHealth}
+        session={session}
+        isHistoryPanelOpen={isHistoryPanelOpen}
+        onWorkspaceViewChange={setWorkspaceView}
+        onRefreshHealth={() => void refreshHealth()}
+        onToggleHistory={() => setIsHistoryPanelOpen((current) => !current)}
+        onLogout={handleLogout}
+      />
 
       {message ? <div className="alert">{message}</div> : null}
 

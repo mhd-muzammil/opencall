@@ -430,7 +430,8 @@ function ComparisonSummaryPanel({
 }
 
 export default function DashboardPage() {
-  const [email, setEmail] = useState("");
+  const [username, setUsername] = useState("");
+  const [password, setPassword] = useState("");
   const [session, setSession] = useState<LoginResponse | null>(null);
   const [regionId, setRegionId] = useState("");
   const [files, setFiles] = useState<Partial<Record<FileField, File>>>({});
@@ -646,19 +647,20 @@ export default function DashboardPage() {
 
   async function handleLogin(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    const loginEmail = email.trim();
-    if (!loginEmail) {
-      setMessage("Enter your work email to continue.");
+    const loginUsername = username.trim();
+    if (!loginUsername || !password) {
+      setMessage("Enter your username and password to continue.");
       return;
     }
 
     await runAction(async () => {
-      const nextSession = await login(loginEmail);
+      const nextSession = await login(loginUsername, password);
       window.localStorage.setItem("opencall.token", nextSession.token);
       window.localStorage.setItem("opencall.user", JSON.stringify(nextSession.user));
       setSession(nextSession);
       setRegionId(nextSession.user.regionId ?? "");
-      setEmail("");
+      setUsername("");
+      setPassword("");
     });
   }
 
@@ -1069,12 +1071,14 @@ export default function DashboardPage() {
   if (!session) {
     return (
       <LoginScreen
-        email={email}
+        username={username}
+        password={password}
         isBusy={isBusy}
         message={message}
         dbHealth={dbHealth}
         runtimeHealth={runtimeHealth}
-        onEmailChange={setEmail}
+        onUsernameChange={setUsername}
+        onPasswordChange={setPassword}
         onSubmit={(event) => void handleLogin(event)}
       />
     );

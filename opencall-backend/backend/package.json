@@ -8,6 +8,7 @@
     "db:check": "tsx src/scripts/checkDatabase.ts",
     "build": "tsc -p tsconfig.json",
     "start": "node dist/server.js",
+    "user:upsert-admin": "node dist/scripts/upsertAdminUser.js",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "lint": "eslint src --ext .ts",
     "test": "vitest run"

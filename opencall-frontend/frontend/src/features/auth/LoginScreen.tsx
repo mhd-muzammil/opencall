@@ -21,20 +21,24 @@ export function SessionLoadingScreen() {
 }
 
 export function LoginScreen({
-  email,
+  username,
+  password,
   isBusy,
   message,
   dbHealth,
   runtimeHealth,
-  onEmailChange,
+  onUsernameChange,
+  onPasswordChange,
   onSubmit,
 }: Readonly<{
-  email: string;
+  username: string;
+  password: string;
   isBusy: boolean;
   message: string | null;
   dbHealth: DatabaseHealthResponse | null;
   runtimeHealth: RuntimeHealthResponse | null;
-  onEmailChange: (email: string) => void;
+  onUsernameChange: (username: string) => void;
+  onPasswordChange: (password: string) => void;
   onSubmit: (event: React.FormEvent<HTMLFormElement>) => void;
 }>) {
   return (
@@ -53,17 +57,27 @@ export function LoginScreen({
 
         <form className="loginForm" onSubmit={onSubmit}>
           <label>
-            Email address
+            Username
             <input
-              type="email"
-              value={email}
-              onChange={(event) => onEmailChange(event.target.value)}
-              placeholder="admin@example.com"
-              autoComplete="email"
+              type="text"
+              value={username}
+              onChange={(event) => onUsernameChange(event.target.value)}
+              placeholder="opencall"
+              autoComplete="username"
               autoFocus
             />
           </label>
-          <button type="submit" disabled={isBusy || !email.trim()}>
+          <label>
+            Password
+            <input
+              type="password"
+              value={password}
+              onChange={(event) => onPasswordChange(event.target.value)}
+              placeholder="Enter password"
+              autoComplete="current-password"
+            />
+          </label>
+          <button type="submit" disabled={isBusy || !username.trim() || !password}>
             {isBusy ? "Signing in..." : "Sign in"}
           </button>
         </form>

@@ -9,6 +9,15 @@ interface UserRow {
   region_id: string | null;
 }
 
+interface UserWithPasswordRow extends UserRow {
+  password_hash: string;
+}
+
+export interface AuthenticatedUserWithPassword {
+  user: AuthenticatedUser;
+  passwordHash: string;
+}
+
 function mapUser(row: UserRow): AuthenticatedUser {
   return {
     id: row.id,
@@ -53,6 +62,32 @@ export async function findActiveUserByEmail(
   const row = result.rows[0];
 
   return row ? mapUser(row) : null;
+}
+
+export async function findActiveUserWithPasswordByLogin(
+  login: string,
+): Promise<AuthenticatedUserWithPassword | null> {
+  const result = await query<UserWithPasswordRow>(
+    `
+      SELECT id, email, password_hash, role, region_id
+      FROM users
+      WHERE (
+          lower(email) = lower($1)
+          OR lower(username) = lower($1)
+        )
+        AND is_active = TRUE
+      LIMIT 1
+    `,
+    [login],
+  );
+  const row = result.rows[0];
+
+  return row
+    ? {
+        user: mapUser(row),
+        passwordHash: row.password_hash,
+      }
+    : null;
 }
 
 export async function findActiveUserByIdForShare(

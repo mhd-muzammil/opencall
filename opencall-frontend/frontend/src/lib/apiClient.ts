@@ -206,13 +206,13 @@ async function readJson<T>(response: Response): Promise<T> {
   return body.data as T;
 }
 
-export async function login(email: string): Promise<LoginResponse> {
+export async function login(username: string, password: string): Promise<LoginResponse> {
   const response = await fetch(`${API_BASE_URL}/api/v1/auth/login`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
     },
-    body: JSON.stringify({ email }),
+    body: JSON.stringify({ username, password }),
   });
 
   return readJson<LoginResponse>(response);

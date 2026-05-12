@@ -980,6 +980,139 @@ code {
   font-size: 13px;
 }
 
+.caseTypeSection {
+  display: grid;
+  gap: 14px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: #fbfcfd;
+  padding: 16px;
+}
+
+.caseTypeSection h3 {
+  margin: 0;
+  font-size: 15px;
+}
+
+.caseTypeSection .sectionHeader p {
+  white-space: normal;
+}
+
+.caseTypeGrid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.caseTypeCard {
+  display: grid;
+  gap: 8px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: #ffffff;
+  color: var(--text);
+  padding: 14px;
+  text-align: left;
+  box-shadow: 0 8px 22px rgba(15, 23, 42, 0.05);
+  transition: border-color 120ms ease, box-shadow 120ms ease, transform 120ms ease;
+}
+
+.caseTypeCard:hover,
+.caseTypeCard.active {
+  border-color: var(--accent);
+  background: #f8fbff;
+  box-shadow: 0 12px 26px rgba(79, 70, 229, 0.12);
+  transform: translateY(-1px);
+}
+
+.caseTypeSummary {
+  display: grid;
+  gap: 8px;
+  min-height: 116px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text);
+  padding: 2px 4px 10px;
+  text-align: left;
+}
+
+.caseTypeSummary:hover:not(:disabled),
+.caseTypeSummary:focus-visible {
+  background: #eef2ff;
+  color: var(--text);
+  outline: none;
+}
+
+.caseTypeSummary span {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.caseTypeSummary strong {
+  color: var(--accent);
+  font-size: 36px;
+  line-height: 0.95;
+}
+
+.caseTypeSummary small {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.caseTypeRegionList {
+  display: grid;
+  gap: 5px;
+  border-top: 1px solid var(--border);
+  padding-top: 8px;
+}
+
+.caseTypeRegionList button {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-height: 30px;
+  border: 1px solid transparent;
+  border-radius: 5px;
+  background: #eef2ff;
+  color: var(--text);
+  padding: 5px 8px;
+  text-align: left;
+}
+
+.caseTypeRegionList button:hover:not(:disabled),
+.caseTypeRegionList button:focus-visible {
+  border-color: #c7d2fe;
+  background: #e6ebff;
+  color: var(--text);
+  outline: none;
+}
+
+.caseTypeRegionList span {
+  min-width: 0;
+  overflow: hidden;
+  color: #334155;
+  font-size: 12px;
+  font-weight: 700;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.caseTypeRegionList strong {
+  min-width: 28px;
+  border-radius: 999px;
+  background: #ffffff;
+  color: var(--accent);
+  padding: 2px 7px;
+  font-size: 12px;
+  font-weight: 900;
+  text-align: center;
+}
+
 .tableWrap {
   width: 100%;
   max-height: 540px;
@@ -1324,6 +1457,7 @@ td.missingCell.carriedForwardCell {
   .batchGrid,
   .metricGrid,
   .overviewStatsGrid,
+  .caseTypeGrid,
   .recordsHero,
   .comparisonMetricGrid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -1336,8 +1470,22 @@ td.missingCell.carriedForwardCell {
 
 .downloadActions {
   display: flex;
+  align-items: center;
+  justify-content: space-between;
   gap: 12px;
   margin-bottom: 16px;
+}
+
+.downloadActionGroup {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.backToDashboardButton {
+  min-height: 50px;
+  padding: 0 18px;
+  white-space: nowrap;
 }
 
 .downloadBtn {
@@ -1419,6 +1567,7 @@ td.missingCell.carriedForwardCell {
   .metricGrid,
   .comparisonMetricGrid,
   .overviewStatsGrid,
+  .caseTypeGrid,
   .recordsHero,
   .recordsHeroStats,
   .reportStats {
@@ -1427,8 +1576,13 @@ td.missingCell.carriedForwardCell {
   }
 
   .recordsCta,
+  .downloadActions,
   .workspaceTabs {
     align-items: stretch;
+    flex-direction: column;
+  }
+
+  .downloadActionGroup {
     flex-direction: column;
   }
 
@@ -1746,6 +1900,55 @@ td.missingCell.carriedForwardCell {
   text-align: center;
 }
 
+.regionSegmentMetrics {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.regionSegmentMetric {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-height: 34px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: #ffffff;
+  color: var(--text);
+  padding: 6px 8px;
+  cursor: pointer;
+  text-align: left;
+  transition: border-color 120ms ease, background 120ms ease, box-shadow 120ms ease;
+}
+
+.regionSegmentMetric:hover,
+.regionSegmentMetric:focus-visible {
+  border-color: var(--accent);
+  background: #f8fbff;
+  box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.1);
+  outline: none;
+}
+
+.regionSegmentMetric span {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.regionSegmentMetric strong {
+  min-width: 28px;
+  border-radius: 999px;
+  background: var(--accent-soft);
+  color: var(--accent);
+  padding: 3px 8px;
+  font-size: 13px;
+  font-weight: 900;
+  text-align: center;
+}
+
 .regionWoOtcList {
   margin-top: 12px;
   border-top: 1px solid var(--border);
@@ -1862,9 +2065,10 @@ td.missingCell.carriedForwardCell {
   text-align: center;
 }
 
-.regionFilterTab:hover {
+.regionFilterTab:hover:not(:disabled) {
   border-color: var(--accent);
   background: #f8fafc;
+  color: var(--text);
 }
 
 .regionFilterTab.active {
@@ -1901,14 +2105,18 @@ td.missingCell.carriedForwardCell {
   transition: border-color 120ms ease, box-shadow 120ms ease, transform 120ms ease;
 }
 
-.rtplMetricCard:hover {
+.rtplMetricCard:hover:not(:disabled) {
   border-color: var(--accent);
+  background: #eef2ff;
+  color: var(--text);
   box-shadow: 0 12px 24px rgba(68, 62, 230, 0.12);
   transform: translateY(-1px);
 }
 
 .rtplMetricCard:focus-visible {
   border-color: var(--accent);
+  background: #eef2ff;
+  color: var(--text);
   box-shadow: 0 0 0 3px rgba(68, 62, 230, 0.16);
   outline: none;
 }

@@ -76,6 +76,8 @@ const FILE_FIELDS: Array<{
 
 const MANUAL_ENTRY_REQUIRED = "Manual Entry Required";
 const CISS_PRODUCT_LINE = "CISS";
+const PC_SEGMENT = "PC";
+const PRINT_SEGMENT = "Print";
 const LAST_HISTORY_SESSION_KEY = "opencall.lastHistorySessionId";
 
 const CHANGE_TYPE_LABELS: Record<ChangeType, string> = {
@@ -101,6 +103,19 @@ function isCissCase(row: GeneratedReportResponse["rows"][number]): boolean {
     .trim()
     .toUpperCase()
     .includes(CISS_PRODUCT_LINE);
+}
+
+function isSegmentCase(
+  row: GeneratedReportResponse["rows"][number],
+  segment: string,
+): boolean {
+  return String(row.output.Segment ?? "").trim().toLowerCase() === segment.toLowerCase();
+}
+
+function isRcaCase(row: GeneratedReportResponse["rows"][number]): boolean {
+  const rca = String(row.output.RCA ?? "").trim();
+
+  return rca.length > 0 && rca !== MANUAL_ENTRY_REQUIRED;
 }
 
 const MANUAL_FIELD_BY_COLUMN: Partial<Record<string, ManualCarryForwardField>> = {
@@ -474,6 +489,7 @@ export default function DashboardPage() {
   const [selectedWoOtcCode, setSelectedWoOtcCode] = useState<string | null>(null);
   const [selectedRtplRegion, setSelectedRtplRegion] = useState<string>(ALL_REGIONS_FILTER);
   const [showCissOnly, setShowCissOnly] = useState(false);
+  const [showRcaOnly, setShowRcaOnly] = useState(false);
   const [showClosedOnly, setShowClosedOnly] = useState(false);
   const [workspaceView, setWorkspaceView] = useState<"overview" | "records">("overview");
 
@@ -482,6 +498,7 @@ export default function DashboardPage() {
     setSelectedWoOtcCode(null);
     setSelectedRtplRegion(ALL_REGIONS_FILTER);
     setShowCissOnly(false);
+    setShowRcaOnly(false);
     setShowClosedOnly(false);
   }, [report?.reportId]);
 
@@ -490,21 +507,38 @@ export default function DashboardPage() {
     return report.rows.filter(isCissCase);
   }, [report]);
 
-  const cissCountByRegion = useMemo(() => {
-    const counts = new Map<string, number>();
+  const pcRows = useMemo(() => {
+    if (!report) return [];
+    return report.rows.filter((row) => isSegmentCase(row, PC_SEGMENT));
+  }, [report]);
 
-    for (const row of cissRows) {
-      const region = String(row.output["Work Location"] ?? "").trim();
+  const printRows = useMemo(() => {
+    if (!report) return [];
+    return report.rows.filter((row) => isSegmentCase(row, PRINT_SEGMENT));
+  }, [report]);
 
-      if (!region) {
-        continue;
-      }
+  const rcaRows = useMemo(() => {
+    if (!report) return [];
+    return report.rows.filter(isRcaCase);
+  }, [report]);
 
-      counts.set(region, (counts.get(region) ?? 0) + 1);
-    }
+  const caseTypeRegionBreakdown = useMemo(() => {
+    if (!report) return [];
 
-    return counts;
-  }, [cissRows]);
+    return report.regionBreakdown.map((entry) => {
+      const rows = filterRowsByRegion(report.rows, entry.aspCode);
+
+      return {
+        aspCode: entry.aspCode,
+        regionName: entry.regionName,
+        ciss: rows.filter(isCissCase).length,
+        pc: rows.filter((row) => isSegmentCase(row, PC_SEGMENT)).length,
+        print: rows.filter((row) => isSegmentCase(row, PRINT_SEGMENT)).length,
+        rca: rows.filter(isRcaCase).length,
+      };
+    });
+  }, [report]);
+
 
   const closedRows = useMemo(() => {
     if (!report) return [];
@@ -515,8 +549,9 @@ export default function DashboardPage() {
     if (!report) return [];
     if (showClosedOnly) return closedRows;
     if (showCissOnly) return cissRows;
+    if (showRcaOnly) return rcaRows;
     return report.rows;
-  }, [cissRows, closedRows, report, showCissOnly, showClosedOnly]);
+  }, [cissRows, closedRows, rcaRows, report, showCissOnly, showClosedOnly, showRcaOnly]);
 
   const regionFilteredRows = useMemo(() => {
     if (!report) return [];
@@ -542,6 +577,16 @@ export default function DashboardPage() {
   const filteredRows = useMemo(
     () => colFilters.filteredRows(regionFilteredRows),
     [colFilters, regionFilteredRows],
+  );
+
+  const scopedClosedRows = useMemo(
+    () => regionFilteredRows.filter((row) => row.carryForward.closedSyntheticRow),
+    [regionFilteredRows],
+  );
+
+  const scopedManualCellCount = useMemo(
+    () => countManualRequiredCells(filteredRows),
+    [filteredRows],
   );
 
   const overallWoOtcBreakdown = useMemo(() => {
@@ -1070,6 +1115,7 @@ export default function DashboardPage() {
     const hasExistingExportFilter = Boolean(selectedRegion || selectedWoOtcCode);
     const hasColumnFilter = colFilters.activeFilterCount > 0;
     const hasCissFilter = showCissOnly;
+    const hasRcaFilter = showRcaOnly;
     const hasClosedFilter = showClosedOnly;
     const isRtplRegionFiltered = selectedRtplRegion !== ALL_REGIONS_FILTER;
 
@@ -1081,6 +1127,9 @@ export default function DashboardPage() {
     } else if (hasCissFilter) {
       const scopedCissRows = scopedRows(cissRows);
       exportRows = hasColumnFilter ? colFilters.filteredRows(scopedCissRows) : scopedCissRows;
+    } else if (hasRcaFilter) {
+      const scopedRcaRows = scopedRows(rcaRows);
+      exportRows = hasColumnFilter ? colFilters.filteredRows(scopedRcaRows) : scopedRcaRows;
     } else if (isRtplRegionFiltered && !hasExistingExportFilter && !hasColumnFilter) {
       exportRows = rtplAnalyticsRows;
     } else if (hasExistingExportFilter || hasColumnFilter) {
@@ -1113,23 +1162,31 @@ export default function DashboardPage() {
     region,
     woOtcCode,
     rtplStatus,
+    segment,
     cissOnly = false,
+    rcaOnly = false,
     closedOnly = false,
   }: Readonly<{
     region?: string | null;
     woOtcCode?: string | null;
     rtplStatus?: string | null;
+    segment?: string | null;
     cissOnly?: boolean;
+    rcaOnly?: boolean;
     closedOnly?: boolean;
   }>) {
     setSelectedRegion(region ?? null);
     setSelectedWoOtcCode(woOtcCode ?? null);
     setShowCissOnly(cissOnly);
+    setShowRcaOnly(rcaOnly);
     setShowClosedOnly(closedOnly);
     setSelectedRtplRegion(region && region !== "ALL" ? region : ALL_REGIONS_FILTER);
     colFilters.resetAll();
     if (rtplStatus) {
       colFilters.setColumnFilter("RTPL status", new Set([rtplStatus]));
+    }
+    if (segment) {
+      colFilters.setColumnFilter("Segment", new Set([segment]));
     }
     setWorkspaceView("records");
   }
@@ -1148,11 +1205,27 @@ export default function DashboardPage() {
     return `${values.size} RTPL statuses`;
   })();
 
+  const selectedSegmentFilter = (() => {
+    const values = colFilters.filters.Segment;
+
+    if (!values || values.size === 0) {
+      return null;
+    }
+
+    if (values.size === 1) {
+      return `${Array.from(values)[0]} cases`;
+    }
+
+    return `${values.size} segments`;
+  })();
+
   const recordsFilterLabel = [
     showClosedOnly ? "Closed calls" : null,
     showCissOnly ? "CISS cases" : null,
+    showRcaOnly ? "RCA cases" : null,
     selectedRegion && selectedRegion !== "ALL" ? selectedRegion : null,
     selectedWoOtcCode ? selectedWoOtcCode : null,
+    selectedSegmentFilter,
     selectedRtplStatusFilter,
   ].filter(Boolean).join(" / ");
 
@@ -1163,14 +1236,6 @@ export default function DashboardPage() {
           value: report.totalRows,
           detail: "Open all records",
           onClick: () => openRecordsWithFilter({ region: null }),
-        },
-        {
-          label: "CISS Cases",
-          value: cissRows.length,
-          detail: showCissOnly ? "Filter active" : "Open matching records",
-          tone: "blue",
-          onClick: () => openRecordsWithFilter({ cissOnly: true }),
-          isActive: showCissOnly,
         },
         {
           label: "Closed Calls",
@@ -1274,6 +1339,96 @@ export default function DashboardPage() {
                 </div>
                 <MetricsGrid items={overviewMetrics} />
               </div>
+              <div className="caseTypeSection">
+                <div className="sectionHeader">
+                  <div>
+                    <h3>Case Type Overview</h3>
+                    <p>CISS, PC, Print, and RCA cases separated from region and contract-code metrics.</p>
+                  </div>
+                </div>
+                <div className="caseTypeGrid">
+                  <div
+                    className={`caseTypeCard ${showCissOnly ? "active" : ""}`}
+                  >
+                    <button type="button" className="caseTypeSummary" onClick={() => openRecordsWithFilter({ cissOnly: true })}>
+                      <span>CISS Cases</span>
+                      <strong>{formatNumber(cissRows.length)}</strong>
+                      <small>Product line contains CISS</small>
+                    </button>
+                    <div className="caseTypeRegionList">
+                      {caseTypeRegionBreakdown.map((entry) => (
+                        <button
+                          type="button"
+                          key={entry.aspCode}
+                          onClick={() => openRecordsWithFilter({ region: entry.aspCode, cissOnly: true })}
+                        >
+                          <span>{entry.regionName}</span>
+                          <strong>{entry.ciss}</strong>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                  <div className="caseTypeCard">
+                    <button type="button" className="caseTypeSummary" onClick={() => openRecordsWithFilter({ segment: PC_SEGMENT })}>
+                      <span>PC Cases</span>
+                      <strong>{formatNumber(pcRows.length)}</strong>
+                      <small>Segment is PC</small>
+                    </button>
+                    <div className="caseTypeRegionList">
+                      {caseTypeRegionBreakdown.map((entry) => (
+                        <button
+                          type="button"
+                          key={entry.aspCode}
+                          onClick={() => openRecordsWithFilter({ region: entry.aspCode, segment: PC_SEGMENT })}
+                        >
+                          <span>{entry.regionName}</span>
+                          <strong>{entry.pc}</strong>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                  <div className="caseTypeCard">
+                    <button type="button" className="caseTypeSummary" onClick={() => openRecordsWithFilter({ segment: PRINT_SEGMENT })}>
+                      <span>Print Cases</span>
+                      <strong>{formatNumber(printRows.length)}</strong>
+                      <small>Segment is Print</small>
+                    </button>
+                    <div className="caseTypeRegionList">
+                      {caseTypeRegionBreakdown.map((entry) => (
+                        <button
+                          type="button"
+                          key={entry.aspCode}
+                          onClick={() => openRecordsWithFilter({ region: entry.aspCode, segment: PRINT_SEGMENT })}
+                        >
+                          <span>{entry.regionName}</span>
+                          <strong>{entry.print}</strong>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                  <div
+                    className={`caseTypeCard ${showRcaOnly ? "active" : ""}`}
+                  >
+                    <button type="button" className="caseTypeSummary" onClick={() => openRecordsWithFilter({ rcaOnly: true })}>
+                      <span>RCA Cases</span>
+                      <strong>{formatNumber(rcaRows.length)}</strong>
+                      <small>RCA value available</small>
+                    </button>
+                    <div className="caseTypeRegionList">
+                      {caseTypeRegionBreakdown.map((entry) => (
+                        <button
+                          type="button"
+                          key={entry.aspCode}
+                          onClick={() => openRecordsWithFilter({ region: entry.aspCode, rcaOnly: true })}
+                        >
+                          <span>{entry.regionName}</span>
+                          <strong>{entry.rca}</strong>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              </div>
               {incompleteCellCount > 0 ? (
                 <p className="hint">
                   Click any highlighted "Manual Entry Required" cell or the row Edit button to enter manual data.
@@ -1290,6 +1445,8 @@ export default function DashboardPage() {
                         setSelectedWoOtcCode(null);
                         setShowClosedOnly(false);
                         setShowCissOnly(false);
+                        setShowRcaOnly(false);
+                        colFilters.resetAll();
                       }}
                       style={{ minHeight: '32px', padding: '0 12px', fontSize: '12px' }}
                     >
@@ -1309,26 +1466,6 @@ export default function DashboardPage() {
                       <div className="regionMetricSubtext">GLOBAL</div>
                     </div>
                     
-                    <div
-                      className="regionCissMetric"
-                      role="button"
-                      tabIndex={0}
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        openRecordsWithFilter({ region: "ALL", cissOnly: true });
-                      }}
-                      onKeyDown={(e) => {
-                        if (e.key === "Enter" || e.key === " ") {
-                          e.preventDefault();
-                          e.stopPropagation();
-                          openRecordsWithFilter({ region: "ALL", cissOnly: true });
-                        }
-                      }}
-                    >
-                      <span>CISS Cases</span>
-                      <strong>{cissRows.length}</strong>
-                    </div>
-
                     {overallWoOtcBreakdown.length > 0 && (
                       <div className="regionWoOtcList">
                         {overallWoOtcBreakdown.map(woCode => (
@@ -1361,26 +1498,6 @@ export default function DashboardPage() {
                         <div className="regionMetricSubtext">{entry.aspCode}</div>
                       </div>
 
-                      <div
-                        className="regionCissMetric"
-                        role="button"
-                        tabIndex={0}
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          openRecordsWithFilter({ region: entry.aspCode, cissOnly: true });
-                        }}
-                        onKeyDown={(e) => {
-                          if (e.key === "Enter" || e.key === " ") {
-                            e.preventDefault();
-                            e.stopPropagation();
-                            openRecordsWithFilter({ region: entry.aspCode, cissOnly: true });
-                          }
-                        }}
-                      >
-                        <span>CISS Cases</span>
-                        <strong>{cissCountByRegion.get(entry.aspCode) ?? 0}</strong>
-                      </div>
-                      
                       {entry.woOtcCodeBreakdown && entry.woOtcCodeBreakdown.length > 0 && (
                         <div className="regionWoOtcList">
                           {entry.woOtcCodeBreakdown.map(woCode => (
@@ -1474,40 +1591,49 @@ export default function DashboardPage() {
 
               <div className="recordsArea">
                 <div className="recordsHero">
-                  <div>
-                    <p className="eyebrow">OpenCall</p>
-                    <h2>Records Workspace</h2>
-                    <p>
-                      {formatNumber(filteredRows.length)} of {formatNumber(regionFilteredRows.length)} records shown
-                      {recordsFilterLabel ? ` for ${recordsFilterLabel}` : ""}
-                    </p>
-                  </div>
-                  <div className="recordsHeroStats">
+                <div>
+                  <p className="eyebrow">OpenCall</p>
+                  <h2>Records Workspace</h2>
+                  <p>
+                    {formatNumber(filteredRows.length)} of {formatNumber(regionFilteredRows.length)} records shown
+                    {recordsFilterLabel ? ` for ${recordsFilterLabel}` : ""}
+                  </p>
+                </div>
+                <div className="recordsHeroStats">
                     <OverviewStat label="Visible" value={filteredRows.length} detail="After filters" />
-                    <OverviewStat label="Total" value={report.totalRows} detail="Generated records" tone="blue" />
+                    <OverviewStat label="Total" value={regionFilteredRows.length} detail="Current scope" tone="blue" />
                     <OverviewStat
                       label="Closed"
-                      value={closedRows.length}
+                      value={scopedClosedRows.length}
                       detail="Closed calls"
                       tone="danger"
                       onClick={() => openRecordsWithFilter({ closedOnly: true })}
                       isActive={showClosedOnly}
                     />
-                    <OverviewStat label="Manual" value={incompleteCellCount} detail="Fields to complete" tone={incompleteCellCount > 0 ? "danger" : "accent"} />
+                    <OverviewStat label="Manual" value={scopedManualCellCount} detail="Fields to complete" tone={scopedManualCellCount > 0 ? "danger" : "accent"} />
                   </div>
                 </div>
               <div className="downloadActions">
+                <div className="downloadActionGroup">
+                  <button
+                    className="downloadBtn excelBtn"
+                    onClick={() => exportReport(downloadReportAsXlsx)}
+                  >
+                    Download Excel (.xlsx)
+                  </button>
+                  <button
+                    className="downloadBtn csvBtn"
+                    onClick={() => exportReport(downloadReportAsExcel)}
+                  >
+                    Download CSV
+                  </button>
+                </div>
                 <button
-                  className="downloadBtn excelBtn"
-                  onClick={() => exportReport(downloadReportAsXlsx)}
+                  type="button"
+                  className="secondaryButton backToDashboardButton"
+                  onClick={() => setWorkspaceView("overview")}
                 >
-                  Download Excel (.xlsx)
-                </button>
-                <button
-                  className="downloadBtn csvBtn"
-                  onClick={() => exportReport(downloadReportAsExcel)}
-                >
-                  Download CSV
+                  Back to Dashboard
                 </button>
               </div>
               {colFilters.activeFilterCount > 0 && (
@@ -1549,6 +1675,16 @@ export default function DashboardPage() {
                     {filteredRows.length} of {regionFilteredRows.length} rows shown
                   </span>
                   <button type="button" onClick={() => setShowCissOnly(false)}>Show All Cases</button>
+                </div>
+              )}
+              {showRcaOnly && (
+                <div className="colFilterSummary">
+                  <span>
+                    RCA Cases active
+                    {" Â· "}
+                    {filteredRows.length} of {regionFilteredRows.length} rows shown
+                  </span>
+                  <button type="button" onClick={() => setShowRcaOnly(false)}>Show All Cases</button>
                 </div>
               )}
               {showClosedOnly && (

@@ -158,6 +158,9 @@ export interface EditedReportRowResponse {
   manualNotes: string | null;
   location: string | null;
   segment: string | null;
+  caseCreatedTime: string | null;
+  wipAging: string | null;
+  hpOwnerStatus: string | null;
   manualFieldsCompleted: boolean;
   manualFieldsMissing: string[];
   updatedAt: string;
@@ -340,6 +343,9 @@ export async function updateReportRow(input: {
     manual_notes?: string | null;
     location?: string | null;
     segment?: string | null;
+    case_created_time?: string | null;
+    wip_aging?: string | null;
+    hp_owner_status?: string | null;
   };
 }): Promise<EditedReportRowResponse> {
   const response = await fetch(`${API_BASE_URL}/api/v1/report-rows/${input.rowId}`, {
@@ -363,6 +369,7 @@ export interface ReportHistorySession {
   renderwaysUploadBatchId: string | null;
   callPlanUploadBatchId: string | null;
   reportId: string | null;
+  reportDate: string | null;
   totalRows: number;
   createdAt: string;
   updatedAt: string;

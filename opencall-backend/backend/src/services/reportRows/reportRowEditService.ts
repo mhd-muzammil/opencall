@@ -20,6 +20,9 @@ export const EDITABLE_REPORT_ROW_FIELDS = [
   "manualNotes",
   "location",
   "segment",
+  "caseCreatedTime",
+  "wipAging",
+  "hpOwnerStatus",
 ] as const;
 
 export type EditableReportRowField =
@@ -39,6 +42,7 @@ const REQUIRED_MANUAL_FIELD_VALUE_BY_RESPONSE_FIELD: Record<
     | "location"
     | "caseCreatedTime"
     | "wipAging"
+    | "hpOwnerStatus"
     | "customerMail"
     | "rca"
   >
@@ -49,6 +53,7 @@ const REQUIRED_MANUAL_FIELD_VALUE_BY_RESPONSE_FIELD: Record<
   location: "location",
   case_created_time: "caseCreatedTime",
   wip_aging: "wipAging",
+  hp_owner_status: "hpOwnerStatus",
   customer_mail: "customerMail",
   rca: "rca",
 };
@@ -59,6 +64,22 @@ const OPTIONAL_FIELD_VALUE_BY_RESPONSE_FIELD: Record<
 > = {
   remarks: "remarks",
   manual_notes: "manualNotes",
+};
+
+const MANUAL_FIELD_BY_EDITABLE_FIELD: Partial<
+  Record<EditableReportRowField, ManualCarryForwardField>
+> = {
+  engineer: "engineer",
+  rtplStatus: "rtpl_status",
+  customerMail: "customer_mail",
+  rca: "rca",
+  remarks: "remarks",
+  manualNotes: "manual_notes",
+  location: "location",
+  segment: "segment",
+  caseCreatedTime: "case_created_time",
+  wipAging: "wip_aging",
+  hpOwnerStatus: "hp_owner_status",
 };
 
 const PLACEHOLDER_VALUES = new Set([
@@ -126,6 +147,16 @@ function mergeRowValues(
       input.location === undefined ? current.location : cleanEditableValue(input.location),
     segment:
       input.segment === undefined ? current.segment : cleanEditableValue(input.segment),
+    caseCreatedTime:
+      input.caseCreatedTime === undefined
+        ? current.caseCreatedTime
+        : cleanEditableValue(input.caseCreatedTime),
+    wipAging:
+      input.wipAging === undefined ? current.wipAging : cleanEditableValue(input.wipAging),
+    hpOwnerStatus:
+      input.hpOwnerStatus === undefined
+        ? current.hpOwnerStatus
+        : cleanEditableValue(input.hpOwnerStatus),
   };
 }
 
@@ -167,6 +198,9 @@ export async function updateReportRowManualFields(input: {
 
   const merged = mergeRowValues(current, input.values);
   const missing = manualFieldsMissing(merged);
+  const clearedCarryForwardFields = Object.keys(input.values)
+    .map((field) => MANUAL_FIELD_BY_EDITABLE_FIELD[field as EditableReportRowField])
+    .filter((field): field is ManualCarryForwardField => Boolean(field));
 
   return updateDailyCallPlanReportRowManualFields(input.rowId, {
     engineer: merged.engineer,
@@ -177,6 +211,10 @@ export async function updateReportRowManualFields(input: {
     manualNotes: merged.manualNotes,
     location: merged.location,
     segment: merged.segment,
+    caseCreatedTime: merged.caseCreatedTime,
+    wipAging: merged.wipAging,
+    hpOwnerStatus: merged.hpOwnerStatus,
+    clearedCarryForwardFields,
     manualFieldsCompleted: missing.length === 0,
     manualFieldsMissing: missing,
     updatedBy: input.user.id,

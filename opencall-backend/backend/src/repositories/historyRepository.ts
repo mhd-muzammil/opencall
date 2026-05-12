@@ -11,6 +11,7 @@ export interface ReportHistorySessionRow {
   renderways_upload_batch_id: string | null;
   call_plan_upload_batch_id: string | null;
   daily_call_plan_report_id: string | null;
+  report_date: string | null;
   total_rows: number;
   created_at: string;
   updated_at: string;
@@ -177,10 +178,14 @@ export async function getHistorySessionsByUser(
   userId: string,
 ): Promise<ReportHistorySessionRow[]> {
   const sql = `
-    SELECT *
-    FROM report_history_sessions
-    WHERE user_id = $1
-    ORDER BY created_at DESC;
+    SELECT
+      sessions.*,
+      reports.report_date::TEXT AS report_date
+    FROM report_history_sessions sessions
+    LEFT JOIN daily_call_plan_reports reports
+      ON reports.id = sessions.daily_call_plan_report_id
+    WHERE sessions.user_id = $1
+    ORDER BY sessions.created_at DESC;
   `;
   const result = await query<ReportHistorySessionRow>(sql, [userId]);
   return result.rows;
@@ -191,9 +196,13 @@ export async function getHistorySessionById(
   userId: string,
 ): Promise<ReportHistorySessionRow | null> {
   const sql = `
-    SELECT *
-    FROM report_history_sessions
-    WHERE id = $1 AND user_id = $2
+    SELECT
+      sessions.*,
+      reports.report_date::TEXT AS report_date
+    FROM report_history_sessions sessions
+    LEFT JOIN daily_call_plan_reports reports
+      ON reports.id = sessions.daily_call_plan_report_id
+    WHERE sessions.id = $1 AND sessions.user_id = $2
     LIMIT 1;
   `;
   const result = await query<ReportHistorySessionRow>(sql, [id, userId]);

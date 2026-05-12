@@ -1,15 +1,43 @@
 import { z } from "zod";
 
+const editableTextSchema = z.string().nullable().optional();
+
+const editableDateTimeSchema = editableTextSchema.refine(
+  (value) => {
+    if (value === undefined || value === null || value.trim() === "") {
+      return true;
+    }
+
+    return !Number.isNaN(Date.parse(value));
+  },
+  { message: "Case Created Time must be a valid date/time" },
+);
+
+function normalizeDateTime(value: string | null | undefined): string | null | undefined {
+  if (value === undefined) {
+    return undefined;
+  }
+
+  if (value === null || value.trim() === "") {
+    return null;
+  }
+
+  return new Date(value).toISOString();
+}
+
 export const reportRowEditRequestSchema = z
   .object({
-    engineer: z.string().nullable().optional(),
-    rtpl_status: z.string().nullable().optional(),
-    customer_mail: z.string().nullable().optional(),
-    rca: z.string().nullable().optional(),
-    remarks: z.string().nullable().optional(),
-    manual_notes: z.string().nullable().optional(),
-    location: z.string().nullable().optional(),
-    segment: z.string().nullable().optional(),
+    engineer: editableTextSchema,
+    rtpl_status: editableTextSchema,
+    customer_mail: editableTextSchema,
+    rca: editableTextSchema,
+    remarks: editableTextSchema,
+    manual_notes: editableTextSchema,
+    location: editableTextSchema,
+    segment: editableTextSchema,
+    case_created_time: editableDateTimeSchema,
+    wip_aging: editableTextSchema,
+    hp_owner_status: editableTextSchema,
   })
   .strict()
   .refine((body) => Object.keys(body).length > 0, {
@@ -24,4 +52,7 @@ export const reportRowEditRequestSchema = z
     manualNotes: body.manual_notes,
     location: body.location,
     segment: body.segment,
+    caseCreatedTime: normalizeDateTime(body.case_created_time),
+    wipAging: body.wip_aging,
+    hpOwnerStatus: body.hp_owner_status,
   }));

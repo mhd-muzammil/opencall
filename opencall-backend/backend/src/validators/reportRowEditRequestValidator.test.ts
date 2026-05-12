@@ -27,6 +27,25 @@ describe("reportRowEditRequestSchema", () => {
       manualNotes: "Call before noon",
       location: undefined,
       segment: undefined,
+      caseCreatedTime: undefined,
+      wipAging: undefined,
+      hpOwnerStatus: undefined,
     });
+  });
+
+  it("normalizes valid case created time values", () => {
+    const result = reportRowEditRequestSchema.parse({
+      case_created_time: "2026-03-27T17:41:55.000Z",
+    });
+
+    expect(result.caseCreatedTime).toBe("2026-03-27T17:41:55.000Z");
+  });
+
+  it("rejects invalid case created time values before database update", () => {
+    const result = reportRowEditRequestSchema.safeParse({
+      case_created_time: "12345678",
+    });
+
+    expect(result.success).toBe(false);
   });
 });

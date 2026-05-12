@@ -22,24 +22,34 @@ function displayNameFromEmail(email: string): string {
 export function AppHeader({
   workspaceView,
   hasReport,
+  hasBatches,
+  isBusy,
   dbHealth,
   runtimeHealth,
   session,
-  isHistoryPanelOpen,
   onWorkspaceViewChange,
   onRefreshHealth,
-  onToggleHistory,
+  onOpenUpload,
+  onOpenHistory,
+  onGenerateReport,
+  onExportXlsx,
+  onExportCsv,
   onLogout,
 }: Readonly<{
   workspaceView: WorkspaceView;
   hasReport: boolean;
+  hasBatches: boolean;
+  isBusy: boolean;
   dbHealth: DatabaseHealthResponse | null;
   runtimeHealth: RuntimeHealthResponse | null;
   session: LoginResponse;
-  isHistoryPanelOpen: boolean;
   onWorkspaceViewChange: (view: WorkspaceView) => void;
   onRefreshHealth: () => void;
-  onToggleHistory: () => void;
+  onOpenUpload: () => void;
+  onOpenHistory: () => void;
+  onGenerateReport: () => void;
+  onExportXlsx: () => void;
+  onExportCsv: () => void;
   onLogout: () => void;
 }>) {
   const userDisplayName = displayNameFromEmail(session.user.email);
@@ -55,65 +65,102 @@ export function AppHeader({
         </div>
       </div>
       <div className="topActions">
-        <div className="workspaceTabs" aria-label="Workspace view">
-          <button
-            className={workspaceView === "overview" ? "active" : ""}
-            type="button"
-            onClick={() => onWorkspaceViewChange("overview")}
-          >
-            Dashboard
-          </button>
-          <button
-            className={workspaceView === "records" ? "active" : ""}
-            type="button"
-            disabled={!hasReport}
-            onClick={() => onWorkspaceViewChange("records")}
-          >
-            Records
-          </button>
-        </div>
-        <StatusPill tone={dbHealth?.connected ? "good" : "bad"}>
-          DB {dbHealth?.connected ? "connected" : dbHealth?.status ?? "checking"}
-        </StatusPill>
-        <StatusPill tone={runtimeHealth?.ok ? "good" : "bad"}>
-          Runtime {runtimeHealth?.ok ? "ready" : runtimeHealth?.status ?? "checking"}
-        </StatusPill>
-        <button
-          className="iconButton topIconButton refreshAction"
-          type="button"
-          onClick={onRefreshHealth}
-          title="Refresh health"
-        >
-          <span aria-hidden="true" />
-          Refresh
-        </button>
-        <button
-          className="iconButton topIconButton historyAction"
-          type="button"
-          onClick={onToggleHistory}
-          title="Report history"
-        >
-          <span aria-hidden="true" />
-          {isHistoryPanelOpen ? "Close History" : "History"}
-        </button>
-        <details className="profileMenu">
-          <summary aria-label="Open profile menu">
-            <span className="profileAvatar" aria-hidden="true">{userInitial}</span>
-          </summary>
-          <div className="profileDropdown">
-            <div className="profileIdentity">
-              <strong>{userDisplayName}</strong>
-              <span>{session.user.email}</span>
-              <em>{formatRoleLabel(session.user.role)}</em>
-            </div>
-            <button className="profileMenuItem" type="button">
-              Settings
+        <div className="headerPrimaryActions">
+          <div className="workspaceTabs" aria-label="Workspace view">
+            <button
+              className={workspaceView === "overview" ? "active" : ""}
+              type="button"
+              onClick={() => onWorkspaceViewChange("overview")}
+            >
+              Dashboard
             </button>
-            <button className="profileMenuItem danger" type="button" onClick={onLogout}>
-              Log out
+            <button
+              className={workspaceView === "records" ? "active" : ""}
+              type="button"
+              disabled={!hasReport}
+              onClick={() => onWorkspaceViewChange("records")}
+            >
+              Records
             </button>
           </div>
-        </details>
+          {session.user.regionId ? (
+            <span className="regionScopePill">Region {session.user.regionId.slice(0, 8)}</span>
+          ) : null}
+          <button
+            className="iconButton topIconButton uploadAction"
+            type="button"
+            onClick={onOpenUpload}
+            title="Upload source files"
+          >
+            <span aria-hidden="true" />
+            Upload Files
+          </button>
+          <button
+            className="iconButton topIconButton historyAction"
+            type="button"
+            onClick={onOpenHistory}
+            title="Report history"
+          >
+            <span aria-hidden="true" />
+            History
+          </button>
+          <button
+            className="topIconButton generateAction"
+            type="button"
+            disabled={isBusy || !hasBatches}
+            onClick={onGenerateReport}
+            title="Generate report from current batches"
+          >
+            <span aria-hidden="true" />
+            Generate Report
+          </button>
+          <details className="exportMenu">
+            <summary aria-label="Open export actions">Export</summary>
+            <div className="exportDropdown">
+              <button type="button" disabled={!hasReport} onClick={onExportXlsx}>
+                Excel (.xlsx)
+              </button>
+              <button type="button" disabled={!hasReport} onClick={onExportCsv}>
+                CSV
+              </button>
+            </div>
+          </details>
+        </div>
+        <div className="headerUtilityActions">
+          <StatusPill tone={dbHealth?.connected ? "good" : "bad"}>
+            DB {dbHealth?.connected ? "connected" : dbHealth?.status ?? "checking"}
+          </StatusPill>
+          <StatusPill tone={runtimeHealth?.ok ? "good" : "bad"}>
+            Runtime {runtimeHealth?.ok ? "ready" : runtimeHealth?.status ?? "checking"}
+          </StatusPill>
+          <button
+            className="iconButton topIconButton refreshAction"
+            type="button"
+            onClick={onRefreshHealth}
+            title="Refresh health"
+          >
+            <span aria-hidden="true" />
+            Refresh
+          </button>
+          <details className="profileMenu">
+            <summary aria-label="Open profile menu">
+              <span className="profileAvatar" aria-hidden="true">{userInitial}</span>
+            </summary>
+            <div className="profileDropdown">
+              <div className="profileIdentity">
+                <strong>{userDisplayName}</strong>
+                <span>{session.user.email}</span>
+                <em>{formatRoleLabel(session.user.role)}</em>
+              </div>
+              <button className="profileMenuItem" type="button">
+                Settings
+              </button>
+              <button className="profileMenuItem danger" type="button" onClick={onLogout}>
+                Log out
+              </button>
+            </div>
+          </details>
+        </div>
       </div>
     </header>
   );

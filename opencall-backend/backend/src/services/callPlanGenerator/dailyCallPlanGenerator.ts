@@ -228,6 +228,9 @@ async function applyPersistedRowMetadata(
     row.id = persisted.id;
     row.updatedAt = persisted.updatedAt;
     row.updatedBy = persisted.updatedBy;
+    row.enriched.case_created_time = persisted.caseCreatedTime;
+    row.enriched.wip_aging = persisted.wipAging;
+    row.enriched.hp_owner_status = persisted.hpOwnerStatus;
     row.enriched.rtpl_status = persisted.rtplStatus ?? "";
     row.enriched.segment = persisted.segment ?? "";
     row.enriched.engineer = persisted.engineer;
@@ -237,6 +240,7 @@ async function applyPersistedRowMetadata(
     row.enriched.remarks = persisted.remarks;
     row.enriched.manual_notes = persisted.manualNotes;
     row.match.enrichedRow = row.enriched;
+    row.carryForward.carriedForwardFields = persisted.carriedForwardFields;
     row.carryForward.manualFieldsCompleted = persisted.manualFieldsCompleted;
     row.carryForward.manualFieldsMissing = persisted.manualFieldsMissing;
     row.output = orderedDailyCallPlanRow(

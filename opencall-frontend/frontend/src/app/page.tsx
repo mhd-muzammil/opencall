@@ -4,7 +4,10 @@ import { DAILY_CALL_PLAN_COLUMNS, RTPL_STATUS_OPTIONS } from "@opencall/shared";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { ColumnFilterDropdown } from "../components/ColumnFilterDropdown";
 import { AppHeader } from "../components/AppHeader";
+import { HistoryDrawer } from "../components/HistoryDrawer";
+import { MetricsGrid, type MetricsGridItem } from "../components/MetricsGrid";
 import { StatusPill } from "../components/StatusPill";
+import { UploadDrawer } from "../components/UploadDrawer";
 import { useColumnFilters } from "../lib/useColumnFilters";
 import { FILTERABLE_COLUMNS } from "../lib/columnFilter";
 import {
@@ -29,7 +32,6 @@ import {
   renameReportHistory,
   deleteReportHistory,
 } from "../lib/apiClient";
-import { ReportHistoryPanel } from "../components/ReportHistoryPanel";
 import { LoginScreen, SessionLoadingScreen } from "../features/auth/LoginScreen";
 import { downloadReportAsXlsx, downloadReportAsExcel } from "../lib/excelExport";
 import {
@@ -51,6 +53,7 @@ type ManualCarryForwardField =
   | "location"
   | "case_created_time"
   | "wip_aging"
+  | "hp_owner_status"
   | "customer_mail"
   | "rca";
 
@@ -73,6 +76,7 @@ const FILE_FIELDS: Array<{
 
 const MANUAL_ENTRY_REQUIRED = "Manual Entry Required";
 const CISS_PRODUCT_LINE = "CISS";
+const LAST_HISTORY_SESSION_KEY = "opencall.lastHistorySessionId";
 
 const CHANGE_TYPE_LABELS: Record<ChangeType, string> = {
   NEW: "New",
@@ -89,6 +93,7 @@ const CHANGE_FIELD_LABELS: Record<string, string> = {
   tat: "TAT",
   engineer: "Engineer",
   location: "Location",
+  hp_owner_status: "HP Owner Status",
 };
 
 function isCissCase(row: GeneratedReportResponse["rows"][number]): boolean {
@@ -105,6 +110,7 @@ const MANUAL_FIELD_BY_COLUMN: Partial<Record<string, ManualCarryForwardField>> =
   Location: "location",
   "Case Created Time": "case_created_time",
   "WIP aging": "wip_aging",
+  "HP Owner Status": "hp_owner_status",
   "Customer Mail": "customer_mail",
   RCA: "rca",
 };
@@ -116,6 +122,7 @@ const MANUAL_FIELD_LABELS: Record<ManualCarryForwardField, string> = {
   location: "Location",
   case_created_time: "Case Created Time",
   wip_aging: "WIP aging",
+  hp_owner_status: "HP Owner Status",
   customer_mail: "Customer Mail",
   rca: "RCA",
 };
@@ -127,6 +134,7 @@ const EDITABLE_COLUMN_API_FIELD: Partial<Record<string, string>> = {
   Location: "location",
   "Case Created Time": "case_created_time",
   "WIP aging": "wip_aging",
+  "HP Owner Status": "hp_owner_status",
   "Customer Mail": "customer_mail",
   RCA: "rca",
 };
@@ -140,6 +148,9 @@ const EDITED_RESPONSE_COLUMN: Partial<
     | "segment"
     | "engineer"
     | "location"
+    | "caseCreatedTime"
+    | "wipAging"
+    | "hpOwnerStatus"
     | "customerMail"
     | "rca"
   >>
@@ -148,6 +159,9 @@ const EDITED_RESPONSE_COLUMN: Partial<
   Segment: "segment",
   Engineer: "engineer",
   Location: "location",
+  "Case Created Time": "caseCreatedTime",
+  "WIP aging": "wipAging",
+  "HP Owner Status": "hpOwnerStatus",
   "Customer Mail": "customerMail",
   RCA: "rca",
 };
@@ -442,6 +456,7 @@ export default function DashboardPage() {
   const [savingSerialNo, setSavingSerialNo] = useState<number | null>(null);
    const [draftOutput, setDraftOutput] = useState<Record<string, string | number>>({});
    const draftOutputRef = useRef(draftOutput);
+   const hasAutoRestoredHistoryRef = useRef(false);
    draftOutputRef.current = draftOutput;
   const [reportDate, setReportDate] = useState(todayIsoDate());
   const [dbHealth, setDbHealth] = useState<DatabaseHealthResponse | null>(null);
@@ -454,6 +469,7 @@ export default function DashboardPage() {
 
   const [historySessions, setHistorySessions] = useState<ReportHistorySession[]>([]);
   const [isHistoryPanelOpen, setIsHistoryPanelOpen] = useState(false);
+  const [isUploadDrawerOpen, setIsUploadDrawerOpen] = useState(false);
   const [selectedRegion, setSelectedRegion] = useState<string | null>(null);
   const [selectedWoOtcCode, setSelectedWoOtcCode] = useState<string | null>(null);
   const [selectedRtplRegion, setSelectedRtplRegion] = useState<string>(ALL_REGIONS_FILTER);
@@ -473,6 +489,22 @@ export default function DashboardPage() {
     if (!report) return [];
     return report.rows.filter(isCissCase);
   }, [report]);
+
+  const cissCountByRegion = useMemo(() => {
+    const counts = new Map<string, number>();
+
+    for (const row of cissRows) {
+      const region = String(row.output["Work Location"] ?? "").trim();
+
+      if (!region) {
+        continue;
+      }
+
+      counts.set(region, (counts.get(region) ?? 0) + 1);
+    }
+
+    return counts;
+  }, [cissRows]);
 
   const closedRows = useMemo(() => {
     if (!report) return [];
@@ -614,7 +646,29 @@ export default function DashboardPage() {
 
   useEffect(() => {
     if (session) {
-      getReportHistory(session.token).then(setHistorySessions).catch((error) => {
+      getReportHistory(session.token).then((sessions) => {
+        setHistorySessions(sessions);
+
+        if (!hasAutoRestoredHistoryRef.current && !report && !upload) {
+          hasAutoRestoredHistoryRef.current = true;
+          const lastHistorySessionId = window.localStorage.getItem(LAST_HISTORY_SESSION_KEY);
+          const savedSession = sessions.find(
+            (historySession) =>
+              historySession.id === lastHistorySessionId &&
+              historySession.status === "COMPLETED" &&
+              historySession.reportId,
+          );
+          const latestCompletedSession = sessions.find(
+            (historySession) =>
+              historySession.status === "COMPLETED" && Boolean(historySession.reportId),
+          );
+          const sessionToRestore = savedSession ?? latestCompletedSession;
+
+          if (sessionToRestore) {
+            void handleHistoryOpen(sessionToRestore);
+          }
+        }
+      }).catch((error) => {
         if (error instanceof Error && (error.message.includes("expired") || error.message.includes("Invalid bearer") || error.message.includes("unauthorized") || error.message.includes("failed 401"))) {
           handleLogout();
           setMessage("Session expired, please login again.");
@@ -624,6 +678,7 @@ export default function DashboardPage() {
       });
     } else {
       setHistorySessions([]);
+      hasAutoRestoredHistoryRef.current = false;
     }
   }, [session]);
 
@@ -696,6 +751,7 @@ export default function DashboardPage() {
       setSavingSerialNo(null);
       setDraftOutput({});
       setWorkspaceView("overview");
+      setIsUploadDrawerOpen(false);
       
       // Refresh history to get the draft
       getReportHistory(session.token).then(setHistorySessions).catch(console.error);
@@ -734,6 +790,7 @@ export default function DashboardPage() {
         ...batchIds,
       });
       setReport(generated);
+      window.localStorage.setItem(LAST_HISTORY_SESSION_KEY, generated.sessionId);
       setWorkspaceView("overview");
       setEditingSerialNo(null);
       setSavingSerialNo(null);
@@ -756,6 +813,7 @@ export default function DashboardPage() {
     setDraftOutput({});
     setSelectedPreviewCategory(null);
     setWorkspaceView("overview");
+    hasAutoRestoredHistoryRef.current = false;
   }
 
   async function handleHistoryOpen(historySession: ReportHistorySession) {
@@ -785,6 +843,8 @@ export default function DashboardPage() {
       setDraftOutput({});
       setFiles({});
       if (detail.regionId) setRegionId(detail.regionId);
+      if (detail.reportDate) setReportDate(detail.reportDate);
+      window.localStorage.setItem(LAST_HISTORY_SESSION_KEY, detail.id);
       
       // Fetch preview and report if applicable
       const prev = await previewMatches({
@@ -799,20 +859,20 @@ export default function DashboardPage() {
       // If it's completed, we could ideally fetch the report.
       // But since we don't have a getReport API, we'll just re-generate it to restore view
       if (detail.status === "COMPLETED") {
+         const historyReportDate = detail.reportDate ?? detail.createdAt.slice(0, 10);
          const rep = await generateReport({
            token: session.token,
            regionId: detail.regionId || regionId,
-           reportDate: detail.createdAt.slice(0, 10),
+           reportDate: historyReportDate,
            flexUploadBatchId: detail.flexUploadBatchId!,
            ...(detail.renderwaysUploadBatchId ? { renderwaysUploadBatchId: detail.renderwaysUploadBatchId } : {}),
            ...(detail.callPlanUploadBatchId ? { callPlanUploadBatchId: detail.callPlanUploadBatchId } : {}),
          });
          setReport(rep);
+         window.localStorage.setItem(LAST_HISTORY_SESSION_KEY, rep.sessionId);
       }
       
-      if (window.innerWidth < 768) {
-        setIsHistoryPanelOpen(false);
-      }
+      setIsHistoryPanelOpen(false);
     });
   }
 
@@ -867,6 +927,17 @@ export default function DashboardPage() {
         currentValue && currentValue !== MANUAL_ENTRY_REQUIRED ? currentValue : null;
 
       if (draftValue === null || draftValue === normalizedCurrent) {
+        continue;
+      }
+
+      if (apiField === "case_created_time") {
+        const timestamp = Date.parse(draftValue);
+
+        if (Number.isNaN(timestamp)) {
+          throw new Error("Case Created Time must be a valid date/time.");
+        }
+
+        values[apiField as keyof ReportRowPatchValues] = new Date(timestamp).toISOString();
         continue;
       }
 
@@ -1084,6 +1155,47 @@ export default function DashboardPage() {
     selectedWoOtcCode ? selectedWoOtcCode : null,
     selectedRtplStatusFilter,
   ].filter(Boolean).join(" / ");
+
+  const overviewMetrics: MetricsGridItem[] = report
+    ? [
+        {
+          label: "Total Records",
+          value: report.totalRows,
+          detail: "Open all records",
+          onClick: () => openRecordsWithFilter({ region: null }),
+        },
+        {
+          label: "CISS Cases",
+          value: cissRows.length,
+          detail: showCissOnly ? "Filter active" : "Open matching records",
+          tone: "blue",
+          onClick: () => openRecordsWithFilter({ cissOnly: true }),
+          isActive: showCissOnly,
+        },
+        {
+          label: "Closed Calls",
+          value: closedRows.length,
+          detail: "Open closed records",
+          tone: "danger",
+          onClick: () => openRecordsWithFilter({ closedOnly: true }),
+          isActive: showClosedOnly,
+        },
+        {
+          label: "Duplicates",
+          value: report.duplicateTicketCount,
+          detail: "Needs review",
+          tone: "warn",
+        },
+        {
+          label: "Manual Required",
+          value: incompleteCellCount,
+          detail: incompleteCellCount > 0 ? "Open records to edit" : "All manual fields clear",
+          tone: incompleteCellCount > 0 ? "danger" : "accent",
+          onClick: () => openRecordsWithFilter({ region: null }),
+        },
+      ]
+    : [];
+
   if (!isSessionLoaded) {
     return <SessionLoadingScreen />;
   }
@@ -1109,66 +1221,48 @@ export default function DashboardPage() {
       <AppHeader
         workspaceView={workspaceView}
         hasReport={Boolean(report)}
+        hasBatches={canUseBatches}
+        isBusy={isBusy}
         dbHealth={dbHealth}
         runtimeHealth={runtimeHealth}
         session={session}
-        isHistoryPanelOpen={isHistoryPanelOpen}
         onWorkspaceViewChange={setWorkspaceView}
         onRefreshHealth={() => void refreshHealth()}
-        onToggleHistory={() => setIsHistoryPanelOpen((current) => !current)}
+        onOpenUpload={() => setIsUploadDrawerOpen(true)}
+        onOpenHistory={() => setIsHistoryPanelOpen(true)}
+        onGenerateReport={() => void handleGenerate()}
+        onExportXlsx={() => exportReport(downloadReportAsXlsx)}
+        onExportCsv={() => exportReport(downloadReportAsExcel)}
         onLogout={handleLogout}
+      />
+
+      <UploadDrawer
+        isOpen={isUploadDrawerOpen}
+        isBusy={isBusy}
+        files={files}
+        fileFields={FILE_FIELDS}
+        onClose={() => setIsUploadDrawerOpen(false)}
+        onSubmit={(event) => void handleUpload(event)}
+        onFileChange={(field, file) => {
+          setFiles((current) => ({
+            ...current,
+            [field]: file,
+          }));
+        }}
+      />
+
+      <HistoryDrawer
+        isOpen={isHistoryPanelOpen}
+        sessions={historySessions}
+        onClose={() => setIsHistoryPanelOpen(false)}
+        onOpen={handleHistoryOpen}
+        onRename={handleHistoryRename}
+        onDelete={handleHistoryDelete}
       />
 
       {message ? <div className="alert">{message}</div> : null}
 
-      <section className={`workspace ${workspaceView === "records" ? "recordsMode" : "overviewMode"} ${session && isHistoryPanelOpen ? "withHistory" : ""}`}>
-        <aside className="sidebar">
-          <form className="panel uploadPanel" onSubmit={(event) => void handleUpload(event)}>
-            <div className="sectionHeader">
-              <h2>Source Files</h2>
-              <button type="submit" disabled={isBusy || !session}>
-                Upload
-              </button>
-            </div>
-            <div className="fileGrid" style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
-              {FILE_FIELDS.map((item) => (
-                <label className="fileDrop" key={item.field}>
-                  <span>
-                    {item.label}{" "}
-                    <em className={item.required ? "requiredTag" : undefined}>
-                      {item.required ? "Required" : "Optional"}
-                    </em>
-                  </span>
-                  <input
-                    type="file"
-                    accept=".xls,.xlsx"
-                    onChange={(event) => {
-                      const file = event.target.files?.[0];
-                      setFiles((current) => ({
-                        ...current,
-                        [item.field]: file,
-                      }));
-                    }}
-                  />
-                  <strong>
-                    {files[item.field]?.name ??
-                      (item.required ? "Required file not selected" : "Optional")}
-                  </strong>
-                </label>
-              ))}
-            </div>
-          </form>
-
-          {session && isHistoryPanelOpen && (
-            <ReportHistoryPanel 
-              sessions={historySessions}
-              onOpen={handleHistoryOpen}
-              onRename={handleHistoryRename}
-              onDelete={handleHistoryDelete}
-            />
-          )}
-        </aside>
-
+      <section className={`workspace ${workspaceView === "records" ? "recordsMode" : "overviewMode"}`}>
         <section className="mainGrid">
           {report ? (
             <section className="panel reportPanel">
@@ -1178,38 +1272,7 @@ export default function DashboardPage() {
                   <h2>Generated Report</h2>
                   <p>{report.reportId}</p>
                 </div>
-                <div className="overviewStatsGrid">
-                  <OverviewStat
-                    label="Total Records"
-                    value={report.totalRows}
-                    detail="Open all records"
-                    onClick={() => openRecordsWithFilter({ region: null })}
-                  />
-                  <OverviewStat
-                    label="CISS Cases"
-                    value={cissRows.length}
-                    detail={showCissOnly ? "Filter active" : "Open matching records"}
-                    tone="blue"
-                    onClick={() => openRecordsWithFilter({ cissOnly: true })}
-                    isActive={showCissOnly}
-                  />
-                  <OverviewStat
-                    label="Closed Calls"
-                    value={closedRows.length}
-                    detail="Open closed records"
-                    tone="danger"
-                    onClick={() => openRecordsWithFilter({ closedOnly: true })}
-                    isActive={showClosedOnly}
-                  />
-                  <OverviewStat label="Duplicates" value={report.duplicateTicketCount} detail="Needs review" tone="warn" />
-                  <OverviewStat
-                    label="Manual Required"
-                    value={incompleteCellCount}
-                    detail={incompleteCellCount > 0 ? "Open records to edit" : "All manual fields clear"}
-                    tone={incompleteCellCount > 0 ? "danger" : "accent"}
-                    onClick={() => openRecordsWithFilter({ region: null })}
-                  />
-                </div>
+                <MetricsGrid items={overviewMetrics} />
               </div>
               {incompleteCellCount > 0 ? (
                 <p className="hint">
@@ -1246,6 +1309,26 @@ export default function DashboardPage() {
                       <div className="regionMetricSubtext">GLOBAL</div>
                     </div>
                     
+                    <div
+                      className="regionCissMetric"
+                      role="button"
+                      tabIndex={0}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        openRecordsWithFilter({ region: "ALL", cissOnly: true });
+                      }}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter" || e.key === " ") {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          openRecordsWithFilter({ region: "ALL", cissOnly: true });
+                        }
+                      }}
+                    >
+                      <span>CISS Cases</span>
+                      <strong>{cissRows.length}</strong>
+                    </div>
+
                     {overallWoOtcBreakdown.length > 0 && (
                       <div className="regionWoOtcList">
                         {overallWoOtcBreakdown.map(woCode => (
@@ -1276,6 +1359,26 @@ export default function DashboardPage() {
                         <div className="regionMetricValue">{entry.count}</div>
                         <div className="regionMetricLabel">{entry.regionName}</div>
                         <div className="regionMetricSubtext">{entry.aspCode}</div>
+                      </div>
+
+                      <div
+                        className="regionCissMetric"
+                        role="button"
+                        tabIndex={0}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          openRecordsWithFilter({ region: entry.aspCode, cissOnly: true });
+                        }}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter" || e.key === " ") {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            openRecordsWithFilter({ region: entry.aspCode, cissOnly: true });
+                          }
+                        }}
+                      >
+                        <span>CISS Cases</span>
+                        <strong>{cissCountByRegion.get(entry.aspCode) ?? 0}</strong>
                       </div>
                       
                       {entry.woOtcCodeBreakdown && entry.woOtcCodeBreakdown.length > 0 && (

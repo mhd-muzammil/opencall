@@ -19,6 +19,7 @@ export const MANUAL_CARRY_FORWARD_FIELDS = [
   "location",
   "case_created_time",
   "wip_aging",
+  "hp_owner_status",
   "customer_mail",
   "rca",
 ] as const;

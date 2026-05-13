@@ -11,6 +11,7 @@ interface FlexWipRecordRow {
   normalized_ticket_id: string;
   case_id: string | null;
   normalized_case_id: string | null;
+  create_time: Date | null;
   product: string | null;
   flex_status: string | null;
   wo_otc_code: string | null;
@@ -69,6 +70,7 @@ export async function insertFlexWipRecords(
           normalized_ticket_id,
           case_id,
           normalized_case_id,
+          create_time,
           product,
           flex_status,
           wo_otc_code,
@@ -85,7 +87,7 @@ export async function insertFlexWipRecords(
         )
         VALUES (
           $1, $2, $3, $4, $5, $6, $7, $8, $9,
-          $10, $11, $12, $13, $14, $15, $16, $17::jsonb, $18
+          $10, $11, $12, $13, $14, $15, $16, $17, $18::jsonb, $19
         )
       `,
       [
@@ -94,6 +96,7 @@ export async function insertFlexWipRecords(
         record.normalizedTicketId,
         record.caseId,
         record.normalizedCaseId,
+        record.createTime,
         record.product,
         record.flexStatus,
         record.woOtcCode,
@@ -209,6 +212,7 @@ export async function findFlexWipRecordsByBatchId(
         normalized_ticket_id,
         case_id,
         normalized_case_id,
+        create_time,
         product,
         flex_status,
         wo_otc_code,
@@ -235,6 +239,7 @@ export async function findFlexWipRecordsByBatchId(
     normalizedTicketId: row.normalized_ticket_id,
     caseId: row.case_id,
     normalizedCaseId: row.normalized_case_id,
+    createTime: row.create_time,
     product: row.product,
     flexStatus: row.flex_status,
     woOtcCode: row.wo_otc_code,

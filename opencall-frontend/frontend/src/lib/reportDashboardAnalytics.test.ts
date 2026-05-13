@@ -80,6 +80,7 @@ function reportFixture(): GeneratedReportResponse {
         aspCode: "ASPS01461",
         regionName: "CHENNAI",
         count: 2,
+        closedCount: 0,
         woOtcCodeBreakdown: [
           { code: "05K-Extended Warranty", count: 1 },
           { code: "01-Trade", count: 1 },
@@ -89,6 +90,7 @@ function reportFixture(): GeneratedReportResponse {
         aspCode: "UNKNOWN",
         regionName: "Unknown Region",
         count: 1,
+        closedCount: 0,
         woOtcCodeBreakdown: [
           { code: "05K-Extended Warranty", count: 1 },
         ],

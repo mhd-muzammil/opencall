@@ -19,6 +19,48 @@ function valueOrManual(value: string | number | null | undefined): string | numb
   return value;
 }
 
+function pad2(value: number): string {
+  return String(value).padStart(2, "0");
+}
+
+export function formatDisplayDateTime(
+  value: string | number | null | undefined,
+): string | number {
+  if (value === null || value === undefined || value === "") {
+    return MANUAL_ENTRY_REQUIRED;
+  }
+
+  if (typeof value === "number") {
+    return value;
+  }
+
+  const normalizedValue = value.includes(" ") && /[+-]\d{2}:?\d{2}$/.test(value)
+    ? value.replace(" ", "T")
+    : value;
+  const date = new Date(normalizedValue);
+
+  if (Number.isNaN(date.getTime())) {
+    return value;
+  }
+
+  const parts = new Intl.DateTimeFormat("en-GB", {
+    timeZone: "Asia/Kolkata",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hour12: true,
+  }).formatToParts(date);
+  const partValue = (type: string) =>
+    parts.find((part) => part.type === type)?.value ?? "";
+  const hour = pad2(Number(partValue("hour")));
+  const dayPeriod = partValue("dayPeriod").toUpperCase();
+
+  return `${partValue("day")}-${partValue("month")}-${partValue("year")} ${hour}:${partValue("minute")}:${partValue("second")} ${dayPeriod}`;
+}
+
 export function formatDailyCallPlanRow(
   serialNo: number,
   row: EnrichedCallPlanRow,
@@ -27,7 +69,7 @@ export function formatDailyCallPlanRow(
     "S.no": serialNo,
     "Ticket ID": valueOrEmpty(row.ticket_id),
     "Case ID": valueOrManual(row.case_id),
-    "Case Created Time": valueOrManual(row.case_created_time),
+    "Case Created Time": formatDisplayDateTime(row.case_created_time),
     "WIP aging": valueOrManual(row.wip_aging),
     "RTPL status": valueOrManual(row.rtpl_status),
     Segment: valueOrManual(row.segment),

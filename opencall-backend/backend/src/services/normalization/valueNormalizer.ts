@@ -41,6 +41,32 @@ export function parseExcelDate(value: unknown): Date | null {
     return null;
   }
 
+  const dayFirstDateTime = /^(\d{1,2})[-/](\d{1,2})[-/](\d{4})\s+(\d{1,2}):(\d{2})(?::(\d{2}))?\s*(AM|PM)?$/i.exec(cleaned);
+  if (dayFirstDateTime) {
+    const [, day, month, year, hour, minute, second = "0", meridiem] = dayFirstDateTime;
+    let normalizedHour = Number(hour);
+
+    if (meridiem) {
+      const upperMeridiem = meridiem.toUpperCase();
+      if (upperMeridiem === "AM" && normalizedHour === 12) {
+        normalizedHour = 0;
+      } else if (upperMeridiem === "PM" && normalizedHour < 12) {
+        normalizedHour += 12;
+      }
+    }
+
+    const parsed = new Date(
+      Number(year),
+      Number(month) - 1,
+      Number(day),
+      normalizedHour,
+      Number(minute),
+      Number(second),
+    );
+
+    return Number.isNaN(parsed.getTime()) ? null : parsed;
+  }
+
   const parsed = new Date(cleaned);
   return Number.isNaN(parsed.getTime()) ? null : parsed;
 }

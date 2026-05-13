@@ -123,9 +123,13 @@ describe("insertDailyCallPlanReportRows", () => {
     expect(sql).toContain("carried_forward_fields");
     expect(sql).toContain("manual_fields_completed");
     expect(sql).toContain("manual_fields_missing");
-    expect(values[30]).toBe(JSON.stringify(["engineer", "customer_mail"]));
-    expect(values[31]).toBe(true);
-    expect(values[32]).toEqual([]);
+    expect(sql).toContain("product_line_name");
+    expect(sql).toContain("work_location");
+    expect(values[10]).toBe("Commercial");
+    expect(values[11]).toBe("ASPS01461");
+    expect(values[32]).toBe(JSON.stringify(["engineer", "customer_mail"]));
+    expect(values[33]).toBe(true);
+    expect(values[34]).toEqual([]);
   });
 
   it("loads persisted manual fields for regenerated history reports", async () => {

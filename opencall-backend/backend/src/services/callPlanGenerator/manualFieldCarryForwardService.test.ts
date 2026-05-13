@@ -94,8 +94,8 @@ function previousFinalRow(
     segment: "Enterprise",
     engineer: "Priya",
     product: "Old product",
-    productLineName: null,
-    workLocation: null,
+    productLineName: "Commercial",
+    workLocation: "ASPS01461",
     flexStatus: "Old open",
     hpOwnerStatus: "Actionable",
     woOtcCode: "OLD",
@@ -266,5 +266,7 @@ describe("ManualFieldCarryForwardService", () => {
     expect(closedRow?.carryForward.changeType).toBe("CLOSED");
     expect(closedRow?.comparison?.changeType).toBe("CLOSED");
     expect(closedRow?.enriched.engineer).toBe("Priya");
+    expect(closedRow?.enriched.work_location).toBe("ASPS01461");
+    expect(closedRow?.output["Work Location"]).toBe("ASPS01461");
   });
 });

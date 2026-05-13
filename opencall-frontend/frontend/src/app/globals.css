@@ -1996,6 +1996,27 @@ td.missingCell.carriedForwardCell {
   color: white;
 }
 
+.regionClosedItem {
+  border: 1px solid #fecaca;
+  background: #fff1f2;
+}
+
+.regionClosedItem:hover {
+  background: #ffe4e6;
+}
+
+.regionClosedItem .regionWoOtcCode,
+.regionClosedItem .regionWoOtcCount {
+  color: #b91c1c;
+}
+
+.regionClosedItem.active,
+.regionClosedItem.active .regionWoOtcCode,
+.regionClosedItem.active .regionWoOtcCount {
+  background: #dc2626;
+  color: #ffffff;
+}
+
 .regionWoOtcCode {
   font-weight: 600;
   text-align: left;

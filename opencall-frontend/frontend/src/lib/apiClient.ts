@@ -108,6 +108,7 @@ export interface GeneratedReportResponse {
     aspCode: string;
     regionName: string;
     count: number;
+    closedCount: number;
     woOtcCodeBreakdown: Array<{
       code: string;
       count: number;

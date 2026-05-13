@@ -85,6 +85,7 @@ export function parseFlexWipReport(
       normalizedTicketId,
       caseId,
       normalizedCaseId,
+      createTime: parseExcelDate(getCell(row.values, ["Create Time", "CreateTime", "Created Time", "Case Created Time"])),
       product: cleanString(getCell(row.values, ["Product", "Product Name"])),
       flexStatus: cleanString(getCell(row.values, ["Status", "Flex Status"])),
       woOtcCode: cleanString(getCell(row.values, ["WO OTC Code", "WO OTC CODE", "WO-OTC Code"])),

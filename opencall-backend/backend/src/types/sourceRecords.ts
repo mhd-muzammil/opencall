@@ -18,6 +18,7 @@ export interface FlexWipParsedRecord {
   normalizedTicketId: string;
   caseId: string | null;
   normalizedCaseId: string | null;
+  createTime: Date | null;
   product: string | null;
   flexStatus: string | null;
   woOtcCode: string | null;

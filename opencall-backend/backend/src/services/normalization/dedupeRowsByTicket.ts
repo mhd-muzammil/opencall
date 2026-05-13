@@ -2,6 +2,7 @@ import { cleanString, normalizeTicketId } from "./valueNormalizer.js";
 
 const TIMESTAMP_FIELD_CANDIDATES = [
   "partnerAccept",
+  "createTime",
   "caseCreatedTime",
   "case_created_time",
   "tat",

@@ -238,7 +238,7 @@ function buildEnrichedRow(
   return {
     ticket_id: flexWip?.ticketId ?? renderways?.ticketId ?? callPlan?.ticketId ?? "",
     case_id: flexWip?.caseId ?? renderways?.caseId ?? "",
-    case_created_time: toIsoString(renderways?.partnerAccept),
+    case_created_time: toIsoString(flexWip?.createTime),
     wip_aging: renderways?.wipAging ?? null,
     rtpl_status: renderways?.rtplStatus ?? callPlan?.morningStatus ?? "",
     segment: getSegment(renderways?.productType, renderways?.callClassification),

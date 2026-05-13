@@ -189,6 +189,73 @@ function formatNumber(value: number): string {
   return new Intl.NumberFormat("en-IN").format(value);
 }
 
+function pad2(value: number): string {
+  return String(value).padStart(2, "0");
+}
+
+function formatDisplayDateTime(value: string | number | null | undefined): string | number {
+  if (value === null || value === undefined || value === "") {
+    return MANUAL_ENTRY_REQUIRED;
+  }
+
+  if (typeof value === "number") {
+    return value;
+  }
+
+  const normalizedValue = value.includes(" ") && /[+-]\d{2}:?\d{2}$/.test(value)
+    ? value.replace(" ", "T")
+    : value;
+  const date = new Date(normalizedValue);
+
+  if (Number.isNaN(date.getTime())) {
+    return value;
+  }
+
+  const parts = new Intl.DateTimeFormat("en-GB", {
+    timeZone: "Asia/Kolkata",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hour12: true,
+  }).formatToParts(date);
+  const partValue = (type: string) =>
+    parts.find((part) => part.type === type)?.value ?? "";
+  const hour = pad2(Number(partValue("hour")));
+  const dayPeriod = partValue("dayPeriod").toUpperCase();
+
+  return `${partValue("day")}-${partValue("month")}-${partValue("year")} ${hour}:${partValue("minute")}:${partValue("second")} ${dayPeriod}`;
+}
+
+function parseEditableDateTime(value: string): number {
+  const displayDateTime = /^(\d{1,2})[-/](\d{1,2})[-/](\d{4})\s+(\d{1,2}):(\d{2})(?::(\d{2}))?\s*(AM|PM)$/i.exec(value.trim());
+
+  if (displayDateTime) {
+    const [, day, month, year, hour, minute, second = "0", meridiem] = displayDateTime;
+    let normalizedHour = Number(hour);
+    const normalizedMeridiem = String(meridiem).toUpperCase();
+
+    if (normalizedMeridiem === "AM" && normalizedHour === 12) {
+      normalizedHour = 0;
+    } else if (normalizedMeridiem === "PM" && normalizedHour < 12) {
+      normalizedHour += 12;
+    }
+
+    return new Date(
+      Number(year),
+      Number(month) - 1,
+      Number(day),
+      normalizedHour,
+      Number(minute),
+      Number(second),
+    ).getTime();
+  }
+
+  return Date.parse(value);
+}
+
 function batchIdBySource(
   batches: readonly UploadBatch[],
   sourceType: SourceKey,
@@ -594,6 +661,14 @@ export default function DashboardPage() {
     return buildOverallWoOtcBreakdown(report.regionBreakdown);
   }, [report]);
 
+  const overallClosedCount = useMemo(() => {
+    if (!report) return 0;
+    return report.regionBreakdown.reduce(
+      (total, entry) => total + (entry.closedCount ?? 0),
+      0,
+    );
+  }, [report]);
+
   const rtplRegionOptions = useMemo(() => {
     if (!report) return [];
 
@@ -976,7 +1051,7 @@ export default function DashboardPage() {
       }
 
       if (apiField === "case_created_time") {
-        const timestamp = Date.parse(draftValue);
+        const timestamp = parseEditableDateTime(draftValue);
 
         if (Number.isNaN(timestamp)) {
           throw new Error("Case Created Time must be a valid date/time.");
@@ -1004,9 +1079,12 @@ export default function DashboardPage() {
       }
 
       const value = persisted[responseField];
+      const displayValue = column === "Case Created Time"
+        ? formatDisplayDateTime(value)
+        : value;
       nextOutput[column] =
-        typeof value === "string" && value.trim().length > 0
-          ? value
+        typeof displayValue === "string" && displayValue.trim().length > 0
+          ? displayValue
           : MANUAL_ENTRY_REQUIRED;
     }
 
@@ -1466,8 +1544,20 @@ export default function DashboardPage() {
                       <div className="regionMetricSubtext">GLOBAL</div>
                     </div>
                     
-                    {overallWoOtcBreakdown.length > 0 && (
+                    {(overallClosedCount > 0 || overallWoOtcBreakdown.length > 0) && (
                       <div className="regionWoOtcList">
+                        {overallClosedCount > 0 ? (
+                          <div
+                            className={`regionWoOtcItem regionClosedItem ${showClosedOnly && (selectedRegion === "ALL" || !selectedRegion) && !selectedWoOtcCode ? "active" : ""}`}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              openRecordsWithFilter({ region: "ALL", closedOnly: true });
+                            }}
+                          >
+                            <span className="regionWoOtcCode">Closed</span>
+                            <span className="regionWoOtcCount">{overallClosedCount}</span>
+                          </div>
+                        ) : null}
                         {overallWoOtcBreakdown.map(woCode => (
                           <div 
                             key={woCode.code}
@@ -1498,8 +1588,20 @@ export default function DashboardPage() {
                         <div className="regionMetricSubtext">{entry.aspCode}</div>
                       </div>
 
-                      {entry.woOtcCodeBreakdown && entry.woOtcCodeBreakdown.length > 0 && (
+                      {(entry.closedCount > 0 || (entry.woOtcCodeBreakdown && entry.woOtcCodeBreakdown.length > 0)) && (
                         <div className="regionWoOtcList">
+                          {entry.closedCount > 0 ? (
+                            <div
+                              className={`regionWoOtcItem regionClosedItem ${showClosedOnly && selectedRegion === entry.aspCode && !selectedWoOtcCode ? "active" : ""}`}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                openRecordsWithFilter({ region: entry.aspCode, closedOnly: true });
+                              }}
+                            >
+                              <span className="regionWoOtcCode">Closed</span>
+                              <span className="regionWoOtcCount">{entry.closedCount}</span>
+                            </div>
+                          ) : null}
                           {entry.woOtcCodeBreakdown.map(woCode => (
                             <div 
                               key={woCode.code}

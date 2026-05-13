@@ -166,6 +166,8 @@ interface FinalReportManualCarryForwardDbRow {
   segment: string | null;
   engineer: string | null;
   product: string | null;
+  product_line_name: string | null;
+  work_location: string | null;
   flex_status: string | null;
   hp_owner_status: string | null;
   wo_otc_code: string | null;
@@ -195,8 +197,8 @@ function mapFinalReportManualCarryForwardRow(
     segment: row.segment,
     engineer: row.engineer,
     product: row.product,
-    productLineName: null,
-    workLocation: null,
+    productLineName: row.product_line_name,
+    workLocation: row.work_location,
     flexStatus: row.flex_status,
     hpOwnerStatus: row.hp_owner_status,
     woOtcCode: row.wo_otc_code,
@@ -341,6 +343,8 @@ export async function insertDailyCallPlanReportRows(
           segment,
           engineer,
           product,
+          product_line_name,
+          work_location,
           flex_status,
           hp_owner_status,
           wo_otc_code,
@@ -371,8 +375,8 @@ export async function insertDailyCallPlanReportRows(
           $1, $2, $3, $4, $5, $6, $7, $8,
           $9, $10, $11, $12, $13, $14, $15, $16,
           $17, $18, $19, $20, $21, $22, $23, $24,
-          $25, $26, $27, $28, $29::jsonb, $30, $31::jsonb, $32, $33::text[],
-          $34, $35::jsonb
+          $25, $26, $27, $28, $29, $30, $31::jsonb, $32, $33::jsonb, $34, $35::text[],
+          $36, $37::jsonb
         )
         RETURNING id, updated_at::TEXT AS updated_at, updated_by::TEXT AS updated_by
       `,
@@ -387,6 +391,8 @@ export async function insertDailyCallPlanReportRows(
         row.enriched.segment,
         row.enriched.engineer,
         row.enriched.product,
+        row.enriched.product_line_name,
+        row.enriched.work_location,
         row.enriched.flex_status,
         row.enriched.hp_owner_status,
         row.enriched.wo_otc_code,
@@ -441,6 +447,8 @@ export async function findFinalReportRowsForManualCarryForwardBySessionId(
         rows.segment,
         rows.engineer,
         rows.product,
+        rows.product_line_name,
+        rows.work_location,
         rows.flex_status,
         rows.hp_owner_status,
         rows.wo_otc_code,
@@ -536,6 +544,8 @@ export async function findPreviousFinalReportRowsForManualCarryForward(
         rows.segment,
         rows.engineer,
         rows.product,
+        rows.product_line_name,
+        rows.work_location,
         rows.flex_status,
         rows.hp_owner_status,
         rows.wo_otc_code,

@@ -99,8 +99,9 @@ code {
 }
 
 .topBar {
-  display: grid;
-  grid-template-columns: minmax(300px, auto) minmax(0, 1fr);
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
   align-items: center;
   gap: 20px;
   min-height: 76px;
@@ -229,7 +230,7 @@ code {
 
 .topActions {
   display: flex;
-  flex-wrap: nowrap;
+  flex-wrap: wrap;
   gap: 10px;
   justify-items: end;
   align-items: center;
@@ -240,7 +241,7 @@ code {
 .headerPrimaryActions,
 .headerUtilityActions {
   display: flex;
-  flex-wrap: nowrap;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: flex-end;
   gap: 10px;
@@ -1534,26 +1535,24 @@ td.missingCell.carriedForwardCell {
   }
 
   .topActions {
-    display: grid;
-    grid-template-columns: 1fr;
+    display: flex;
+    flex-wrap: wrap;
     justify-content: flex-start;
   }
 
-  .topActions > *,
   .headerPrimaryActions,
-  .headerUtilityActions,
+  .headerUtilityActions {
+    display: flex;
+    flex-wrap: wrap;
+    width: 100%;
+  }
+
   .headerPrimaryActions > *,
   .headerUtilityActions > *,
   .topIconButton,
   .generateAction,
   .exportMenu summary {
-    width: 100%;
-  }
-
-  .headerPrimaryActions,
-  .headerUtilityActions {
-    display: grid;
-    grid-template-columns: 1fr;
+    flex: 1 1 auto;
   }
 
   .topIconButton,

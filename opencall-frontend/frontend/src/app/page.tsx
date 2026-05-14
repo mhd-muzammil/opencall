@@ -669,6 +669,20 @@ export default function DashboardPage() {
     );
   }, [report]);
 
+  const closedRegionBreakdown = useMemo(() => {
+    if (!report) return [];
+
+    return report.regionBreakdown
+      .map((entry) => ({
+        aspCode: entry.aspCode,
+        regionName: entry.regionName,
+        closedCount: entry.closedCount ?? 0,
+        activeCount: entry.count,
+      }))
+      .filter((entry) => entry.closedCount > 0)
+      .sort((a, b) => b.closedCount - a.closedCount);
+  }, [report]);
+
   const rtplRegionOptions = useMemo(() => {
     if (!report) return [];
 
@@ -1544,20 +1558,8 @@ export default function DashboardPage() {
                       <div className="regionMetricSubtext">GLOBAL</div>
                     </div>
                     
-                    {(overallClosedCount > 0 || overallWoOtcBreakdown.length > 0) && (
+                    {overallWoOtcBreakdown.length > 0 && (
                       <div className="regionWoOtcList">
-                        {overallClosedCount > 0 ? (
-                          <div
-                            className={`regionWoOtcItem regionClosedItem ${showClosedOnly && (selectedRegion === "ALL" || !selectedRegion) && !selectedWoOtcCode ? "active" : ""}`}
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              openRecordsWithFilter({ region: "ALL", closedOnly: true });
-                            }}
-                          >
-                            <span className="regionWoOtcCode">Closed</span>
-                            <span className="regionWoOtcCount">{overallClosedCount}</span>
-                          </div>
-                        ) : null}
                         {overallWoOtcBreakdown.map(woCode => (
                           <div 
                             key={woCode.code}
@@ -1588,20 +1590,8 @@ export default function DashboardPage() {
                         <div className="regionMetricSubtext">{entry.aspCode}</div>
                       </div>
 
-                      {(entry.closedCount > 0 || (entry.woOtcCodeBreakdown && entry.woOtcCodeBreakdown.length > 0)) && (
+                      {entry.woOtcCodeBreakdown && entry.woOtcCodeBreakdown.length > 0 && (
                         <div className="regionWoOtcList">
-                          {entry.closedCount > 0 ? (
-                            <div
-                              className={`regionWoOtcItem regionClosedItem ${showClosedOnly && selectedRegion === entry.aspCode && !selectedWoOtcCode ? "active" : ""}`}
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                openRecordsWithFilter({ region: entry.aspCode, closedOnly: true });
-                              }}
-                            >
-                              <span className="regionWoOtcCode">Closed</span>
-                              <span className="regionWoOtcCount">{entry.closedCount}</span>
-                            </div>
-                          ) : null}
                           {entry.woOtcCodeBreakdown.map(woCode => (
                             <div 
                               key={woCode.code}
@@ -1621,6 +1611,45 @@ export default function DashboardPage() {
                   ))}
                 </div>
               </div>
+
+              {overallClosedCount > 0 ? (
+                <div className="closedCallsSection">
+                  <div className="closedCallsHeader">
+                    <div>
+                      <p className="eyebrow">Closed Call Ledger</p>
+                      <h3>Closed Calls</h3>
+                      <p>
+                        Closed work orders are separated from the Work in Progress region breakdown
+                        to keep active contract-code operations clean.
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      className={`closedCallsTotal ${showClosedOnly && (!selectedRegion || selectedRegion === "ALL") ? "active" : ""}`}
+                      onClick={() => openRecordsWithFilter({ region: "ALL", closedOnly: true })}
+                    >
+                      <span>Total Closed</span>
+                      <strong>{formatNumber(overallClosedCount)}</strong>
+                      <small>Open closed records</small>
+                    </button>
+                  </div>
+
+                  <div className="closedRegionGrid">
+                    {closedRegionBreakdown.map((entry) => (
+                      <button
+                        key={entry.aspCode}
+                        type="button"
+                        className={`closedRegionCard ${showClosedOnly && selectedRegion === entry.aspCode ? "active" : ""}`}
+                        onClick={() => openRecordsWithFilter({ region: entry.aspCode, closedOnly: true })}
+                      >
+                        <span>{entry.regionName}</span>
+                        <strong>{formatNumber(entry.closedCount)}</strong>
+                        <small>{entry.aspCode} | {formatNumber(entry.activeCount)} active WIP</small>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              ) : null}
 
               <div className="rtplAnalyticsSection">
                 <div className="sectionHeader rtplAnalyticsHeader">

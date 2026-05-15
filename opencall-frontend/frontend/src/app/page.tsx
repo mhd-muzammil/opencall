@@ -52,7 +52,6 @@ type ManualCarryForwardField =
   | "engineer"
   | "location"
   | "case_created_time"
-  | "wip_aging"
   | "hp_owner_status"
   | "customer_mail"
   | "rca";
@@ -124,7 +123,6 @@ const MANUAL_FIELD_BY_COLUMN: Partial<Record<string, ManualCarryForwardField>> =
   Engineer: "engineer",
   Location: "location",
   "Case Created Time": "case_created_time",
-  "WIP aging": "wip_aging",
   "HP Owner Status": "hp_owner_status",
   "Customer Mail": "customer_mail",
   RCA: "rca",
@@ -136,7 +134,6 @@ const MANUAL_FIELD_LABELS: Record<ManualCarryForwardField, string> = {
   engineer: "Engineer",
   location: "Location",
   case_created_time: "Case Created Time",
-  wip_aging: "WIP aging",
   hp_owner_status: "HP Owner Status",
   customer_mail: "Customer Mail",
   rca: "RCA",
@@ -148,7 +145,6 @@ const EDITABLE_COLUMN_API_FIELD: Partial<Record<string, string>> = {
   Engineer: "engineer",
   Location: "location",
   "Case Created Time": "case_created_time",
-  "WIP aging": "wip_aging",
   "HP Owner Status": "hp_owner_status",
   "Customer Mail": "customer_mail",
   RCA: "rca",
@@ -164,7 +160,6 @@ const EDITED_RESPONSE_COLUMN: Partial<
     | "engineer"
     | "location"
     | "caseCreatedTime"
-    | "wipAging"
     | "hpOwnerStatus"
     | "customerMail"
     | "rca"
@@ -175,7 +170,6 @@ const EDITED_RESPONSE_COLUMN: Partial<
   Engineer: "engineer",
   Location: "location",
   "Case Created Time": "caseCreatedTime",
-  "WIP aging": "wipAging",
   "HP Owner Status": "hpOwnerStatus",
   "Customer Mail": "customerMail",
   RCA: "rca",

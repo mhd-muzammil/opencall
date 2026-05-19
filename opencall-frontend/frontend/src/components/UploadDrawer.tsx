@@ -6,7 +6,10 @@ export interface UploadFileItem {
   field: UploadFileField;
   label: string;
   required: boolean;
+  multiple?: boolean;
 }
+
+type UploadFilesByField = Partial<Record<UploadFileField, File[]>>;
 
 export function UploadDrawer({
   isOpen,
@@ -19,11 +22,11 @@ export function UploadDrawer({
 }: Readonly<{
   isOpen: boolean;
   isBusy: boolean;
-  files: Partial<Record<UploadFileField, File>>;
+  files: UploadFilesByField;
   fileFields: readonly UploadFileItem[];
   onClose: () => void;
   onSubmit: (event: FormEvent<HTMLFormElement>) => void;
-  onFileChange: (field: UploadFileField, file: File | undefined) => void;
+  onFileChange: (field: UploadFileField, files: File[]) => void;
 }>) {
   if (!isOpen) {
     return null;
@@ -60,11 +63,15 @@ export function UploadDrawer({
                 <input
                   type="file"
                   accept=".xls,.xlsx"
-                  onChange={(event) => onFileChange(item.field, event.target.files?.[0])}
+                  multiple={item.multiple}
+                  onChange={(event) =>
+                    onFileChange(item.field, Array.from(event.target.files ?? []))
+                  }
                 />
                 <strong>
-                  {files[item.field]?.name ??
-                    (item.required ? "Required file not selected" : "Optional")}
+                  {files[item.field]?.length
+                    ? files[item.field]!.map((file) => file.name).join(", ")
+                    : item.required ? "Required file not selected" : "Optional"}
                 </strong>
               </label>
             ))}

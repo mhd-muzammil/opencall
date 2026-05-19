@@ -243,15 +243,15 @@ export async function uploadReports(input: {
   regionId: string;
   flexWipReport: File;
   renderwaysReport?: File;
-  callPlan?: File;
+  callPlan?: File[];
 }): Promise<UploadResponse> {
   const formData = new FormData();
   formData.append("flexWipReport", input.flexWipReport);
   if (input.renderwaysReport) {
     formData.append("renderwaysReport", input.renderwaysReport);
   }
-  if (input.callPlan) {
-    formData.append("callPlan", input.callPlan);
+  for (const file of input.callPlan ?? []) {
+    formData.append("callPlan", file);
   }
 
   if (input.regionId.trim()) {

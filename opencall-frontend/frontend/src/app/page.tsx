@@ -67,10 +67,11 @@ const FILE_FIELDS: Array<{
   source: SourceKey;
   label: string;
   required: boolean;
+  multiple?: boolean;
 }> = [
   { field: "flexWipReport", source: "FLEX_WIP", label: "Flex WIP Report", required: true },
   { field: "renderwaysReport", source: "RENDERWAYS", label: "Renderways / RTPL Report", required: false },
-  { field: "callPlan", source: "CALL_PLAN", label: "Call Plan Report", required: false },
+  { field: "callPlan", source: "CALL_PLAN", label: "Call Plan Reports", required: false, multiple: true },
 ];
 
 const MANUAL_ENTRY_REQUIRED = "Manual Entry Required";
@@ -524,7 +525,7 @@ export default function DashboardPage() {
   const [password, setPassword] = useState("");
   const [session, setSession] = useState<LoginResponse | null>(null);
   const [regionId, setRegionId] = useState("");
-  const [files, setFiles] = useState<Partial<Record<FileField, File>>>({});
+  const [files, setFiles] = useState<Partial<Record<FileField, File[]>>>({});
   const [upload, setUpload] = useState<UploadResponse | null>(null);
   const [preview, setPreview] = useState<MatchPreviewResponse | null>(null);
   const [report, setReport] = useState<GeneratedReportResponse | null>(null);
@@ -855,9 +856,9 @@ export default function DashboardPage() {
       return;
     }
 
-    const flexWipReport = files.flexWipReport;
-    const renderwaysReport = files.renderwaysReport;
-    const callPlan = files.callPlan;
+    const flexWipReport = files.flexWipReport?.[0];
+    const renderwaysReport = files.renderwaysReport?.[0];
+    const callPlan = files.callPlan ?? [];
 
     if (!flexWipReport) {
       setMessage("Flex WIP Report is required before processing");
@@ -870,7 +871,7 @@ export default function DashboardPage() {
         regionId,
         flexWipReport,
         ...(renderwaysReport ? { renderwaysReport } : {}),
-        ...(callPlan ? { callPlan } : {}),
+        ...(callPlan.length > 0 ? { callPlan } : {}),
       });
       setUpload(result);
       setPreview(null);
@@ -1394,10 +1395,10 @@ export default function DashboardPage() {
         fileFields={FILE_FIELDS}
         onClose={() => setIsUploadDrawerOpen(false)}
         onSubmit={(event) => void handleUpload(event)}
-        onFileChange={(field, file) => {
+        onFileChange={(field, selectedFiles) => {
           setFiles((current) => ({
             ...current,
-            [field]: file,
+            [field]: selectedFiles,
           }));
         }}
       />

@@ -1064,6 +1064,73 @@ code {
   font-weight: 700;
 }
 
+.printCaseSplit {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.printCaseSplitButton {
+  display: grid;
+  gap: 4px;
+  min-height: 64px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: #f8fafc;
+  color: var(--text);
+  padding: 9px 10px;
+  text-align: left;
+}
+
+.printCaseSplitButton:hover:not(:disabled),
+.printCaseSplitButton:focus-visible,
+.printCaseSplitButton.active {
+  border-color: #94a3b8;
+  background: #ffffff;
+  outline: none;
+}
+
+.printCaseSplitButton.installation {
+  border-color: #99f6e4;
+  background: #f0fdfa;
+}
+
+.printCaseSplitButton.installation:hover:not(:disabled),
+.printCaseSplitButton.installation:focus-visible,
+.printCaseSplitButton.installation.active {
+  border-color: #14b8a6;
+}
+
+.printCaseSplitButton.fix {
+  border-color: #bfdbfe;
+  background: #eff6ff;
+}
+
+.printCaseSplitButton.fix:hover:not(:disabled),
+.printCaseSplitButton.fix:focus-visible,
+.printCaseSplitButton.fix.active {
+  border-color: #3b82f6;
+}
+
+.printCaseSplitButton span,
+.printCaseRegionSubtype span {
+  min-width: 0;
+  overflow: hidden;
+  color: #475569;
+  font-size: 11px;
+  font-weight: 900;
+  line-height: 1.1;
+  text-overflow: ellipsis;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.printCaseSplitButton strong {
+  color: var(--text);
+  font-size: 22px;
+  line-height: 1;
+}
+
 .caseTypeRegionList {
   display: grid;
   gap: 5px;
@@ -1112,6 +1179,62 @@ code {
   font-size: 12px;
   font-weight: 900;
   text-align: center;
+}
+
+.printCaseRegionList {
+  gap: 6px;
+}
+
+.printCaseRegionRow {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(74px, 0.42fr) minmax(62px, 0.34fr);
+  gap: 6px;
+}
+
+.caseTypeRegionList .printCaseRegionTotal,
+.caseTypeRegionList .printCaseRegionSubtype {
+  min-width: 0;
+}
+
+.caseTypeRegionList .printCaseRegionTotal {
+  background: #eef2ff;
+}
+
+.caseTypeRegionList .printCaseRegionSubtype {
+  justify-content: center;
+  gap: 4px;
+  padding: 5px 6px;
+}
+
+.caseTypeRegionList .printCaseRegionSubtype.installation {
+  background: #ecfdf5;
+}
+
+.caseTypeRegionList .printCaseRegionSubtype.installation:hover:not(:disabled),
+.caseTypeRegionList .printCaseRegionSubtype.installation:focus-visible {
+  border-color: #5eead4;
+  background: #ccfbf1;
+}
+
+.caseTypeRegionList .printCaseRegionSubtype.fix {
+  background: #eff6ff;
+}
+
+.caseTypeRegionList .printCaseRegionSubtype.fix:hover:not(:disabled),
+.caseTypeRegionList .printCaseRegionSubtype.fix:focus-visible {
+  border-color: #93c5fd;
+  background: #dbeafe;
+}
+
+.caseTypeRegionList .printCaseRegionSubtype span {
+  flex: 0 1 auto;
+  font-size: 10px;
+}
+
+.caseTypeRegionList .printCaseRegionSubtype strong {
+  min-width: 22px;
+  color: #0f172a;
+  padding: 2px 6px;
 }
 
 .tableWrap {

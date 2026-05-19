@@ -209,6 +209,16 @@ function activeRowsForComparison(
   return rows.filter((row) => !row.carryForward.closedSyntheticRow);
 }
 
+function getRenderwaysWipAging(row: GeneratedDailyCallPlanRow): string | null {
+  const value = row.match.renderways?.wipAging;
+
+  if (value === null || value === undefined || String(value).trim() === "") {
+    return null;
+  }
+
+  return value;
+}
+
 async function applyPersistedRowMetadata(
   client: Parameters<typeof findDailyCallPlanReportRowMetadataByReportId>[0],
   reportId: string,
@@ -444,10 +454,18 @@ export async function generateDailyCallPlanReport(
       comparison = metadataFromComparison(reportComparison);
     }
 
-    // ── Recalculate WIP aging from case_created_time for every row ──
+    // Prefer Renderways WIP Aging when uploaded; otherwise calculate from case_created_time.
     const reportNow = new Date();
     const updateAging = () => {
       for (const row of rows) {
+        const renderwaysWipAging = getRenderwaysWipAging(row);
+
+        if (renderwaysWipAging !== null) {
+          row.enriched.wip_aging = renderwaysWipAging;
+          row.output["WIP aging"] = renderwaysWipAging;
+          continue;
+        }
+
         const computed = calculateWipAging(row.enriched.case_created_time, reportNow);
         if (computed !== null) {
           row.enriched.wip_aging = computed;

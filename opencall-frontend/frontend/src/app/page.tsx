@@ -46,6 +46,7 @@ type SourceKey = "FLEX_WIP" | "RENDERWAYS" | "CALL_PLAN";
 type FileField = "flexWipReport" | "renderwaysReport" | "callPlan";
 type ChangeType = "NEW" | "CLOSED" | "CARRIED" | "UPDATED";
 type ReportRow = GeneratedReportResponse["rows"][number];
+type PrintCaseFilter = "all" | "installation" | "fix";
 type ManualCarryForwardField =
   | "rtpl_status"
   | "segment"
@@ -78,6 +79,7 @@ const MANUAL_ENTRY_REQUIRED = "Manual Entry Required";
 const CISS_PRODUCT_LINE = "CISS";
 const PC_SEGMENT = "PC";
 const PRINT_SEGMENT = "Print";
+const PRINT_INSTALLATION_WO_OTC_CODE = "05F";
 const LAST_HISTORY_SESSION_KEY = "opencall.lastHistorySessionId";
 
 const CHANGE_TYPE_LABELS: Record<ChangeType, string> = {
@@ -110,6 +112,31 @@ function isSegmentCase(
   segment: string,
 ): boolean {
   return String(row.output.Segment ?? "").trim().toLowerCase() === segment.toLowerCase();
+}
+
+function normalizeWoOtcCode(value: string | number | null | undefined): string {
+  return String(value ?? "")
+    .trim()
+    .toUpperCase()
+    .replace(/[–—−]/g, "-")
+    .replace(/\s*-\s*/g, "-")
+    .replace(/\s+/g, " ");
+}
+
+function getWoOtcCodePrefix(value: string | number | null | undefined): string {
+  return normalizeWoOtcCode(value).match(/^[A-Z0-9]+/)?.[0] ?? "";
+}
+
+function isPrintInstallationCase(row: GeneratedReportResponse["rows"][number]): boolean {
+  return getWoOtcCodePrefix(row.output["WO OTC CODE"]) === PRINT_INSTALLATION_WO_OTC_CODE;
+}
+
+function isPrintCase(row: GeneratedReportResponse["rows"][number]): boolean {
+  return isSegmentCase(row, PRINT_SEGMENT) || isPrintInstallationCase(row);
+}
+
+function isPrintFixCase(row: GeneratedReportResponse["rows"][number]): boolean {
+  return isPrintCase(row) && !isPrintInstallationCase(row);
 }
 
 function isRcaCase(row: GeneratedReportResponse["rows"][number]): boolean {
@@ -553,6 +580,7 @@ export default function DashboardPage() {
   const [showCissOnly, setShowCissOnly] = useState(false);
   const [showRcaOnly, setShowRcaOnly] = useState(false);
   const [showClosedOnly, setShowClosedOnly] = useState(false);
+  const [printCaseFilter, setPrintCaseFilter] = useState<PrintCaseFilter | null>(null);
   const [workspaceView, setWorkspaceView] = useState<"overview" | "records">("overview");
 
   useEffect(() => {
@@ -562,6 +590,7 @@ export default function DashboardPage() {
     setShowCissOnly(false);
     setShowRcaOnly(false);
     setShowClosedOnly(false);
+    setPrintCaseFilter(null);
   }, [report?.reportId]);
 
   const cissRows = useMemo(() => {
@@ -576,7 +605,17 @@ export default function DashboardPage() {
 
   const printRows = useMemo(() => {
     if (!report) return [];
-    return report.rows.filter((row) => isSegmentCase(row, PRINT_SEGMENT));
+    return report.rows.filter(isPrintCase);
+  }, [report]);
+
+  const printInstallationRows = useMemo(() => {
+    if (!report) return [];
+    return report.rows.filter(isPrintInstallationCase);
+  }, [report]);
+
+  const printFixRows = useMemo(() => {
+    if (!report) return [];
+    return report.rows.filter(isPrintFixCase);
   }, [report]);
 
   const rcaRows = useMemo(() => {
@@ -589,13 +628,17 @@ export default function DashboardPage() {
 
     return report.regionBreakdown.map((entry) => {
       const rows = filterRowsByRegion(report.rows, entry.aspCode);
+      const regionPrintRows = rows.filter(isPrintCase);
+      const regionPrintInstallationRows = regionPrintRows.filter(isPrintInstallationCase);
 
       return {
         aspCode: entry.aspCode,
         regionName: entry.regionName,
         ciss: rows.filter(isCissCase).length,
         pc: rows.filter((row) => isSegmentCase(row, PC_SEGMENT)).length,
-        print: rows.filter((row) => isSegmentCase(row, PRINT_SEGMENT)).length,
+        print: regionPrintRows.length,
+        printInstallation: regionPrintInstallationRows.length,
+        printFix: regionPrintRows.length - regionPrintInstallationRows.length,
         rca: rows.filter(isRcaCase).length,
       };
     });
@@ -612,8 +655,23 @@ export default function DashboardPage() {
     if (showClosedOnly) return closedRows;
     if (showCissOnly) return cissRows;
     if (showRcaOnly) return rcaRows;
+    if (printCaseFilter === "all") return printRows;
+    if (printCaseFilter === "installation") return printInstallationRows;
+    if (printCaseFilter === "fix") return printFixRows;
     return report.rows;
-  }, [cissRows, closedRows, rcaRows, report, showCissOnly, showClosedOnly, showRcaOnly]);
+  }, [
+    cissRows,
+    closedRows,
+    printCaseFilter,
+    printFixRows,
+    printInstallationRows,
+    printRows,
+    rcaRows,
+    report,
+    showCissOnly,
+    showClosedOnly,
+    showRcaOnly,
+  ]);
 
   const regionFilteredRows = useMemo(() => {
     if (!report) return [];
@@ -1204,6 +1262,7 @@ export default function DashboardPage() {
     const hasCissFilter = showCissOnly;
     const hasRcaFilter = showRcaOnly;
     const hasClosedFilter = showClosedOnly;
+    const hasPrintFilter = printCaseFilter !== null;
     const isRtplRegionFiltered = selectedRtplRegion !== ALL_REGIONS_FILTER;
 
     let exportRows: ReportRow[] | null = null;
@@ -1217,6 +1276,15 @@ export default function DashboardPage() {
     } else if (hasRcaFilter) {
       const scopedRcaRows = scopedRows(rcaRows);
       exportRows = hasColumnFilter ? colFilters.filteredRows(scopedRcaRows) : scopedRcaRows;
+    } else if (hasPrintFilter) {
+      const printScopedRows =
+        printCaseFilter === "installation"
+          ? printInstallationRows
+          : printCaseFilter === "fix"
+            ? printFixRows
+            : printRows;
+      const scopedPrintRows = scopedRows(printScopedRows);
+      exportRows = hasColumnFilter ? colFilters.filteredRows(scopedPrintRows) : scopedPrintRows;
     } else if (isRtplRegionFiltered && !hasExistingExportFilter && !hasColumnFilter) {
       exportRows = rtplAnalyticsRows;
     } else if (hasExistingExportFilter || hasColumnFilter) {
@@ -1250,6 +1318,7 @@ export default function DashboardPage() {
     woOtcCode,
     rtplStatus,
     segment,
+    printCase = null,
     cissOnly = false,
     rcaOnly = false,
     closedOnly = false,
@@ -1258,6 +1327,7 @@ export default function DashboardPage() {
     woOtcCode?: string | null;
     rtplStatus?: string | null;
     segment?: string | null;
+    printCase?: PrintCaseFilter | null;
     cissOnly?: boolean;
     rcaOnly?: boolean;
     closedOnly?: boolean;
@@ -1267,6 +1337,7 @@ export default function DashboardPage() {
     setShowCissOnly(cissOnly);
     setShowRcaOnly(rcaOnly);
     setShowClosedOnly(closedOnly);
+    setPrintCaseFilter(printCase);
     setSelectedRtplRegion(region && region !== "ALL" ? region : ALL_REGIONS_FILTER);
     colFilters.resetAll();
     if (rtplStatus) {
@@ -1306,10 +1377,20 @@ export default function DashboardPage() {
     return `${values.size} segments`;
   })();
 
+  const selectedPrintCaseFilter =
+    printCaseFilter === "installation"
+      ? "Print installation"
+      : printCaseFilter === "fix"
+        ? "Print fix"
+        : printCaseFilter === "all"
+          ? "Print cases"
+          : null;
+
   const recordsFilterLabel = [
     showClosedOnly ? "Closed calls" : null,
     showCissOnly ? "CISS cases" : null,
     showRcaOnly ? "RCA cases" : null,
+    selectedPrintCaseFilter,
     selectedRegion && selectedRegion !== "ALL" ? selectedRegion : null,
     selectedWoOtcCode ? selectedWoOtcCode : null,
     selectedSegmentFilter,
@@ -1430,7 +1511,7 @@ export default function DashboardPage() {
                 <div className="sectionHeader">
                   <div>
                     <h3>Case Type Overview</h3>
-                    <p>CISS, PC, Print, and RCA cases separated from region and contract-code metrics.</p>
+                    <p>CISS, PC, Print, and RCA cases separated from region metrics; Print also shows Installation and Fix.</p>
                   </div>
                 </div>
                 <div className="caseTypeGrid">
@@ -1474,22 +1555,60 @@ export default function DashboardPage() {
                       ))}
                     </div>
                   </div>
-                  <div className="caseTypeCard">
-                    <button type="button" className="caseTypeSummary" onClick={() => openRecordsWithFilter({ segment: PRINT_SEGMENT })}>
+                  <div className={`caseTypeCard printCaseCard ${printCaseFilter ? "active" : ""}`}>
+                    <button type="button" className="caseTypeSummary" onClick={() => openRecordsWithFilter({ printCase: "all" })}>
                       <span>Print Cases</span>
                       <strong>{formatNumber(printRows.length)}</strong>
-                      <small>Segment is Print</small>
+                      <small>Installation = WO OTC 05F; Fix = remaining Print</small>
                     </button>
-                    <div className="caseTypeRegionList">
+                    <div className="printCaseSplit">
+                      <button
+                        type="button"
+                        className={`printCaseSplitButton installation ${printCaseFilter === "installation" ? "active" : ""}`}
+                        onClick={() => openRecordsWithFilter({ printCase: "installation" })}
+                      >
+                        <span>Installation</span>
+                        <strong>{formatNumber(printInstallationRows.length)}</strong>
+                      </button>
+                      <button
+                        type="button"
+                        className={`printCaseSplitButton fix ${printCaseFilter === "fix" ? "active" : ""}`}
+                        onClick={() => openRecordsWithFilter({ printCase: "fix" })}
+                      >
+                        <span>Fix</span>
+                        <strong>{formatNumber(printFixRows.length)}</strong>
+                      </button>
+                    </div>
+                    <div className="caseTypeRegionList printCaseRegionList">
                       {caseTypeRegionBreakdown.map((entry) => (
-                        <button
-                          type="button"
-                          key={entry.aspCode}
-                          onClick={() => openRecordsWithFilter({ region: entry.aspCode, segment: PRINT_SEGMENT })}
-                        >
-                          <span>{entry.regionName}</span>
-                          <strong>{entry.print}</strong>
-                        </button>
+                        <div className="printCaseRegionRow" key={entry.aspCode}>
+                          <button
+                            type="button"
+                            className="printCaseRegionTotal"
+                            onClick={() => openRecordsWithFilter({ region: entry.aspCode, printCase: "all" })}
+                          >
+                            <span>{entry.regionName}</span>
+                            <strong>{entry.print}</strong>
+                          </button>
+                          <button
+                            type="button"
+                            className="printCaseRegionSubtype installation"
+                            onClick={() => openRecordsWithFilter({ region: entry.aspCode, printCase: "installation" })}
+                            aria-label={`${entry.regionName} print installation cases`}
+                          >
+                            <span>Install</span>
+                            <strong>{entry.printInstallation}</strong>
+                          </button>
+                          <button
+                            type="button"
+                            className="printCaseRegionSubtype fix"
+                            onClick={() => openRecordsWithFilter({ region: entry.aspCode, printCase: "fix" })}
+                            aria-label={`${entry.regionName} print fix cases`}
+                          >
+                            <span>Fix</span>
+                            <strong>{entry.printFix}</strong>
+                          </button>
+                        </div>
                       ))}
                     </div>
                   </div>
@@ -1533,6 +1652,7 @@ export default function DashboardPage() {
                         setShowClosedOnly(false);
                         setShowCissOnly(false);
                         setShowRcaOnly(false);
+                        setPrintCaseFilter(null);
                         colFilters.resetAll();
                       }}
                       style={{ minHeight: '32px', padding: '0 12px', fontSize: '12px' }}
@@ -1811,6 +1931,16 @@ export default function DashboardPage() {
                     {filteredRows.length} of {regionFilteredRows.length} rows shown
                   </span>
                   <button type="button" onClick={() => setShowRcaOnly(false)}>Show All Cases</button>
+                </div>
+              )}
+              {printCaseFilter && (
+                <div className="colFilterSummary">
+                  <span>
+                    {selectedPrintCaseFilter} active
+                    {" Â· "}
+                    {filteredRows.length} of {regionFilteredRows.length} rows shown
+                  </span>
+                  <button type="button" onClick={() => setPrintCaseFilter(null)}>Show All Cases</button>
                 </div>
               )}
               {showClosedOnly && (

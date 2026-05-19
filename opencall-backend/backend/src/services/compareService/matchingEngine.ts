@@ -232,12 +232,14 @@ function buildEnrichedRow(
     input.slaHoursByWipAgingCategory,
     renderways?.wipAgingCategory,
   );
+  const caseCreatedTime = toIsoString(flexWip?.createTime);
+  const calculatedWipAging = calculateWipAging(caseCreatedTime);
 
   return {
     ticket_id: flexWip?.ticketId ?? renderways?.ticketId ?? callPlan?.ticketId ?? "",
     case_id: flexWip?.caseId ?? renderways?.caseId ?? "",
-    case_created_time: toIsoString(flexWip?.createTime),
-    wip_aging: calculateWipAging(toIsoString(flexWip?.createTime)) ?? renderways?.wipAging ?? null,
+    case_created_time: caseCreatedTime,
+    wip_aging: renderways?.wipAging ?? calculatedWipAging ?? null,
     rtpl_status: renderways?.rtplStatus ?? callPlan?.morningStatus ?? "",
     segment: getSegment(renderways?.productType, renderways?.callClassification),
     engineer: callPlan?.engineer ?? null,

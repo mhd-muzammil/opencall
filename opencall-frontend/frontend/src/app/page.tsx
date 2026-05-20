@@ -370,6 +370,37 @@ function countManualRequiredCells(rows: readonly ReportRow[]): number {
   }, 0);
 }
 
+function normalizeRecordSearchValue(value: unknown): string {
+  return String(value ?? "").trim().toLowerCase();
+}
+
+function rowMatchesRecordSearch(row: ReportRow, query: string): boolean {
+  const terms = query
+    .trim()
+    .toLowerCase()
+    .split(/\s+/)
+    .filter(Boolean);
+
+  if (terms.length === 0) {
+    return true;
+  }
+
+  const searchableText = [
+    row.serialNo,
+    row.comparison?.changeType,
+    ...DAILY_CALL_PLAN_COLUMNS.flatMap((column) => [
+      column,
+      row.output[column],
+    ]),
+    ...row.carryForward.carriedForwardFields,
+    ...row.carryForward.manualFieldsMissing,
+  ]
+    .map(normalizeRecordSearchValue)
+    .join(" ");
+
+  return terms.every((term) => searchableText.includes(term));
+}
+
 function ChangeTypeBadge({
   comparison,
 }: Readonly<{
@@ -581,6 +612,7 @@ export default function DashboardPage() {
   const [showRcaOnly, setShowRcaOnly] = useState(false);
   const [showClosedOnly, setShowClosedOnly] = useState(false);
   const [printCaseFilter, setPrintCaseFilter] = useState<PrintCaseFilter | null>(null);
+  const [recordsSearchQuery, setRecordsSearchQuery] = useState("");
   const [workspaceView, setWorkspaceView] = useState<"overview" | "records">("overview");
 
   useEffect(() => {
@@ -591,6 +623,7 @@ export default function DashboardPage() {
     setShowRcaOnly(false);
     setShowClosedOnly(false);
     setPrintCaseFilter(null);
+    setRecordsSearchQuery("");
   }, [report?.reportId]);
 
   const cissRows = useMemo(() => {
@@ -694,9 +727,14 @@ export default function DashboardPage() {
   }, [reportId]);
 
   // Final visible rows: region-filtered → column-filtered
-  const filteredRows = useMemo(
+  const columnFilteredRows = useMemo(
     () => colFilters.filteredRows(regionFilteredRows),
     [colFilters, regionFilteredRows],
+  );
+
+  const filteredRows = useMemo(
+    () => columnFilteredRows.filter((row) => rowMatchesRecordSearch(row, recordsSearchQuery)),
+    [columnFilteredRows, recordsSearchQuery],
   );
 
   const scopedClosedRows = useMemo(
@@ -1256,9 +1294,16 @@ export default function DashboardPage() {
         const matchCode = !selectedWoOtcCode || row.output["WO OTC CODE"] === selectedWoOtcCode;
         return matchRegion && matchCode;
       });
+    const applyActiveTableFilters = (rows: readonly ReportRow[]): ReportRow[] => {
+      const nextRows = colFilters.activeFilterCount > 0
+        ? colFilters.filteredRows(rows)
+        : [...rows];
+      return nextRows.filter((row) => rowMatchesRecordSearch(row, recordsSearchQuery));
+    };
 
     const hasExistingExportFilter = Boolean(selectedRegion || selectedWoOtcCode);
     const hasColumnFilter = colFilters.activeFilterCount > 0;
+    const hasRecordsSearchFilter = recordsSearchQuery.trim().length > 0;
     const hasCissFilter = showCissOnly;
     const hasRcaFilter = showRcaOnly;
     const hasClosedFilter = showClosedOnly;
@@ -1269,13 +1314,13 @@ export default function DashboardPage() {
 
     if (hasClosedFilter) {
       const scopedClosedRows = scopedRows(closedRows);
-      exportRows = hasColumnFilter ? colFilters.filteredRows(scopedClosedRows) : scopedClosedRows;
+      exportRows = applyActiveTableFilters(scopedClosedRows);
     } else if (hasCissFilter) {
       const scopedCissRows = scopedRows(cissRows);
-      exportRows = hasColumnFilter ? colFilters.filteredRows(scopedCissRows) : scopedCissRows;
+      exportRows = applyActiveTableFilters(scopedCissRows);
     } else if (hasRcaFilter) {
       const scopedRcaRows = scopedRows(rcaRows);
-      exportRows = hasColumnFilter ? colFilters.filteredRows(scopedRcaRows) : scopedRcaRows;
+      exportRows = applyActiveTableFilters(scopedRcaRows);
     } else if (hasPrintFilter) {
       const printScopedRows =
         printCaseFilter === "installation"
@@ -1284,10 +1329,10 @@ export default function DashboardPage() {
             ? printFixRows
             : printRows;
       const scopedPrintRows = scopedRows(printScopedRows);
-      exportRows = hasColumnFilter ? colFilters.filteredRows(scopedPrintRows) : scopedPrintRows;
-    } else if (isRtplRegionFiltered && !hasExistingExportFilter && !hasColumnFilter) {
+      exportRows = applyActiveTableFilters(scopedPrintRows);
+    } else if (isRtplRegionFiltered && !hasExistingExportFilter && !hasColumnFilter && !hasRecordsSearchFilter) {
       exportRows = rtplAnalyticsRows;
-    } else if (hasExistingExportFilter || hasColumnFilter) {
+    } else if (hasExistingExportFilter || hasColumnFilter || hasRecordsSearchFilter) {
       exportRows = filteredRows;
     }
 
@@ -1882,6 +1927,16 @@ export default function DashboardPage() {
                   Back to Dashboard
                 </button>
               </div>
+              <div className="recordsSearchBar">
+                <input
+                  id="records-search"
+                  type="search"
+                  value={recordsSearchQuery}
+                  aria-label="Search records"
+                  placeholder="Search WO, case ID, trade..."
+                  onChange={(event) => setRecordsSearchQuery(event.target.value)}
+                />
+              </div>
               {colFilters.activeFilterCount > 0 && (
                 <div className="colFilterSummary">
                   <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
@@ -1893,6 +1948,21 @@ export default function DashboardPage() {
                     {filteredRows.length} of {regionFilteredRows.length} rows shown
                   </span>
                   <button type="button" onClick={colFilters.resetAll}>Clear All Filters</button>
+                </div>
+              )}
+              {recordsSearchQuery && (
+                <div className="colFilterSummary">
+                  <span>
+                    Search "{recordsSearchQuery}" active
+                    {" - "}
+                    {filteredRows.length} of {columnFilteredRows.length} rows shown
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => setRecordsSearchQuery("")}
+                  >
+                    Clear Search
+                  </button>
                 </div>
               )}
               {(selectedRegion || selectedWoOtcCode) && (

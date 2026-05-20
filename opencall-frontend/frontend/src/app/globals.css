@@ -1606,6 +1606,17 @@ td.missingCell.carriedForwardCell {
   gap: 12px;
 }
 
+.recordsSearchBar {
+  width: min(440px, 100%);
+  margin: -4px 0 14px;
+}
+
+.recordsSearchBar input {
+  min-height: 38px;
+  border-radius: 6px;
+  background: #ffffff;
+}
+
 .backToDashboardButton {
   min-height: 50px;
   padding: 0 18px;

@@ -124,10 +124,12 @@ function computeRegionBreakdown(
       regionMap.set(aspCode, regionData);
     }
 
-    regionData.count++;
     if (row.carryForward.closedSyntheticRow) {
       regionData.closedCount++;
+      continue;
     }
+
+    regionData.count++;
     regionData.woOtcCodes.set(woCode, (regionData.woOtcCodes.get(woCode) ?? 0) + 1);
   }
 

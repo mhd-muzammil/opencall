@@ -626,41 +626,41 @@ export default function DashboardPage() {
     setRecordsSearchQuery("");
   }, [report?.reportId]);
 
-  const cissRows = useMemo(() => {
+  const activeRows = useMemo(() => {
     if (!report) return [];
-    return report.rows.filter(isCissCase);
+    return report.rows.filter((row) => !row.carryForward.closedSyntheticRow);
   }, [report]);
+
+  const cissRows = useMemo(() => {
+    return activeRows.filter(isCissCase);
+  }, [activeRows]);
 
   const pcRows = useMemo(() => {
     if (!report) return [];
-    return report.rows.filter((row) => isSegmentCase(row, PC_SEGMENT));
-  }, [report]);
+    return activeRows.filter((row) => isSegmentCase(row, PC_SEGMENT));
+  }, [activeRows, report]);
 
   const printRows = useMemo(() => {
-    if (!report) return [];
-    return report.rows.filter(isPrintCase);
-  }, [report]);
+    return activeRows.filter(isPrintCase);
+  }, [activeRows]);
 
   const printInstallationRows = useMemo(() => {
-    if (!report) return [];
-    return report.rows.filter(isPrintInstallationCase);
-  }, [report]);
+    return activeRows.filter(isPrintInstallationCase);
+  }, [activeRows]);
 
   const printFixRows = useMemo(() => {
-    if (!report) return [];
-    return report.rows.filter(isPrintFixCase);
-  }, [report]);
+    return activeRows.filter(isPrintFixCase);
+  }, [activeRows]);
 
   const rcaRows = useMemo(() => {
-    if (!report) return [];
-    return report.rows.filter(isRcaCase);
-  }, [report]);
+    return activeRows.filter(isRcaCase);
+  }, [activeRows]);
 
   const caseTypeRegionBreakdown = useMemo(() => {
     if (!report) return [];
 
     return report.regionBreakdown.map((entry) => {
-      const rows = filterRowsByRegion(report.rows, entry.aspCode);
+      const rows = filterRowsByRegion(activeRows, entry.aspCode);
       const regionPrintRows = rows.filter(isPrintCase);
       const regionPrintInstallationRows = regionPrintRows.filter(isPrintInstallationCase);
 
@@ -691,8 +691,9 @@ export default function DashboardPage() {
     if (printCaseFilter === "all") return printRows;
     if (printCaseFilter === "installation") return printInstallationRows;
     if (printCaseFilter === "fix") return printFixRows;
-    return report.rows;
+    return activeRows;
   }, [
+    activeRows,
     cissRows,
     closedRows,
     printCaseFilter,
@@ -700,7 +701,6 @@ export default function DashboardPage() {
     printInstallationRows,
     printRows,
     rcaRows,
-    report,
     showCissOnly,
     showClosedOnly,
     showRcaOnly,
@@ -738,8 +738,16 @@ export default function DashboardPage() {
   );
 
   const scopedClosedRows = useMemo(
-    () => regionFilteredRows.filter((row) => row.carryForward.closedSyntheticRow),
-    [regionFilteredRows],
+    () =>
+      closedRows.filter((row) => {
+        const matchRegion =
+          selectedRegion === "ALL" ||
+          !selectedRegion ||
+          row.output["Work Location"] === selectedRegion;
+        const matchCode = !selectedWoOtcCode || row.output["WO OTC CODE"] === selectedWoOtcCode;
+        return matchRegion && matchCode;
+      }),
+    [closedRows, selectedRegion, selectedWoOtcCode],
   );
 
   const scopedManualCellCount = useMemo(
@@ -778,19 +786,19 @@ export default function DashboardPage() {
     if (!report) return [];
 
     return [
-      { value: ALL_REGIONS_FILTER, label: "All", count: report.rows.length },
+      { value: ALL_REGIONS_FILTER, label: "All", count: activeRows.length },
       ...report.regionBreakdown.map((entry) => ({
         value: entry.aspCode,
         label: entry.regionName,
         count: entry.count,
       })),
     ];
-  }, [report]);
+  }, [activeRows.length, report]);
 
   const rtplAnalyticsRows = useMemo(() => {
     if (!report) return [];
-    return filterRowsByRegion(report.rows, selectedRtplRegion);
-  }, [report, selectedRtplRegion]);
+    return filterRowsByRegion(activeRows, selectedRtplRegion);
+  }, [activeRows, report, selectedRtplRegion]);
 
   const rtplStatusMetrics = useMemo(
     () => buildRtplOperationalAnalytics(rtplAnalyticsRows),
@@ -1445,9 +1453,9 @@ export default function DashboardPage() {
   const overviewMetrics: MetricsGridItem[] = report
     ? [
         {
-          label: "Total Records",
-          value: report.totalRows,
-          detail: "Open all records",
+          label: "Today Calls",
+          value: activeRows.length,
+          detail: "Open active records",
           onClick: () => openRecordsWithFilter({ region: null }),
         },
         {
@@ -1713,7 +1721,7 @@ export default function DashboardPage() {
                     style={{ cursor: "pointer", border: "2px solid var(--accent)", background: "var(--accent-tint)" }}
                   >
                     <div className="regionMetricHeader">
-                        <div className="regionMetricValue">{report.rows.length}</div>
+                        <div className="regionMetricValue">{activeRows.length}</div>
                       <div className="regionMetricLabel">ALL REGIONS</div>
                       <div className="regionMetricSubtext">GLOBAL</div>
                     </div>
@@ -1737,7 +1745,7 @@ export default function DashboardPage() {
                     )}
                   </div>
 
-                  {report.regionBreakdown.map((entry) => (
+                  {report.regionBreakdown.filter((entry) => entry.count > 0).map((entry) => (
                     <div 
                       key={entry.aspCode} 
                       className={`regionMetric ${selectedRegion === entry.aspCode && !selectedWoOtcCode ? "active" : ""}`}

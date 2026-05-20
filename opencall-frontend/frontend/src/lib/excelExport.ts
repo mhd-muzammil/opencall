@@ -119,6 +119,28 @@ export function buildReportExportMatrix(
   return data;
 }
 
+function buildReportExportMatrixForRows(
+  rows: readonly GeneratedReportResponse["rows"][number][],
+): ExportCellValue[][] {
+  return [
+    [...STANDARD_EXPORT_COLUMNS],
+    ...rows.map(mapRowToStandardExport),
+  ];
+}
+
+export function buildWorkbookExportMatrices(report: GeneratedReportResponse): {
+  todayCallPlan: ExportCellValue[][];
+  closure: ExportCellValue[][];
+} {
+  const activeRows = report.rows.filter((row) => !row.carryForward.closedSyntheticRow);
+  const closedRows = report.rows.filter((row) => row.carryForward.closedSyntheticRow);
+
+  return {
+    todayCallPlan: buildReportExportMatrixForRows(activeRows),
+    closure: buildReportExportMatrixForRows(closedRows),
+  };
+}
+
 export function downloadReportAsExcel(report: GeneratedReportResponse): void {
   const data = buildReportExportMatrix(report);
   const escapeCSV = (
@@ -151,16 +173,19 @@ export function downloadReportAsExcel(report: GeneratedReportResponse): void {
 }
 
 export function downloadReportAsXlsx(report: GeneratedReportResponse): void {
-  const data = buildReportExportMatrix(report);
-  const headers = data[0] ?? [];
+  const { todayCallPlan, closure } = buildWorkbookExportMatrices(report);
+  const headers = todayCallPlan[0] ?? [];
 
   const wb = XLSX.utils.book_new();
-  const ws = XLSX.utils.aoa_to_sheet(data);
+  const todayCallPlanSheet = XLSX.utils.aoa_to_sheet(todayCallPlan);
+  const closureSheet = XLSX.utils.aoa_to_sheet(closure);
 
   // Auto-size columns slightly
-  ws["!cols"] = headers.map(() => ({ wch: 20 }));
+  todayCallPlanSheet["!cols"] = headers.map(() => ({ wch: 20 }));
+  closureSheet["!cols"] = headers.map(() => ({ wch: 20 }));
 
-  XLSX.utils.book_append_sheet(wb, ws, "Daily Call Plan");
+  XLSX.utils.book_append_sheet(wb, todayCallPlanSheet, "Today Call Plan");
+  XLSX.utils.book_append_sheet(wb, closureSheet, "closure");
 
   const date = report.reportDate || new Date().toISOString().split("T")[0];
   XLSX.writeFile(wb, `Daily_Call_Plan_${date}.xlsx`);

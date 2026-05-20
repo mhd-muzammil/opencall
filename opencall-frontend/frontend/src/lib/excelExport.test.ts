@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import type { GeneratedReportResponse } from "./apiClient";
 import {
   buildReportExportMatrix,
+  buildWorkbookExportMatrices,
   EXPORT_METADATA_COLUMNS,
   STANDARD_EXPORT_COLUMNS,
 } from "./excelExport";
@@ -163,5 +164,16 @@ describe("buildReportExportMatrix", () => {
     expect(closedRow?.[4]).toBe("5");
     expect(closedRow?.[5]).toBe("Pending");
     expect(closedRow?.[11]).toBe("Open");
+  });
+
+  it("splits xlsx workbook data into today call plan and closure sheets", () => {
+    const { todayCallPlan, closure } = buildWorkbookExportMatrices(reportFixture());
+
+    expect(todayCallPlan[0]).toEqual([...STANDARD_EXPORT_COLUMNS]);
+    expect(closure[0]).toEqual([...STANDARD_EXPORT_COLUMNS]);
+    expect(todayCallPlan).toHaveLength(2);
+    expect(closure).toHaveLength(2);
+    expect(todayCallPlan[1]?.[1]).toBe("WO-123");
+    expect(closure[1]?.[1]).toBe("WO-999");
   });
 });

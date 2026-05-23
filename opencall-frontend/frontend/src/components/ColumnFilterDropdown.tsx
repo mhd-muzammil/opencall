@@ -39,18 +39,16 @@ export function ColumnFilterDropdown({
 }: ColumnFilterDropdownProps) {
   const wrapperRef = useRef<HTMLDivElement>(null);
   const [search, setSearch] = useState("");
-  const [draftSelection, setDraftSelection] = useState<Set<string> | null>(null);
   const [wipAgingValueSort, setWipAgingValueSort] =
     useState<WipAgingSortDirection>("lowToHigh");
   const isWipAgingColumn = column === "WIP aging";
 
   useEffect(() => {
     if (isOpen) {
-      setDraftSelection(selectedValues ? new Set(selectedValues) : null);
       setSearch("");
       setWipAgingValueSort(wipAgingSort ?? "lowToHigh");
     }
-  }, [isOpen, selectedValues, wipAgingSort]);
+  }, [isOpen, wipAgingSort]);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -101,44 +99,41 @@ export function ColumnFilterDropdown({
 
   const toggleDraft = useCallback(
     (value: string) => {
-      setDraftSelection((prev) => {
-        const next = new Set(prev ?? uniqueValues.map((entry) => entry.value));
-        if (next.has(value)) {
-          next.delete(value);
-        } else {
-          next.add(value);
-        }
-        return next;
-      });
+      const allValues = uniqueValues.map((entry) => entry.value);
+      const next = new Set(selectedValues ?? allValues);
+
+      if (next.has(value)) {
+        next.delete(value);
+      } else {
+        next.add(value);
+      }
+
+      if (next.size === allValues.length) {
+        onSelectAll(column);
+        return;
+      }
+
+      onApply(column, next);
     },
-    [uniqueValues],
+    [column, onApply, onSelectAll, selectedValues, uniqueValues],
   );
 
   const selectAllDraft = useCallback(() => {
-    setDraftSelection(null);
-  }, []);
+    onSelectAll(column);
+  }, [column, onSelectAll]);
 
   const unselectAllDraft = useCallback(() => {
-    setDraftSelection(new Set());
-  }, []);
+    onApply(column, new Set());
+  }, [column, onApply]);
 
   const selectWipRangeDraft = useCallback(
     (min: number, max: number) => {
-      setDraftSelection(selectWipAgingRangeValues(uniqueValues, min, max));
+      onApply(column, selectWipAgingRangeValues(uniqueValues, min, max));
     },
-    [uniqueValues],
+    [column, onApply, uniqueValues],
   );
 
-  const handleApply = useCallback(() => {
-    if (draftSelection === null) {
-      onSelectAll(column);
-    } else {
-      onApply(column, draftSelection);
-    }
-    onClose();
-  }, [column, draftSelection, onApply, onClose, onSelectAll]);
-
-  const isAllSelected = draftSelection === null;
+  const isAllSelected = !selectedValues;
   const totalUniqueCount = uniqueValues.length;
 
   return (
@@ -246,7 +241,7 @@ export function ColumnFilterDropdown({
 
             {visibleEntries.map((entry) => {
               const checked =
-                isAllSelected || Boolean(draftSelection?.has(entry.value));
+                isAllSelected || Boolean(selectedValues?.has(entry.value));
               return (
                 <label className="colFilterItem" key={entry.value}>
                   <input
@@ -286,13 +281,6 @@ export function ColumnFilterDropdown({
               onClick={() => setSearch("")}
             >
               Clear
-            </button>
-            <button
-              type="button"
-              className="colFilterActionBtn primary"
-              onClick={handleApply}
-            >
-              Apply
             </button>
           </div>
         </div>

@@ -36,9 +36,11 @@ import { LoginScreen, SessionLoadingScreen } from "../features/auth/LoginScreen"
 import { downloadReportAsXlsx, downloadReportAsExcel } from "../lib/excelExport";
 import {
   ALL_REGIONS_FILTER,
+  buildFlexOperationalAnalytics,
   buildOverallWoOtcBreakdown,
   buildRtplOperationalAnalytics,
   filterRowsByRegion,
+  isTodayCallPlanVisibleRow,
   reportWithRows,
 } from "../lib/reportDashboardAnalytics";
 
@@ -628,7 +630,7 @@ export default function DashboardPage() {
 
   const activeRows = useMemo(() => {
     if (!report) return [];
-    return report.rows.filter((row) => !row.carryForward.closedSyntheticRow);
+    return report.rows.filter(isTodayCallPlanVisibleRow);
   }, [report]);
 
   const cissRows = useMemo(() => {
@@ -656,10 +658,53 @@ export default function DashboardPage() {
     return activeRows.filter(isRcaCase);
   }, [activeRows]);
 
+  const activeRegionBreakdown = useMemo(() => {
+    if (!report) return [];
+
+    const regionMetadata = new Map(
+      report.regionBreakdown.map((entry) => [
+        entry.aspCode,
+        {
+          aspCode: entry.aspCode,
+          regionName: entry.regionName,
+          closedCount: entry.closedCount,
+        },
+      ]),
+    );
+    const regionCounts = new Map<string, { count: number; woOtcCodes: Map<string, number> }>();
+
+    for (const row of activeRows) {
+      const aspCode = String(row.output["Work Location"] || "UNKNOWN").trim().toUpperCase() || "UNKNOWN";
+      const woOtcCode = String(row.output["WO OTC CODE"] || "Unspecified").trim() || "Unspecified";
+      const current =
+        regionCounts.get(aspCode) ?? { count: 0, woOtcCodes: new Map<string, number>() };
+
+      current.count += 1;
+      current.woOtcCodes.set(woOtcCode, (current.woOtcCodes.get(woOtcCode) ?? 0) + 1);
+      regionCounts.set(aspCode, current);
+    }
+
+    return Array.from(regionCounts.entries())
+      .map(([aspCode, entry]) => {
+        const metadata = regionMetadata.get(aspCode);
+
+        return {
+          aspCode,
+          regionName: metadata?.regionName ?? "Unknown Region",
+          count: entry.count,
+          closedCount: metadata?.closedCount ?? 0,
+          woOtcCodeBreakdown: Array.from(entry.woOtcCodes.entries())
+            .map(([code, count]) => ({ code, count }))
+            .sort((a, b) => b.count - a.count || a.code.localeCompare(b.code)),
+        };
+      })
+      .sort((a, b) => b.count - a.count || a.regionName.localeCompare(b.regionName));
+  }, [activeRows, report]);
+
   const caseTypeRegionBreakdown = useMemo(() => {
     if (!report) return [];
 
-    return report.regionBreakdown.map((entry) => {
+    return activeRegionBreakdown.map((entry) => {
       const rows = filterRowsByRegion(activeRows, entry.aspCode);
       const regionPrintRows = rows.filter(isPrintCase);
       const regionPrintInstallationRows = regionPrintRows.filter(isPrintInstallationCase);
@@ -675,7 +720,7 @@ export default function DashboardPage() {
         rca: rows.filter(isRcaCase).length,
       };
     });
-  }, [report]);
+  }, [activeRegionBreakdown, activeRows, report]);
 
 
   const closedRows = useMemo(() => {
@@ -757,8 +802,8 @@ export default function DashboardPage() {
 
   const overallWoOtcBreakdown = useMemo(() => {
     if (!report) return [];
-    return buildOverallWoOtcBreakdown(report.regionBreakdown);
-  }, [report]);
+    return buildOverallWoOtcBreakdown(activeRegionBreakdown);
+  }, [activeRegionBreakdown, report]);
 
   const overallClosedCount = useMemo(() => {
     if (!report) return 0;
@@ -787,13 +832,13 @@ export default function DashboardPage() {
 
     return [
       { value: ALL_REGIONS_FILTER, label: "All", count: activeRows.length },
-      ...report.regionBreakdown.map((entry) => ({
+      ...activeRegionBreakdown.map((entry) => ({
         value: entry.aspCode,
         label: entry.regionName,
         count: entry.count,
       })),
     ];
-  }, [activeRows.length, report]);
+  }, [activeRegionBreakdown, activeRows.length, report]);
 
   const rtplAnalyticsRows = useMemo(() => {
     if (!report) return [];
@@ -802,6 +847,11 @@ export default function DashboardPage() {
 
   const rtplStatusMetrics = useMemo(
     () => buildRtplOperationalAnalytics(rtplAnalyticsRows),
+    [rtplAnalyticsRows],
+  );
+
+  const flexStatusMetrics = useMemo(
+    () => buildFlexOperationalAnalytics(rtplAnalyticsRows),
     [rtplAnalyticsRows],
   );
 
@@ -1370,6 +1420,7 @@ export default function DashboardPage() {
     region,
     woOtcCode,
     rtplStatus,
+    flexStatus,
     segment,
     printCase = null,
     cissOnly = false,
@@ -1379,6 +1430,7 @@ export default function DashboardPage() {
     region?: string | null;
     woOtcCode?: string | null;
     rtplStatus?: string | null;
+    flexStatus?: string | null;
     segment?: string | null;
     printCase?: PrintCaseFilter | null;
     cissOnly?: boolean;
@@ -1395,6 +1447,9 @@ export default function DashboardPage() {
     colFilters.resetAll();
     if (rtplStatus) {
       colFilters.setColumnFilter("RTPL status", new Set([rtplStatus]));
+    }
+    if (flexStatus) {
+      colFilters.setColumnFilter("Flex Status", new Set([flexStatus]));
     }
     if (segment) {
       colFilters.setColumnFilter("Segment", new Set([segment]));
@@ -1414,6 +1469,20 @@ export default function DashboardPage() {
     }
 
     return `${values.size} RTPL statuses`;
+  })();
+
+  const selectedFlexStatusFilter = (() => {
+    const values = colFilters.filters["Flex Status"];
+
+    if (!values || values.size === 0) {
+      return null;
+    }
+
+    if (values.size === 1) {
+      return Array.from(values)[0];
+    }
+
+    return `${values.size} Flex statuses`;
   })();
 
   const selectedSegmentFilter = (() => {
@@ -1448,6 +1517,7 @@ export default function DashboardPage() {
     selectedWoOtcCode ? selectedWoOtcCode : null,
     selectedSegmentFilter,
     selectedRtplStatusFilter,
+    selectedFlexStatusFilter,
   ].filter(Boolean).join(" / ");
 
   const overviewMetrics: MetricsGridItem[] = report
@@ -1745,7 +1815,7 @@ export default function DashboardPage() {
                     )}
                   </div>
 
-                  {report.regionBreakdown.filter((entry) => entry.count > 0).map((entry) => (
+                  {activeRegionBreakdown.filter((entry) => entry.count > 0).map((entry) => (
                     <div 
                       key={entry.aspCode} 
                       className={`regionMetric ${selectedRegion === entry.aspCode && !selectedWoOtcCode ? "active" : ""}`}
@@ -1869,6 +1939,60 @@ export default function DashboardPage() {
                 ) : (
                   <div className="rtplEmptyState">
                     No RTPL statuses for the selected region.
+                  </div>
+                )}
+              </div>
+
+              <div className="rtplAnalyticsSection">
+                <div className="sectionHeader rtplAnalyticsHeader">
+                  <div>
+                    <h3>Flex Operational Analytics</h3>
+                  </div>
+                  <span className="statusBadge neutral">
+                    {rtplAnalyticsRows.length} rows
+                  </span>
+                </div>
+
+                <div className="regionFilterTabs" aria-label="Flex analytics region filter">
+                  {rtplRegionOptions.map((option) => (
+                    <button
+                      key={option.value}
+                      type="button"
+                      className={`regionFilterTab ${selectedRtplRegion === option.value ? "active" : ""}`}
+                      onClick={() => setSelectedRtplRegion(option.value)}
+                    >
+                      <span>{option.label}</span>
+                      <strong>{option.count}</strong>
+                    </button>
+                  ))}
+                </div>
+
+                {flexStatusMetrics.length > 0 ? (
+                  <div className="rtplMetricGrid">
+                    {flexStatusMetrics.map((metric) => (
+                      <button
+                        className="rtplMetricCard"
+                        key={metric.status}
+                        type="button"
+                        onClick={() =>
+                          openRecordsWithFilter({
+                            region:
+                              selectedRtplRegion === ALL_REGIONS_FILTER
+                                ? null
+                                : selectedRtplRegion,
+                            flexStatus: metric.status,
+                          })
+                        }
+                        title={`Open ${metric.status} records`}
+                      >
+                        <span>{metric.status}</span>
+                        <strong>{metric.count}</strong>
+                      </button>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="rtplEmptyState">
+                    No Flex statuses for the selected region.
                   </div>
                 )}
               </div>

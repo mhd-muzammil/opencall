@@ -176,4 +176,25 @@ describe("buildReportExportMatrix", () => {
     expect(todayCallPlan[1]?.[1]).toBe("WO-123");
     expect(closure[1]?.[1]).toBe("WO-999");
   });
+
+  it("excludes Request to Cancel flex rows from exports", () => {
+    const report = reportFixture();
+    report.rows.push({
+      ...report.rows[0]!,
+      id: "row-3",
+      serialNo: 3,
+      output: outputRow({
+        "S.no": 3,
+        "Ticket ID": "WO-CANCEL",
+        "Flex Status": "Request to Cancel",
+      }),
+    });
+
+    const matrix = buildReportExportMatrix(report);
+    const { todayCallPlan, closure } = buildWorkbookExportMatrices(report);
+
+    expect(matrix.flat()).not.toContain("WO-CANCEL");
+    expect(todayCallPlan.flat()).not.toContain("WO-CANCEL");
+    expect(closure.flat()).not.toContain("WO-CANCEL");
+  });
 });

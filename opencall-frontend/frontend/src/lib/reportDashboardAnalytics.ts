@@ -18,6 +18,28 @@ function cleanedString(value: unknown): string {
   return String(value ?? "").trim();
 }
 
+function normalizeFlexStatus(value: unknown): string {
+  return cleanedString(value).replace(/\s+/g, " ").toLowerCase();
+}
+
+export function isRequestToCancelFlexStatus(value: unknown): boolean {
+  return normalizeFlexStatus(value) === "request to cancel";
+}
+
+export function hasRequestToCancelFlexStatus(row: ReportRow): boolean {
+  return (
+    isRequestToCancelFlexStatus(row.output["Flex Status"]) ||
+    isRequestToCancelFlexStatus(row.comparison?.previousFlexStatus)
+  );
+}
+
+export function isTodayCallPlanVisibleRow(row: ReportRow): boolean {
+  return (
+    !row.carryForward.closedSyntheticRow &&
+    !hasRequestToCancelFlexStatus(row)
+  );
+}
+
 export function buildOverallWoOtcBreakdown(
   regionBreakdown: GeneratedReportResponse["regionBreakdown"],
 ): WoOtcBreakdownEntry[] {
@@ -48,12 +70,25 @@ export function filterRowsByRegion(
 export function buildRtplOperationalAnalytics(
   rows: readonly ReportRow[],
 ): RtplStatusMetric[] {
+  return buildStatusAnalytics(rows, "RTPL status");
+}
+
+export function buildFlexOperationalAnalytics(
+  rows: readonly ReportRow[],
+): RtplStatusMetric[] {
+  return buildStatusAnalytics(rows, "Flex Status");
+}
+
+function buildStatusAnalytics(
+  rows: readonly ReportRow[],
+  column: string,
+): RtplStatusMetric[] {
   const counts = new Map<string, number>();
 
   for (const row of rows) {
-    const status = cleanedString(row.output["RTPL status"]);
+    const status = cleanedString(row.output[column]);
 
-    if (!status || status === "Manual Entry Required") {
+    if (!status) {
       continue;
     }
 

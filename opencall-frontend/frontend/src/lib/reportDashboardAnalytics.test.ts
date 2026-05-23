@@ -2,9 +2,11 @@ import { DAILY_CALL_PLAN_COLUMNS } from "@opencall/shared";
 import { describe, expect, it } from "vitest";
 import type { GeneratedReportResponse } from "./apiClient";
 import {
+  buildFlexOperationalAnalytics,
   buildOverallWoOtcBreakdown,
   buildRtplOperationalAnalytics,
   filterRowsByRegion,
+  isTodayCallPlanVisibleRow,
   reportWithRows,
 } from "./reportDashboardAnalytics";
 
@@ -100,16 +102,19 @@ function reportFixture(): GeneratedReportResponse {
       row(1, {
         "Ticket ID": "WO-1",
         "Work Location": "ASPS01461",
+        "Flex Status": "Open",
         "RTPL status": "Completed",
       }),
       row(2, {
         "Ticket ID": "WO-2",
         "Work Location": "ASPS01461",
+        "Flex Status": "Assigned",
         "RTPL status": "Hold",
       }),
       row(3, {
         "Ticket ID": "WO-3",
         "Work Location": "UNKNOWN",
+        "Flex Status": "Open",
         "RTPL status": "Completed",
       }),
     ],
@@ -137,6 +142,24 @@ describe("reportDashboardAnalytics", () => {
     expect(metrics).toEqual([
       { status: "Completed", count: 2 },
       { status: "Hold", count: 1 },
+      { status: "Manual Entry Required", count: 1 },
+    ]);
+  });
+
+  it("builds dynamic Flex metrics from real row statuses only", () => {
+    const metrics = buildFlexOperationalAnalytics([
+      ...reportFixture().rows,
+      row(4, {
+        "Ticket ID": "WO-4",
+        "Work Location": "ASPS01461",
+        "Flex Status": "Engg Assigned",
+      }),
+    ]);
+
+    expect(metrics).toEqual([
+      { status: "Open", count: 2 },
+      { status: "Assigned", count: 1 },
+      { status: "Engg Assigned", count: 1 },
     ]);
   });
 
@@ -151,5 +174,19 @@ describe("reportDashboardAnalytics", () => {
     ]);
     expect(exportReport.totalRows).toBe(2);
     expect(exportReport.regionBreakdown).toBe(report.regionBreakdown);
+  });
+
+  it("removes Request to Cancel flex statuses from today call-plan visibility", () => {
+    const visibleRow = row(1, {
+      "Ticket ID": "WO-1",
+      "Flex Status": "Open",
+    });
+    const requestToCancelRow = row(2, {
+      "Ticket ID": "WO-2",
+      "Flex Status": " request   TO   cancel ",
+    });
+
+    expect(isTodayCallPlanVisibleRow(visibleRow)).toBe(true);
+    expect(isTodayCallPlanVisibleRow(requestToCancelRow)).toBe(false);
   });
 });

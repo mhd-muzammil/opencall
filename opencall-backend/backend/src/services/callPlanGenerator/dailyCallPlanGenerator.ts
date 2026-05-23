@@ -31,6 +31,7 @@ import type {
   GeneratedDailyCallPlanReport,
   GeneratedDailyCallPlanRow,
   GenerateDailyCallPlanInput,
+  ManualCarryForwardSummary,
   ManualCarryForwardRowMetadata,
 } from "../../types/reportGeneration.js";
 import { MANUAL_CARRY_FORWARD_FIELDS } from "../../types/reportGeneration.js";
@@ -48,6 +49,7 @@ import {
   formatDailyCallPlanRow,
   orderedDailyCallPlanRow,
 } from "./dailyCallPlanFormatter.js";
+import { isRequestToCancelFlexStatus } from "./flexStatusRules.js";
 import { manualFieldCarryForwardService } from "./manualFieldCarryForwardService.js";
 import { validateReportGenerationTransaction } from "./reportGenerationValidation.js";
 import { calculateWipAging } from "../compareService/wipAgingCalculator.js";
@@ -209,6 +211,51 @@ function activeRowsForComparison(
   rows: readonly GeneratedDailyCallPlanRow[],
 ): GeneratedDailyCallPlanRow[] {
   return rows.filter((row) => !row.carryForward.closedSyntheticRow);
+}
+
+function isTodayCallPlanRow(row: GeneratedDailyCallPlanRow): boolean {
+  return !isRequestToCancelFlexStatus(row.enriched.flex_status);
+}
+
+function reserialiseRows(
+  rows: readonly GeneratedDailyCallPlanRow[],
+): GeneratedDailyCallPlanRow[] {
+  return rows.map((row, index) => {
+    const serialNo = index + 1;
+
+    return {
+      ...row,
+      serialNo,
+      output: orderedDailyCallPlanRow({
+        ...formatDailyCallPlanRow(serialNo, row.enriched),
+        ...row.output,
+        "S.no": serialNo,
+      }),
+    };
+  });
+}
+
+function summarizeCarryForward(
+  rows: readonly GeneratedDailyCallPlanRow[],
+): ManualCarryForwardSummary {
+  return rows.reduce(
+    (summary, row) => {
+      summary.totalFieldsCarried += row.carryForward.carriedForwardFields.length;
+
+      if (row.carryForward.manualFieldsMissing.length > 0) {
+        summary.rowsStillManual += 1;
+      } else if (row.carryForward.carriedForwardFields.length > 0) {
+        summary.rowsAutoCompleted += 1;
+      }
+
+      return summary;
+    },
+    {
+      totalFieldsCarried: 0,
+      rowsAutoCompleted: 0,
+      rowsStillManual: 0,
+    },
+  );
 }
 
 function getRenderwaysWipAging(row: GeneratedDailyCallPlanRow): string | null {
@@ -393,7 +440,8 @@ export async function generateDailyCallPlanReport(
       currentRows: generatedRows,
       previousFinalRows,
     });
-    const rows = carryForwardResult.rows;
+    const rows = reserialiseRows(carryForwardResult.rows.filter(isTodayCallPlanRow));
+    const carryForwardSummary = summarizeCarryForward(rows);
     const duplicateTicketCount = countDuplicateTickets(rows);
     const unmatchedTicketCount = countUnmatchedRows(rows);
     
@@ -495,7 +543,7 @@ export async function generateDailyCallPlanReport(
       duplicateTicketCount,
       unmatchedTicketCount,
       duplicateTracking,
-      carryForward: carryForwardResult.summary,
+      carryForward: carryForwardSummary,
       comparison,
       regionBreakdown: computeRegionBreakdown(rows),
       rows,

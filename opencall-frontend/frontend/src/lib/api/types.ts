@@ -149,6 +149,8 @@ export interface GeneratedReportResponse {
   }>;
 }
 
+export type ReportRow = GeneratedReportResponse["rows"][number];
+
 export interface EditedReportRowResponse {
   id: string;
   reportId: string;

@@ -6,6 +6,7 @@ export type {
   LoginResponse,
   MatchPreviewResponse,
   ReportHistorySession,
+  ReportRow,
   RuntimeHealthResponse,
   UploadBatch,
   UploadResponse,

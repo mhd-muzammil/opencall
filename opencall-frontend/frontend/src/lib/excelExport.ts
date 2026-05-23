@@ -1,5 +1,9 @@
 import { DAILY_CALL_PLAN_COLUMNS } from "@opencall/shared";
 import type { GeneratedReportResponse } from "./apiClient";
+import {
+  hasRequestToCancelFlexStatus,
+  isTodayCallPlanVisibleRow,
+} from "./reportDashboardAnalytics";
 import * as XLSX from "xlsx";
 
 const MANUAL_ENTRY_REQUIRED = "Manual Entry Required";
@@ -112,7 +116,7 @@ export function buildReportExportMatrix(
   const headers = [...STANDARD_EXPORT_COLUMNS];
   const data: ExportCellValue[][] = [headers];
 
-  for (const row of report.rows) {
+  for (const row of report.rows.filter((item) => !hasRequestToCancelFlexStatus(item))) {
     data.push(mapRowToStandardExport(row));
   }
 
@@ -132,8 +136,12 @@ export function buildWorkbookExportMatrices(report: GeneratedReportResponse): {
   todayCallPlan: ExportCellValue[][];
   closure: ExportCellValue[][];
 } {
-  const activeRows = report.rows.filter((row) => !row.carryForward.closedSyntheticRow);
-  const closedRows = report.rows.filter((row) => row.carryForward.closedSyntheticRow);
+  const activeRows = report.rows.filter(isTodayCallPlanVisibleRow);
+  const closedRows = report.rows.filter(
+    (row) =>
+      row.carryForward.closedSyntheticRow &&
+      !hasRequestToCancelFlexStatus(row),
+  );
 
   return {
     todayCallPlan: buildReportExportMatrixForRows(activeRows),

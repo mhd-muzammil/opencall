@@ -2,6 +2,8 @@ import { describe, it, expect } from "vitest";
 import {
   normalizeFilterValue,
   extractUniqueValues,
+  selectWipAgingRangeValues,
+  sortWipAgingFilterValues,
   buildUniqueValuesMap,
   rowPassesFilters,
   applyColumnFilters,
@@ -85,6 +87,43 @@ describe("extractUniqueValues", () => {
 
   it("returns empty array for no rows", () => {
     expect(extractUniqueValues([], "Segment")).toEqual([]);
+  });
+});
+
+describe("WIP aging filter helpers", () => {
+  const entries = [
+    { value: "10", count: 1 },
+    { value: "2", count: 1 },
+    { value: "0", count: 1 },
+    { value: "5", count: 1 },
+    { value: "(blank)", count: 1 },
+  ];
+
+  it("sorts WIP aging values numerically low to high", () => {
+    expect(sortWipAgingFilterValues(entries, "lowToHigh").map((entry) => entry.value)).toEqual([
+      "0",
+      "2",
+      "5",
+      "10",
+      "(blank)",
+    ]);
+  });
+
+  it("sorts WIP aging values numerically high to low", () => {
+    expect(sortWipAgingFilterValues(entries, "highToLow").map((entry) => entry.value)).toEqual([
+      "10",
+      "5",
+      "2",
+      "0",
+      "(blank)",
+    ]);
+  });
+
+  it("selects WIP aging values inside an inclusive range", () => {
+    expect(Array.from(selectWipAgingRangeValues(entries, 0, 2))).toEqual([
+      "2",
+      "0",
+    ]);
   });
 });
 

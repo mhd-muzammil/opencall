@@ -20,6 +20,8 @@ export interface ColumnUniqueEntry {
   count: number;
 }
 
+export type WipAgingSortDirection = "lowToHigh" | "highToLow";
+
 /** Columns that support per-column filtering. */
 export const FILTERABLE_COLUMNS = DAILY_CALL_PLAN_COLUMNS;
 
@@ -52,6 +54,45 @@ export function extractUniqueValues<
   return Array.from(counts.entries())
     .map(([value, count]) => ({ value, count }))
     .sort((a, b) => a.value.localeCompare(b.value));
+}
+
+function parseWipAgingFilterValue(value: string): number | null {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+export function sortWipAgingFilterValues(
+  entries: readonly ColumnUniqueEntry[],
+  direction: WipAgingSortDirection,
+): ColumnUniqueEntry[] {
+  return [...entries].sort((a, b) => {
+    const aValue = parseWipAgingFilterValue(a.value);
+    const bValue = parseWipAgingFilterValue(b.value);
+
+    if (aValue !== null && bValue !== null) {
+      return direction === "lowToHigh" ? aValue - bValue : bValue - aValue;
+    }
+
+    if (aValue !== null) return -1;
+    if (bValue !== null) return 1;
+
+    return a.value.localeCompare(b.value);
+  });
+}
+
+export function selectWipAgingRangeValues(
+  entries: readonly ColumnUniqueEntry[],
+  min: number,
+  max: number,
+): Set<string> {
+  return new Set(
+    entries
+      .filter((entry) => {
+        const value = parseWipAgingFilterValue(entry.value);
+        return value !== null && value >= min && value <= max;
+      })
+      .map((entry) => entry.value),
+  );
 }
 
 /**

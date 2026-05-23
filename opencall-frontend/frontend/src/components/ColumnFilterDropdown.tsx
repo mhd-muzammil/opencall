@@ -1,7 +1,12 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { ColumnUniqueEntry } from "../lib/columnFilter";
+import {
+  selectWipAgingRangeValues,
+  sortWipAgingFilterValues,
+  type ColumnUniqueEntry,
+  type WipAgingSortDirection,
+} from "../lib/columnFilter";
 
 export interface ColumnFilterDropdownProps {
   column: string;
@@ -9,10 +14,12 @@ export interface ColumnFilterDropdownProps {
   uniqueValues: ColumnUniqueEntry[];
   selectedValues: Set<string> | undefined;
   isFiltered: boolean;
+  wipAgingSort: WipAgingSortDirection | null;
   onToggleValue: (column: string, value: string) => void;
   onSelectAll: (column: string) => void;
   onClearAll: (column: string) => void;
   onApply: (column: string, values: Set<string>) => void;
+  onWipAgingSortChange: (direction: WipAgingSortDirection) => void;
   onOpen: (column: string) => void;
   onClose: () => void;
 }
@@ -23,21 +30,27 @@ export function ColumnFilterDropdown({
   uniqueValues,
   selectedValues,
   isFiltered,
+  wipAgingSort,
   onSelectAll,
   onApply,
+  onWipAgingSortChange,
   onOpen,
   onClose,
 }: ColumnFilterDropdownProps) {
   const wrapperRef = useRef<HTMLDivElement>(null);
   const [search, setSearch] = useState("");
   const [draftSelection, setDraftSelection] = useState<Set<string> | null>(null);
+  const [wipAgingValueSort, setWipAgingValueSort] =
+    useState<WipAgingSortDirection>("lowToHigh");
+  const isWipAgingColumn = column === "WIP aging";
 
   useEffect(() => {
     if (isOpen) {
       setDraftSelection(selectedValues ? new Set(selectedValues) : null);
       setSearch("");
+      setWipAgingValueSort(wipAgingSort ?? "lowToHigh");
     }
-  }, [isOpen, selectedValues]);
+  }, [isOpen, selectedValues, wipAgingSort]);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -75,12 +88,16 @@ export function ColumnFilterDropdown({
   }, [isOpen, onClose]);
 
   const visibleEntries = useMemo(() => {
-    if (!search.trim()) return uniqueValues;
+    const sortedValues = isWipAgingColumn
+      ? sortWipAgingFilterValues(uniqueValues, wipAgingValueSort)
+      : uniqueValues;
+
+    if (!search.trim()) return sortedValues;
     const lowerSearch = search.toLowerCase();
-    return uniqueValues.filter((entry) =>
+    return sortedValues.filter((entry) =>
       entry.value.toLowerCase().includes(lowerSearch),
     );
-  }, [uniqueValues, search]);
+  }, [isWipAgingColumn, uniqueValues, search, wipAgingValueSort]);
 
   const toggleDraft = useCallback(
     (value: string) => {
@@ -104,6 +121,13 @@ export function ColumnFilterDropdown({
   const unselectAllDraft = useCallback(() => {
     setDraftSelection(new Set());
   }, []);
+
+  const selectWipRangeDraft = useCallback(
+    (min: number, max: number) => {
+      setDraftSelection(selectWipAgingRangeValues(uniqueValues, min, max));
+    },
+    [uniqueValues],
+  );
 
   const handleApply = useCallback(() => {
     if (draftSelection === null) {
@@ -159,6 +183,49 @@ export function ColumnFilterDropdown({
               autoFocus
             />
           </div>
+
+          {isWipAgingColumn && (
+            <div className="wipFilterTools">
+              <div className="wipFilterToolGroup" aria-label="WIP aging value order">
+                <button
+                  type="button"
+                  className={`wipFilterTool ${wipAgingSort === "lowToHigh" ? "active" : ""}`}
+                  onClick={() => {
+                    setWipAgingValueSort("lowToHigh");
+                    onWipAgingSortChange("lowToHigh");
+                  }}
+                >
+                  Low to High
+                </button>
+                <button
+                  type="button"
+                  className={`wipFilterTool ${wipAgingSort === "highToLow" ? "active" : ""}`}
+                  onClick={() => {
+                    setWipAgingValueSort("highToLow");
+                    onWipAgingSortChange("highToLow");
+                  }}
+                >
+                  High to Low
+                </button>
+              </div>
+              <div className="wipFilterToolGroup" aria-label="WIP aging ranges">
+                <button
+                  type="button"
+                  className="wipFilterTool"
+                  onClick={() => selectWipRangeDraft(0, 2)}
+                >
+                  0-2 aging
+                </button>
+                <button
+                  type="button"
+                  className="wipFilterTool"
+                  onClick={() => selectWipRangeDraft(3, 5)}
+                >
+                  3-5 aging
+                </button>
+              </div>
+            </div>
+          )}
 
           <div className="colFilterList">
             <label className="colFilterItem colFilterItemAll">

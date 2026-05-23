@@ -9,7 +9,10 @@ import { MetricsGrid, type MetricsGridItem } from "../components/MetricsGrid";
 import { StatusPill } from "../components/StatusPill";
 import { UploadDrawer } from "../components/UploadDrawer";
 import { useColumnFilters } from "../lib/useColumnFilters";
-import { FILTERABLE_COLUMNS } from "../lib/columnFilter";
+import {
+  FILTERABLE_COLUMNS,
+  type WipAgingSortDirection,
+} from "../lib/columnFilter";
 import {
   generateReport,
   getDatabaseHealth,
@@ -114,6 +117,34 @@ function isSegmentCase(
   segment: string,
 ): boolean {
   return String(row.output.Segment ?? "").trim().toLowerCase() === segment.toLowerCase();
+}
+
+function parseWipAgingValue(value: unknown): number | null {
+  const parsed = Number(String(value ?? "").trim());
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function sortRowsByWipAging(
+  rows: readonly ReportRow[],
+  direction: WipAgingSortDirection | null,
+): ReportRow[] {
+  if (!direction) {
+    return [...rows];
+  }
+
+  return [...rows].sort((a, b) => {
+    const aValue = parseWipAgingValue(a.output["WIP aging"]);
+    const bValue = parseWipAgingValue(b.output["WIP aging"]);
+
+    if (aValue !== null && bValue !== null) {
+      return direction === "lowToHigh" ? aValue - bValue : bValue - aValue;
+    }
+
+    if (aValue !== null) return -1;
+    if (bValue !== null) return 1;
+
+    return a.serialNo - b.serialNo;
+  });
 }
 
 function normalizeWoOtcCode(value: string | number | null | undefined): string {
@@ -614,6 +645,7 @@ export default function DashboardPage() {
   const [showRcaOnly, setShowRcaOnly] = useState(false);
   const [showClosedOnly, setShowClosedOnly] = useState(false);
   const [printCaseFilter, setPrintCaseFilter] = useState<PrintCaseFilter | null>(null);
+  const [wipAgingSort, setWipAgingSort] = useState<WipAgingSortDirection | null>(null);
   const [recordsSearchQuery, setRecordsSearchQuery] = useState("");
   const [workspaceView, setWorkspaceView] = useState<"overview" | "records">("overview");
 
@@ -625,6 +657,7 @@ export default function DashboardPage() {
     setShowRcaOnly(false);
     setShowClosedOnly(false);
     setPrintCaseFilter(null);
+    setWipAgingSort(null);
     setRecordsSearchQuery("");
   }, [report?.reportId]);
 
@@ -778,8 +811,12 @@ export default function DashboardPage() {
   );
 
   const filteredRows = useMemo(
-    () => columnFilteredRows.filter((row) => rowMatchesRecordSearch(row, recordsSearchQuery)),
-    [columnFilteredRows, recordsSearchQuery],
+    () =>
+      sortRowsByWipAging(
+        columnFilteredRows.filter((row) => rowMatchesRecordSearch(row, recordsSearchQuery)),
+        wipAgingSort,
+      ),
+    [columnFilteredRows, recordsSearchQuery, wipAgingSort],
   );
 
   const scopedClosedRows = useMemo(
@@ -2176,10 +2213,12 @@ export default function DashboardPage() {
                                 uniqueValues={uniqueVals}
                                 selectedValues={colFilters.filters[column]}
                                 isFiltered={isFiltered}
+                                wipAgingSort={wipAgingSort}
                                 onToggleValue={colFilters.toggleValue}
                                 onSelectAll={colFilters.selectAll}
                                 onClearAll={colFilters.clearAll}
                                 onApply={colFilters.setColumnFilter}
+                                onWipAgingSortChange={setWipAgingSort}
                                 onOpen={colFilters.openFilterDropdown}
                                 onClose={colFilters.closeFilterDropdown}
                               />
@@ -2191,8 +2230,9 @@ export default function DashboardPage() {
                     </tr>
                   </thead>
                   <tbody>
-                    {filteredRows.map((row) => {
+                    {filteredRows.map((row, visibleIndex) => {
                       const isEditing = editingSerialNo === row.serialNo;
+                      const visibleSerialNo = visibleIndex + 1;
 
                       return (
                         <tr
@@ -2219,7 +2259,12 @@ export default function DashboardPage() {
                             ) : null}
                           </td>
                           {DAILY_CALL_PLAN_COLUMNS.map((column) => {
-                            const value = isEditing ? draftOutput[column] : row.output[column];
+                            const value =
+                              column === "S.no"
+                                ? visibleSerialNo
+                                : isEditing
+                                  ? draftOutput[column]
+                                  : row.output[column];
                             const isManualRequired = value === MANUAL_ENTRY_REQUIRED;
                             const isReadOnly = column === "S.no" || column === "Ticket ID";
                             const manualField = MANUAL_FIELD_BY_COLUMN[column];

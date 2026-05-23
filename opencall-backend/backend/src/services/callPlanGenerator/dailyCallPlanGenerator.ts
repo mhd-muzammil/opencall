@@ -217,6 +217,15 @@ function isTodayCallPlanRow(row: GeneratedDailyCallPlanRow): boolean {
   return !isRequestToCancelFlexStatus(row.enriched.flex_status);
 }
 
+function caseCreatedTimeRank(value: string | null): number {
+  if (!value) {
+    return Number.POSITIVE_INFINITY;
+  }
+
+  const parsed = new Date(value).getTime();
+  return Number.isNaN(parsed) ? Number.POSITIVE_INFINITY : parsed;
+}
+
 function reserialiseRows(
   rows: readonly GeneratedDailyCallPlanRow[],
 ): GeneratedDailyCallPlanRow[] {
@@ -405,11 +414,15 @@ export async function generateDailyCallPlanReport(
     const matchedMatches = matches.filter((match) => match.flexWip !== null);
     
     matchedMatches.sort((a, b) => {
-      const aAging = parseInt(a.enrichedRow.wip_aging ?? "0", 10);
-      const bAging = parseInt(b.enrichedRow.wip_aging ?? "0", 10);
-      const valA = Number.isNaN(aAging) ? 0 : aAging;
-      const valB = Number.isNaN(bAging) ? 0 : bAging;
-      return valB - valA;
+      const createdDelta =
+        caseCreatedTimeRank(a.enrichedRow.case_created_time) -
+        caseCreatedTimeRank(b.enrichedRow.case_created_time);
+
+      if (createdDelta !== 0) {
+        return createdDelta;
+      }
+
+      return a.enrichedRow.ticket_id.localeCompare(b.enrichedRow.ticket_id);
     });
 
     const generatedRows = matchedMatches.map<GeneratedDailyCallPlanRow>((match, index) => {

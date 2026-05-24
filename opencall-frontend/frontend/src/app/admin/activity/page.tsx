@@ -1,5 +1,6 @@
 "use client";
 
+import * as React from "react";
 import { useEffect, useMemo, useState } from "react";
 import { listAdminRegions, type AdminRegion } from "../../../lib/adminApiClient";
 import {
@@ -32,17 +33,104 @@ function formatDateTime(value: string | null): string {
   return d.toLocaleString();
 }
 
-function metadataPreview(metadata: Record<string, unknown>): string {
+const FIELD_LABELS: Record<string, string> = {
+  totalRows: "Total rows",
+  reportDate: "Report date",
+  duplicateTicketCount: "Duplicates",
+  unmatchedTicketCount: "Unmatched",
+  reportId: "Report",
+  sourceType: "Source",
+  fileName: "File",
+  rowCount: "Rows",
+  errorCount: "Errors",
+  issueCount: "Issues",
+  status: "Batch status",
+  reason: "Reason",
+  targetEmail: "Email",
+  targetUsername: "Username",
+  targetRole: "Role",
+  newRole: "New role",
+  newRegionId: "New region",
+  requireChange: "Force password change",
+  changedFields: "Fields changed",
+};
+
+const FIELD_ORDER = [
+  "fileName",
+  "sourceType",
+  "rowCount",
+  "errorCount",
+  "issueCount",
+  "status",
+  "reportDate",
+  "totalRows",
+  "duplicateTicketCount",
+  "unmatchedTicketCount",
+  "reportId",
+  "changedFields",
+  "targetEmail",
+  "targetUsername",
+  "targetRole",
+  "newRole",
+  "newRegionId",
+  "requireChange",
+  "reason",
+];
+
+function humanizeKey(key: string): string {
+  if (FIELD_LABELS[key]) return FIELD_LABELS[key];
+  return key
+    .replace(/([A-Z])/g, " $1")
+    .replace(/_/g, " ")
+    .replace(/^./, (c) => c.toUpperCase())
+    .trim();
+}
+
+function humanizeValue(key: string, value: unknown): string | null {
+  if (value === null || value === undefined) return null;
+  if (Array.isArray(value)) {
+    if (value.length === 0) return null;
+    return value.map((v) => humanizeKey(String(v))).join(", ");
+  }
+  if (typeof value === "boolean") return value ? "yes" : "no";
+  if (typeof value === "number") {
+    if (key === "errorCount" && value === 0) return null;
+    if (key === "issueCount" && value === 0) return null;
+    if (key === "duplicateTicketCount" && value === 0) return null;
+    if (key === "unmatchedTicketCount" && value === 0) return null;
+    return value.toLocaleString();
+  }
+  if (typeof value === "object") return JSON.stringify(value);
+  const text = String(value).trim();
+  if (!text) return null;
+  if (key === "reportId") return `${text.slice(0, 8)}…`;
+  return text;
+}
+
+function metadataPreview(metadata: Record<string, unknown>): React.ReactNode {
   const entries = Object.entries(metadata ?? {});
-  if (entries.length === 0) return "";
-  return entries
-    .map(([key, value]) => {
-      if (Array.isArray(value)) return `${key}: ${value.join(", ")}`;
-      if (value === null || value === undefined) return `${key}: —`;
-      if (typeof value === "object") return `${key}: ${JSON.stringify(value)}`;
-      return `${key}: ${String(value)}`;
-    })
-    .join(" · ");
+  if (entries.length === 0) return <span className="muted">—</span>;
+  const ordered = [...entries].sort((a, b) => {
+    const ai = FIELD_ORDER.indexOf(a[0]);
+    const bi = FIELD_ORDER.indexOf(b[0]);
+    if (ai === -1 && bi === -1) return a[0].localeCompare(b[0]);
+    if (ai === -1) return 1;
+    if (bi === -1) return -1;
+    return ai - bi;
+  });
+  const chips: React.ReactNode[] = [];
+  for (const [key, value] of ordered) {
+    const display = humanizeValue(key, value);
+    if (display === null) continue;
+    chips.push(
+      <span key={key} className="activityChip">
+        <span className="activityChipLabel">{humanizeKey(key)}</span>
+        <span className="activityChipValue">{display}</span>
+      </span>,
+    );
+  }
+  if (chips.length === 0) return <span className="muted">—</span>;
+  return <div className="activityChipRow">{chips}</div>;
 }
 
 function eventTone(eventType: ActivityEventType, status: string): string {
@@ -242,7 +330,7 @@ export default function AdminActivityPage() {
                 </td>
                 <td>{row.regionName ? `${row.regionName} (${row.regionCode})` : "—"}</td>
                 <td>{eventLabel(row.eventType)}</td>
-                <td className="muted" style={{ maxWidth: 480 }}>{metadataPreview(row.metadata)}</td>
+                <td style={{ maxWidth: 520 }}>{metadataPreview(row.metadata)}</td>
                 <td>
                   <span className={`adminTag ${eventTone(row.eventType, row.status)}`}>
                     {row.status}

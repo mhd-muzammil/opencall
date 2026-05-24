@@ -3268,6 +3268,40 @@ th .colFilterWrap {
   gap: 8px;
 }
 
+.activityChipRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.activityChip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 8px;
+  border-radius: 999px;
+  background: var(--accent-soft);
+  border: 1px solid var(--accent-ring);
+  font-size: 12px;
+  line-height: 1.3;
+  max-width: 100%;
+}
+.activityChipLabel {
+  color: var(--muted);
+  font-weight: 600;
+  text-transform: uppercase;
+  font-size: 10px;
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+}
+.activityChipValue {
+  color: var(--text);
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 240px;
+}
+
 @media (max-width: 900px) {
   .adminShell {
     grid-template-columns: 1fr;

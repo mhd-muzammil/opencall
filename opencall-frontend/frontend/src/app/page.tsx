@@ -1183,14 +1183,18 @@ export default function DashboardPage() {
       setSavingSerialNo(null);
       setDraftOutput({});
       setFiles({});
-      if (detail.regionId) setRegionId(detail.regionId);
+      const isRegionAdmin = session.user.role === "REGION_ADMIN";
+      const effectiveRegionId = isRegionAdmin
+        ? session.user.regionId ?? ""
+        : detail.regionId || regionId;
+      if (!isRegionAdmin && detail.regionId) setRegionId(detail.regionId);
       if (detail.reportDate) setReportDate(detail.reportDate);
       window.localStorage.setItem(LAST_HISTORY_SESSION_KEY, detail.id);
-      
+
       // Fetch preview and report if applicable
       const prev = await previewMatches({
         token: session.token,
-        regionId: detail.regionId || regionId,
+        regionId: effectiveRegionId,
         flexUploadBatchId: detail.flexUploadBatchId!,
         ...(detail.renderwaysUploadBatchId ? { renderwaysUploadBatchId: detail.renderwaysUploadBatchId } : {}),
         ...(detail.callPlanUploadBatchId ? { callPlanUploadBatchId: detail.callPlanUploadBatchId } : {}),
@@ -1203,7 +1207,7 @@ export default function DashboardPage() {
          const historyReportDate = detail.reportDate ?? detail.createdAt.slice(0, 10);
          const rep = await generateReport({
            token: session.token,
-           regionId: detail.regionId || regionId,
+           regionId: effectiveRegionId,
            reportDate: historyReportDate,
            flexUploadBatchId: detail.flexUploadBatchId!,
            ...(detail.renderwaysUploadBatchId ? { renderwaysUploadBatchId: detail.renderwaysUploadBatchId } : {}),

@@ -3256,6 +3256,18 @@ th .colFilterWrap {
   font-size: 12px;
 }
 
+.adminPaginator {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 4px;
+}
+.adminPaginatorButtons {
+  display: flex;
+  gap: 8px;
+}
+
 @media (max-width: 900px) {
   .adminShell {
     grid-template-columns: 1fr;

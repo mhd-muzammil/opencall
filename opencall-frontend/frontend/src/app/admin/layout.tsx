@@ -12,6 +12,7 @@ interface NavItem {
 
 const NAV: NavItem[] = [
   { href: "/admin/monitoring", label: "Monitoring" },
+  { href: "/admin/rca", label: "RCA tracker" },
   { href: "/admin/activity", label: "Activity feed" },
   { href: "/admin/users", label: "Users" },
 ];

@@ -86,15 +86,17 @@ export function AppHeader({
           {session.user.regionId ? (
             <span className="regionScopePill">Region {session.user.regionId.slice(0, 8)}</span>
           ) : null}
-          <button
-            className="iconButton topIconButton uploadAction"
-            type="button"
-            onClick={onOpenUpload}
-            title="Upload source files"
-          >
-            <span aria-hidden="true" />
-            Upload Files
-          </button>
+          {session.user.role === "SUPER_ADMIN" ? (
+            <button
+              className="iconButton topIconButton uploadAction"
+              type="button"
+              onClick={onOpenUpload}
+              title="Upload source files"
+            >
+              <span aria-hidden="true" />
+              Upload Files
+            </button>
+          ) : null}
           <button
             className="iconButton topIconButton historyAction"
             type="button"
@@ -104,16 +106,18 @@ export function AppHeader({
             <span aria-hidden="true" />
             History
           </button>
-          <button
-            className="topIconButton generateAction"
-            type="button"
-            disabled={isBusy || !hasBatches}
-            onClick={onGenerateReport}
-            title="Generate report from current batches"
-          >
-            <span aria-hidden="true" />
-            Generate Report
-          </button>
+          {session.user.role === "SUPER_ADMIN" ? (
+            <button
+              className="topIconButton generateAction"
+              type="button"
+              disabled={isBusy || !hasBatches}
+              onClick={onGenerateReport}
+              title="Generate report from current batches"
+            >
+              <span aria-hidden="true" />
+              Generate Report
+            </button>
+          ) : null}
           <details className="exportMenu">
             <summary aria-label="Open export actions">Export</summary>
             <div className="exportDropdown">
@@ -152,9 +156,14 @@ export function AppHeader({
                 <span>{session.user.email}</span>
                 <em>{formatRoleLabel(session.user.role)}</em>
               </div>
-              <button className="profileMenuItem" type="button">
-                Settings
-              </button>
+              {session.user.role === "SUPER_ADMIN" ? (
+                <a className="profileMenuItem" href="/admin/users">
+                  Admin Console
+                </a>
+              ) : null}
+              <a className="profileMenuItem" href="/me/password">
+                Change password
+              </a>
               <button className="profileMenuItem danger" type="button" onClick={onLogout}>
                 Log out
               </button>

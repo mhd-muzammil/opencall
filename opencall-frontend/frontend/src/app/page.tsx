@@ -1054,6 +1054,9 @@ export default function DashboardPage() {
       setRegionId(nextSession.user.regionId ?? "");
       setUsername("");
       setPassword("");
+      if (nextSession.user.mustChangePassword) {
+        window.location.href = "/me/password";
+      }
     });
   }
 

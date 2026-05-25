@@ -34,3 +34,4 @@ export const getReportHistoryById = webApiClient.getReportHistoryById;
 export const renameReportHistory = webApiClient.renameReportHistory;
 export const duplicateReportHistory = webApiClient.duplicateReportHistory;
 export const deleteReportHistory = webApiClient.deleteReportHistory;
+export const deleteReportRow = webApiClient.deleteReportRow;

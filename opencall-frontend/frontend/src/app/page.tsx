@@ -34,6 +34,7 @@ import {
   getReportHistoryById,
   renameReportHistory,
   deleteReportHistory,
+  deleteReportRow,
 } from "../lib/apiClient";
 import { LoginScreen, SessionLoadingScreen } from "../features/auth/LoginScreen";
 import { downloadReportAsXlsx, downloadReportAsExcel } from "../lib/excelExport";
@@ -1375,6 +1376,53 @@ export default function DashboardPage() {
     }
   }
 
+  async function handleDeleteRow(serialNo: number) {
+    if (!session) {
+      setMessage("Login required");
+      return;
+    }
+
+    const currentReport = report;
+    const row = currentReport?.rows.find((candidate) => candidate.serialNo === serialNo);
+
+    if (!currentReport || !row) {
+      return;
+    }
+
+    if (!row.id) {
+      setMessage("Delete failed: this row has not been persisted yet.");
+      return;
+    }
+
+    if (!window.confirm("Are you sure you want to delete this case? It will be removed from tomorrow's report generation.")) {
+      return;
+    }
+
+    setSavingSerialNo(serialNo);
+    setMessage(null);
+
+    try {
+      await deleteReportRow(session.token, row.id);
+
+      setReport((latestReport) => {
+        if (!latestReport) {
+          return latestReport;
+        }
+
+        return {
+          ...latestReport,
+          rows: latestReport.rows.filter((latestRow) => latestRow.serialNo !== serialNo),
+        };
+      });
+      cancelEditing();
+      setMessage("Row deleted successfully.");
+    } catch (error) {
+      setMessage(error instanceof Error ? `Delete failed: ${error.message}` : "Delete failed");
+    } finally {
+      setSavingSerialNo(null);
+    }
+  }
+
   function exportReport(download: (report: GeneratedReportResponse) => void) {
     if (!report) {
       return;
@@ -2392,6 +2440,15 @@ export default function DashboardPage() {
                                   onClick={cancelEditing}
                                 >
                                   Cancel
+                                </button>
+                                <button
+                                  type="button"
+                                  className="secondaryButton"
+                                  style={{ color: "var(--danger)", borderColor: "var(--danger)" }}
+                                  disabled={savingSerialNo === row.serialNo}
+                                  onClick={() => void handleDeleteRow(row.serialNo)}
+                                >
+                                  Delete
                                 </button>
                               </div>
                             ) : (

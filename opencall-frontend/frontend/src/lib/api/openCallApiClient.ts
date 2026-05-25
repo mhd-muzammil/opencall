@@ -68,6 +68,7 @@ export interface OpenCallApiClient {
       hp_owner_status?: string | null;
     };
   }): Promise<EditedReportRowResponse>;
+  deleteReportRow(token: string, rowId: string): Promise<{ success: boolean }>;
   getReportHistory(token: string): Promise<ReportHistorySession[]>;
   getReportHistoryById(token: string, id: string): Promise<ReportHistorySession>;
   renameReportHistory(token: string, id: string, title: string): Promise<{ id: string; title: string }>;
@@ -202,6 +203,15 @@ export function createOpenCallApiClient({
       });
 
       return readJson<EditedReportRowResponse>(response);
+    },
+
+    async deleteReportRow(token, rowId) {
+      const response = await fetchImpl(url(`/api/v1/report-rows/${rowId}`), {
+        method: "DELETE",
+        headers: authHeaders(token),
+      });
+
+      return readJson<{ success: boolean }>(response);
     },
 
     async getReportHistory(token) {

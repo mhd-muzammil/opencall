@@ -86,6 +86,7 @@ const CISS_PRODUCT_LINE = "CISS";
 const PC_SEGMENT = "PC";
 const PRINT_SEGMENT = "Print";
 const PRINT_INSTALLATION_WO_OTC_CODE = "05F";
+const TRADE_WO_OTC_CODE_KEYWORD = "TRADE";
 const LAST_HISTORY_SESSION_KEY = "opencall.lastHistorySessionId";
 
 const CHANGE_TYPE_LABELS: Record<ChangeType, string> = {
@@ -106,7 +107,14 @@ const CHANGE_FIELD_LABELS: Record<string, string> = {
   hp_owner_status: "HP Owner Status",
 };
 
+function isTradeCase(row: GeneratedReportResponse["rows"][number]): boolean {
+  return normalizeWoOtcCode(row.output["WO OTC CODE"]).includes(TRADE_WO_OTC_CODE_KEYWORD);
+}
+
 function isCissCase(row: GeneratedReportResponse["rows"][number]): boolean {
+  if (isTradeCase(row)) {
+    return false;
+  }
   return String(row.output["Product Line Name"] ?? "")
     .trim()
     .toUpperCase()
@@ -644,6 +652,7 @@ export default function DashboardPage() {
   const [selectedRtplRegion, setSelectedRtplRegion] = useState<string>(ALL_REGIONS_FILTER);
   const [showCissOnly, setShowCissOnly] = useState(false);
   const [showRcaOnly, setShowRcaOnly] = useState(false);
+  const [showTradeOnly, setShowTradeOnly] = useState(false);
   const [showClosedOnly, setShowClosedOnly] = useState(false);
   const [printCaseFilter, setPrintCaseFilter] = useState<PrintCaseFilter | null>(null);
   const [wipAgingSort, setWipAgingSort] = useState<WipAgingSortDirection | null>(null);
@@ -656,6 +665,7 @@ export default function DashboardPage() {
     setSelectedRtplRegion(ALL_REGIONS_FILTER);
     setShowCissOnly(false);
     setShowRcaOnly(false);
+    setShowTradeOnly(false);
     setShowClosedOnly(false);
     setPrintCaseFilter(null);
     setWipAgingSort(null);
@@ -690,6 +700,10 @@ export default function DashboardPage() {
 
   const rcaRows = useMemo(() => {
     return activeRows.filter(isRcaCase);
+  }, [activeRows]);
+
+  const tradeRows = useMemo(() => {
+    return activeRows.filter(isTradeCase);
   }, [activeRows]);
 
   const activeRegionBreakdown = useMemo(() => {
@@ -752,6 +766,7 @@ export default function DashboardPage() {
         printInstallation: regionPrintInstallationRows.length,
         printFix: regionPrintRows.length - regionPrintInstallationRows.length,
         rca: rows.filter(isRcaCase).length,
+        trade: rows.filter(isTradeCase).length,
       };
     });
   }, [activeRegionBreakdown, activeRows, report]);
@@ -767,6 +782,7 @@ export default function DashboardPage() {
     if (showClosedOnly) return closedRows;
     if (showCissOnly) return cissRows;
     if (showRcaOnly) return rcaRows;
+    if (showTradeOnly) return tradeRows;
     if (printCaseFilter === "all") return printRows;
     if (printCaseFilter === "installation") return printInstallationRows;
     if (printCaseFilter === "fix") return printFixRows;
@@ -783,6 +799,8 @@ export default function DashboardPage() {
     showCissOnly,
     showClosedOnly,
     showRcaOnly,
+    showTradeOnly,
+    tradeRows,
   ]);
 
   const regionFilteredRows = useMemo(() => {
@@ -1037,6 +1055,9 @@ export default function DashboardPage() {
       setRegionId(nextSession.user.regionId ?? "");
       setUsername("");
       setPassword("");
+      if (nextSession.user.mustChangePassword) {
+        window.location.href = "/me/password";
+      }
     });
   }
 
@@ -1163,14 +1184,18 @@ export default function DashboardPage() {
       setSavingSerialNo(null);
       setDraftOutput({});
       setFiles({});
-      if (detail.regionId) setRegionId(detail.regionId);
+      const isRegionAdmin = session.user.role === "REGION_ADMIN";
+      const effectiveRegionId = isRegionAdmin
+        ? session.user.regionId ?? ""
+        : detail.regionId || regionId;
+      if (!isRegionAdmin && detail.regionId) setRegionId(detail.regionId);
       if (detail.reportDate) setReportDate(detail.reportDate);
       window.localStorage.setItem(LAST_HISTORY_SESSION_KEY, detail.id);
-      
+
       // Fetch preview and report if applicable
       const prev = await previewMatches({
         token: session.token,
-        regionId: detail.regionId || regionId,
+        regionId: effectiveRegionId,
         flexUploadBatchId: detail.flexUploadBatchId!,
         ...(detail.renderwaysUploadBatchId ? { renderwaysUploadBatchId: detail.renderwaysUploadBatchId } : {}),
         ...(detail.callPlanUploadBatchId ? { callPlanUploadBatchId: detail.callPlanUploadBatchId } : {}),
@@ -1183,7 +1208,7 @@ export default function DashboardPage() {
          const historyReportDate = detail.reportDate ?? detail.createdAt.slice(0, 10);
          const rep = await generateReport({
            token: session.token,
-           regionId: detail.regionId || regionId,
+           regionId: effectiveRegionId,
            reportDate: historyReportDate,
            flexUploadBatchId: detail.flexUploadBatchId!,
            ...(detail.renderwaysUploadBatchId ? { renderwaysUploadBatchId: detail.renderwaysUploadBatchId } : {}),
@@ -1449,6 +1474,7 @@ export default function DashboardPage() {
     const hasRecordsSearchFilter = recordsSearchQuery.trim().length > 0;
     const hasCissFilter = showCissOnly;
     const hasRcaFilter = showRcaOnly;
+    const hasTradeFilter = showTradeOnly;
     const hasClosedFilter = showClosedOnly;
     const hasPrintFilter = printCaseFilter !== null;
     const isRtplRegionFiltered = selectedRtplRegion !== ALL_REGIONS_FILTER;
@@ -1464,6 +1490,9 @@ export default function DashboardPage() {
     } else if (hasRcaFilter) {
       const scopedRcaRows = scopedRows(rcaRows);
       exportRows = applyActiveTableFilters(scopedRcaRows);
+    } else if (hasTradeFilter) {
+      const scopedTradeRows = scopedRows(tradeRows);
+      exportRows = applyActiveTableFilters(scopedTradeRows);
     } else if (hasPrintFilter) {
       const printScopedRows =
         printCaseFilter === "installation"
@@ -1510,6 +1539,7 @@ export default function DashboardPage() {
     printCase = null,
     cissOnly = false,
     rcaOnly = false,
+    tradeOnly = false,
     closedOnly = false,
   }: Readonly<{
     region?: string | null;
@@ -1520,12 +1550,14 @@ export default function DashboardPage() {
     printCase?: PrintCaseFilter | null;
     cissOnly?: boolean;
     rcaOnly?: boolean;
+    tradeOnly?: boolean;
     closedOnly?: boolean;
   }>) {
     setSelectedRegion(region ?? null);
     setSelectedWoOtcCode(woOtcCode ?? null);
     setShowCissOnly(cissOnly);
     setShowRcaOnly(rcaOnly);
+    setShowTradeOnly(tradeOnly);
     setShowClosedOnly(closedOnly);
     setPrintCaseFilter(printCase);
     setSelectedRtplRegion(region && region !== "ALL" ? region : ALL_REGIONS_FILTER);
@@ -1597,6 +1629,7 @@ export default function DashboardPage() {
     showClosedOnly ? "Closed calls" : null,
     showCissOnly ? "CISS cases" : null,
     showRcaOnly ? "RCA cases" : null,
+    showTradeOnly ? "Trade cases" : null,
     selectedPrintCaseFilter,
     selectedRegion && selectedRegion !== "ALL" ? selectedRegion : null,
     selectedWoOtcCode ? selectedWoOtcCode : null,
@@ -1719,17 +1752,34 @@ export default function DashboardPage() {
                 <div className="sectionHeader">
                   <div>
                     <h3>Case Type Overview</h3>
-                    <p>CISS, PC, Print, and RCA cases separated from region metrics; Print also shows Installation and Fix.</p>
+                    <p>Warranty priority: Installation first, then CISS (excludes 01-Trade), Fix, PC, Trade, and RCA.</p>
                   </div>
                 </div>
                 <div className="caseTypeGrid">
-                  <div
-                    className={`caseTypeCard ${showCissOnly ? "active" : ""}`}
-                  >
+                  <div className={`caseTypeCard ${printCaseFilter === "installation" ? "active" : ""}`}>
+                    <button type="button" className="caseTypeSummary" onClick={() => openRecordsWithFilter({ printCase: "installation" })}>
+                      <span>Installation</span>
+                      <strong>{formatNumber(printInstallationRows.length)}</strong>
+                      <small>Warranty priority 1 - WO OTC 05F</small>
+                    </button>
+                    <div className="caseTypeRegionList">
+                      {caseTypeRegionBreakdown.map((entry) => (
+                        <button
+                          type="button"
+                          key={entry.aspCode}
+                          onClick={() => openRecordsWithFilter({ region: entry.aspCode, printCase: "installation" })}
+                        >
+                          <span>{entry.regionName}</span>
+                          <strong>{entry.printInstallation}</strong>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                  <div className={`caseTypeCard ${showCissOnly ? "active" : ""}`}>
                     <button type="button" className="caseTypeSummary" onClick={() => openRecordsWithFilter({ cissOnly: true })}>
                       <span>CISS Cases</span>
                       <strong>{formatNumber(cissRows.length)}</strong>
-                      <small>Product line contains CISS</small>
+                      <small>Product line contains CISS (excludes Trade)</small>
                     </button>
                     <div className="caseTypeRegionList">
                       {caseTypeRegionBreakdown.map((entry) => (
@@ -1740,6 +1790,25 @@ export default function DashboardPage() {
                         >
                           <span>{entry.regionName}</span>
                           <strong>{entry.ciss}</strong>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                  <div className={`caseTypeCard ${printCaseFilter === "fix" ? "active" : ""}`}>
+                    <button type="button" className="caseTypeSummary" onClick={() => openRecordsWithFilter({ printCase: "fix" })}>
+                      <span>Fix Cases</span>
+                      <strong>{formatNumber(printFixRows.length)}</strong>
+                      <small>Remaining Print (non-Installation)</small>
+                    </button>
+                    <div className="caseTypeRegionList">
+                      {caseTypeRegionBreakdown.map((entry) => (
+                        <button
+                          type="button"
+                          key={entry.aspCode}
+                          onClick={() => openRecordsWithFilter({ region: entry.aspCode, printCase: "fix" })}
+                        >
+                          <span>{entry.regionName}</span>
+                          <strong>{entry.printFix}</strong>
                         </button>
                       ))}
                     </div>
@@ -1763,66 +1832,26 @@ export default function DashboardPage() {
                       ))}
                     </div>
                   </div>
-                  <div className={`caseTypeCard printCaseCard ${printCaseFilter ? "active" : ""}`}>
-                    <button type="button" className="caseTypeSummary" onClick={() => openRecordsWithFilter({ printCase: "all" })}>
-                      <span>Print Cases</span>
-                      <strong>{formatNumber(printRows.length)}</strong>
-                      <small>Installation = WO OTC 05F; Fix = remaining Print</small>
+                  <div className={`caseTypeCard ${showTradeOnly ? "active" : ""}`}>
+                    <button type="button" className="caseTypeSummary" onClick={() => openRecordsWithFilter({ tradeOnly: true })}>
+                      <span>Trade Cases</span>
+                      <strong>{formatNumber(tradeRows.length)}</strong>
+                      <small>WO OTC CODE 01-Trade (non-warranty)</small>
                     </button>
-                    <div className="printCaseSplit">
-                      <button
-                        type="button"
-                        className={`printCaseSplitButton installation ${printCaseFilter === "installation" ? "active" : ""}`}
-                        onClick={() => openRecordsWithFilter({ printCase: "installation" })}
-                      >
-                        <span>Installation</span>
-                        <strong>{formatNumber(printInstallationRows.length)}</strong>
-                      </button>
-                      <button
-                        type="button"
-                        className={`printCaseSplitButton fix ${printCaseFilter === "fix" ? "active" : ""}`}
-                        onClick={() => openRecordsWithFilter({ printCase: "fix" })}
-                      >
-                        <span>Fix</span>
-                        <strong>{formatNumber(printFixRows.length)}</strong>
-                      </button>
-                    </div>
-                    <div className="caseTypeRegionList printCaseRegionList">
+                    <div className="caseTypeRegionList">
                       {caseTypeRegionBreakdown.map((entry) => (
-                        <div className="printCaseRegionRow" key={entry.aspCode}>
-                          <button
-                            type="button"
-                            className="printCaseRegionTotal"
-                            onClick={() => openRecordsWithFilter({ region: entry.aspCode, printCase: "all" })}
-                          >
-                            <span>{entry.regionName}</span>
-                            <strong>{entry.print}</strong>
-                          </button>
-                          <button
-                            type="button"
-                            className="printCaseRegionSubtype installation"
-                            onClick={() => openRecordsWithFilter({ region: entry.aspCode, printCase: "installation" })}
-                            aria-label={`${entry.regionName} print installation cases`}
-                          >
-                            <span>Install</span>
-                            <strong>{entry.printInstallation}</strong>
-                          </button>
-                          <button
-                            type="button"
-                            className="printCaseRegionSubtype fix"
-                            onClick={() => openRecordsWithFilter({ region: entry.aspCode, printCase: "fix" })}
-                            aria-label={`${entry.regionName} print fix cases`}
-                          >
-                            <span>Fix</span>
-                            <strong>{entry.printFix}</strong>
-                          </button>
-                        </div>
+                        <button
+                          type="button"
+                          key={entry.aspCode}
+                          onClick={() => openRecordsWithFilter({ region: entry.aspCode, tradeOnly: true })}
+                        >
+                          <span>{entry.regionName}</span>
+                          <strong>{entry.trade}</strong>
+                        </button>
                       ))}
                     </div>
                   </div>
-                  <div
-                    className={`caseTypeCard ${showRcaOnly ? "active" : ""}`}
-                  >
+                  <div className={`caseTypeCard ${showRcaOnly ? "active" : ""}`}>
                     <button type="button" className="caseTypeSummary" onClick={() => openRecordsWithFilter({ rcaOnly: true })}>
                       <span>RCA Cases</span>
                       <strong>{formatNumber(rcaRows.length)}</strong>
@@ -1860,6 +1889,7 @@ export default function DashboardPage() {
                         setShowClosedOnly(false);
                         setShowCissOnly(false);
                         setShowRcaOnly(false);
+                        setShowTradeOnly(false);
                         setPrintCaseFilter(null);
                         colFilters.resetAll();
                       }}
@@ -2218,6 +2248,16 @@ export default function DashboardPage() {
                     {filteredRows.length} of {regionFilteredRows.length} rows shown
                   </span>
                   <button type="button" onClick={() => setShowRcaOnly(false)}>Show All Cases</button>
+                </div>
+              )}
+              {showTradeOnly && (
+                <div className="colFilterSummary">
+                  <span>
+                    Trade Cases active
+                    {" Â· "}
+                    {filteredRows.length} of {regionFilteredRows.length} rows shown
+                  </span>
+                  <button type="button" onClick={() => setShowTradeOnly(false)}>Show All Cases</button>
                 </div>
               )}
               {printCaseFilter && (

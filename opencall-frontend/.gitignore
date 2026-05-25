@@ -48,8 +48,5 @@ next-env.d.ts
 debug_match.ts
 test.xls
 
-# unused admin template app
-admin/
-
 # uploads
 backend/storage/uploads/

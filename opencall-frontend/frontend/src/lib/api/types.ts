@@ -11,9 +11,11 @@ export interface LoginResponse {
   user: {
     id: string;
     email: string;
+    username: string | null;
     role: "SUPER_ADMIN" | "REGION_ADMIN";
     regionId: string | null;
     region_id: string | null;
+    mustChangePassword: boolean;
   };
 }
 

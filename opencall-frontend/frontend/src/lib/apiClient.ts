@@ -10,6 +10,9 @@ export type {
   RuntimeHealthResponse,
   UploadBatch,
   UploadResponse,
+  Engineer,
+  DropdownEngineer,
+  ListEngineersResult,
 } from "./api/types";
 export {
   createOpenCallApiClient,
@@ -35,3 +38,9 @@ export const renameReportHistory = webApiClient.renameReportHistory;
 export const duplicateReportHistory = webApiClient.duplicateReportHistory;
 export const deleteReportHistory = webApiClient.deleteReportHistory;
 export const deleteReportRow = webApiClient.deleteReportRow;
+export const getAdminEngineers = webApiClient.getAdminEngineers;
+export const createAdminEngineer = webApiClient.createAdminEngineer;
+export const updateAdminEngineer = webApiClient.updateAdminEngineer;
+export const deactivateAdminEngineer = webApiClient.deactivateAdminEngineer;
+export const reactivateAdminEngineer = webApiClient.reactivateAdminEngineer;
+export const getEngineersDropdown = webApiClient.getEngineersDropdown;

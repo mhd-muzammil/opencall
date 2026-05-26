@@ -156,8 +156,8 @@ export function AppHeader({
                 <span>{session.user.email}</span>
                 <em>{formatRoleLabel(session.user.role)}</em>
               </div>
-              {session.user.role === "SUPER_ADMIN" ? (
-                <a className="profileMenuItem" href="/admin/users">
+              {session.user.role === "SUPER_ADMIN" || session.user.role === "REGION_ADMIN" ? (
+                <a className="profileMenuItem" href={session.user.role === "SUPER_ADMIN" ? "/admin/users" : "/admin/engineers"}>
                   Admin Console
                 </a>
               ) : null}

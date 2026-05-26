@@ -8,13 +8,15 @@ import { clearSession, readSession, type ClientSession } from "../../lib/session
 interface NavItem {
   href: string;
   label: string;
+  roles: ("SUPER_ADMIN" | "REGION_ADMIN")[];
 }
 
-const NAV: NavItem[] = [
-  { href: "/admin/monitoring", label: "Monitoring" },
-  { href: "/admin/rca", label: "RCA tracker" },
-  { href: "/admin/activity", label: "Activity feed" },
-  { href: "/admin/users", label: "Users" },
+const ALL_NAV: NavItem[] = [
+  { href: "/admin/monitoring", label: "Monitoring", roles: ["SUPER_ADMIN"] },
+  { href: "/admin/rca", label: "RCA tracker", roles: ["SUPER_ADMIN", "REGION_ADMIN"] },
+  { href: "/admin/activity", label: "Activity feed", roles: ["SUPER_ADMIN", "REGION_ADMIN"] },
+  { href: "/admin/users", label: "Users", roles: ["SUPER_ADMIN"] },
+  { href: "/admin/engineers", label: "Engineers", roles: ["SUPER_ADMIN", "REGION_ADMIN"] },
 ];
 
 export default function AdminLayout({ children }: { children: ReactNode }) {
@@ -32,8 +34,7 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
       router.replace("/");
       return;
     }
-    if (s.user.role !== "SUPER_ADMIN") {
-      // REGION_ADMIN doesn't get an admin shell — back to operational app.
+    if (s.user.role !== "SUPER_ADMIN" && s.user.role !== "REGION_ADMIN") {
       router.replace("/");
     }
   }, [router]);
@@ -48,9 +49,11 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
     );
   }
 
-  if (!session || session.user.role !== "SUPER_ADMIN") {
+  if (!session || (session.user.role !== "SUPER_ADMIN" && session.user.role !== "REGION_ADMIN")) {
     return null;
   }
+
+  const visibleNav = ALL_NAV.filter((item) => item.roles.includes(session.user.role));
 
   function logout() {
     clearSession();
@@ -70,7 +73,7 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
           </div>
         </div>
         <nav className="adminNav" aria-label="Admin navigation">
-          {NAV.map((item) => {
+          {visibleNav.map((item) => {
             const active = pathname === item.href || pathname.startsWith(item.href + "/");
             return (
               <Link

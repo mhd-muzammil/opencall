@@ -35,7 +35,9 @@ import {
   renameReportHistory,
   deleteReportHistory,
   deleteReportRow,
+  getEngineersDropdown,
 } from "../lib/apiClient";
+import type { DropdownEngineer } from "../lib/api/types";
 import { LoginScreen, SessionLoadingScreen } from "../features/auth/LoginScreen";
 import { downloadReportAsXlsx, downloadReportAsExcel } from "../lib/excelExport";
 import {
@@ -76,8 +78,8 @@ const FILE_FIELDS: Array<{
   required: boolean;
   multiple?: boolean;
 }> = [
-  { field: "flexWipReport", source: "FLEX_WIP", label: "Flex WIP Report", required: true },
-  { field: "renderwaysReport", source: "RENDERWAYS", label: "Renderways / RTPL Report", required: false },
+  { field: "flexWipReport", source: "FLEX_WIP", label: "FieldEZ Report", required: true },
+  { field: "renderwaysReport", source: "RENDERWAYS", label: "Flex Mail Report", required: false },
   { field: "callPlan", source: "CALL_PLAN", label: "Call Plan Reports", required: false, multiple: true },
 ];
 
@@ -638,6 +640,7 @@ export default function DashboardPage() {
    const [draftOutput, setDraftOutput] = useState<Record<string, string | number>>({});
    const draftOutputRef = useRef(draftOutput);
    const hasAutoRestoredHistoryRef = useRef(false);
+   const [engineersList, setEngineersList] = useState<DropdownEngineer[]>([]);
    draftOutputRef.current = draftOutput;
   const [reportDate, setReportDate] = useState(todayIsoDate());
   const [dbHealth, setDbHealth] = useState<DatabaseHealthResponse | null>(null);
@@ -1019,8 +1022,10 @@ export default function DashboardPage() {
           console.error(error);
         }
       });
+      getEngineersDropdown(session.token).then(res => setEngineersList(res.engineers)).catch(console.error);
     } else {
       setHistorySessions([]);
+      setEngineersList([]);
       hasAutoRestoredHistoryRef.current = false;
     }
   }, [session]);
@@ -2445,6 +2450,25 @@ export default function DashboardPage() {
                                         />
                                       )}
                                     </div>
+                                  ) : column === "Engineer" ? (
+                                    <select
+                                      className="cellInput"
+                                      value={String(draftOutput[column] ?? "")}
+                                      onChange={(event) =>
+                                        setDraftOutput((current) => ({
+                                          ...current,
+                                          [column]: event.target.value,
+                                        }))
+                                      }
+                                    >
+                                      <option value="">{MANUAL_ENTRY_REQUIRED}</option>
+                                      {engineersList.map(e => (
+                                        <option key={e.id} value={e.engineerName}>{e.engineerName}</option>
+                                      ))}
+                                      {draftOutput[column] && draftOutput[column] !== MANUAL_ENTRY_REQUIRED && !engineersList.some(e => e.engineerName === String(draftOutput[column])) && (
+                                        <option value={String(draftOutput[column])}>{String(draftOutput[column])} (Inactive/Not in list)</option>
+                                      )}
+                                    </select>
                                   ) : (
                                     <input
                                       className="cellInput"

@@ -209,3 +209,29 @@ export interface ReportHistorySession {
   createdAt: string;
   updatedAt: string;
 }
+
+export interface Engineer {
+  id: string;
+  engineerCode: string | null;
+  engineerName: string;
+  regionId: string;
+  email: string | null;
+  phone: string | null;
+  isActive: boolean;
+  createdBy: string | null;
+  updatedBy: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface DropdownEngineer {
+  id: string;
+  engineerCode: string | null;
+  engineerName: string;
+}
+
+export interface ListEngineersResult {
+  rows: Engineer[];
+  total: number;
+}
+

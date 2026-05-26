@@ -8,6 +8,9 @@ import type {
   ReportHistorySession,
   RuntimeHealthResponse,
   UploadResponse,
+  Engineer,
+  DropdownEngineer,
+  ListEngineersResult,
 } from "./types";
 
 export type FetchLike = typeof fetch;
@@ -74,6 +77,12 @@ export interface OpenCallApiClient {
   renameReportHistory(token: string, id: string, title: string): Promise<{ id: string; title: string }>;
   duplicateReportHistory(token: string, id: string): Promise<{ id: string; title: string }>;
   deleteReportHistory(token: string, id: string): Promise<{ success: boolean }>;
+  getAdminEngineers(token: string, filters: { regionId?: string; search?: string; isActive?: boolean; limit?: number; offset?: number }): Promise<ListEngineersResult>;
+  createAdminEngineer(token: string, input: { engineerName: string; engineerCode?: string | null; regionId: string; email?: string | null; phone?: string | null }): Promise<{ engineer: Engineer }>;
+  updateAdminEngineer(token: string, id: string, input: { engineerName?: string; engineerCode?: string | null; regionId?: string; email?: string | null; phone?: string | null }): Promise<{ engineer: Engineer }>;
+  deactivateAdminEngineer(token: string, id: string): Promise<{ engineer: Engineer }>;
+  reactivateAdminEngineer(token: string, id: string): Promise<{ engineer: Engineer }>;
+  getEngineersDropdown(token: string, regionId?: string): Promise<{ engineers: DropdownEngineer[] }>;
 }
 
 function authHeaders(token: string): Record<string, string> {
@@ -256,6 +265,69 @@ export function createOpenCallApiClient({
       });
 
       return readJson<{ success: boolean }>(response);
+    },
+
+    async getAdminEngineers(token, filters) {
+      const params = new URLSearchParams();
+      if (filters.regionId) params.append("regionId", filters.regionId);
+      if (filters.search) params.append("search", filters.search);
+      if (filters.isActive !== undefined) params.append("isActive", String(filters.isActive));
+      if (filters.limit) params.append("limit", String(filters.limit));
+      if (filters.offset) params.append("offset", String(filters.offset));
+      
+      const queryString = params.toString() ? `?${params.toString()}` : "";
+      const response = await fetchImpl(url(`/api/v1/admin/engineers${queryString}`), {
+        headers: authHeaders(token),
+      });
+
+      return readJson<ListEngineersResult>(response);
+    },
+
+    async createAdminEngineer(token, input) {
+      const response = await fetchImpl(url(`/api/v1/admin/engineers`), {
+        method: "POST",
+        headers: jsonAuthHeaders(token),
+        body: JSON.stringify(input),
+      });
+
+      return readJson<{ engineer: Engineer }>(response);
+    },
+
+    async updateAdminEngineer(token, id, input) {
+      const response = await fetchImpl(url(`/api/v1/admin/engineers/${id}`), {
+        method: "PATCH",
+        headers: jsonAuthHeaders(token),
+        body: JSON.stringify(input),
+      });
+
+      return readJson<{ engineer: Engineer }>(response);
+    },
+
+    async deactivateAdminEngineer(token, id) {
+      const response = await fetchImpl(url(`/api/v1/admin/engineers/${id}/deactivate`), {
+        method: "POST",
+        headers: authHeaders(token),
+      });
+
+      return readJson<{ engineer: Engineer }>(response);
+    },
+
+    async reactivateAdminEngineer(token, id) {
+      const response = await fetchImpl(url(`/api/v1/admin/engineers/${id}/reactivate`), {
+        method: "POST",
+        headers: authHeaders(token),
+      });
+
+      return readJson<{ engineer: Engineer }>(response);
+    },
+
+    async getEngineersDropdown(token, regionId) {
+      const queryString = regionId ? `?regionId=${encodeURIComponent(regionId)}` : "";
+      const response = await fetchImpl(url(`/api/v1/admin/engineers/dropdown${queryString}`), {
+        headers: authHeaders(token),
+      });
+
+      return readJson<{ engineers: DropdownEngineer[] }>(response);
     },
   };
 }

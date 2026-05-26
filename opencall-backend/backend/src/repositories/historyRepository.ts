@@ -180,10 +180,24 @@ export async function getHistorySessionsByUser(
   const sql = `
     SELECT
       sessions.*,
-      reports.report_date::TEXT AS report_date
+      COALESCE(
+        CASE
+          WHEN title_date.parts IS NULL THEN NULL
+          ELSE make_date(
+            (title_date.parts)[3]::INT,
+            (title_date.parts)[2]::INT,
+            (title_date.parts)[1]::INT
+          )
+        END,
+        reports.report_date
+      )::TEXT AS report_date
     FROM report_history_sessions sessions
     LEFT JOIN daily_call_plan_reports reports
       ON reports.id = sessions.daily_call_plan_report_id
+    LEFT JOIN LATERAL regexp_match(
+      sessions.title,
+      'Report Session\s+([0-9]{1,2})/([0-9]{1,2})/([0-9]{4})'
+    ) AS title_date(parts) ON TRUE
     WHERE sessions.user_id = $1
     ORDER BY sessions.created_at DESC;
   `;
@@ -198,10 +212,24 @@ export async function getHistorySessionById(
   const sql = `
     SELECT
       sessions.*,
-      reports.report_date::TEXT AS report_date
+      COALESCE(
+        CASE
+          WHEN title_date.parts IS NULL THEN NULL
+          ELSE make_date(
+            (title_date.parts)[3]::INT,
+            (title_date.parts)[2]::INT,
+            (title_date.parts)[1]::INT
+          )
+        END,
+        reports.report_date
+      )::TEXT AS report_date
     FROM report_history_sessions sessions
     LEFT JOIN daily_call_plan_reports reports
       ON reports.id = sessions.daily_call_plan_report_id
+    LEFT JOIN LATERAL regexp_match(
+      sessions.title,
+      'Report Session\s+([0-9]{1,2})/([0-9]{1,2})/([0-9]{4})'
+    ) AS title_date(parts) ON TRUE
     WHERE sessions.id = $1 AND sessions.user_id = $2
     LIMIT 1;
   `;

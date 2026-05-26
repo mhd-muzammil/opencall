@@ -81,6 +81,23 @@ export interface ReportRowEditPayload {
   updatedBy: string | null;
 }
 
+export interface ReportRowCarryForwardBackfillPayload {
+  rowId: string;
+  rtplStatus: string | null;
+  segment: string | null;
+  engineer: string | null;
+  location: string | null;
+  caseCreatedTime: string | null;
+  hpOwnerStatus: string | null;
+  customerMail: string | null;
+  rca: string | null;
+  remarks: string | null;
+  manualNotes: string | null;
+  carriedForwardFields: readonly ManualCarryForwardField[];
+  manualFieldsCompleted: boolean;
+  manualFieldsMissing: readonly ManualCarryForwardField[];
+}
+
 export interface EditedReportRow {
   id: string;
   reportId: string;
@@ -522,16 +539,37 @@ export async function findPreviousFinalReportRowsForManualCarryForward(
 ): Promise<FinalReportManualCarryForwardRow[]> {
   const result = await client.query<FinalReportManualCarryForwardDbRow>(
     `
-      WITH previous_session AS (
-        SELECT sessions.id
+      WITH completed_sessions AS (
+        SELECT
+          sessions.id,
+          sessions.updated_at,
+          COALESCE(
+            CASE
+              WHEN title_date.parts IS NULL THEN NULL
+              ELSE make_date(
+                (title_date.parts)[3]::INT,
+                (title_date.parts)[2]::INT,
+                (title_date.parts)[1]::INT
+              )
+            END,
+            reports.report_date
+          ) AS effective_report_date
         FROM report_history_sessions sessions
         JOIN daily_call_plan_reports reports
           ON reports.id = sessions.daily_call_plan_report_id
+        LEFT JOIN LATERAL regexp_match(
+          sessions.title,
+          'Report Session\s+([0-9]{1,2})/([0-9]{1,2})/([0-9]{4})'
+        ) AS title_date(parts) ON TRUE
         WHERE sessions.status = 'COMPLETED'
           AND sessions.daily_call_plan_report_id IS NOT NULL
           AND sessions.region_id IS NOT DISTINCT FROM $2
-          AND reports.report_date < $1::date
-        ORDER BY reports.report_date DESC, sessions.updated_at DESC, sessions.id ASC
+      ),
+      previous_session AS (
+        SELECT id
+        FROM completed_sessions
+        WHERE effective_report_date < $1::date
+        ORDER BY effective_report_date DESC, updated_at DESC, id ASC
         LIMIT 1
       )
       SELECT
@@ -650,6 +688,78 @@ export async function updateDailyCallPlanReportRowManualFields(
 
   const row = result.rows[0];
   return row ? mapEditedReportRow(row) : null;
+}
+
+export async function backfillMissingDailyCallPlanReportRowCarryForward(
+  client: PoolClient,
+  payload: ReportRowCarryForwardBackfillPayload,
+): Promise<void> {
+  await client.query(
+    `
+      UPDATE daily_call_plan_report_rows
+      SET
+        rtpl_status = CASE
+          WHEN $2::text IS NOT NULL AND NULLIF(TRIM(COALESCE(rtpl_status, '')), '') IS NULL THEN $2
+          ELSE rtpl_status
+        END,
+        segment = CASE
+          WHEN $3::text IS NOT NULL AND NULLIF(TRIM(COALESCE(segment, '')), '') IS NULL THEN $3
+          ELSE segment
+        END,
+        engineer = CASE
+          WHEN $4::text IS NOT NULL AND NULLIF(TRIM(COALESCE(engineer, '')), '') IS NULL THEN $4
+          ELSE engineer
+        END,
+        location = CASE
+          WHEN $5::text IS NOT NULL AND NULLIF(TRIM(COALESCE(location, '')), '') IS NULL THEN $5
+          ELSE location
+        END,
+        case_created_time = CASE
+          WHEN $6::timestamptz IS NOT NULL AND case_created_time IS NULL THEN $6::timestamptz
+          ELSE case_created_time
+        END,
+        hp_owner_status = CASE
+          WHEN $7::text IS NOT NULL AND NULLIF(TRIM(COALESCE(hp_owner_status, '')), '') IS NULL THEN $7
+          ELSE hp_owner_status
+        END,
+        customer_mail = CASE
+          WHEN $8::text IS NOT NULL AND NULLIF(TRIM(COALESCE(customer_mail, '')), '') IS NULL THEN $8
+          ELSE customer_mail
+        END,
+        rca = CASE
+          WHEN $9::text IS NOT NULL AND NULLIF(TRIM(COALESCE(rca, '')), '') IS NULL THEN $9
+          ELSE rca
+        END,
+        remarks = CASE
+          WHEN $10::text IS NOT NULL AND NULLIF(TRIM(COALESCE(remarks, '')), '') IS NULL THEN $10
+          ELSE remarks
+        END,
+        manual_notes = CASE
+          WHEN $11::text IS NOT NULL AND NULLIF(TRIM(COALESCE(manual_notes, '')), '') IS NULL THEN $11
+          ELSE manual_notes
+        END,
+        carried_forward_fields = $12::jsonb,
+        manual_fields_completed = $13,
+        manual_fields_missing = $14::text[]
+      WHERE id = $1
+    `,
+    [
+      payload.rowId,
+      payload.rtplStatus,
+      payload.segment,
+      payload.engineer,
+      payload.location,
+      payload.caseCreatedTime,
+      payload.hpOwnerStatus,
+      payload.customerMail,
+      payload.rca,
+      payload.remarks,
+      payload.manualNotes,
+      JSON.stringify(payload.carriedForwardFields),
+      payload.manualFieldsCompleted,
+      payload.manualFieldsMissing,
+    ],
+  );
 }
 
 export async function findDailyCallPlanReportRowForEdit(

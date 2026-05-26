@@ -70,12 +70,26 @@ export async function findComparisonSessionById(
       SELECT
         rhs.id,
         rhs.daily_call_plan_report_id AS report_id,
-        dcr.report_date,
+        COALESCE(
+          CASE
+            WHEN title_date.parts IS NULL THEN NULL
+            ELSE make_date(
+              (title_date.parts)[3]::INT,
+              (title_date.parts)[2]::INT,
+              (title_date.parts)[1]::INT
+            )
+          END,
+          dcr.report_date
+        )::TEXT AS report_date,
         rhs.region_id,
         rhs.status
       FROM report_history_sessions rhs
       JOIN daily_call_plan_reports dcr
         ON dcr.id = rhs.daily_call_plan_report_id
+      LEFT JOIN LATERAL regexp_match(
+        rhs.title,
+        'Report Session\s+([0-9]{1,2})/([0-9]{1,2})/([0-9]{4})'
+      ) AS title_date(parts) ON TRUE
       WHERE rhs.id = $1
       LIMIT 1
     `,
@@ -96,16 +110,40 @@ export async function findPreviousCompletedComparisonSession(
         SELECT
           rhs.id,
           rhs.region_id,
-          dcr.report_date
+          COALESCE(
+            CASE
+              WHEN title_date.parts IS NULL THEN NULL
+              ELSE make_date(
+                (title_date.parts)[3]::INT,
+                (title_date.parts)[2]::INT,
+                (title_date.parts)[1]::INT
+              )
+            END,
+            dcr.report_date
+          ) AS report_date
         FROM report_history_sessions rhs
         JOIN daily_call_plan_reports dcr
           ON dcr.id = rhs.daily_call_plan_report_id
+        LEFT JOIN LATERAL regexp_match(
+          rhs.title,
+          'Report Session\s+([0-9]{1,2})/([0-9]{1,2})/([0-9]{4})'
+        ) AS title_date(parts) ON TRUE
         WHERE rhs.id = $1
       )
       SELECT
         previous.id,
         previous.daily_call_plan_report_id AS report_id,
-        previous_report.report_date,
+        COALESCE(
+          CASE
+            WHEN previous_title_date.parts IS NULL THEN NULL
+            ELSE make_date(
+              (previous_title_date.parts)[3]::INT,
+              (previous_title_date.parts)[2]::INT,
+              (previous_title_date.parts)[1]::INT
+            )
+          END,
+          previous_report.report_date
+        )::TEXT AS report_date,
         previous.region_id,
         previous.status
       FROM current_session current
@@ -116,7 +154,21 @@ export async function findPreviousCompletedComparisonSession(
        AND previous.region_id IS NOT DISTINCT FROM current.region_id
       JOIN daily_call_plan_reports previous_report
         ON previous_report.id = previous.daily_call_plan_report_id
-       AND previous_report.report_date = current.report_date - INTERVAL '1 day'
+      LEFT JOIN LATERAL regexp_match(
+        previous.title,
+        'Report Session\s+([0-9]{1,2})/([0-9]{1,2})/([0-9]{4})'
+      ) AS previous_title_date(parts) ON TRUE
+      WHERE COALESCE(
+        CASE
+          WHEN previous_title_date.parts IS NULL THEN NULL
+          ELSE make_date(
+            (previous_title_date.parts)[3]::INT,
+            (previous_title_date.parts)[2]::INT,
+            (previous_title_date.parts)[1]::INT
+          )
+        END,
+        previous_report.report_date
+      ) = current.report_date - INTERVAL '1 day'
       ORDER BY previous.updated_at DESC, previous.id ASC
       LIMIT 1
     `,

@@ -18,6 +18,21 @@ function cleanedString(value: unknown): string {
   return String(value ?? "").trim();
 }
 
+function isManualEntryRequired(value: unknown): boolean {
+  return cleanedString(value).toLowerCase() === "manual entry required";
+}
+
+function rtplStatusForAnalytics(row: ReportRow): string {
+  const currentStatus = cleanedString(row.output["RTPL status"]);
+
+  if (currentStatus && !isManualEntryRequired(currentStatus)) {
+    return currentStatus;
+  }
+
+  const previousStatus = cleanedString(row.comparison?.previousRtplStatus);
+  return previousStatus || currentStatus;
+}
+
 function normalizeFlexStatus(value: unknown): string {
   return cleanedString(value).replace(/\s+/g, " ").toLowerCase();
 }
@@ -70,23 +85,23 @@ export function filterRowsByRegion(
 export function buildRtplOperationalAnalytics(
   rows: readonly ReportRow[],
 ): RtplStatusMetric[] {
-  return buildStatusAnalytics(rows, "RTPL status");
+  return buildStatusAnalytics(rows, rtplStatusForAnalytics);
 }
 
 export function buildFlexOperationalAnalytics(
   rows: readonly ReportRow[],
 ): RtplStatusMetric[] {
-  return buildStatusAnalytics(rows, "Flex Status");
+  return buildStatusAnalytics(rows, (row) => row.output["Flex Status"]);
 }
 
 function buildStatusAnalytics(
   rows: readonly ReportRow[],
-  column: string,
+  getStatus: (row: ReportRow) => unknown,
 ): RtplStatusMetric[] {
   const counts = new Map<string, number>();
 
   for (const row of rows) {
-    const status = cleanedString(row.output[column]);
+    const status = cleanedString(getStatus(row));
 
     if (!status) {
       continue;

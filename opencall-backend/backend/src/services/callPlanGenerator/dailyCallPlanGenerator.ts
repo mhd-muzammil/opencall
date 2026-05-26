@@ -5,6 +5,7 @@ import {
   findAreaNameByPincode,
 } from "../../repositories/businessRuleRepository.js";
 import {
+  backfillMissingDailyCallPlanReportRowCarryForward,
   createDailyCallPlanReport,
   findDailyCallPlanReportRowMetadataByReportId,
   findPreviousFinalReportRowsForManualCarryForward,
@@ -31,6 +32,7 @@ import type {
   GeneratedDailyCallPlanReport,
   GeneratedDailyCallPlanRow,
   GenerateDailyCallPlanInput,
+  ManualCarryForwardField,
   ManualCarryForwardSummary,
   ManualCarryForwardRowMetadata,
 } from "../../types/reportGeneration.js";
@@ -50,7 +52,10 @@ import {
   orderedDailyCallPlanRow,
 } from "./dailyCallPlanFormatter.js";
 import { isRequestToCancelFlexStatus } from "./flexStatusRules.js";
-import { manualFieldCarryForwardService } from "./manualFieldCarryForwardService.js";
+import {
+  cleanManualValue,
+  manualFieldCarryForwardService,
+} from "./manualFieldCarryForwardService.js";
 import { validateReportGenerationTransaction } from "./reportGenerationValidation.js";
 import { calculateWipAging } from "../compareService/wipAgingCalculator.js";
 
@@ -277,6 +282,145 @@ function getRenderwaysWipAging(row: GeneratedDailyCallPlanRow): string | null {
   return value;
 }
 
+function countMissingRtplRows(rows: readonly GeneratedDailyCallPlanRow[]): number {
+  return rows.filter(
+    (row) =>
+      !row.carryForward.closedSyntheticRow &&
+      !cleanManualValue(row.enriched.rtpl_status),
+  ).length;
+}
+
+function manualFieldValue(
+  row: GeneratedDailyCallPlanRow,
+  field: ManualCarryForwardField,
+): string | null {
+  const value = row.enriched[field];
+  return value === null || value === undefined ? null : String(value);
+}
+
+function setManualFieldValue(
+  row: GeneratedDailyCallPlanRow,
+  field: ManualCarryForwardField,
+  value: string | null,
+): void {
+  switch (field) {
+    case "rtpl_status":
+      row.enriched.rtpl_status = value ?? "";
+      return;
+    case "segment":
+      row.enriched.segment = value ?? "";
+      return;
+    case "engineer":
+      row.enriched.engineer = value;
+      return;
+    case "location":
+      row.enriched.location = value;
+      return;
+    case "case_created_time":
+      row.enriched.case_created_time = value;
+      return;
+    case "hp_owner_status":
+      row.enriched.hp_owner_status = value;
+      return;
+    case "customer_mail":
+      row.enriched.customer_mail = value;
+      return;
+    case "rca":
+      row.enriched.rca = value;
+      return;
+    case "remarks":
+      row.enriched.remarks = value;
+      return;
+    case "manual_notes":
+      row.enriched.manual_notes = value;
+      return;
+  }
+}
+
+function persistedManualFieldValue(
+  persisted: Awaited<
+    ReturnType<typeof findDailyCallPlanReportRowMetadataByReportId>
+  >[number],
+  field: ManualCarryForwardField,
+): string | null {
+  switch (field) {
+    case "rtpl_status":
+      return persisted.rtplStatus;
+    case "segment":
+      return persisted.segment;
+    case "engineer":
+      return persisted.engineer;
+    case "location":
+      return persisted.location;
+    case "case_created_time":
+      return persisted.caseCreatedTime;
+    case "hp_owner_status":
+      return persisted.hpOwnerStatus;
+    case "customer_mail":
+      return persisted.customerMail;
+    case "rca":
+      return persisted.rca;
+    case "remarks":
+      return persisted.remarks;
+    case "manual_notes":
+      return persisted.manualNotes;
+  }
+}
+
+function applyPreviousComparisonRtplFallback(
+  row: GeneratedDailyCallPlanRow,
+  carriedForwardFields: Set<ManualCarryForwardField>,
+): boolean {
+  if (cleanManualValue(row.enriched.rtpl_status)) {
+    return false;
+  }
+
+  const previousRtplStatus = cleanManualValue(row.comparison?.previousRtplStatus);
+  if (!previousRtplStatus) {
+    return false;
+  }
+
+  row.enriched.rtpl_status = previousRtplStatus;
+  carriedForwardFields.add("rtpl_status");
+  row.carryForward.previousTicketMatched = true;
+  row.carryForward.changeType ??= "CARRIED";
+  return true;
+}
+
+function refreshCarryForwardMetadata(row: GeneratedDailyCallPlanRow): void {
+  row.carryForward.manualFieldsMissing = MANUAL_CARRY_FORWARD_FIELDS.filter(
+    (field) => !cleanManualValue(row.enriched[field]),
+  );
+  row.carryForward.manualFieldsCompleted =
+    row.carryForward.manualFieldsMissing.length === 0;
+}
+
+function applyComparisonRtplFallbackToRows(
+  rows: GeneratedDailyCallPlanRow[],
+): number {
+  let fallbackCount = 0;
+
+  for (const row of rows) {
+    const carriedForwardFields = new Set<ManualCarryForwardField>(
+      row.carryForward.carriedForwardFields,
+    );
+
+    if (!applyPreviousComparisonRtplFallback(row, carriedForwardFields)) {
+      continue;
+    }
+
+    row.carryForward.carriedForwardFields = [...carriedForwardFields];
+    refreshCarryForwardMetadata(row);
+    row.match.enrichedRow = row.enriched;
+    row.output = orderedDailyCallPlanRow(
+      formatDailyCallPlanRow(row.serialNo, row.enriched),
+    );
+    fallbackCount += 1;
+  }
+
+  return fallbackCount;
+}
+
 async function applyPersistedRowMetadata(
   client: Parameters<typeof findDailyCallPlanReportRowMetadataByReportId>[0],
   reportId: string,
@@ -301,24 +445,67 @@ async function applyPersistedRowMetadata(
     row.id = persisted.id;
     row.updatedAt = persisted.updatedAt;
     row.updatedBy = persisted.updatedBy;
-    row.enriched.case_created_time = persisted.caseCreatedTime;
     row.enriched.wip_aging = persisted.wipAging;
-    row.enriched.hp_owner_status = persisted.hpOwnerStatus;
-    row.enriched.rtpl_status = persisted.rtplStatus ?? "";
-    row.enriched.segment = persisted.segment ?? "";
-    row.enriched.engineer = persisted.engineer;
-    row.enriched.location = persisted.location;
-    row.enriched.customer_mail = persisted.customerMail;
-    row.enriched.rca = persisted.rca;
-    row.enriched.remarks = persisted.remarks;
-    row.enriched.manual_notes = persisted.manualNotes;
+    const carriedForwardFields = new Set<ManualCarryForwardField>(
+      persisted.carriedForwardFields,
+    );
+    const repairedFields: ManualCarryForwardField[] = [];
+
+    for (const field of [
+      ...MANUAL_CARRY_FORWARD_FIELDS,
+      "remarks",
+      "manual_notes",
+    ] as const) {
+      const persistedValue = persistedManualFieldValue(persisted, field);
+      const generatedValue = manualFieldValue(row, field);
+
+      if (cleanManualValue(persistedValue)) {
+        setManualFieldValue(row, field, persistedValue);
+        continue;
+      }
+
+      if (cleanManualValue(generatedValue)) {
+        setManualFieldValue(row, field, generatedValue);
+        if (row.carryForward.carriedForwardFields.includes(field)) {
+          repairedFields.push(field);
+          carriedForwardFields.add(field);
+        }
+        continue;
+      }
+
+      setManualFieldValue(row, field, persistedValue);
+      carriedForwardFields.delete(field);
+    }
+
+    if (applyPreviousComparisonRtplFallback(row, carriedForwardFields)) {
+      repairedFields.push("rtpl_status");
+    }
+
     row.match.enrichedRow = row.enriched;
-    row.carryForward.carriedForwardFields = persisted.carriedForwardFields;
-    row.carryForward.manualFieldsCompleted = persisted.manualFieldsCompleted;
-    row.carryForward.manualFieldsMissing = persisted.manualFieldsMissing;
+    row.carryForward.carriedForwardFields = [...carriedForwardFields];
+    refreshCarryForwardMetadata(row);
     row.output = orderedDailyCallPlanRow(
       formatDailyCallPlanRow(row.serialNo, row.enriched),
     );
+
+    if (repairedFields.length > 0) {
+      await backfillMissingDailyCallPlanReportRowCarryForward(client, {
+        rowId: persisted.id,
+        rtplStatus: row.enriched.rtpl_status,
+        segment: row.enriched.segment,
+        engineer: row.enriched.engineer,
+        location: row.enriched.location,
+        caseCreatedTime: row.enriched.case_created_time,
+        hpOwnerStatus: row.enriched.hp_owner_status,
+        customerMail: row.enriched.customer_mail,
+        rca: row.enriched.rca,
+        remarks: row.enriched.remarks,
+        manualNotes: row.enriched.manual_notes,
+        carriedForwardFields: row.carryForward.carriedForwardFields,
+        manualFieldsCompleted: row.carryForward.manualFieldsCompleted,
+        manualFieldsMissing: row.carryForward.manualFieldsMissing,
+      });
+    }
   }
 }
 
@@ -454,6 +641,15 @@ export async function generateDailyCallPlanReport(
       previousFinalRows,
     });
     const rows = reserialiseRows(carryForwardResult.rows.filter(isTodayCallPlanRow));
+    console.info("[dailyCallPlanGenerator] RTPL carry-forward input", {
+      reportDate: input.reportDate,
+      regionId: input.regionId,
+      previousFinalRows: previousFinalRows.length,
+      generatedRows: generatedRows.length,
+      rowsAfterCarryForward: rows.length,
+      totalFieldsCarried: carryForwardResult.summary.totalFieldsCarried,
+      missingRtplAfterCarryForward: countMissingRtplRows(rows),
+    });
     const carryForwardSummary = summarizeCarryForward(rows);
     const duplicateTicketCount = countDuplicateTickets(rows);
     const unmatchedTicketCount = countUnmatchedRows(rows);
@@ -502,6 +698,14 @@ export async function generateDailyCallPlanReport(
       });
 
       applyComparisonToGeneratedRows(rows, reportComparison);
+      const comparisonRtplFallbackCount = applyComparisonRtplFallbackToRows(rows);
+      console.info("[dailyCallPlanGenerator] RTPL comparison fallback", {
+        reportDate: input.reportDate,
+        regionId: input.regionId,
+        previousSessionId: previousSession.id,
+        comparisonRtplFallbackCount,
+        missingRtplAfterComparisonFallback: countMissingRtplRows(rows),
+      });
       if (!existingReportId) {
         await replaceReportComparison(client, {
           currentSessionId: reportComparison.currentSessionId,
@@ -542,6 +746,12 @@ export async function generateDailyCallPlanReport(
       await insertDailyCallPlanReportRows(client, reportId, rows);
     } else {
       await applyPersistedRowMetadata(client, reportId, rows);
+      console.info("[dailyCallPlanGenerator] RTPL persisted metadata applied", {
+        reportDate: input.reportDate,
+        regionId: input.regionId,
+        reportId,
+        missingRtplAfterPersistedMetadata: countMissingRtplRows(rows),
+      });
       // Recalculate again after applying metadata to ensure aging is up-to-date
       // and accounts for any manually updated case_created_time.
       updateAging();

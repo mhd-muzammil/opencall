@@ -52,7 +52,7 @@ const ALL_CARRY_FORWARD_FIELDS: readonly ManualCarryForwardField[] = [
   ...OPTIONAL_MANUAL_CARRY_FORWARD_FIELDS,
 ];
 
-function cleanManualValue(value: unknown): string | null {
+export function cleanManualValue(value: unknown): string | null {
   if (value === null || value === undefined) {
     return null;
   }

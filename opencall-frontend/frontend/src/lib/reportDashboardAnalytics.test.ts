@@ -146,6 +146,26 @@ describe("reportDashboardAnalytics", () => {
     ]);
   });
 
+  it("uses previous RTPL status for analytics when current report still has manual placeholder", () => {
+    const carriedRow = row(4, {
+      "Ticket ID": "WO-4",
+      "Work Location": "ASPS01461",
+      "RTPL status": "Manual Entry Required",
+    });
+    carriedRow.comparison = {
+      changeType: "CARRIED",
+      previousFlexStatus: "Open",
+      previousRtplStatus: "Part Pending",
+      previousWipAging: "2",
+      changedFields: {},
+      changeSummary: "No tracked changes",
+    };
+
+    const metrics = buildRtplOperationalAnalytics([carriedRow]);
+
+    expect(metrics).toEqual([{ status: "Part Pending", count: 1 }]);
+  });
+
   it("builds dynamic Flex metrics from real row statuses only", () => {
     const metrics = buildFlexOperationalAnalytics([
       ...reportFixture().rows,

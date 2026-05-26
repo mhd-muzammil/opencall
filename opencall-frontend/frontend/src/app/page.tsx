@@ -2294,8 +2294,6 @@ export default function DashboardPage() {
                 <table>
                   <thead>
                     <tr>
-                      <th>Change</th>
-                      <th>Ops</th>
                       {DAILY_CALL_PLAN_COLUMNS.map((column) => {
                         const isFilterable = colFilters.isFilterable(column);
                         const isFiltered = colFilters.isColumnFiltered(column);
@@ -2324,6 +2322,8 @@ export default function DashboardPage() {
                           </th>
                         );
                       })}
+                      <th>Change</th>
+                      <th>Ops</th>
                       <th className="stickyActionColumn">Action</th>
                     </tr>
                   </thead>
@@ -2342,20 +2342,6 @@ export default function DashboardPage() {
                               : undefined
                           }
                         >
-                          <td className="changeCell">
-                            <ChangeTypeBadge comparison={row.comparison} />
-                          </td>
-                          <td className="opsCell">
-                            <CarryForwardBadge carryForward={row.carryForward} />
-                            {row.carryForward.manualFieldsMissing.length > 0 ? (
-                              <span
-                                className="manualCount"
-                                title={`Manual entry required: ${formatFieldList(row.carryForward.manualFieldsMissing)}`}
-                              >
-                                {row.carryForward.manualFieldsMissing.length}
-                              </span>
-                            ) : null}
-                          </td>
                           {DAILY_CALL_PLAN_COLUMNS.map((column) => {
                             const value =
                               column === "S.no"
@@ -2492,6 +2478,20 @@ export default function DashboardPage() {
                               </td>
                             );
                           })}
+                          <td className="changeCell">
+                            <ChangeTypeBadge comparison={row.comparison} />
+                          </td>
+                          <td className="opsCell">
+                            <CarryForwardBadge carryForward={row.carryForward} />
+                            {row.carryForward.manualFieldsMissing.length > 0 ? (
+                              <span
+                                className="manualCount"
+                                title={`Manual entry required: ${formatFieldList(row.carryForward.manualFieldsMissing)}`}
+                              >
+                                {row.carryForward.manualFieldsMissing.length}
+                              </span>
+                            ) : null}
+                          </td>
                           <td className="stickyActionColumn">
                             {isEditing ? (
                               <div className="rowActions">

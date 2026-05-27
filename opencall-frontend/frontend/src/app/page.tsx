@@ -1,6 +1,6 @@
 "use client";
 
-import { DAILY_CALL_PLAN_COLUMNS, RTPL_STATUS_OPTIONS } from "@opencall/shared";
+import { DAILY_CALL_PLAN_COLUMNS, RTPL_STATUS_OPTIONS, RTPL_STATUS_GROUPS } from "@opencall/shared";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { ColumnFilterDropdown } from "../components/ColumnFilterDropdown";
 import { AppHeader } from "../components/AppHeader";
@@ -8,6 +8,7 @@ import { HistoryDrawer } from "../components/HistoryDrawer";
 import { MetricsGrid, type MetricsGridItem } from "../components/MetricsGrid";
 import { StatusPill } from "../components/StatusPill";
 import { UploadDrawer } from "../components/UploadDrawer";
+import { RTPLStatusDropdown } from "../components/RTPLStatusDropdown";
 import { useColumnFilters } from "../lib/useColumnFilters";
 import {
   FILTERABLE_COLUMNS,
@@ -2389,38 +2390,23 @@ export default function DashboardPage() {
                                 {isEditing && !isReadOnly ? (
                                   column === "RTPL status" ? (
                                     <div style={{ display: "flex", gap: "4px", alignItems: "center" }}>
-                                         <select
-                                           className="cellInput"
-                                           value={
-                                             draftOutput[column]
-                                               ? RTPL_STATUS_OPTIONS.some((opt) => opt === String(draftOutput[column]))
-                                                 ? String(draftOutput[column])
-                                                 : "Custom"
-                                               : ""
-                                           }
-                                           onChange={(event) => {
-                                             const selected = event.target.value;
-                                             if (selected === "Custom") {
-                                               setDraftOutput((current) => ({
-                                                 ...current,
-                                                 [column]: "",
-                                               }));
-                                             } else {
-                                               setDraftOutput((current) => ({
-                                                 ...current,
-                                                 [column]: selected || "",
-                                               }));
-                                             }
-                                           }}
-                                         >
-                                        <option value="">{MANUAL_ENTRY_REQUIRED}</option>
-                                        {RTPL_STATUS_OPTIONS.map((option) => (
-                                          <option key={option} value={option}>
-                                            {option}
-                                          </option>
-                                        ))}
-                                        <option value="Custom">Custom</option>
-                                      </select>
+                                        <RTPLStatusDropdown
+                                          value={String(draftOutput[column] ?? "")}
+                                          manualEntryRequiredLabel={MANUAL_ENTRY_REQUIRED}
+                                          onChange={(selected) => {
+                                            if (selected === "Custom") {
+                                              setDraftOutput((current) => ({
+                                                ...current,
+                                                [column]: "",
+                                              }));
+                                            } else {
+                                              setDraftOutput((current) => ({
+                                                ...current,
+                                                [column]: selected,
+                                              }));
+                                            }
+                                          }}
+                                        />
                                        {(draftOutput[column] === "" || !RTPL_STATUS_OPTIONS.some((opt) => opt === String(draftOutput[column]))) && (
                                         <input
                                           className="cellInput"

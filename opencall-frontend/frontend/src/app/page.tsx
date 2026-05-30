@@ -687,6 +687,7 @@ export default function DashboardPage() {
   const [editingSerialNo, setEditingSerialNo] = useState<number | null>(null);
   const [savingSerialNo, setSavingSerialNo] = useState<number | null>(null);
    const [draftOutput, setDraftOutput] = useState<Record<string, string | number>>({});
+   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
    const draftOutputRef = useRef(draftOutput);
    const hasAutoRestoredHistoryRef = useRef(false);
    const [engineersList, setEngineersList] = useState<DropdownEngineer[]>([]);
@@ -1692,9 +1693,15 @@ export default function DashboardPage() {
     setDraftOutput({ ...row.output });
   }
 
+  function startModalEditing(row: GeneratedReportResponse["rows"][number]) {
+    startEditing(row);
+    setIsEditModalOpen(true);
+  }
+
   function cancelEditing() {
     setEditingSerialNo(null);
     setDraftOutput({});
+    setIsEditModalOpen(false);
   }
 
   function patchValue(column: string): string | null {
@@ -2982,7 +2989,21 @@ export default function DashboardPage() {
                                   )
                                 ) : (
                                   <span className="cellValueWrap">
-                                    <span>{String(value ?? "")}</span>
+                                    {column === "Ticket ID" ? (
+                                      <button
+                                        type="button"
+                                        className="ticketIdLink"
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          startModalEditing(row);
+                                        }}
+                                        title="Click to view/edit order form"
+                                      >
+                                        {String(value ?? "")}
+                                      </button>
+                                    ) : (
+                                      <span>{String(value ?? "")}</span>
+                                    )}
                                     {isCarriedForward ? (
                                       <span className="cellCarryFlag">Carried</span>
                                     ) : null}
@@ -3597,6 +3618,252 @@ export default function DashboardPage() {
               >
                 📥 Download Productivity Excel
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {isEditModalOpen && editingSerialNo !== null && (
+        <div className="modalOverlay" onClick={cancelEditing}>
+          <div className="modalCard" onClick={(e) => e.stopPropagation()}>
+            <div className="modalHeader">
+              <div className="modalTitleGroup">
+                <span className="modalEyebrow">Work Order Details & Entry</span>
+                <h2 className="modalTitle">
+                  Ticket ID: <span className="highlightText">{String(draftOutput["Ticket ID"] ?? "")}</span>
+                </h2>
+              </div>
+              <button type="button" className="modalCloseBtn" onClick={cancelEditing} title="Close Form">
+                &times;
+              </button>
+            </div>
+
+            <div className="modalBody">
+              {/* Read-Only Summary Info */}
+              <div className="modalInfoGrid">
+                <div className="modalInfoItem">
+                  <span>Case ID</span>
+                  <strong>{String(draftOutput["Case ID"] ?? "N/A")}</strong>
+                </div>
+                <div className="modalInfoItem">
+                  <span>Customer Name</span>
+                  <strong>{String(draftOutput["Customer Name"] ?? "N/A")}</strong>
+                </div>
+                <div className="modalInfoItem">
+                  <span>Work Location</span>
+                  <strong>{String(draftOutput["Work Location"] ?? "N/A")}</strong>
+                </div>
+                <div className="modalInfoItem">
+                  <span>WO OTC Code</span>
+                  <strong>{String(draftOutput["WO OTC CODE"] ?? "N/A")}</strong>
+                </div>
+                <div className="modalInfoItem">
+                  <span>Product Line</span>
+                  <strong>{String(draftOutput["Product Line Name"] ?? "N/A")}</strong>
+                </div>
+                <div className="modalInfoItem">
+                  <span>WIP Aging</span>
+                  <strong>{String(draftOutput["WIP aging"] ?? "N/A")} Days</strong>
+                </div>
+              </div>
+
+              {/* Form Fields */}
+              <form 
+                className="modalForm" 
+                onSubmit={(e) => { 
+                  e.preventDefault(); 
+                  void saveEditing(editingSerialNo); 
+                }}
+              >
+                <div className="formFieldGroup">
+                  {/* RTPL Status */}
+                  <div className="formField">
+                    <label htmlFor="modal-rtpl-status">RTPL Status</label>
+                    <div className="statusFieldContainer">
+                      <RTPLStatusDropdown
+                        value={String(draftOutput["RTPL status"] ?? "")}
+                        manualEntryRequiredLabel={MANUAL_ENTRY_REQUIRED}
+                        onChange={(selected) => {
+                          if (selected === "Custom") {
+                            setDraftOutput((current) => ({
+                              ...current,
+                              "RTPL status": "",
+                            }));
+                          } else {
+                            setDraftOutput((current) => ({
+                              ...current,
+                              "RTPL status": selected,
+                            }));
+                          }
+                        }}
+                      />
+                      {(draftOutput["RTPL status"] === "" || !RTPL_STATUS_OPTIONS.some((opt) => opt === String(draftOutput["RTPL status"]))) && (
+                        <input
+                          id="modal-rtpl-status-custom"
+                          className="modalInput customStatusInput"
+                          value={String(draftOutput["RTPL status"] ?? "")}
+                          onChange={(event) =>
+                            setDraftOutput((current) => ({
+                              ...current,
+                              "RTPL status": event.target.value,
+                            }))
+                          }
+                          placeholder="Enter custom status"
+                        />
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Engineer */}
+                  <div className="formField">
+                    <label htmlFor="modal-engineer">Engineer</label>
+                    <select
+                      id="modal-engineer"
+                      className="modalSelect"
+                      value={String(draftOutput["Engineer"] ?? "")}
+                      onChange={(event) =>
+                        setDraftOutput((current) => ({
+                          ...current,
+                          "Engineer": event.target.value,
+                        }))
+                      }
+                    >
+                      <option value="">{MANUAL_ENTRY_REQUIRED}</option>
+                      {engineersList.map(e => (
+                        <option key={e.id} value={e.engineerName}>{e.engineerName}</option>
+                      ))}
+                      {draftOutput["Engineer"] && draftOutput["Engineer"] !== MANUAL_ENTRY_REQUIRED && !engineersList.some(e => e.engineerName === String(draftOutput["Engineer"])) && (
+                        <option value={String(draftOutput["Engineer"])}>{String(draftOutput["Engineer"])} (Inactive/Not in list)</option>
+                      )}
+                    </select>
+                  </div>
+
+                  {/* Segment */}
+                  <div className="formField">
+                    <label htmlFor="modal-segment">Segment</label>
+                    <input
+                      id="modal-segment"
+                      className="modalInput"
+                      value={String(draftOutput["Segment"] ?? "")}
+                      onChange={(event) =>
+                        setDraftOutput((current) => ({
+                          ...current,
+                          "Segment": event.target.value,
+                        }))
+                      }
+                    />
+                  </div>
+
+                  {/* Location */}
+                  <div className="formField">
+                    <label htmlFor="modal-location">Location</label>
+                    <input
+                      id="modal-location"
+                      className="modalInput"
+                      value={String(draftOutput["Location"] ?? "")}
+                      onChange={(event) =>
+                        setDraftOutput((current) => ({
+                          ...current,
+                          "Location": event.target.value,
+                        }))
+                      }
+                    />
+                  </div>
+
+                  {/* HP Owner Status */}
+                  <div className="formField">
+                    <label htmlFor="modal-hp-owner-status">HP Owner Status</label>
+                    <input
+                      id="modal-hp-owner-status"
+                      className="modalInput"
+                      value={String(draftOutput["HP Owner Status"] ?? "")}
+                      onChange={(event) =>
+                        setDraftOutput((current) => ({
+                          ...current,
+                          "HP Owner Status": event.target.value,
+                        }))
+                      }
+                    />
+                  </div>
+
+                  {/* Case Created Time */}
+                  <div className="formField">
+                    <label htmlFor="modal-case-created-time">Case Created Time</label>
+                    <input
+                      id="modal-case-created-time"
+                      className="modalInput"
+                      value={String(draftOutput["Case Created Time"] ?? "")}
+                      onChange={(event) =>
+                        setDraftOutput((current) => ({
+                          ...current,
+                          "Case Created Time": event.target.value,
+                        }))
+                      }
+                      placeholder="DD-MM-YYYY HH:MM:SS AM/PM"
+                    />
+                  </div>
+
+                  {/* Customer Mail */}
+                  <div className="formField">
+                    <label htmlFor="modal-customer-mail">Customer Mail</label>
+                    <input
+                      id="modal-customer-mail"
+                      className="modalInput"
+                      value={String(draftOutput["Customer Mail"] ?? "")}
+                      onChange={(event) =>
+                        setDraftOutput((current) => ({
+                          ...current,
+                          "Customer Mail": event.target.value,
+                        }))
+                      }
+                    />
+                  </div>
+
+                  {/* RCA */}
+                  <div className="formField fullWidth">
+                    <label htmlFor="modal-rca">RCA (Root Cause Analysis)</label>
+                    <textarea
+                      id="modal-rca"
+                      className="modalTextarea"
+                      value={String(draftOutput["RCA"] ?? "")}
+                      onChange={(event) =>
+                        setDraftOutput((current) => ({
+                          ...current,
+                          "RCA": event.target.value,
+                        }))
+                      }
+                      rows={3}
+                    />
+                  </div>
+                </div>
+
+                <div className="modalActions">
+                  <button
+                    type="button"
+                    className="secondaryButton"
+                    disabled={savingSerialNo === editingSerialNo}
+                    onClick={cancelEditing}
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    className="deleteBtn"
+                    style={{ marginRight: "auto" }}
+                    disabled={savingSerialNo === editingSerialNo}
+                    onClick={() => void handleDeleteRow(editingSerialNo)}
+                  >
+                    {savingSerialNo === editingSerialNo ? "Please wait..." : "Delete Order"}
+                  </button>
+                  <button
+                    type="submit"
+                    className="saveBtn"
+                    disabled={savingSerialNo === editingSerialNo}
+                  >
+                    {savingSerialNo === editingSerialNo ? "Saving..." : "Save Entry"}
+                  </button>
+                </div>
+              </form>
             </div>
           </div>
         </div>

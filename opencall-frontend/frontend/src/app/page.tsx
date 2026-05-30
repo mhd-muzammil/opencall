@@ -223,6 +223,10 @@ function isConsumerCase(row: GeneratedReportResponse["rows"][number]): boolean {
   return false;
 }
 
+function isWarrantyCase(row: GeneratedReportResponse["rows"][number]): boolean {
+  return !isTradeCase(row);
+}
+
 const MANUAL_FIELD_BY_COLUMN: Partial<Record<string, ManualCarryForwardField>> = {
   "RTPL status": "rtpl_status",
   Segment: "segment",
@@ -713,6 +717,8 @@ export default function DashboardPage() {
   const [showClosedOnly, setShowClosedOnly] = useState(false);
   const [showConsumerOnly, setShowConsumerOnly] = useState(false);
   const [showCommercialOnly, setShowCommercialOnly] = useState(false);
+  const [showWarrantyOnly, setShowWarrantyOnly] = useState(false);
+  const [showNonWarrantyOnly, setShowNonWarrantyOnly] = useState(false);
   const [isKpiModalOpen, setIsKpiModalOpen] = useState(false);
   const [isChennaiKpiModalOpen, setIsChennaiKpiModalOpen] = useState(false);
   const [isProductivityModalOpen, setIsProductivityModalOpen] = useState(false);
@@ -733,6 +739,8 @@ export default function DashboardPage() {
     setShowClosedOnly(false);
     setShowConsumerOnly(false);
     setShowCommercialOnly(false);
+    setShowWarrantyOnly(false);
+    setShowNonWarrantyOnly(false);
     setIsKpiModalOpen(false);
     setIsChennaiKpiModalOpen(false);
     setIsProductivityModalOpen(false);
@@ -793,6 +801,8 @@ export default function DashboardPage() {
         count: number;
         consumerCount: number;
         commercialCount: number;
+        warrantyCount: number;
+        nonWarrantyCount: number;
         woOtcCodes: Map<string, number>;
       }
     >();
@@ -805,6 +815,8 @@ export default function DashboardPage() {
           count: 0,
           consumerCount: 0,
           commercialCount: 0,
+          warrantyCount: 0,
+          nonWarrantyCount: 0,
           woOtcCodes: new Map<string, number>(),
         };
 
@@ -813,6 +825,11 @@ export default function DashboardPage() {
         current.consumerCount += 1;
       } else {
         current.commercialCount += 1;
+      }
+      if (isWarrantyCase(row)) {
+        current.warrantyCount += 1;
+      } else {
+        current.nonWarrantyCount += 1;
       }
       current.woOtcCodes.set(woOtcCode, (current.woOtcCodes.get(woOtcCode) ?? 0) + 1);
       regionCounts.set(aspCode, current);
@@ -828,6 +845,8 @@ export default function DashboardPage() {
           count: entry.count,
           consumerCount: entry.consumerCount,
           commercialCount: entry.commercialCount,
+          warrantyCount: entry.warrantyCount,
+          nonWarrantyCount: entry.nonWarrantyCount,
           closedCount: metadata?.closedCount ?? 0,
           woOtcCodeBreakdown: Array.from(entry.woOtcCodes.entries())
             .map(([code, count]) => ({ code, count }))
@@ -857,6 +876,8 @@ export default function DashboardPage() {
         trade: rows.filter(isTradeCase).length,
         consumer: rows.filter(isConsumerCase).length,
         commercial: rows.filter((row) => !isConsumerCase(row)).length,
+        warranty: rows.filter(isWarrantyCase).length,
+        nonWarranty: rows.filter(isTradeCase).length,
       };
     });
   }, [activeRegionBreakdown, activeRows, report]);
@@ -875,11 +896,21 @@ export default function DashboardPage() {
     return activeRows.filter((row) => !isConsumerCase(row));
   }, [activeRows]);
 
+  const warrantyRows = useMemo(() => {
+    return activeRows.filter(isWarrantyCase);
+  }, [activeRows]);
+
+  const nonWarrantyRows = useMemo(() => {
+    return activeRows.filter(isTradeCase);
+  }, [activeRows]);
+
   const tableBaseRows = useMemo(() => {
     if (!report) return [];
     if (showClosedOnly) return closedRows;
     if (showConsumerOnly) return consumerRows;
     if (showCommercialOnly) return commercialRows;
+    if (showWarrantyOnly) return warrantyRows;
+    if (showNonWarrantyOnly) return nonWarrantyRows;
     if (showCissOnly) return cissRows;
     if (showRcaOnly) return rcaRows;
     if (showTradeOnly) return tradeRows;
@@ -893,6 +924,8 @@ export default function DashboardPage() {
     closedRows,
     consumerRows,
     commercialRows,
+    warrantyRows,
+    nonWarrantyRows,
     printCaseFilter,
     printFixRows,
     printInstallationRows,
@@ -902,6 +935,8 @@ export default function DashboardPage() {
     showClosedOnly,
     showConsumerOnly,
     showCommercialOnly,
+    showWarrantyOnly,
+    showNonWarrantyOnly,
     showRcaOnly,
     showTradeOnly,
     tradeRows,
@@ -1948,6 +1983,8 @@ export default function DashboardPage() {
     const hasRecordsSearchFilter = recordsSearchQuery.trim().length > 0;
     const hasConsumerFilter = showConsumerOnly;
     const hasCommercialFilter = showCommercialOnly;
+    const hasWarrantyFilter = showWarrantyOnly;
+    const hasNonWarrantyFilter = showNonWarrantyOnly;
     const hasCissFilter = showCissOnly;
     const hasRcaFilter = showRcaOnly;
     const hasTradeFilter = showTradeOnly;
@@ -1966,6 +2003,12 @@ export default function DashboardPage() {
     } else if (hasCommercialFilter) {
       const scopedCommercialRows = scopedRows(commercialRows);
       exportRows = applyActiveTableFilters(scopedCommercialRows);
+    } else if (hasWarrantyFilter) {
+      const scopedWarrantyRows = scopedRows(warrantyRows);
+      exportRows = applyActiveTableFilters(scopedWarrantyRows);
+    } else if (hasNonWarrantyFilter) {
+      const scopedNonWarrantyRows = scopedRows(nonWarrantyRows);
+      exportRows = applyActiveTableFilters(scopedNonWarrantyRows);
     } else if (hasCissFilter) {
       const scopedCissRows = scopedRows(cissRows);
       exportRows = applyActiveTableFilters(scopedCissRows);
@@ -2025,6 +2068,8 @@ export default function DashboardPage() {
     closedOnly = false,
     consumerOnly = false,
     commercialOnly = false,
+    warrantyOnly = false,
+    nonWarrantyOnly = false,
   }: Readonly<{
     region?: string | null;
     woOtcCode?: string | null;
@@ -2038,6 +2083,8 @@ export default function DashboardPage() {
     closedOnly?: boolean;
     consumerOnly?: boolean;
     commercialOnly?: boolean;
+    warrantyOnly?: boolean;
+    nonWarrantyOnly?: boolean;
   }>) {
     setSelectedRegion(region ?? null);
     setSelectedWoOtcCode(woOtcCode ?? null);
@@ -2047,6 +2094,8 @@ export default function DashboardPage() {
     setShowClosedOnly(closedOnly);
     setShowConsumerOnly(consumerOnly);
     setShowCommercialOnly(commercialOnly);
+    setShowWarrantyOnly(warrantyOnly);
+    setShowNonWarrantyOnly(nonWarrantyOnly);
     setPrintCaseFilter(printCase);
     setSelectedRtplRegion(region && region !== "ALL" ? region : ALL_REGIONS_FILTER);
     colFilters.resetAll();
@@ -2421,6 +2470,65 @@ export default function DashboardPage() {
                   </div>
                 </div>
               </div>
+
+              <div className="caseTypeSection" style={{ borderLeft: "4px solid var(--accent)", marginTop: "24px" }}>
+                <div className="sectionHeader">
+                  <div>
+                    <h3>Warranty Segment Split</h3>
+                    <p>Split counts for Active Warranty and Non-Warranty (Trade) cases.</p>
+                  </div>
+                </div>
+                <div className="caseTypeGrid" style={{ gridTemplateColumns: "repeat(2, minmax(0, 1fr))" }}>
+                  <div className={`caseTypeCard ${showWarrantyOnly ? "active" : ""}`} style={{ padding: "16px" }}>
+                    <button
+                      type="button"
+                      className="caseTypeSummary"
+                      style={{ minHeight: "auto", padding: "0", cursor: "pointer", width: "100%", background: "none", border: "none", textAlign: "left" }}
+                      onClick={() => openRecordsWithFilter({ warrantyOnly: true })}
+                    >
+                      <span>Warranty Segment</span>
+                      <strong style={{ color: "#16a34a", fontSize: "36px", marginTop: "8px" }}>{formatNumber(warrantyRows.length)}</strong>
+                      <small style={{ marginTop: "4px" }}>Active Warranty / Service Contracts</small>
+                    </button>
+                    <div className="caseTypeRegionList" style={{ marginTop: "12px" }}>
+                      {caseTypeRegionBreakdown.map((entry) => (
+                        <button
+                          type="button"
+                          key={entry.aspCode}
+                          onClick={() => openRecordsWithFilter({ region: entry.aspCode, warrantyOnly: true })}
+                        >
+                          <span>{entry.regionName}</span>
+                          <strong>{entry.warranty}</strong>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                  <div className={`caseTypeCard ${showNonWarrantyOnly ? "active" : ""}`} style={{ padding: "16px" }}>
+                    <button
+                      type="button"
+                      className="caseTypeSummary"
+                      style={{ minHeight: "auto", padding: "0", cursor: "pointer", width: "100%", background: "none", border: "none", textAlign: "left" }}
+                      onClick={() => openRecordsWithFilter({ nonWarrantyOnly: true })}
+                    >
+                      <span>Non-Warranty Segment</span>
+                      <strong style={{ color: "#ea580c", fontSize: "36px", marginTop: "8px" }}>{formatNumber(nonWarrantyRows.length)}</strong>
+                      <small style={{ marginTop: "4px" }}>Trade / Non-Warranty / Out-of-Warranty Accounts</small>
+                    </button>
+                    <div className="caseTypeRegionList" style={{ marginTop: "12px" }}>
+                      {caseTypeRegionBreakdown.map((entry) => (
+                        <button
+                          type="button"
+                          key={entry.aspCode}
+                          onClick={() => openRecordsWithFilter({ region: entry.aspCode, nonWarrantyOnly: true })}
+                        >
+                          <span>{entry.regionName}</span>
+                          <strong>{entry.nonWarranty}</strong>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              </div>
               {incompleteCellCount > 0 ? (
                 <p className="hint">
                   Click any highlighted "Manual Entry Required" cell or the row Edit button to enter manual data.
@@ -2450,7 +2558,7 @@ export default function DashboardPage() {
                 </div>
                 <div className="regionGrid">
                   <div 
-                    className={`regionMetric ${selectedRegion === "ALL" && !selectedWoOtcCode && !showConsumerOnly && !showCommercialOnly ? "active" : ""}`}
+                    className={`regionMetric ${selectedRegion === "ALL" && !selectedWoOtcCode && !showConsumerOnly && !showCommercialOnly && !showWarrantyOnly && !showNonWarrantyOnly ? "active" : ""}`}
                     onClick={() => openRecordsWithFilter({ region: "ALL" })}
                     style={{ cursor: "pointer", border: "2px solid var(--accent)", background: "var(--accent-tint)" }}
                   >
@@ -2512,6 +2620,59 @@ export default function DashboardPage() {
                         </strong>
                       </button>
                     </div>
+
+                    <div className="regionSegmentMetrics" style={{ marginTop: "8px" }}>
+                      <button
+                        type="button"
+                        className={`regionSegmentMetric ${selectedRegion === "ALL" && showWarrantyOnly ? "active" : ""}`}
+                        style={{
+                          padding: "4px 6px",
+                          gap: "4px",
+                          ...(selectedRegion === "ALL" && showWarrantyOnly ? { borderColor: "var(--accent)", background: "var(--accent-soft)", color: "var(--accent)" } : {})
+                        }}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          openRecordsWithFilter({ region: "ALL", warrantyOnly: true });
+                        }}
+                      >
+                        <span style={{ fontSize: "9px", textTransform: "none", fontWeight: "700" }}>Warranty</span>
+                        <strong
+                          style={{
+                            minWidth: "20px",
+                            padding: "2px 6px",
+                            fontSize: "11px",
+                            ...(selectedRegion === "ALL" && showWarrantyOnly ? { background: "#ffffff", color: "var(--accent)" } : {})
+                          }}
+                        >
+                          {warrantyRows.length}
+                        </strong>
+                      </button>
+                      <button
+                        type="button"
+                        className={`regionSegmentMetric ${selectedRegion === "ALL" && showNonWarrantyOnly ? "active" : ""}`}
+                        style={{
+                          padding: "4px 6px",
+                          gap: "4px",
+                          ...(selectedRegion === "ALL" && showNonWarrantyOnly ? { borderColor: "var(--accent)", background: "var(--accent-soft)", color: "var(--accent)" } : {})
+                        }}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          openRecordsWithFilter({ region: "ALL", nonWarrantyOnly: true });
+                        }}
+                      >
+                        <span style={{ fontSize: "9px", textTransform: "none", fontWeight: "700" }}>Non-Warranty</span>
+                        <strong
+                          style={{
+                            minWidth: "20px",
+                            padding: "2px 6px",
+                            fontSize: "11px",
+                            ...(selectedRegion === "ALL" && showNonWarrantyOnly ? { background: "#ffffff", color: "var(--accent)" } : {})
+                          }}
+                        >
+                          {nonWarrantyRows.length}
+                        </strong>
+                      </button>
+                    </div>
                     
                     {overallWoOtcBreakdown.length > 0 && (
                       <div className="regionWoOtcList">
@@ -2535,7 +2696,7 @@ export default function DashboardPage() {
                   {activeRegionBreakdown.filter((entry) => entry.count > 0).map((entry) => (
                     <div 
                       key={entry.aspCode} 
-                      className={`regionMetric ${selectedRegion === entry.aspCode && !selectedWoOtcCode && !showConsumerOnly && !showCommercialOnly ? "active" : ""}`}
+                      className={`regionMetric ${selectedRegion === entry.aspCode && !selectedWoOtcCode && !showConsumerOnly && !showCommercialOnly && !showWarrantyOnly && !showNonWarrantyOnly ? "active" : ""}`}
                       onClick={() => openRecordsWithFilter({ region: entry.aspCode })}
                       style={{ cursor: "pointer" }}
                     >
@@ -2594,6 +2755,59 @@ export default function DashboardPage() {
                             }}
                           >
                             {entry.commercialCount}
+                          </strong>
+                        </button>
+                      </div>
+
+                      <div className="regionSegmentMetrics" style={{ marginTop: "8px" }}>
+                        <button
+                          type="button"
+                          className={`regionSegmentMetric ${selectedRegion === entry.aspCode && showWarrantyOnly ? "active" : ""}`}
+                          style={{
+                            padding: "4px 6px",
+                            gap: "4px",
+                            ...(selectedRegion === entry.aspCode && showWarrantyOnly ? { borderColor: "var(--accent)", background: "var(--accent-soft)", color: "var(--accent)" } : {})
+                          }}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            openRecordsWithFilter({ region: entry.aspCode, warrantyOnly: true });
+                          }}
+                        >
+                          <span style={{ fontSize: "9px", textTransform: "none", fontWeight: "700" }}>Warranty</span>
+                          <strong
+                            style={{
+                              minWidth: "20px",
+                              padding: "2px 6px",
+                              fontSize: "11px",
+                              ...(selectedRegion === entry.aspCode && showWarrantyOnly ? { background: "#ffffff", color: "var(--accent)" } : {})
+                            }}
+                          >
+                            {entry.warrantyCount}
+                          </strong>
+                        </button>
+                        <button
+                          type="button"
+                          className={`regionSegmentMetric ${selectedRegion === entry.aspCode && showNonWarrantyOnly ? "active" : ""}`}
+                          style={{
+                            padding: "4px 6px",
+                            gap: "4px",
+                            ...(selectedRegion === entry.aspCode && showNonWarrantyOnly ? { borderColor: "var(--accent)", background: "var(--accent-soft)", color: "var(--accent)" } : {})
+                          }}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            openRecordsWithFilter({ region: entry.aspCode, nonWarrantyOnly: true });
+                          }}
+                        >
+                          <span style={{ fontSize: "9px", textTransform: "none", fontWeight: "700" }}>Non-Warranty</span>
+                          <strong
+                            style={{
+                              minWidth: "20px",
+                              padding: "2px 6px",
+                              fontSize: "11px",
+                              ...(selectedRegion === entry.aspCode && showNonWarrantyOnly ? { background: "#ffffff", color: "var(--accent)" } : {})
+                            }}
+                          >
+                            {entry.nonWarrantyCount}
                           </strong>
                         </button>
                       </div>
@@ -2935,6 +3149,26 @@ export default function DashboardPage() {
                     {filteredRows.length} of {regionFilteredRows.length} rows shown
                   </span>
                   <button type="button" onClick={() => setShowCommercialOnly(false)}>Show All Cases</button>
+                </div>
+              )}
+              {showWarrantyOnly && (
+                <div className="colFilterSummary">
+                  <span>
+                    Warranty Cases active
+                    {" · "}
+                    {filteredRows.length} of {regionFilteredRows.length} rows shown
+                  </span>
+                  <button type="button" onClick={() => setShowWarrantyOnly(false)}>Show All Cases</button>
+                </div>
+              )}
+              {showNonWarrantyOnly && (
+                <div className="colFilterSummary">
+                  <span>
+                    Non-Warranty Cases active
+                    {" · "}
+                    {filteredRows.length} of {regionFilteredRows.length} rows shown
+                  </span>
+                  <button type="button" onClick={() => setShowNonWarrantyOnly(false)}>Show All Cases</button>
                 </div>
               )}
               {showCissOnly && (

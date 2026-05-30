@@ -787,15 +787,33 @@ export default function DashboardPage() {
         },
       ]),
     );
-    const regionCounts = new Map<string, { count: number; woOtcCodes: Map<string, number> }>();
+    const regionCounts = new Map<
+      string,
+      {
+        count: number;
+        consumerCount: number;
+        commercialCount: number;
+        woOtcCodes: Map<string, number>;
+      }
+    >();
 
     for (const row of activeRows) {
       const aspCode = String(row.output["Work Location"] || "UNKNOWN").trim().toUpperCase() || "UNKNOWN";
       const woOtcCode = String(row.output["WO OTC CODE"] || "Unspecified").trim() || "Unspecified";
       const current =
-        regionCounts.get(aspCode) ?? { count: 0, woOtcCodes: new Map<string, number>() };
+        regionCounts.get(aspCode) ?? {
+          count: 0,
+          consumerCount: 0,
+          commercialCount: 0,
+          woOtcCodes: new Map<string, number>(),
+        };
 
       current.count += 1;
+      if (isConsumerCase(row)) {
+        current.consumerCount += 1;
+      } else {
+        current.commercialCount += 1;
+      }
       current.woOtcCodes.set(woOtcCode, (current.woOtcCodes.get(woOtcCode) ?? 0) + 1);
       regionCounts.set(aspCode, current);
     }
@@ -808,6 +826,8 @@ export default function DashboardPage() {
           aspCode,
           regionName: metadata?.regionName ?? "Unknown Region",
           count: entry.count,
+          consumerCount: entry.consumerCount,
+          commercialCount: entry.commercialCount,
           closedCount: metadata?.closedCount ?? 0,
           woOtcCodeBreakdown: Array.from(entry.woOtcCodes.entries())
             .map(([code, count]) => ({ code, count }))
@@ -835,6 +855,8 @@ export default function DashboardPage() {
         printFix: regionPrintRows.length - regionPrintInstallationRows.length,
         rca: rows.filter(isRcaCase).length,
         trade: rows.filter(isTradeCase).length,
+        consumer: rows.filter(isConsumerCase).length,
+        commercial: rows.filter((row) => !isConsumerCase(row)).length,
       };
     });
   }, [activeRegionBreakdown, activeRows, report]);
@@ -2349,18 +2371,52 @@ export default function DashboardPage() {
                   </div>
                 </div>
                 <div className="caseTypeGrid" style={{ gridTemplateColumns: "repeat(2, minmax(0, 1fr))" }}>
-                  <div className={`caseTypeCard ${showConsumerOnly ? "active" : ""}`} style={{ cursor: "pointer", padding: "16px" }} onClick={() => openRecordsWithFilter({ consumerOnly: true })}>
-                    <div className="caseTypeSummary" style={{ minHeight: "auto", padding: "0" }}>
+                  <div className={`caseTypeCard ${showConsumerOnly ? "active" : ""}`} style={{ padding: "16px" }}>
+                    <button
+                      type="button"
+                      className="caseTypeSummary"
+                      style={{ minHeight: "auto", padding: "0", cursor: "pointer", width: "100%", background: "none", border: "none", textAlign: "left" }}
+                      onClick={() => openRecordsWithFilter({ consumerOnly: true })}
+                    >
                       <span>Consumer Segment</span>
                       <strong style={{ color: "#4f46e5", fontSize: "36px", marginTop: "8px" }}>{formatNumber(consumerRows.length)}</strong>
                       <small style={{ marginTop: "4px" }}>Retail / Individual Accounts</small>
+                    </button>
+                    <div className="caseTypeRegionList" style={{ marginTop: "12px" }}>
+                      {caseTypeRegionBreakdown.map((entry) => (
+                        <button
+                          type="button"
+                          key={entry.aspCode}
+                          onClick={() => openRecordsWithFilter({ region: entry.aspCode, consumerOnly: true })}
+                        >
+                          <span>{entry.regionName}</span>
+                          <strong>{entry.consumer}</strong>
+                        </button>
+                      ))}
                     </div>
                   </div>
-                  <div className={`caseTypeCard ${showCommercialOnly ? "active" : ""}`} style={{ cursor: "pointer", padding: "16px" }} onClick={() => openRecordsWithFilter({ commercialOnly: true })}>
-                    <div className="caseTypeSummary" style={{ minHeight: "auto", padding: "0" }}>
+                  <div className={`caseTypeCard ${showCommercialOnly ? "active" : ""}`} style={{ padding: "16px" }}>
+                    <button
+                      type="button"
+                      className="caseTypeSummary"
+                      style={{ minHeight: "auto", padding: "0", cursor: "pointer", width: "100%", background: "none", border: "none", textAlign: "left" }}
+                      onClick={() => openRecordsWithFilter({ commercialOnly: true })}
+                    >
                       <span>Commercial Segment</span>
                       <strong style={{ color: "#2563eb", fontSize: "36px", marginTop: "8px" }}>{formatNumber(commercialRows.length)}</strong>
                       <small style={{ marginTop: "4px" }}>Corporate / Business / Enterprise Accounts</small>
+                    </button>
+                    <div className="caseTypeRegionList" style={{ marginTop: "12px" }}>
+                      {caseTypeRegionBreakdown.map((entry) => (
+                        <button
+                          type="button"
+                          key={entry.aspCode}
+                          onClick={() => openRecordsWithFilter({ region: entry.aspCode, commercialOnly: true })}
+                        >
+                          <span>{entry.regionName}</span>
+                          <strong>{entry.commercial}</strong>
+                        </button>
+                      ))}
                     </div>
                   </div>
                 </div>
@@ -2394,7 +2450,7 @@ export default function DashboardPage() {
                 </div>
                 <div className="regionGrid">
                   <div 
-                    className={`regionMetric ${selectedRegion === "ALL" && !selectedWoOtcCode ? "active" : ""}`}
+                    className={`regionMetric ${selectedRegion === "ALL" && !selectedWoOtcCode && !showConsumerOnly && !showCommercialOnly ? "active" : ""}`}
                     onClick={() => openRecordsWithFilter({ region: "ALL" })}
                     style={{ cursor: "pointer", border: "2px solid var(--accent)", background: "var(--accent-tint)" }}
                   >
@@ -2402,6 +2458,59 @@ export default function DashboardPage() {
                         <div className="regionMetricValue">{activeRows.length}</div>
                       <div className="regionMetricLabel">ALL REGIONS</div>
                       <div className="regionMetricSubtext">GLOBAL</div>
+                    </div>
+
+                    <div className="regionSegmentMetrics">
+                      <button
+                        type="button"
+                        className={`regionSegmentMetric ${selectedRegion === "ALL" && showConsumerOnly ? "active" : ""}`}
+                        style={{
+                          padding: "4px 6px",
+                          gap: "4px",
+                          ...(selectedRegion === "ALL" && showConsumerOnly ? { borderColor: "var(--accent)", background: "var(--accent-soft)", color: "var(--accent)" } : {})
+                        }}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          openRecordsWithFilter({ region: "ALL", consumerOnly: true });
+                        }}
+                      >
+                        <span style={{ fontSize: "10px", textTransform: "none", fontWeight: "700" }}>Consumer</span>
+                        <strong
+                          style={{
+                            minWidth: "20px",
+                            padding: "2px 6px",
+                            fontSize: "11px",
+                            ...(selectedRegion === "ALL" && showConsumerOnly ? { background: "#ffffff", color: "var(--accent)" } : {})
+                          }}
+                        >
+                          {consumerRows.length}
+                        </strong>
+                      </button>
+                      <button
+                        type="button"
+                        className={`regionSegmentMetric ${selectedRegion === "ALL" && showCommercialOnly ? "active" : ""}`}
+                        style={{
+                          padding: "4px 6px",
+                          gap: "4px",
+                          ...(selectedRegion === "ALL" && showCommercialOnly ? { borderColor: "var(--accent)", background: "var(--accent-soft)", color: "var(--accent)" } : {})
+                        }}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          openRecordsWithFilter({ region: "ALL", commercialOnly: true });
+                        }}
+                      >
+                        <span style={{ fontSize: "10px", textTransform: "none", fontWeight: "700" }}>Commercial</span>
+                        <strong
+                          style={{
+                            minWidth: "20px",
+                            padding: "2px 6px",
+                            fontSize: "11px",
+                            ...(selectedRegion === "ALL" && showCommercialOnly ? { background: "#ffffff", color: "var(--accent)" } : {})
+                          }}
+                        >
+                          {commercialRows.length}
+                        </strong>
+                      </button>
                     </div>
                     
                     {overallWoOtcBreakdown.length > 0 && (
@@ -2426,7 +2535,7 @@ export default function DashboardPage() {
                   {activeRegionBreakdown.filter((entry) => entry.count > 0).map((entry) => (
                     <div 
                       key={entry.aspCode} 
-                      className={`regionMetric ${selectedRegion === entry.aspCode && !selectedWoOtcCode ? "active" : ""}`}
+                      className={`regionMetric ${selectedRegion === entry.aspCode && !selectedWoOtcCode && !showConsumerOnly && !showCommercialOnly ? "active" : ""}`}
                       onClick={() => openRecordsWithFilter({ region: entry.aspCode })}
                       style={{ cursor: "pointer" }}
                     >
@@ -2434,6 +2543,59 @@ export default function DashboardPage() {
                         <div className="regionMetricValue">{entry.count}</div>
                         <div className="regionMetricLabel">{entry.regionName}</div>
                         <div className="regionMetricSubtext">{entry.aspCode}</div>
+                      </div>
+
+                      <div className="regionSegmentMetrics">
+                        <button
+                          type="button"
+                          className={`regionSegmentMetric ${selectedRegion === entry.aspCode && showConsumerOnly ? "active" : ""}`}
+                          style={{
+                            padding: "4px 6px",
+                            gap: "4px",
+                            ...(selectedRegion === entry.aspCode && showConsumerOnly ? { borderColor: "var(--accent)", background: "var(--accent-soft)", color: "var(--accent)" } : {})
+                          }}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            openRecordsWithFilter({ region: entry.aspCode, consumerOnly: true });
+                          }}
+                        >
+                          <span style={{ fontSize: "10px", textTransform: "none", fontWeight: "700" }}>Consumer</span>
+                          <strong
+                            style={{
+                              minWidth: "20px",
+                              padding: "2px 6px",
+                              fontSize: "11px",
+                              ...(selectedRegion === entry.aspCode && showConsumerOnly ? { background: "#ffffff", color: "var(--accent)" } : {})
+                            }}
+                          >
+                            {entry.consumerCount}
+                          </strong>
+                        </button>
+                        <button
+                          type="button"
+                          className={`regionSegmentMetric ${selectedRegion === entry.aspCode && showCommercialOnly ? "active" : ""}`}
+                          style={{
+                            padding: "4px 6px",
+                            gap: "4px",
+                            ...(selectedRegion === entry.aspCode && showCommercialOnly ? { borderColor: "var(--accent)", background: "var(--accent-soft)", color: "var(--accent)" } : {})
+                          }}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            openRecordsWithFilter({ region: entry.aspCode, commercialOnly: true });
+                          }}
+                        >
+                          <span style={{ fontSize: "10px", textTransform: "none", fontWeight: "700" }}>Commercial</span>
+                          <strong
+                            style={{
+                              minWidth: "20px",
+                              padding: "2px 6px",
+                              fontSize: "11px",
+                              ...(selectedRegion === entry.aspCode && showCommercialOnly ? { background: "#ffffff", color: "var(--accent)" } : {})
+                            }}
+                          >
+                            {entry.commercialCount}
+                          </strong>
+                        </button>
                       </div>
 
                       {entry.woOtcCodeBreakdown && entry.woOtcCodeBreakdown.length > 0 && (
@@ -3043,15 +3205,6 @@ export default function DashboardPage() {
                                   onClick={cancelEditing}
                                 >
                                   Cancel
-                                </button>
-                                <button
-                                  type="button"
-                                  className="secondaryButton"
-                                  style={{ color: "var(--danger)", borderColor: "var(--danger)" }}
-                                  disabled={savingSerialNo === row.serialNo}
-                                  onClick={() => void handleDeleteRow(row.serialNo)}
-                                >
-                                  Delete
                                 </button>
                               </div>
                             ) : (
@@ -3845,15 +3998,6 @@ export default function DashboardPage() {
                     onClick={cancelEditing}
                   >
                     Cancel
-                  </button>
-                  <button
-                    type="button"
-                    className="deleteBtn"
-                    style={{ marginRight: "auto" }}
-                    disabled={savingSerialNo === editingSerialNo}
-                    onClick={() => void handleDeleteRow(editingSerialNo)}
-                  >
-                    {savingSerialNo === editingSerialNo ? "Please wait..." : "Delete Order"}
                   </button>
                   <button
                     type="submit"

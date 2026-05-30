@@ -40,7 +40,7 @@ import {
 } from "../lib/apiClient";
 import type { DropdownEngineer } from "../lib/api/types";
 import { LoginScreen, SessionLoadingScreen } from "../features/auth/LoginScreen";
-import { downloadReportAsXlsx, downloadReportAsExcel } from "../lib/excelExport";
+import { downloadReportAsXlsx, downloadReportAsExcel, downloadRegionSummaryExcel, downloadEngineerProductivityExcel } from "../lib/excelExport";
 import {
   ALL_REGIONS_FILTER,
   buildFlexOperationalAnalytics,
@@ -190,6 +190,39 @@ function isRcaCase(row: GeneratedReportResponse["rows"][number]): boolean {
   return rca.length > 0 && rca !== MANUAL_ENTRY_REQUIRED;
 }
 
+function isConsumerCase(row: GeneratedReportResponse["rows"][number]): boolean {
+  const segment = String(row.output.Segment ?? "").trim().toLowerCase();
+  const prodLine = String(row.output["Product Line Name"] ?? "").trim().toLowerCase();
+  const account = String(row.output["Account Name"] ?? "").trim().toLowerCase();
+  const custName = String(row.output["Customer Name"] ?? "").trim().toLowerCase();
+
+  // 1. Direct explicit checks
+  if (segment.includes("consumer") || prodLine.includes("consumer")) {
+    return true;
+  }
+  if (segment.includes("commercial") || prodLine.includes("commercial") || segment.includes("enterprise") || prodLine.includes("enterprise")) {
+    return false;
+  }
+
+  // 2. High-fidelity corporate/business account checks
+  const corporateKeywords = ["pvt", "ltd", "corp", "inc", "bank", "technologies", "solutions", "limited", "enterprise", "tcs", "wipro", "infosys", "cognizant", "hcl"];
+  if (corporateKeywords.some(keyword => account.includes(keyword))) {
+    return false;
+  }
+
+  // 3. Retail/Individual checks
+  if (account === "individual" || account === "consumer" || account.includes("retail")) {
+    return true;
+  }
+
+  // 4. Fallbacks for individuals (e.g. empty account or same as customer name)
+  if (account === "" || account === custName) {
+    return true;
+  }
+
+  return false;
+}
+
 const MANUAL_FIELD_BY_COLUMN: Partial<Record<string, ManualCarryForwardField>> = {
   "RTPL status": "rtpl_status",
   Segment: "segment",
@@ -254,6 +287,21 @@ function todayIsoDate(): string {
   const month = String(now.getMonth() + 1).padStart(2, "0");
   const day = String(now.getDate()).padStart(2, "0");
   return `${year}-${month}-${day}`;
+}
+
+function formatDisplayDateOnly(dateStr: string): string {
+  const date = new Date(dateStr);
+  if (Number.isNaN(date.getTime())) return dateStr;
+  const day = date.getDate();
+  const monthNames = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+  const month = monthNames[date.getMonth()];
+  
+  let suffix = "th";
+  if (day === 1 || day === 21 || day === 31) suffix = "st";
+  else if (day === 2 || day === 22) suffix = "nd";
+  else if (day === 3 || day === 23) suffix = "rd";
+  
+  return `${day}${suffix} ${month}`;
 }
 
 function formatNumber(value: number): string {
@@ -662,6 +710,13 @@ export default function DashboardPage() {
   const [showRcaOnly, setShowRcaOnly] = useState(false);
   const [showTradeOnly, setShowTradeOnly] = useState(false);
   const [showClosedOnly, setShowClosedOnly] = useState(false);
+  const [showConsumerOnly, setShowConsumerOnly] = useState(false);
+  const [showCommercialOnly, setShowCommercialOnly] = useState(false);
+  const [isKpiModalOpen, setIsKpiModalOpen] = useState(false);
+  const [isChennaiKpiModalOpen, setIsChennaiKpiModalOpen] = useState(false);
+  const [isProductivityModalOpen, setIsProductivityModalOpen] = useState(false);
+  const [productivityFilterType, setProductivityFilterType] = useState("Today");
+  const [selectedProductivityValue, setSelectedProductivityValue] = useState("");
   const [printCaseFilter, setPrintCaseFilter] = useState<PrintCaseFilter | null>(null);
   const [wipAgingSort, setWipAgingSort] = useState<WipAgingSortDirection | null>(null);
   const [recordsSearchQuery, setRecordsSearchQuery] = useState("");
@@ -675,9 +730,13 @@ export default function DashboardPage() {
     setShowRcaOnly(false);
     setShowTradeOnly(false);
     setShowClosedOnly(false);
-    setPrintCaseFilter(null);
-    setWipAgingSort(null);
-    setRecordsSearchQuery("");
+    setShowConsumerOnly(false);
+    setShowCommercialOnly(false);
+    setIsKpiModalOpen(false);
+    setIsChennaiKpiModalOpen(false);
+    setIsProductivityModalOpen(false);
+    setProductivityFilterType("Today");
+    setSelectedProductivityValue("");
   }, [report?.reportId]);
 
   const activeRows = useMemo(() => {
@@ -785,9 +844,19 @@ export default function DashboardPage() {
     return report.rows.filter((row) => row.carryForward.closedSyntheticRow);
   }, [report]);
 
+  const consumerRows = useMemo(() => {
+    return activeRows.filter(isConsumerCase);
+  }, [activeRows]);
+
+  const commercialRows = useMemo(() => {
+    return activeRows.filter((row) => !isConsumerCase(row));
+  }, [activeRows]);
+
   const tableBaseRows = useMemo(() => {
     if (!report) return [];
     if (showClosedOnly) return closedRows;
+    if (showConsumerOnly) return consumerRows;
+    if (showCommercialOnly) return commercialRows;
     if (showCissOnly) return cissRows;
     if (showRcaOnly) return rcaRows;
     if (showTradeOnly) return tradeRows;
@@ -799,6 +868,8 @@ export default function DashboardPage() {
     activeRows,
     cissRows,
     closedRows,
+    consumerRows,
+    commercialRows,
     printCaseFilter,
     printFixRows,
     printInstallationRows,
@@ -806,6 +877,8 @@ export default function DashboardPage() {
     rcaRows,
     showCissOnly,
     showClosedOnly,
+    showConsumerOnly,
+    showCommercialOnly,
     showRcaOnly,
     showTradeOnly,
     tradeRows,
@@ -858,6 +931,367 @@ export default function DashboardPage() {
       }),
     [closedRows, selectedRegion, selectedWoOtcCode],
   );
+
+  const activeRegionName = useMemo(() => {
+    if (!report || !selectedRegion || selectedRegion === "ALL") return "";
+    const entry = report.regionBreakdown.find((r) => r.aspCode === selectedRegion);
+    return entry?.regionName ?? selectedRegion;
+  }, [report, selectedRegion]);
+
+  const regionKpiMetrics = useMemo(() => {
+    if (!report || !selectedRegion || selectedRegion === "ALL") return null;
+    
+    const rows = regionFilteredRows;
+    const active = rows.filter((r) => !r.carryForward.closedSyntheticRow);
+    const closed = rows.filter((r) => r.carryForward.closedSyntheticRow);
+    
+    const getUniqueEngineers = (items: typeof rows) => {
+      const list = items
+        .map((r) => String(r.output.Engineer ?? "").trim())
+        .filter((name) => name && name !== "Manual Entry Required");
+      return Array.from(new Set(list));
+    };
+    const uniqueEngineers = getUniqueEngineers(active);
+    const engineerCount = uniqueEngineers.length;
+    
+    const countStatus = (statusList: string[]) => {
+      return active.filter((r) => {
+        const s = String(r.output["RTPL status"] ?? "").trim().toLowerCase();
+        return statusList.some((item) => s === item.toLowerCase());
+      }).length;
+    };
+    
+    const countStatusContains = (keyword: string) => {
+      return active.filter((r) => {
+        const s = String(r.output["RTPL status"] ?? "").trim().toLowerCase();
+        return s.includes(keyword.toLowerCase());
+      }).length;
+    };
+    
+    const isTradeRow = (r: typeof rows[number]) => {
+      const code = String(r.output["WO OTC CODE"] ?? "").trim().toUpperCase();
+      return code.includes("TRADE") || code.startsWith("01");
+    };
+    
+    const actionable = countStatus(["Actionable"]);
+    const planned = countStatus(["Engg Assigned"]);
+    const enggOnsite = countStatus(["Engg Assigned"]) + countStatusContains("onsite");
+    const toBeSchedule = countStatus(["To be Scheduled", "Engg Assignment Pending"]);
+    const cxReschedule = countStatus(["CX Pending"]) + countStatusContains("reschedule") + countStatusContains("cx");
+    const sscPending = countStatus(["SSC Pending → Part Pending"]);
+    const elevateTech = countStatus(["Elevation HP Pending", "Elevation Part Pending"]);
+    const underObservation = countStatus(["CRT Pending", "CT Validation Pending"]) + countStatusContains("observation");
+    const toBeYank = countStatus(["Need to Yank", "Yank"]);
+    const addPartOrdered = countStatus(["Additional Part", "Part Order Pending"]);
+    const toBeCancel = countStatus(["Need to Cancel", "Need to Cancel Mail"]);
+    const newCalls = active.filter((r) => r.comparison?.changeType === "NEW").length;
+    const tradeOpenCalls = active.filter(isTradeRow).length;
+    
+    const closedCancelled = closed.filter((r) => {
+      const s = String(r.output["RTPL status"] ?? "").trim().toLowerCase();
+      return s.includes("cancel");
+    }).length;
+    
+    return {
+      engineerCount,
+      enggPresents: engineerCount,
+      openCalls: active.length,
+      actionable,
+      planned,
+      closedCalls: closed.length,
+      enggOnsite,
+      toBeSchedule,
+      cxReschedule,
+      sscPending,
+      elevateTech,
+      underObservation,
+      toBeYank,
+      closedCancelled,
+      addPartOrdered,
+      toBeCancel,
+      newCalls,
+      tradeOpenCalls,
+    };
+  }, [report, selectedRegion, regionFilteredRows]);
+
+  const chennaiKpiMetrics = useMemo(() => {
+    if (!report || !selectedRegion || selectedRegion === "ALL") return null;
+    
+    const rows = regionFilteredRows;
+    const active = rows.filter((r) => !r.carryForward.closedSyntheticRow);
+    const closed = rows.filter((r) => r.carryForward.closedSyntheticRow);
+    
+    const getUniqueEngineers = (items: typeof rows) => {
+      const list = items
+        .map((r) => String(r.output.Engineer ?? "").trim())
+        .filter((name) => name && name !== "Manual Entry Required");
+      return Array.from(new Set(list));
+    };
+    const uniqueEngineers = getUniqueEngineers(active);
+    const enggCount = uniqueEngineers.length;
+    
+    const parseWipAgingValue = (value: unknown): number | null => {
+      const parsed = Number(String(value ?? "").trim());
+      return Number.isFinite(parsed) ? parsed : null;
+    };
+    
+    const countStatus = (statusList: string[]) => {
+      return active.filter((r) => {
+        const s = String(r.output["RTPL status"] ?? "").trim().toLowerCase();
+        return statusList.some((item) => s === item.toLowerCase());
+      }).length;
+    };
+    
+    // Calculations:
+    const openCalls = active.length;
+    const actionable = countStatus(["Actionable"]);
+    const planned = countStatus(["Engg Assigned"]);
+    const callAllocation = enggCount > 0 ? (planned / enggCount).toFixed(1) : "0.0";
+    
+    const printOpenGe2 = active.filter(r => isPrintCase(r) && (parseWipAgingValue(r.output["WIP aging"]) ?? 0) >= 2).length;
+    const printActionableGe2 = active.filter(r => isPrintCase(r) && String(r.output["RTPL status"] ?? "").trim().toLowerCase() === "actionable" && (parseWipAgingValue(r.output["WIP aging"]) ?? 0) >= 2).length;
+    const printScheduledGe2 = active.filter(r => isPrintCase(r) && String(r.output["RTPL status"] ?? "").trim().toLowerCase() === "engg assigned" && (parseWipAgingValue(r.output["WIP aging"]) ?? 0) >= 2).length;
+    
+    const openCallsGt10 = active.filter(r => (parseWipAgingValue(r.output["WIP aging"]) ?? 0) > 10).length;
+    const actionableGt10 = active.filter(r => String(r.output["RTPL status"] ?? "").trim().toLowerCase() === "actionable" && (parseWipAgingValue(r.output["WIP aging"]) ?? 0) > 10).length;
+    const scheduledGt10 = active.filter(r => String(r.output["RTPL status"] ?? "").trim().toLowerCase() === "engg assigned" && (parseWipAgingValue(r.output["WIP aging"]) ?? 0) > 10).length;
+    
+    const mpsGt1 = active.filter(r => String(r.output["RTPL status"] ?? "").trim().toLowerCase().includes("mps") && (parseWipAgingValue(r.output["WIP aging"]) ?? 0) > 1).length;
+    const eodCloser = closed.length;
+    const newCalls = active.filter(r => r.comparison?.changeType === "NEW").length;
+    
+    const csoDaysInventory = eodCloser > 0 ? (openCalls / eodCloser).toFixed(1) : "#DIV/0!";
+    const engAvlInField = enggCount;
+    const enggProductivity = enggCount > 0 ? (eodCloser / enggCount).toFixed(1) : "0.0";
+    
+    const missedToSchedule = active.filter(r => String(r.output["RTPL status"] ?? "").trim().toLowerCase().includes("missed") || String(r.output["RTPL status"] ?? "").trim().toLowerCase().includes("non avl")).length;
+    const missedByEng = active.filter(r => String(r.output["RTPL status"] ?? "").trim().toLowerCase().includes("high call")).length;
+    const gTotalMissed = missedToSchedule + missedByEng;
+    const pctMissed = openCalls > 0 ? Math.round((gTotalMissed / openCalls) * 100) : 0;
+    const closureAdherence = (eodCloser + gTotalMissed) > 0 ? Math.round((eodCloser / (eodCloser + gTotalMissed)) * 100) : 0;
+    
+    // NAF right table columns
+    const flexBackend = active.filter(r => {
+      const s = String(r.output["RTPL status"] ?? "").trim().toLowerCase();
+      return s.includes("flex backend") || s.includes("backend");
+    }).length;
+    const ssc = active.filter(r => String(r.output["RTPL status"] ?? "").trim().toLowerCase().includes("ssc")).length;
+    const hpBackend = active.filter(r => String(r.output["RTPL status"] ?? "").trim().toLowerCase().includes("hp backend")).length;
+    const obsCustomer = active.filter(r => String(r.output["RTPL status"] ?? "").trim().toLowerCase().includes("obs") || String(r.output["RTPL status"] ?? "").trim().toLowerCase().includes("customer")).length;
+    const cuPending = active.filter(r => String(r.output["RTPL status"] ?? "").trim().toLowerCase().includes("cu pending")).length;
+    const physicalClosed = active.filter(r => String(r.output["RTPL status"] ?? "").trim().toLowerCase().includes("physical closed") || String(r.output["RTPL status"] ?? "").trim().toLowerCase().includes("physically closed")).length;
+    
+    const totalNaf = flexBackend + ssc + hpBackend + obsCustomer + cuPending + physicalClosed;
+    const sscPct = totalNaf > 0 ? Math.round((ssc / totalNaf) * 100) : 0;
+    
+    return {
+      openCalls,
+      actionable,
+      planned,
+      callAllocation,
+      printOpenGe2,
+      printActionableGe2,
+      printScheduledGe2,
+      openCallsGt10,
+      actionableGt10,
+      scheduledGt10,
+      mpsGt1,
+      eodCloser,
+      newCalls,
+      csoDaysInventory,
+      enggCount,
+      engAvlInField,
+      enggProductivity,
+      missedToSchedule,
+      missedByEng,
+      gTotalMissed,
+      pctMissed,
+      closureAdherence,
+      
+      // Right Table NAF
+      flexBackend,
+      ssc,
+      hpBackend,
+      obsCustomer,
+      cuPending,
+      physicalClosed,
+      totalNaf,
+      sscPct,
+    };
+  }, [report, selectedRegion, regionFilteredRows]);
+
+  const engineerProductivityMetrics = useMemo(() => {
+    if (!report) return { list: [], totalAttended: 0, monthsList: [], datesList: [], todayStr: "" };
+
+    // 1. Filter rows by selectedRegion
+    let regionRows = report.rows;
+    if (selectedRegion && selectedRegion !== "ALL") {
+      regionRows = report.rows.filter(r => r.output["Work Location"] === selectedRegion);
+    }
+
+    // 2. Identify all unique months and dates in these rows
+    const monthsSet = new Set<string>();
+    const datesSet = new Set<string>();
+    
+    const getFormattedReportDate = (reportDateStr: string): string => {
+      const parts = reportDateStr.split("-");
+      if (parts.length === 3 && parts[0] && parts[1] && parts[2] && parts[0].length === 4) {
+        return `${parts[2]}-${parts[1]}-${parts[0]}`;
+      }
+      return reportDateStr;
+    };
+
+    const todayStr = report.reportDate ? getFormattedReportDate(report.reportDate) : "";
+
+    for (const r of regionRows) {
+      const createdTime = String(r.output["Case Created Time"] ?? "").trim();
+      if (createdTime && createdTime !== MANUAL_ENTRY_REQUIRED) {
+        const match = /^(\d{2})[-/](\d{2})[-/](\d{4})/.exec(createdTime);
+        if (match) {
+          const day = match[1] ?? "";
+          const monthCode = match[2] ?? "";
+          const year = match[3] ?? "";
+          
+          const monthIndex = parseInt(monthCode, 10) - 1;
+          const monthNames = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+          const monthName = monthNames[monthIndex] ?? "Unknown";
+          
+          monthsSet.add(`${monthName} ${year}`);
+          datesSet.add(`${day}-${monthCode}-${year}`);
+        }
+      }
+    }
+
+    const monthsList = Array.from(monthsSet).sort((a, b) => a.localeCompare(b));
+    const datesList = Array.from(datesSet).sort((a, b) => {
+      const parseDMY = (s: string) => {
+        const p = s.split("-");
+        const day = parseInt(p[0] ?? "0", 10);
+        const month = parseInt(p[1] ?? "0", 10) - 1;
+        const year = parseInt(p[2] ?? "0", 10);
+        return new Date(year, month, day).getTime();
+      };
+      return parseDMY(a) - parseDMY(b);
+    });
+
+    // 3. Filter rows based on type
+    let filteredRowsForProd = regionRows;
+    if (productivityFilterType === "Today" && todayStr) {
+      filteredRowsForProd = regionRows.filter(r => {
+        const createdTime = String(r.output["Case Created Time"] ?? "").trim();
+        if (createdTime && createdTime !== MANUAL_ENTRY_REQUIRED) {
+          const match = /^(\d{2})[-/](\d{2})[-/](\d{4})/.exec(createdTime);
+          if (match) {
+            const rowDate = `${match[1]}-${match[2]}-${match[3]}`;
+            return rowDate === todayStr;
+          }
+        }
+        return false;
+      });
+    } else if (productivityFilterType === "Specific Date" && selectedProductivityValue) {
+      filteredRowsForProd = regionRows.filter(r => {
+        const createdTime = String(r.output["Case Created Time"] ?? "").trim();
+        if (createdTime && createdTime !== MANUAL_ENTRY_REQUIRED) {
+          const match = /^(\d{2})[-/](\d{2})[-/](\d{4})/.exec(createdTime);
+          if (match) {
+            const rowDate = `${match[1]}-${match[2]}-${match[3]}`;
+            return rowDate === selectedProductivityValue;
+          }
+        }
+        return false;
+      });
+    } else if (productivityFilterType === "Specific Month" && selectedProductivityValue) {
+      filteredRowsForProd = regionRows.filter(r => {
+        const createdTime = String(r.output["Case Created Time"] ?? "").trim();
+        if (createdTime && createdTime !== MANUAL_ENTRY_REQUIRED) {
+          const match = /^(\d{2})[-/](\d{2})[-/](\d{4})/.exec(createdTime);
+          if (match) {
+            const monthCode = match[2] ?? "";
+            const year = match[3] ?? "";
+            const monthIndex = parseInt(monthCode, 10) - 1;
+            const monthNames = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+            const rowMonth = `${monthNames[monthIndex]} ${year}`;
+            return rowMonth === selectedProductivityValue;
+          }
+        }
+        return false;
+      });
+    }
+
+    // 4. Group by unique engineers
+    const active = filteredRowsForProd.filter((r) => !r.carryForward.closedSyntheticRow);
+    const closed = filteredRowsForProd.filter((r) => r.carryForward.closedSyntheticRow);
+
+    const getUniqueEngineers = (items: typeof filteredRowsForProd) => {
+      const list = items
+        .map((r) => String(r.output.Engineer ?? "").trim())
+        .filter((name) => name && name !== "Manual Entry Required");
+      return Array.from(new Set(list));
+    };
+
+    const allEngNames = getUniqueEngineers(filteredRowsForProd);
+    
+    const list = allEngNames.map((engName) => {
+      const engActive = active.filter(r => String(r.output.Engineer ?? "").trim() === engName);
+      const engClosed = closed.filter(r => String(r.output.Engineer ?? "").trim() === engName);
+      
+      const countStatus = (items: typeof engActive, keywords: string[]) => {
+        return items.filter(r => {
+          const s = String(r.output["RTPL status"] ?? "").trim().toLowerCase();
+          return keywords.some(kw => s.includes(kw.toLowerCase()));
+        }).length;
+      };
+
+      const closedCount = engClosed.length + countStatus(engActive, ["closed"]);
+      const partOrderedCount = countStatus(engActive, ["part", "additional part", "part order pending"]);
+      const underObservationCount = countStatus(engActive, ["observation", "crt pending", "ct validation"]);
+      const cxRescheduleCount = countStatus(engActive, ["cx", "reschedule", "cust pending", "customer pending"]);
+
+      const attendedCount = closedCount + partOrderedCount + underObservationCount;
+      const assignedCount = attendedCount + cxRescheduleCount;
+
+      return {
+        name: engName,
+        assigned: assignedCount,
+        attended: attendedCount,
+        closed: closedCount,
+        partOrdered: partOrderedCount,
+        underObservation: underObservationCount,
+        cxReschedule: cxRescheduleCount,
+      };
+    }).sort((a, b) => b.attended - a.attended || a.name.localeCompare(b.name));
+
+    const totalAttended = list.reduce((sum, item) => sum + item.attended, 0);
+
+    return { list, totalAttended, monthsList, datesList, todayStr };
+  }, [report, selectedRegion, productivityFilterType, selectedProductivityValue]);
+
+  useEffect(() => {
+    if (productivityFilterType === "Specific Date") {
+      if (!selectedProductivityValue || !engineerProductivityMetrics.datesList.includes(selectedProductivityValue)) {
+        setSelectedProductivityValue(engineerProductivityMetrics.datesList[0] || "");
+      }
+    } else if (productivityFilterType === "Specific Month") {
+      if (!selectedProductivityValue || !engineerProductivityMetrics.monthsList.includes(selectedProductivityValue)) {
+        setSelectedProductivityValue(engineerProductivityMetrics.monthsList[0] || "");
+      }
+    } else {
+      setSelectedProductivityValue("");
+    }
+  }, [productivityFilterType, engineerProductivityMetrics.datesList, engineerProductivityMetrics.monthsList, selectedProductivityValue]);
+
+  const productivityDateLabel = useMemo(() => {
+    if (productivityFilterType === "Today") {
+      return `Today (${engineerProductivityMetrics.todayStr || ""})`;
+    }
+    if (productivityFilterType === "Specific Date") {
+      return selectedProductivityValue || "Specific Date";
+    }
+    if (productivityFilterType === "Specific Month") {
+      return selectedProductivityValue || "Specific Month";
+    }
+    return "All Dates";
+  }, [productivityFilterType, engineerProductivityMetrics.todayStr, selectedProductivityValue]);
 
   const scopedManualCellCount = useMemo(
     () => countManualRequiredCells(filteredRows),
@@ -1483,6 +1917,8 @@ export default function DashboardPage() {
     const hasExistingExportFilter = Boolean(selectedRegion || selectedWoOtcCode);
     const hasColumnFilter = colFilters.activeFilterCount > 0;
     const hasRecordsSearchFilter = recordsSearchQuery.trim().length > 0;
+    const hasConsumerFilter = showConsumerOnly;
+    const hasCommercialFilter = showCommercialOnly;
     const hasCissFilter = showCissOnly;
     const hasRcaFilter = showRcaOnly;
     const hasTradeFilter = showTradeOnly;
@@ -1495,6 +1931,12 @@ export default function DashboardPage() {
     if (hasClosedFilter) {
       const scopedClosedRows = scopedRows(closedRows);
       exportRows = applyActiveTableFilters(scopedClosedRows);
+    } else if (hasConsumerFilter) {
+      const scopedConsumerRows = scopedRows(consumerRows);
+      exportRows = applyActiveTableFilters(scopedConsumerRows);
+    } else if (hasCommercialFilter) {
+      const scopedCommercialRows = scopedRows(commercialRows);
+      exportRows = applyActiveTableFilters(scopedCommercialRows);
     } else if (hasCissFilter) {
       const scopedCissRows = scopedRows(cissRows);
       exportRows = applyActiveTableFilters(scopedCissRows);
@@ -1552,6 +1994,8 @@ export default function DashboardPage() {
     rcaOnly = false,
     tradeOnly = false,
     closedOnly = false,
+    consumerOnly = false,
+    commercialOnly = false,
   }: Readonly<{
     region?: string | null;
     woOtcCode?: string | null;
@@ -1563,6 +2007,8 @@ export default function DashboardPage() {
     rcaOnly?: boolean;
     tradeOnly?: boolean;
     closedOnly?: boolean;
+    consumerOnly?: boolean;
+    commercialOnly?: boolean;
   }>) {
     setSelectedRegion(region ?? null);
     setSelectedWoOtcCode(woOtcCode ?? null);
@@ -1570,6 +2016,8 @@ export default function DashboardPage() {
     setShowRcaOnly(rcaOnly);
     setShowTradeOnly(tradeOnly);
     setShowClosedOnly(closedOnly);
+    setShowConsumerOnly(consumerOnly);
+    setShowCommercialOnly(commercialOnly);
     setPrintCaseFilter(printCase);
     setSelectedRtplRegion(region && region !== "ALL" ? region : ALL_REGIONS_FILTER);
     colFilters.resetAll();
@@ -1638,6 +2086,8 @@ export default function DashboardPage() {
 
   const recordsFilterLabel = [
     showClosedOnly ? "Closed calls" : null,
+    showConsumerOnly ? "Consumer cases" : null,
+    showCommercialOnly ? "Commercial cases" : null,
     showCissOnly ? "CISS cases" : null,
     showRcaOnly ? "RCA cases" : null,
     showTradeOnly ? "Trade cases" : null,
@@ -1879,6 +2329,31 @@ export default function DashboardPage() {
                           <strong>{entry.rca}</strong>
                         </button>
                       ))}
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div className="caseTypeSection" style={{ borderLeft: "4px solid var(--accent)" }}>
+                <div className="sectionHeader">
+                  <div>
+                    <h3>Customer Segment Split</h3>
+                    <p>Split counts for Consumer (Retail/Individual) and Commercial (Corporate/Business) cases.</p>
+                  </div>
+                </div>
+                <div className="caseTypeGrid" style={{ gridTemplateColumns: "repeat(2, minmax(0, 1fr))" }}>
+                  <div className={`caseTypeCard ${showConsumerOnly ? "active" : ""}`} style={{ cursor: "pointer", padding: "16px" }} onClick={() => openRecordsWithFilter({ consumerOnly: true })}>
+                    <div className="caseTypeSummary" style={{ minHeight: "auto", padding: "0" }}>
+                      <span>Consumer Segment</span>
+                      <strong style={{ color: "#4f46e5", fontSize: "36px", marginTop: "8px" }}>{formatNumber(consumerRows.length)}</strong>
+                      <small style={{ marginTop: "4px" }}>Retail / Individual Accounts</small>
+                    </div>
+                  </div>
+                  <div className={`caseTypeCard ${showCommercialOnly ? "active" : ""}`} style={{ cursor: "pointer", padding: "16px" }} onClick={() => openRecordsWithFilter({ commercialOnly: true })}>
+                    <div className="caseTypeSummary" style={{ minHeight: "auto", padding: "0" }}>
+                      <span>Commercial Segment</span>
+                      <strong style={{ color: "#2563eb", fontSize: "36px", marginTop: "8px" }}>{formatNumber(commercialRows.length)}</strong>
+                      <small style={{ marginTop: "4px" }}>Corporate / Business / Enterprise Accounts</small>
                     </div>
                   </div>
                 </div>
@@ -2176,6 +2651,36 @@ export default function DashboardPage() {
                   >
                     Download CSV
                   </button>
+                  {selectedRegion && selectedRegion !== "ALL" && regionKpiMetrics && (
+                    <>
+                      <button
+                        type="button"
+                        className="downloadBtn excelBtn"
+                        style={{ background: "linear-gradient(135deg, #0284c7, #0369a1)", borderColor: "#0284c7", color: "#ffffff" }}
+                        onClick={() => setIsKpiModalOpen(true)}
+                      >
+                        📊 VIEW TN REPORT
+                      </button>
+                      <button
+                        type="button"
+                        className="downloadBtn excelBtn"
+                        style={{ background: "linear-gradient(135deg, #0ea5e9, #0284c7)", borderColor: "#0ea5e9", color: "#ffffff" }}
+                        onClick={() => setIsChennaiKpiModalOpen(true)}
+                      >
+                        📊 VIEW EOD&BOD REPORT DASHBOARD
+                      </button>
+                    </>
+                  )}
+                  {(session?.user?.role === "SUPER_ADMIN" || (selectedRegion && selectedRegion !== "ALL" && regionKpiMetrics)) && (
+                    <button
+                      type="button"
+                      className="downloadBtn excelBtn"
+                      style={{ background: "linear-gradient(135deg, #f97316, #ea580c)", borderColor: "#f97316", color: "#ffffff" }}
+                      onClick={() => setIsProductivityModalOpen(true)}
+                    >
+                      📊 VIEW ENGINEER PRODUCTIVITY
+                    </button>
+                  )}
                 </div>
                 <button
                   type="button"
@@ -2195,6 +2700,8 @@ export default function DashboardPage() {
                   onChange={(event) => setRecordsSearchQuery(event.target.value)}
                 />
               </div>
+
+
               {colFilters.activeFilterCount > 0 && (
                 <div className="colFilterSummary">
                   <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
@@ -2239,6 +2746,26 @@ export default function DashboardPage() {
                   >
                     Show All Regions
                   </button>
+                </div>
+              )}
+              {showConsumerOnly && (
+                <div className="colFilterSummary">
+                  <span>
+                    Consumer Cases active
+                    {" · "}
+                    {filteredRows.length} of {regionFilteredRows.length} rows shown
+                  </span>
+                  <button type="button" onClick={() => setShowConsumerOnly(false)}>Show All Cases</button>
+                </div>
+              )}
+              {showCommercialOnly && (
+                <div className="colFilterSummary">
+                  <span>
+                    Commercial Cases active
+                    {" · "}
+                    {filteredRows.length} of {regionFilteredRows.length} rows shown
+                  </span>
+                  <button type="button" onClick={() => setShowCommercialOnly(false)}>Show All Cases</button>
                 </div>
               )}
               {showCissOnly && (
@@ -2649,6 +3176,431 @@ export default function DashboardPage() {
           ) : null}
         </section>
       </section>
+
+      {/* 1. Salem Region KPI Summary Popup Modal */}
+      {isKpiModalOpen && selectedRegion && selectedRegion !== "ALL" && regionKpiMetrics && (
+        <div className="drawerOverlay" style={{ zIndex: 100, display: "flex", alignItems: "center", justifyContent: "center", background: "rgba(15, 23, 42, 0.45)" }} onClick={() => setIsKpiModalOpen(false)}>
+          <div 
+            style={{ 
+              background: "#ffffff", 
+              borderRadius: "12px", 
+              width: "min(640px, 95vw)", 
+              boxShadow: "0 20px 50px rgba(0, 0, 0, 0.15)", 
+              padding: "24px", 
+              display: "grid", 
+              gap: "18px", 
+              position: "relative",
+              border: "1px solid var(--border)"
+            }} 
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", borderBottom: "1px solid var(--border)", paddingBottom: "12px" }}>
+              <h2 style={{ margin: 0, fontSize: "18px", fontWeight: "700" }}>📊 {activeRegionName} KPI Performance Summary</h2>
+              <button 
+                type="button" 
+                className="secondaryButton" 
+                style={{ minHeight: "32px", padding: "0 12px", borderRadius: "6px", fontSize: "13px" }} 
+                onClick={() => setIsKpiModalOpen(false)}
+              >
+                Close
+              </button>
+            </div>
+
+            <div style={{ maxHeight: "60vh", overflowY: "auto", paddingRight: "4px" }}>
+              <table className="kpiSummaryTable" style={{ width: "100%", borderCollapse: "collapse", minWidth: "480px" }}>
+                <thead>
+                  <tr style={{ background: "#0284c7", color: "#ffffff", fontWeight: "bold" }}>
+                    <td colSpan={2} style={{ padding: "10px", border: "1px solid #cbd5e1", fontSize: "13px" }}>{report?.reportDate || todayIsoDate()}</td>
+                    <td style={{ padding: "10px", border: "1px solid #cbd5e1", textAlign: "right", fontSize: "13px" }}>{activeRegionName}</td>
+                  </tr>
+                  <tr style={{ background: "#fef08a", color: "#854d0e", fontWeight: "bold" }}>
+                    <td style={{ width: "80px", padding: "8px", border: "1px solid #cbd5e1", textAlign: "center", fontSize: "12px" }}>S.No</td>
+                    <td style={{ padding: "8px", border: "1px solid #cbd5e1", fontSize: "12px" }}>Description</td>
+                    <td style={{ width: "120px", padding: "8px", border: "1px solid #cbd5e1", textAlign: "center", fontSize: "12px" }}>Count</td>
+                  </tr>
+                </thead>
+                <tbody>
+                  {[
+                    { id: 1, desc: "Engineer Count", val: regionKpiMetrics.engineerCount },
+                    { id: 2, desc: "No.of Engg Presents", val: regionKpiMetrics.enggPresents },
+                    { id: 3, desc: "Open Calls", val: regionKpiMetrics.openCalls },
+                    { id: 4, desc: "Actionable Calls", val: regionKpiMetrics.actionable },
+                    { id: 5, desc: "Planned Calls", val: regionKpiMetrics.planned },
+                    { id: 6, desc: "Closed Calls", val: regionKpiMetrics.closedCalls, alert: true },
+                    { id: 7, desc: "Engg onsite", val: regionKpiMetrics.enggOnsite },
+                    { id: 8, desc: "To be schedule", val: regionKpiMetrics.toBeSchedule },
+                    { id: 9, desc: "CX Reschedule Calls", val: regionKpiMetrics.cxReschedule },
+                    { id: 10, desc: "SSC Pending Calls", val: regionKpiMetrics.sscPending },
+                    { id: 11, desc: "Elevate/Tech Support Calls", val: regionKpiMetrics.elevateTech },
+                    { id: 12, desc: "Under observation Calls", val: regionKpiMetrics.underObservation },
+                    { id: 13, desc: "To be Yank", val: regionKpiMetrics.toBeYank },
+                    { id: 14, desc: "Closed cancelled", val: regionKpiMetrics.closedCancelled },
+                    { id: 15, desc: "Add.Part ordered", val: regionKpiMetrics.addPartOrdered, alert: true },
+                    { id: 16, desc: "To be Cancel", val: regionKpiMetrics.toBeCancel },
+                    { id: 17, desc: "New calls", val: regionKpiMetrics.newCalls, alert: true },
+                    { id: 18, desc: "Trade Open Calls", val: regionKpiMetrics.tradeOpenCalls },
+                  ].map((m) => (
+                    <tr key={m.id} style={{ borderBottom: "1px solid #e2e8f0" }}>
+                      <td style={{ padding: "6px", border: "1px solid #cbd5e1", textAlign: "center", background: "#f8fafc", fontWeight: "600", color: "#334155" }}>{m.id}</td>
+                      <td style={{ padding: "6px", border: "1px solid #cbd5e1", color: "#334155" }}>{m.desc}</td>
+                      <td style={{ padding: "6px", border: "1px solid #cbd5e1", textAlign: "center", background: m.alert ? "#fef08a" : "transparent", color: m.alert ? "#854d0e" : "#0f172a", fontWeight: "bold" }}>{m.val}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            <div style={{ display: "flex", justifyContent: "flex-end", gap: "10px", borderTop: "1px solid var(--border)", paddingTop: "14px" }}>
+              <button
+                type="button"
+                className="secondaryButton"
+                onClick={() => setIsKpiModalOpen(false)}
+              >
+                Close
+              </button>
+              <button
+                type="button"
+                style={{ background: "linear-gradient(135deg, #0284c7, #0369a1)", borderColor: "#0284c7", display: "inline-flex", alignItems: "center", gap: "6px", color: "#ffffff" }}
+                onClick={() => {
+                  downloadRegionSummaryExcel(activeRegionName, report?.reportDate || todayIsoDate(), regionFilteredRows, false);
+                }}
+              >
+                📥 Download Summary Excel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 2. Chennai Region Dashboard Summary Popup Modal */}
+      {isChennaiKpiModalOpen && selectedRegion && selectedRegion !== "ALL" && chennaiKpiMetrics && (
+        <div className="drawerOverlay" style={{ zIndex: 100, display: "flex", alignItems: "center", justifyContent: "center", background: "rgba(15, 23, 42, 0.45)" }} onClick={() => setIsChennaiKpiModalOpen(false)}>
+          <div 
+            style={{ 
+              background: "#ffffff", 
+              borderRadius: "12px", 
+              width: "min(1000px, 98vw)", 
+              boxShadow: "0 20px 50px rgba(0, 0, 0, 0.15)", 
+              padding: "24px", 
+              display: "grid", 
+              gap: "18px", 
+              position: "relative",
+              border: "1px solid var(--border)"
+            }} 
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", borderBottom: "1px solid var(--border)", paddingBottom: "12px" }}>
+              <h2 style={{ margin: 0, fontSize: "18px", fontWeight: "700" }}>📊 {activeRegionName} Dashboard Summary</h2>
+              <button 
+                type="button" 
+                className="secondaryButton" 
+                style={{ minHeight: "32px", padding: "0 12px", borderRadius: "6px", fontSize: "13px" }} 
+                onClick={() => setIsChennaiKpiModalOpen(false)}
+              >
+                Close
+              </button>
+            </div>
+
+            <div style={{ maxHeight: "60vh", overflowY: "auto", paddingRight: "4px" }}>
+              <div style={{ display: "grid", gridTemplateColumns: "1.4fr 1fr", gap: "20px" }}>
+                {/* Left Table - CHENNAI DASHBOARD */}
+                <div>
+                  <table className="kpiSummaryTable" style={{ width: "100%", borderCollapse: "collapse" }}>
+                    <thead>
+                      <tr style={{ background: "#bae6fd", color: "#0f172a", fontWeight: "bold" }}>
+                        <td colSpan={2} style={{ padding: "10px", border: "1px solid #cbd5e1", fontSize: "13px", fontWeight: "800" }}>
+                          CHENNAI DASHBOARD
+                        </td>
+                        <td style={{ padding: "10px", border: "1px solid #cbd5e1", textAlign: "right", fontSize: "12px", background: "#f1f5f9" }}>
+                          Wednesday / {report?.reportDate ? formatDisplayDateOnly(report.reportDate) : "25th Mar"}
+                        </td>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {[
+                        { id: 1, desc: "Total open call", val: chennaiKpiMetrics.openCalls },
+                        { id: 2, desc: "Total field Actionable call", val: chennaiKpiMetrics.actionable },
+                        { id: 3, desc: "Total Call Scheduled", val: chennaiKpiMetrics.planned },
+                        { id: 4, desc: "Call Allocation Engineer Wise", val: chennaiKpiMetrics.callAllocation },
+                        { id: 5, desc: "Print - Open call (=>2 days)", val: chennaiKpiMetrics.printOpenGe2 },
+                        { id: 6, desc: "Print - Actionable call (=>2 days)", val: chennaiKpiMetrics.printActionableGe2 },
+                        { id: 7, desc: "Print - Scheduled (=>2 days)", val: chennaiKpiMetrics.printScheduledGe2 },
+                        { id: 8, desc: "Open call (>10 days)", val: chennaiKpiMetrics.openCallsGt10 },
+                        { id: 9, desc: "Actionable call (>10 days)", val: chennaiKpiMetrics.actionableGt10 },
+                        { id: 10, desc: "Call Scheduled (>10 days)", val: chennaiKpiMetrics.scheduledGt10 },
+                        { id: 11, desc: "MPS >1 Days", val: chennaiKpiMetrics.mpsGt1 || "" },
+                        { id: 12, desc: "EOD Call Closer", val: chennaiKpiMetrics.eodCloser || "" },
+                        { id: 13, desc: "New Calls Received", val: chennaiKpiMetrics.newCalls || "" },
+                        { id: 14, desc: "CSO Days Inventory", val: chennaiKpiMetrics.csoDaysInventory, isInventory: true },
+                        { id: 15, desc: "Total Eng Count", val: chennaiKpiMetrics.enggCount },
+                        { id: 16, desc: "Eng Avl in Field", val: chennaiKpiMetrics.engAvlInField },
+                        { id: 17, desc: "Engineers Productivity", val: chennaiKpiMetrics.enggProductivity },
+                        { id: 18, desc: "Missed to schedule field action calls due to non avl of Eng", val: chennaiKpiMetrics.missedToSchedule || "" },
+                        { id: 19, desc: "Missed by Eng to attend scheduled Call (High call allocation)", val: chennaiKpiMetrics.missedByEng || "", isMissedByEng: true },
+                        { id: 20, desc: "G Total (Missed to schedule & Attend Daily basis)", val: chennaiKpiMetrics.gTotalMissed || "" },
+                        { id: 21, desc: "% - Missed to schedule & Attend Daily call", val: `${chennaiKpiMetrics.pctMissed}%`, isPctMissed: true },
+                        { id: 22, desc: "Closure Adherence", val: `${chennaiKpiMetrics.closureAdherence}%`, isAdherence: true },
+                      ].map((m) => {
+                        let bg = "transparent";
+                        let fg = "#334155";
+                        let weight = "normal";
+                        
+                        if (m.isInventory) {
+                          bg = m.val === "#DIV/0!" ? "#fee2e2" : "transparent";
+                          fg = m.val === "#DIV/0!" ? "#dc2626" : "#334155";
+                          weight = "bold";
+                        } else if (m.isMissedByEng) {
+                          bg = "#ffedd5";
+                          fg = "#c2410c";
+                        } else if (m.isPctMissed) {
+                          bg = "#f1f5f9";
+                          fg = "#334155";
+                          weight = "bold";
+                        } else if (m.isAdherence) {
+                          bg = "#eab308";
+                          fg = "#713f12";
+                          weight = "bold";
+                        }
+                        
+                        return (
+                          <tr key={m.id} style={{ borderBottom: "1px solid #e2e8f0" }}>
+                            <td style={{ padding: "6px 8px", border: "1px solid #cbd5e1", textAlign: "center", background: "#f8fafc", fontWeight: "600", color: "#334155", width: "40px" }}>{m.id}</td>
+                            <td style={{ padding: "6px 8px", border: "1px solid #cbd5e1", color: "#334155", fontWeight: m.isAdherence ? "bold" : "normal" }}>{m.desc}</td>
+                            <td style={{ padding: "6px 8px", border: "1px solid #cbd5e1", textAlign: "center", background: bg, color: fg, fontWeight: weight }}>{m.val}</td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+
+                {/* Right Table - NAF ANALYSIS */}
+                <div>
+                  <table className="kpiSummaryTable" style={{ width: "100%", borderCollapse: "collapse" }}>
+                    <thead>
+                      <tr style={{ background: "#ffedd5", color: "#c2410c", fontWeight: "bold" }}>
+                        <td style={{ padding: "10px", border: "1px solid #cbd5e1", fontSize: "13px" }}>Date</td>
+                        <td style={{ padding: "10px", border: "1px solid #cbd5e1", background: "#fef08a", color: "#854d0e", textAlign: "center", fontSize: "13px", fontWeight: "800" }}>
+                          {report?.reportDate ? formatDisplayDateOnly(report.reportDate) : "25th Feb"}
+                        </td>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {[
+                        { label: "Non Action-Field", val: chennaiKpiMetrics.totalNaf, isHeader: true },
+                        { label: "Flex Backend", val: chennaiKpiMetrics.flexBackend || "" },
+                        { label: "SSC", val: chennaiKpiMetrics.ssc || "" },
+                        { label: "HP Backend", val: chennaiKpiMetrics.hpBackend || "" },
+                        { label: "OBS-Customer", val: chennaiKpiMetrics.obsCustomer || "" },
+                        { label: "Cu Pending", val: chennaiKpiMetrics.cuPending || "" },
+                        { label: "Physical Closed", val: chennaiKpiMetrics.physicalClosed || "" },
+                        { label: "Total NAF", val: chennaiKpiMetrics.totalNaf, isTotal: true },
+                        { label: "SSC%", val: `${chennaiKpiMetrics.sscPct}%`, isSscPct: true },
+                      ].map((r, index) => {
+                        let bg = "transparent";
+                        let fg = "#334155";
+                        let weight = "normal";
+                        
+                        if (r.isHeader) {
+                          bg = "#ffedd5";
+                          fg = "#c2410c";
+                          weight = "bold";
+                        } else if (r.isTotal) {
+                          bg = "#f1f5f9";
+                          weight = "bold";
+                        } else if (r.isSscPct) {
+                          bg = "#fed7aa";
+                          fg = "#ea580c";
+                          weight = "bold";
+                        }
+                        
+                        return (
+                          <tr key={index} style={{ borderBottom: "1px solid #e2e8f0" }}>
+                            <td style={{ padding: "8px 12px", border: "1px solid #cbd5e1", color: fg, fontWeight: weight, background: r.isHeader ? bg : "transparent" }}>{r.label}</td>
+                            <td style={{ padding: "8px 12px", border: "1px solid #cbd5e1", textAlign: "center", background: bg, color: fg, fontWeight: "bold" }}>{r.val}</td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+
+            <div style={{ display: "flex", justifyContent: "flex-end", gap: "10px", borderTop: "1px solid var(--border)", paddingTop: "14px" }}>
+              <button
+                type="button"
+                className="secondaryButton"
+                onClick={() => setIsChennaiKpiModalOpen(false)}
+              >
+                Close
+              </button>
+              <button
+                type="button"
+                style={{ background: "linear-gradient(135deg, #0ea5e9, #0284c7)", borderColor: "#0ea5e9", display: "inline-flex", alignItems: "center", gap: "6px", color: "#ffffff" }}
+                onClick={() => {
+                  downloadRegionSummaryExcel(activeRegionName, report?.reportDate || todayIsoDate(), regionFilteredRows, true);
+                }}
+              >
+                📥 Download Summary Excel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      {/* 3. Super Admin Engineer Productivity Dashboard Popup Modal */}
+      {isProductivityModalOpen && (
+        <div className="drawerOverlay" style={{ zIndex: 100, display: "flex", alignItems: "center", justifyContent: "center", background: "rgba(15, 23, 42, 0.45)" }} onClick={() => setIsProductivityModalOpen(false)}>
+          <div 
+            style={{ 
+              background: "#ffffff", 
+              borderRadius: "12px", 
+              width: "min(900px, 95vw)", 
+              boxShadow: "0 20px 50px rgba(0, 0, 0, 0.15)", 
+              padding: "24px", 
+              display: "grid", 
+              gap: "18px", 
+              position: "relative",
+              border: "1px solid var(--border)"
+            }} 
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", borderBottom: "1px solid var(--border)", paddingBottom: "12px", gap: "16px", flexWrap: "wrap" }}>
+              <div style={{ display: "flex", flexDirection: "column", gap: "2px" }}>
+                <h2 style={{ margin: 0, fontSize: "18px", fontWeight: "700" }}>📊 Engineer Productivity Dashboard</h2>
+                <p style={{ margin: 0, fontSize: "12px", color: "var(--text-muted)" }}>
+                  Showing status breakdown {selectedRegion && selectedRegion !== "ALL" ? `for ${activeRegionName}` : "globally across all regions"}
+                </p>
+              </div>
+              <div style={{ display: "flex", gap: "12px", alignItems: "center", flexWrap: "wrap" }}>
+                {/* Filter Type */}
+                <div style={{ display: "flex", gap: "6px", alignItems: "center" }}>
+                  <span style={{ fontSize: "12px", fontWeight: "600", color: "#475569" }}>Filter:</span>
+                  <select 
+                    value={productivityFilterType} 
+                    onChange={(e) => setProductivityFilterType(e.target.value)}
+                    style={{ padding: "6px 10px", borderRadius: "6px", border: "1px solid var(--border)", fontSize: "12px", fontWeight: "600", outline: "none", background: "#f8fafc", cursor: "pointer" }}
+                  >
+                    <option value="Today">Today</option>
+                    <option value="Specific Date">Specific Date</option>
+                    <option value="Specific Month">Specific Month</option>
+                    <option value="All Dates">All History</option>
+                  </select>
+                </div>
+
+                {/* Conditional Specific Date / Specific Month value */}
+                {(productivityFilterType === "Specific Date" || productivityFilterType === "Specific Month") && (
+                  <div style={{ display: "flex", gap: "6px", alignItems: "center" }}>
+                    <span style={{ fontSize: "12px", fontWeight: "600", color: "#475569" }}>
+                      {productivityFilterType === "Specific Date" ? "Date:" : "Month:"}
+                    </span>
+                    <select 
+                      value={selectedProductivityValue} 
+                      onChange={(e) => setSelectedProductivityValue(e.target.value)}
+                      style={{ padding: "6px 10px", borderRadius: "6px", border: "1px solid var(--border)", fontSize: "12px", fontWeight: "600", outline: "none", background: "#f8fafc", cursor: "pointer" }}
+                    >
+                      {productivityFilterType === "Specific Date" 
+                        ? engineerProductivityMetrics.datesList.map(d => (
+                            <option key={d} value={d}>{d}</option>
+                          ))
+                        : engineerProductivityMetrics.monthsList.map(m => (
+                            <option key={m} value={m}>{m}</option>
+                          ))
+                      }
+                    </select>
+                  </div>
+                )}
+
+                <button 
+                  type="button" 
+                  className="secondaryButton" 
+                  style={{ minHeight: "32px", padding: "0 12px", borderRadius: "6px", fontSize: "13px" }} 
+                  onClick={() => setIsProductivityModalOpen(false)}
+                >
+                  Close
+                </button>
+              </div>
+            </div>
+
+            <div style={{ maxHeight: "60vh", overflowY: "auto", paddingRight: "4px" }}>
+              <table className="kpiSummaryTable" style={{ width: "100%", borderCollapse: "collapse" }}>
+                <thead>
+                  <tr style={{ background: "#fed7aa", color: "#7c2d12", fontWeight: "bold" }}>
+                    <td colSpan={8} style={{ padding: "10px", border: "1px solid #cbd5e1", textAlign: "center", fontSize: "13px", fontWeight: "800" }}>
+                      Filter Applied: {productivityDateLabel}
+                    </td>
+                  </tr>
+                  <tr style={{ background: "#ffedd5", color: "#7c2d12", fontWeight: "bold" }}>
+                    <td style={{ padding: "8px", border: "1px solid #cbd5e1", textAlign: "center", fontSize: "12px", width: "60px" }}>S.No</td>
+                    <td style={{ padding: "8px", border: "1px solid #cbd5e1", fontSize: "12px" }}>Engineer Name</td>
+                    <td style={{ padding: "8px", border: "1px solid #cbd5e1", textAlign: "center", fontSize: "12px" }}>Assigned</td>
+                    <td style={{ padding: "8px", border: "1px solid #cbd5e1", textAlign: "center", fontSize: "12px" }}>Attended</td>
+                    <td style={{ padding: "8px", border: "1px solid #cbd5e1", textAlign: "center", fontSize: "12px" }}>Closed</td>
+                    <td style={{ padding: "8px", border: "1px solid #cbd5e1", textAlign: "center", fontSize: "12px" }}>Part ordered</td>
+                    <td style={{ padding: "8px", border: "1px solid #cbd5e1", textAlign: "center", fontSize: "12px" }}>Under Observation</td>
+                    <td style={{ padding: "8px", border: "1px solid #cbd5e1", textAlign: "center", fontSize: "12px" }}>CX Reschedule</td>
+                  </tr>
+                </thead>
+                <tbody>
+                  {engineerProductivityMetrics.list.length > 0 ? (
+                    engineerProductivityMetrics.list.map((item, index) => (
+                      <tr key={item.name} style={{ borderBottom: "1px solid #e2e8f0" }}>
+                        <td style={{ padding: "8px", border: "1px solid #cbd5e1", textAlign: "center", background: "#f8fafc", fontWeight: "600", color: "#334155" }}>{index + 1}</td>
+                        <td style={{ padding: "8px", border: "1px solid #cbd5e1", fontWeight: "600", color: "#0f172a" }}>{item.name}</td>
+                        <td style={{ padding: "8px", border: "1px solid #cbd5e1", textAlign: "center", color: "#334155" }}>{item.assigned}</td>
+                        <td style={{ padding: "8px", border: "1px solid #cbd5e1", textAlign: "center", fontWeight: "bold", color: "#0f172a", background: "#f1f5f9" }}>{item.attended}</td>
+                        <td style={{ padding: "8px", border: "1px solid #cbd5e1", textAlign: "center", color: "#166534", fontWeight: "600" }}>{item.closed}</td>
+                        <td style={{ padding: "8px", border: "1px solid #cbd5e1", textAlign: "center", color: "#92400e" }}>{item.partOrdered || ""}</td>
+                        <td style={{ padding: "8px", border: "1px solid #cbd5e1", textAlign: "center", color: "#1e3a8a" }}>{item.underObservation || ""}</td>
+                        <td style={{ padding: "8px", border: "1px solid #cbd5e1", textAlign: "center", color: "#701a75" }}>{item.cxReschedule || ""}</td>
+                      </tr>
+                    ))
+                  ) : (
+                    <tr>
+                      <td colSpan={8} style={{ padding: "20px", border: "1px solid #cbd5e1", textAlign: "center", color: "var(--text-muted)" }}>
+                        No engineer productivity records found for this period.
+                      </td>
+                    </tr>
+                  )}
+                  {engineerProductivityMetrics.list.length > 0 && (
+                    <tr style={{ background: "#f8fafc", fontWeight: "bold" }}>
+                      <td colSpan={3} style={{ padding: "10px", border: "1px solid #cbd5e1", textAlign: "right", color: "#334155" }}>Total Attended</td>
+                      <td style={{ padding: "10px", border: "1px solid #cbd5e1", textAlign: "center", background: "#fed7aa", color: "#7c2d12", fontWeight: "bold" }}>
+                        {engineerProductivityMetrics.totalAttended}
+                      </td>
+                      <td colSpan={4} style={{ border: "1px solid #cbd5e1", background: "transparent" }}></td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+
+            <div style={{ display: "flex", justifyContent: "flex-end", gap: "10px", borderTop: "1px solid var(--border)", paddingTop: "14px" }}>
+              <button
+                type="button"
+                className="secondaryButton"
+                onClick={() => setIsProductivityModalOpen(false)}
+              >
+                Close
+              </button>
+              <button
+                type="button"
+                style={{ background: "linear-gradient(135deg, #f97316, #ea580c)", borderColor: "#f97316", display: "inline-flex", alignItems: "center", gap: "6px", color: "#ffffff" }}
+                onClick={() => {
+                  downloadEngineerProductivityExcel(
+                    activeRegionName || "Global", 
+                    productivityDateLabel, 
+                    engineerProductivityMetrics.list,
+                    engineerProductivityMetrics.totalAttended
+                  );
+                }}
+              >
+                📥 Download Productivity Excel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </main>
   );
 }

@@ -198,3 +198,285 @@ export function downloadReportAsXlsx(report: GeneratedReportResponse): void {
   const date = report.reportDate || new Date().toISOString().split("T")[0];
   XLSX.writeFile(wb, `Daily_Call_Plan_${date}.xlsx`);
 }
+
+export function downloadRegionSummaryExcel(
+  regionName: string,
+  reportDate: string,
+  rows: readonly GeneratedReportResponse["rows"][number][],
+  isChennaiStyle?: boolean,
+): void {
+  const isChennai = isChennaiStyle !== undefined ? isChennaiStyle : regionName.toLowerCase().includes("chennai");
+
+  const formatDisplayDateOnly = (dateStr: string): string => {
+    const date = new Date(dateStr);
+    if (Number.isNaN(date.getTime())) return dateStr;
+    const day = date.getDate();
+    const monthNames = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+    const month = monthNames[date.getMonth()];
+    
+    let suffix = "th";
+    if (day === 1 || day === 21 || day === 31) suffix = "st";
+    else if (day === 2 || day === 22) suffix = "nd";
+    else if (day === 3 || day === 23) suffix = "rd";
+    
+    return `${day}${suffix} ${month}`;
+  };
+
+  const getDayOfWeek = (dateStr: string): string => {
+    const date = new Date(dateStr);
+    if (Number.isNaN(date.getTime())) return "Wednesday";
+    const days = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+    return days[date.getDay()] ?? "Wednesday";
+  };
+
+  // 1. Calculate the counts
+  const activeRows = rows.filter((r) => !r.carryForward.closedSyntheticRow);
+  const closedRows = rows.filter((r) => r.carryForward.closedSyntheticRow);
+
+  // Engineers list
+  const getUniqueEngineers = (items: typeof rows) => {
+    const list = items
+      .map((r) => String(r.output.Engineer ?? "").trim())
+      .filter((name) => name && name !== "Manual Entry Required");
+    return Array.from(new Set(list));
+  };
+  const uniqueEngineers = getUniqueEngineers(activeRows);
+  const engineerCount = uniqueEngineers.length;
+
+  const countByRtplStatus = (statusList: string[]) => {
+    return activeRows.filter((r) => {
+      const status = String(r.output["RTPL status"] ?? "").trim().toLowerCase();
+      return statusList.some((s) => status === s.toLowerCase());
+    }).length;
+  };
+
+  const countByRtplStatusContains = (keyword: string) => {
+    return activeRows.filter((r) => {
+      const status = String(r.output["RTPL status"] ?? "").trim().toLowerCase();
+      return status.includes(keyword.toLowerCase());
+    }).length;
+  };
+
+  const parseWipAgingValue = (value: unknown): number | null => {
+    const parsed = Number(String(value ?? "").trim());
+    return Number.isFinite(parsed) ? parsed : null;
+  };
+
+  const isPrintCase = (r: GeneratedReportResponse["rows"][number]): boolean => {
+    const segment = String(r.output.Segment ?? "").trim().toLowerCase();
+    const prodLine = String(r.output["Product Line Name"] ?? "").trim().toLowerCase();
+    const woOtcCode = String(r.output["WO OTC CODE"] ?? "").trim().toUpperCase();
+    return segment === "print" || prodLine.includes("print") || woOtcCode.startsWith("05F");
+  };
+
+  let aoaData: (string | number)[][];
+  let merges: XLSX.Range[] = [];
+  let colWidths: { wch: number }[] = [];
+
+  if (isChennai) {
+    const openCalls = activeRows.length;
+    const actionable = countByRtplStatus(["Actionable"]);
+    const planned = countByRtplStatus(["Engg Assigned"]);
+    const callAllocation = engineerCount > 0 ? (planned / engineerCount).toFixed(1) : "0.0";
+    
+    const printOpenGe2 = activeRows.filter(r => isPrintCase(r) && (parseWipAgingValue(r.output["WIP aging"]) ?? 0) >= 2).length;
+    const printActionableGe2 = activeRows.filter(r => isPrintCase(r) && String(r.output["RTPL status"] ?? "").trim().toLowerCase() === "actionable" && (parseWipAgingValue(r.output["WIP aging"]) ?? 0) >= 2).length;
+    const printScheduledGe2 = activeRows.filter(r => isPrintCase(r) && String(r.output["RTPL status"] ?? "").trim().toLowerCase() === "engg assigned" && (parseWipAgingValue(r.output["WIP aging"]) ?? 0) >= 2).length;
+    
+    const openCallsGt10 = activeRows.filter(r => (parseWipAgingValue(r.output["WIP aging"]) ?? 0) > 10).length;
+    const actionableGt10 = activeRows.filter(r => String(r.output["RTPL status"] ?? "").trim().toLowerCase() === "actionable" && (parseWipAgingValue(r.output["WIP aging"]) ?? 0) > 10).length;
+    const scheduledGt10 = activeRows.filter(r => String(r.output["RTPL status"] ?? "").trim().toLowerCase() === "engg assigned" && (parseWipAgingValue(r.output["WIP aging"]) ?? 0) > 10).length;
+    
+    const mpsGt1 = activeRows.filter(r => String(r.output["RTPL status"] ?? "").trim().toLowerCase().includes("mps") && (parseWipAgingValue(r.output["WIP aging"]) ?? 0) > 1).length;
+    const eodCloser = closedRows.length;
+    const newCalls = activeRows.filter(r => r.comparison?.changeType === "NEW").length;
+    
+    const csoDaysInventory = eodCloser > 0 ? (openCalls / eodCloser).toFixed(1) : "#DIV/0!";
+    const engAvlInField = engineerCount;
+    const enggProductivity = engineerCount > 0 ? (eodCloser / engineerCount).toFixed(1) : "0.0";
+    
+    const missedToSchedule = activeRows.filter(r => String(r.output["RTPL status"] ?? "").trim().toLowerCase().includes("missed") || String(r.output["RTPL status"] ?? "").trim().toLowerCase().includes("non avl")).length;
+    const missedByEng = activeRows.filter(r => String(r.output["RTPL status"] ?? "").trim().toLowerCase().includes("high call")).length;
+    const gTotalMissed = missedToSchedule + missedByEng;
+    const pctMissed = openCalls > 0 ? Math.round((gTotalMissed / openCalls) * 100) : 0;
+    const closureAdherence = (eodCloser + gTotalMissed) > 0 ? Math.round((eodCloser / (eodCloser + gTotalMissed)) * 100) : 0;
+    
+    // NAF
+    const flexBackend = activeRows.filter(r => {
+      const s = String(r.output["RTPL status"] ?? "").trim().toLowerCase();
+      return s.includes("flex backend") || s.includes("backend");
+    }).length;
+    const ssc = activeRows.filter(r => String(r.output["RTPL status"] ?? "").trim().toLowerCase().includes("ssc")).length;
+    const hpBackend = activeRows.filter(r => String(r.output["RTPL status"] ?? "").trim().toLowerCase().includes("hp backend")).length;
+    const obsCustomer = activeRows.filter(r => String(r.output["RTPL status"] ?? "").trim().toLowerCase().includes("obs") || String(r.output["RTPL status"] ?? "").trim().toLowerCase().includes("customer")).length;
+    const cuPending = activeRows.filter(r => String(r.output["RTPL status"] ?? "").trim().toLowerCase().includes("cu pending")).length;
+    const physicalClosed = activeRows.filter(r => String(r.output["RTPL status"] ?? "").trim().toLowerCase().includes("physical closed") || String(r.output["RTPL status"] ?? "").trim().toLowerCase().includes("physically closed")).length;
+    
+    const totalNaf = flexBackend + ssc + hpBackend + obsCustomer + cuPending + physicalClosed;
+    const sscPct = totalNaf > 0 ? Math.round((ssc / totalNaf) * 100) : 0;
+
+    aoaData = [
+      ["CHENNAI DASHBOARD", "", getDayOfWeek(reportDate) + " / " + formatDisplayDateOnly(reportDate), "", "Date", formatDisplayDateOnly(reportDate)],
+      ["S.No", "Description", "Count", "", "Non Action-Field", totalNaf],
+      [1, "Total open call", openCalls, "", "Flex Backend", flexBackend || ""],
+      [2, "Total field Actionable call", actionable, "", "SSC", ssc || ""],
+      [3, "Total Call Scheduled", planned, "", "HP Backend", hpBackend || ""],
+      [4, "Call Allocation Engineer Wise", Number(callAllocation), "", "OBS-Customer", obsCustomer || ""],
+      [5, "Print - Open call (=>2 days)", printOpenGe2, "", "Cu Pending", cuPending || ""],
+      [6, "Print - Actionable call (=>2 days)", printActionableGe2, "", "Physical Closed", physicalClosed || ""],
+      [7, "Print - Scheduled (=>2 days)", printScheduledGe2, "", "Total NAF", totalNaf],
+      [8, "Open call (>10 days)", openCallsGt10, "", "SSC%", `${sscPct}%`],
+      [9, "Actionable call (>10 days)", actionableGt10, "", "", ""],
+      [10, "Call Scheduled (>10 days)", scheduledGt10, "", "", ""],
+      [11, "MPS >1 Days", mpsGt1 || "", "", "", ""],
+      [12, "EOD Call Closer", eodCloser || "", "", "", ""],
+      [13, "New Calls Received", newCalls || "", "", "", ""],
+      [14, "CSO Days Inventory", csoDaysInventory === "#DIV/0!" ? "#DIV/0!" : Number(csoDaysInventory), "", "", ""],
+      [15, "Total Eng Count", engineerCount, "", "", ""],
+      [16, "Eng Avl in Field", engAvlInField, "", "", ""],
+      [17, "Engineers Productivity", Number(enggProductivity), "", "", ""],
+      [18, "Missed to schedule field action calls due to non avl of Eng", missedToSchedule || "", "", "", ""],
+      [19, "Missed by Eng to attend scheduled Call (High call allocation)", missedByEng || "", "", "", ""],
+      [20, "G Total (Missed to schedule & Attend Daily basis)", gTotalMissed || "", "", "", ""],
+      [21, "% - Missed to schedule & Attend Daily call", `${pctMissed}%`, "", "", ""],
+      [22, "Closure Adherence", `${closureAdherence}%`, "", "", ""],
+    ];
+
+    merges = [
+      { s: { r: 0, c: 0 }, e: { r: 0, c: 1 } },
+    ];
+
+    colWidths = [
+      { wch: 10 },
+      { wch: 45 },
+      { wch: 15 },
+      { wch: 5 },
+      { wch: 30 },
+      { wch: 15 },
+    ];
+  } else {
+    // 2. Salem region KPI summaries
+    const openCallsCount = activeRows.length;
+    const closedCallsCount = closedRows.length;
+    const actionableCount = countByRtplStatus(["Actionable"]);
+    const plannedCount = countByRtplStatus(["Engg Assigned"]);
+    const enggOnsiteCount = countByRtplStatus(["Engg Assigned"]) + countByRtplStatusContains("onsite");
+    const toBeScheduleCount = countByRtplStatus(["To be Scheduled", "Engg Assignment Pending"]);
+    const cxRescheduleCount = countByRtplStatus(["CX Pending"]) + countByRtplStatusContains("reschedule") + countByRtplStatusContains("cx");
+    const sscPendingCount = countByRtplStatus(["SSC Pending → Part Pending"]);
+    const elevateTechCount = countByRtplStatus(["Elevation HP Pending", "Elevation Part Pending"]);
+    const underObservationCount = countByRtplStatus(["CRT Pending", "CT Validation Pending"]) + countByRtplStatusContains("observation");
+    const toBeYankCount = countByRtplStatus(["Need to Yank", "Yank"]);
+    const addPartOrderedCount = countByRtplStatus(["Additional Part", "Part Order Pending"]);
+    const toBeCancelCount = countByRtplStatus(["Need to Cancel", "Need to Cancel Mail"]);
+    const newCallsCount = activeRows.filter((r) => r.comparison?.changeType === "NEW").length;
+    
+    // Trade open calls helper (WO OTC CODE contains "TRADE" or starts with "01")
+    const isTradeRow = (r: typeof rows[number]) => {
+      const code = String(r.output["WO OTC CODE"] ?? "").trim().toUpperCase();
+      return code.includes("TRADE") || code.startsWith("01");
+    };
+    const tradeOpenCallsCount = activeRows.filter(isTradeRow).length;
+
+    // Closed cancelled
+    const closedCancelledCount = closedRows.filter((r) => {
+      const status = String(r.output["RTPL status"] ?? "").trim().toLowerCase();
+      return status.includes("cancel");
+    }).length;
+
+    aoaData = [
+      [reportDate, "", regionName],
+      ["S.No", "Description", "Count"],
+      [1, "Engineer Count", engineerCount],
+      [2, "No.of Engg Presents", engineerCount],
+      [3, "Open Calls", openCallsCount],
+      [4, "Actionable Calls", actionableCount || 0],
+      [5, "Planned Calls", plannedCount || 0],
+      [6, "Closed Calls", closedCallsCount || 0],
+      [7, "Engg onsite", enggOnsiteCount || 0],
+      [8, "To be schedule", toBeScheduleCount || 0],
+      [9, "CX Reschedule Calls", cxRescheduleCount || 0],
+      [10, "SSC Pending Calls", sscPendingCount || 0],
+      [11, "Elevate/Tech Support Calls", elevateTechCount || 0],
+      [12, "Under observation Calls", underObservationCount || 0],
+      [13, "To be Yank", toBeYankCount || 0],
+      [14, "Closed cancelled", closedCancelledCount || 0],
+      [15, "Add.Part ordered", addPartOrderedCount || 0],
+      [16, "To be Cancel", toBeCancelCount || 0],
+      [17, "New calls", newCallsCount || 0],
+      [18, "Trade Open Calls", tradeOpenCallsCount || 0],
+    ];
+
+    merges = [
+      { s: { r: 0, c: 0 }, e: { r: 0, c: 1 } },
+    ];
+
+    colWidths = [
+      { wch: 10 },
+      { wch: 35 },
+      { wch: 15 },
+    ];
+  }
+
+  // 4. Create Worksheet and Workbook
+  const ws = XLSX.utils.aoa_to_sheet(aoaData);
+  
+  // Set merge for first row
+  ws["!merges"] = merges;
+
+  // Set widths
+  ws["!cols"] = colWidths;
+
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, "Region Summary");
+
+  // Write file
+  XLSX.writeFile(wb, `${regionName}_Region_Summary_${reportDate}.xlsx`);
+}
+
+export function downloadEngineerProductivityExcel(
+  regionName: string,
+  dateLabel: string,
+  list: any[],
+  totalAttended: number,
+): void {
+  const aoaData = [
+    ["Date " + dateLabel, "", "", "", "", "", "", ""],
+    ["S.No", "Engineer Name", "Assigned", "Attended", "Closed", "Part ordered", "Under Observation", "CX Reschedule"],
+    ...list.map((item, index) => [
+      index + 1,
+      item.name,
+      item.assigned,
+      item.attended,
+      item.closed,
+      item.partOrdered || "",
+      item.underObservation || "",
+      item.cxReschedule || "",
+    ]),
+    ["Total Attended", "", "", totalAttended, "", "", "", ""],
+  ];
+
+  const ws = XLSX.utils.aoa_to_sheet(aoaData);
+
+  ws["!merges"] = [
+    { s: { r: 0, c: 0 }, e: { r: 0, c: 7 } },
+    { s: { r: aoaData.length - 1, c: 0 }, e: { r: aoaData.length - 1, c: 2 } },
+  ];
+
+  ws["!cols"] = [
+    { wch: 10 },
+    { wch: 25 },
+    { wch: 12 },
+    { wch: 12 },
+    { wch: 12 },
+    { wch: 15 },
+    { wch: 20 },
+    { wch: 15 },
+  ];
+
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, "Engineer Productivity");
+
+  XLSX.writeFile(wb, `Engineer_Productivity_${regionName}_${dateLabel.replace(/\s+/g, "_")}.xlsx`);
+}
+

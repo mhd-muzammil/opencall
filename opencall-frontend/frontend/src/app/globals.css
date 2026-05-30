@@ -1242,8 +1242,31 @@ code {
   max-height: 540px;
   overflow: auto;
   border: 1px solid var(--border);
-  border-radius: 8px;
+  border-radius: 12px;
+  box-shadow: 0 4px 20px rgba(15, 23, 42, 0.03);
+  background: #ffffff;
+  scrollbar-width: thin;
+  scrollbar-color: #cbd5e1 transparent;
   min-width: 0;
+}
+
+.tableWrap::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+.tableWrap::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.tableWrap::-webkit-scrollbar-thumb {
+  background-color: #cbd5e1;
+  border-radius: 999px;
+  border: 2px solid transparent;
+}
+
+.tableWrap::-webkit-scrollbar-thumb:hover {
+  background-color: #94a3b8;
 }
 
 .recordsArea {
@@ -1293,42 +1316,59 @@ code {
 table {
   width: max-content;
   min-width: 100%;
-  border-collapse: collapse;
+  border-collapse: separate;
+  border-spacing: 0;
   background: #ffffff;
 }
 
 th,
 td {
-  border-bottom: 1px solid var(--border);
-  padding: 9px 10px;
+  padding: 12px 16px;
   text-align: left;
   white-space: nowrap;
+  transition: background-color 0.15s ease, color 0.15s ease;
 }
 
 th {
   position: sticky;
   top: 0;
-  z-index: 1;
-  background: var(--surface-subtle);
-  color: #2c3a48;
-  font-size: 12px;
-  font-weight: 900;
+  z-index: 10;
+  background: #f8fafc;
+  color: #475569;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  border-bottom: 2px solid var(--border);
+  box-shadow: inset 0 -1px 0 var(--border);
+}
+
+th:not(:last-child)::after {
+  content: "";
+  position: absolute;
+  right: 0;
+  top: 25%;
+  height: 50%;
+  width: 1px;
+  background: #cbd5e1;
+  opacity: 0.5;
 }
 
 td {
-  background: #f8fbff;
-  color: #24313f;
+  background: #ffffff;
+  color: #334155;
   font-size: 13px;
-  font-weight: 400;
-  line-height: 1.35;
+  font-weight: 500;
+  line-height: 1.5;
+  border-bottom: 1px solid #f1f5f9;
 }
 
 tbody tr:nth-child(even) td {
-  background: #f8fbff;
+  background: #f8fafc;
 }
 
 tbody tr:hover td {
-  background: #edf4ff;
+  background: #f1f5f9 !important;
 }
 
 .changeCell {
@@ -1343,15 +1383,58 @@ tbody tr:hover td {
 .stickyActionColumn {
   position: sticky;
   right: 0;
-  z-index: 2;
-  background: #f8fbff;
+  z-index: 8;
+  background: #ffffff;
   border-left: 1px solid var(--border);
+  box-shadow: -4px 0 10px rgba(15, 23, 42, 0.02);
+}
+
+tbody tr:nth-child(even) td.stickyActionColumn {
+  background: #f8fafc;
+}
+
+tbody tr:hover td.stickyActionColumn {
+  background: #f1f5f9;
 }
 
 th.stickyActionColumn {
-  z-index: 3;
-  background: var(--surface-subtle);
+  z-index: 11;
+  background: #f8fafc;
+  border-left: 1px solid var(--border);
+  box-shadow: -4px 0 10px rgba(15, 23, 42, 0.02);
 }
+
+/* Sticky S.no (First Column) Styling */
+.tableWrap th:first-child {
+  position: sticky;
+  left: 0;
+  z-index: 12; /* Sticky header has higher z-index than content */
+  background: #f8fafc;
+  border-right: 1px solid var(--border);
+  box-shadow: 4px 0 10px rgba(15, 23, 42, 0.03);
+}
+
+.tableWrap td:first-child {
+  position: sticky;
+  left: 0;
+  z-index: 7; /* Sticky content has lower z-index than sticky headers */
+  background: #ffffff;
+  border-right: 1px solid var(--border);
+  box-shadow: 4px 0 10px rgba(15, 23, 42, 0.03);
+  font-weight: 700;
+  text-align: center;
+}
+
+/* Zebra striping for sticky first column to prevent transparency overlap */
+.tableWrap tbody tr:nth-child(even) td:first-child {
+  background: #f8fafc;
+}
+
+/* Hover effect for sticky first column */
+.tableWrap tbody tr:hover td:first-child {
+  background: #f1f5f9 !important;
+}
+
 
 .changeTooltipWrap {
   position: relative;
@@ -1364,38 +1447,45 @@ th.stickyActionColumn {
   align-items: center;
   justify-content: center;
   min-width: 78px;
-  min-height: 26px;
-  border-radius: 999px;
-  padding: 4px 9px;
+  min-height: 24px;
+  border-radius: 6px;
+  padding: 2px 8px;
   font-size: 11px;
   font-weight: 600;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
   line-height: 1;
   white-space: nowrap;
 }
 
 .changeBadge.new {
-  background: #eff6ff;
-  color: #2563eb;
+  background: #dbeafe;
+  color: #1e40af;
+  border: 1px solid #bfdbfe;
 }
 
 .changeBadge.closed {
-  background: #fff2f1;
-  color: var(--danger);
+  background: #fee2e2;
+  color: #991b1b;
+  border: 1px solid #fecaca;
 }
 
 .changeBadge.updated {
-  background: var(--accent-soft);
-  color: black;
+  background: #fef3c7;
+  color: #92400e;
+  border: 1px solid #fde68a;
 }
 
 .changeBadge.carried {
-  background: var(--accent-soft);
-  color: black;
+  background: #dcfce7;
+  color: #166534;
+  border: 1px solid #bbf7d0;
 }
 
 .changeBadge.none {
-  background: var(--surface-subtle);
-  color: var(--muted);
+  background: #f1f5f9;
+  color: #64748b;
+  border: 1px solid #e2e8f0;
 }
 
 .opsBadge,
@@ -1404,7 +1494,6 @@ th.stickyActionColumn {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  border-radius: 999px;
   font-size: 11px;
   font-weight: 600;
   line-height: 1;
@@ -1413,29 +1502,41 @@ th.stickyActionColumn {
 
 .opsBadge {
   min-width: 72px;
-  min-height: 26px;
-  padding: 4px 9px;
+  min-height: 24px;
+  border-radius: 6px;
+  padding: 2px 8px;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
 }
 
-.opsBadge.carried,
+.opsBadge.carried {
+  background: #dcfce7;
+  color: #166534;
+  border: 1px solid #bbf7d0;
+}
+
 .opsBadge.complete {
-  background: var(--accent-soft);
-  color: black;
+  background: #e0f2fe;
+  color: #0369a1;
+  border: 1px solid #bae6fd;
 }
 
 .opsBadge.new {
-  background: #eff6ff;
-  color: #2563eb;
+  background: #dbeafe;
+  color: #1e40af;
+  border: 1px solid #bfdbfe;
 }
 
 .opsBadge.closed {
-  background: #fff2f1;
-  color: var(--danger);
+  background: #fee2e2;
+  color: #991b1b;
+  border: 1px solid #fecaca;
 }
 
 .opsBadge.manual {
-  background: var(--accent-soft);
-  color: black;
+  background: #ffedd5;
+  color: #c2410c;
+  border: 1px solid #fed7aa;
 }
 
 .manualCount {
@@ -1444,6 +1545,7 @@ th.stickyActionColumn {
   margin-left: 6px;
   background: var(--danger);
   color: #ffffff;
+  border-radius: 999px;
 }
 
 .changeTooltip {
@@ -1500,23 +1602,46 @@ th.stickyActionColumn {
 }
 
 .incompleteRow td {
-  background: #f8fbff;
+  /* Let cell highlights handle indicators */
 }
 
 td.missingCell {
-  background: #f8fbff;
-  color: #24313f;
-  font-weight: 400;
+  background: #fffbeb !important;
+  color: #92400e !important;
+  font-weight: 600;
+  border-left: 3px solid #f59e0b;
+  position: relative;
+}
+
+td.missingCell::after {
+  content: "⚠";
+  position: absolute;
+  right: 8px;
+  top: 50%;
+  transform: translateY(-50%);
+  font-size: 11px;
+  opacity: 0.6;
+}
+
+tbody tr:hover td.missingCell {
+  background: #fef3c7 !important;
 }
 
 td.carriedForwardCell {
-  background: #f8fbff;
-  color: #24313f;
-  font-weight: 400;
+  background: #f0fdf4 !important;
+  color: #166534 !important;
+  font-weight: 500;
+  border-left: 3px solid #10b981;
+}
+
+tbody tr:hover td.carriedForwardCell {
+  background: #dcfce7 !important;
 }
 
 td.missingCell.carriedForwardCell {
-  background: #f8fbff;
+  background: #fffbeb !important;
+  color: #92400e !important;
+  border-left: 3px solid #f59e0b;
 }
 
 .cellValueWrap {
@@ -1549,12 +1674,72 @@ td.missingCell.carriedForwardCell {
 
 .rowActions {
   display: flex;
-  gap: 8px;
+  gap: 6px;
 }
 
 .rowActions button {
-  min-height: 34px;
-  padding: 0 10px;
+  min-height: 32px;
+  padding: 4px 12px;
+  font-size: 12px;
+  font-weight: 600;
+  border-radius: 6px;
+  transition: all 0.15s ease-in-out;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+/* Edit / Save / Cancel / Delete button specific designs */
+.rowActions button:not(.secondaryButton) {
+  background: #10b981;
+  color: #ffffff;
+  border: 1px solid #10b981;
+}
+
+.rowActions button:not(.secondaryButton):hover {
+  background: #059669;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(16, 185, 129, 0.2);
+}
+
+.rowActions button.secondaryButton:not([style*="color"]) {
+  background: #f1f5f9;
+  color: #475569;
+  border: 1px solid #cbd5e1;
+}
+
+.rowActions button.secondaryButton:not([style*="color"]):hover {
+  background: #e2e8f0;
+  transform: translateY(-1px);
+}
+
+.rowActions button.secondaryButton[style*="color"] {
+  background: #fee2e2 !important;
+  color: var(--danger) !important;
+  border: 1px solid #fecaca !important;
+}
+
+.rowActions button.secondaryButton[style*="color"]:hover {
+  background: #fca5a5 !important;
+  color: #991b1b !important;
+  transform: translateY(-1px);
+}
+
+.stickyActionColumn > button.secondaryButton {
+  background: #ffffff;
+  color: var(--accent);
+  border: 1px solid var(--accent);
+  min-height: 30px;
+  padding: 2px 12px;
+  font-size: 12px;
+  font-weight: 600;
+  border-radius: 6px;
+  transition: all 0.15s ease-in-out;
+}
+
+.stickyActionColumn > button.secondaryButton:hover {
+  background: var(--accent-soft);
+  transform: translateY(-1px);
 }
 
 @media (max-width: 980px) {

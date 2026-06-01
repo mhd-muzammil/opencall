@@ -2593,7 +2593,7 @@ export default function DashboardPage() {
                 <div className="sectionHeader">
                   <div>
                     <h3>Case Type Overview</h3>
-                    <p>Warranty priority: Installation first, then CISS (excludes 01-Trade), Fix, PC, Trade, and RCA.</p>
+                    <p>Warranty priority: Installation first, then CISS (excludes 01-Trade), Print Fix, PC, Trade, and RCA.</p>
                   </div>
                 </div>
                 <div className="caseTypeGrid">
@@ -2637,7 +2637,7 @@ export default function DashboardPage() {
                   </div>
                   <div className={`caseTypeCard ${printCaseFilter === "fix" ? "active" : ""}`}>
                     <button type="button" className="caseTypeSummary" onClick={() => openRecordsWithFilter({ printCase: "fix" })}>
-                      <span>Fix Cases</span>
+                      <span>Print Fix Cases</span>
                       <strong>{formatNumber(printFixRows.length)}</strong>
                       <small>Remaining Print (non-Installation)</small>
                     </button>

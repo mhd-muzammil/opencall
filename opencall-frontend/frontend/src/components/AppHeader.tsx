@@ -3,8 +3,6 @@ import type {
   LoginResponse,
   RuntimeHealthResponse,
 } from "../lib/apiClient";
-import { StatusPill } from "./StatusPill";
-
 export type WorkspaceView = "overview" | "records";
 
 function formatRoleLabel(role: LoginResponse["user"]["role"]): string {
@@ -131,12 +129,6 @@ export function AppHeader({
           </details>
         </div>
         <div className="headerUtilityActions">
-          <StatusPill tone={dbHealth?.connected ? "good" : "bad"}>
-            DB {dbHealth?.connected ? "connected" : dbHealth?.status ?? "checking"}
-          </StatusPill>
-          <StatusPill tone={runtimeHealth?.ok ? "good" : "bad"}>
-            Runtime {runtimeHealth?.ok ? "ready" : runtimeHealth?.status ?? "checking"}
-          </StatusPill>
           <button
             className="iconButton topIconButton refreshAction"
             type="button"

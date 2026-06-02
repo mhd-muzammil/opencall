@@ -1683,7 +1683,7 @@ td.missingCell {
 }
 
 td.missingCell::after {
-  content: "⚠";
+  content: "";
   position: absolute;
   right: 8px;
   top: 50%;

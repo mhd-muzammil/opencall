@@ -2988,7 +2988,7 @@ export default function DashboardPage() {
                 </div>
                       {incompleteCellCount > 0 ? (
                 <p className="hint">
-                  Click any highlighted "Manual Entry Required" cell or the row Edit button to enter manual data.
+                  Click any highlighted "Entry" cell or the row Edit button to enter manual data.
                 </p>
               ) : null}
               </div>
@@ -3417,7 +3417,7 @@ export default function DashboardPage() {
                                     <div style={{ display: "flex", gap: "4px", alignItems: "center" }}>
                                         <RTPLStatusDropdown
                                           value={String(draftOutput[column] ?? "")}
-                                          manualEntryRequiredLabel={MANUAL_ENTRY_REQUIRED}
+                                          manualEntryRequiredLabel="Entry"
                                           onChange={(selected) => {
                                             if (selected === "Custom") {
                                               setDraftOutput((current) => ({
@@ -3458,7 +3458,7 @@ export default function DashboardPage() {
                                         }))
                                       }
                                     >
-                                      <option value="">{MANUAL_ENTRY_REQUIRED}</option>
+                                      <option value="">Entry</option>
                                       {engineersList.map(e => (
                                         <option key={e.id} value={e.engineerName}>{e.engineerName}</option>
                                       ))}
@@ -3493,7 +3493,7 @@ export default function DashboardPage() {
                                         {String(value ?? "")}
                                       </button>
                                     ) : (
-                                      <span>{String(value ?? "")}</span>
+                                      <span>{value === MANUAL_ENTRY_REQUIRED ? "Entry" : String(value ?? "")}</span>
                                     )}
                                     {isCarriedForward ? (
                                       <span className="cellCarryFlag">Carried</span>
@@ -4311,7 +4311,7 @@ export default function DashboardPage() {
                     <div className="statusFieldContainer">
                       <RTPLStatusDropdown
                         value={String(draftOutput["RTPL status"] ?? "")}
-                        manualEntryRequiredLabel={MANUAL_ENTRY_REQUIRED}
+                        manualEntryRequiredLabel="Entry"
                         onChange={(selected) => {
                           if (selected === "Custom") {
                             setDraftOutput((current) => ({
@@ -4357,7 +4357,7 @@ export default function DashboardPage() {
                         }))
                       }
                     >
-                      <option value="">{MANUAL_ENTRY_REQUIRED}</option>
+                      <option value="">Entry</option>
                       {engineersList.map(e => (
                         <option key={e.id} value={e.engineerName}>{e.engineerName}</option>
                       ))}

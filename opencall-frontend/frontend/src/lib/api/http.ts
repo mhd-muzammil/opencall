@@ -1,5 +1,19 @@
 import type { ApiErrorBody } from "./types";
 
+export class ApiClientError extends Error {
+  readonly status: number;
+  readonly code: string | null;
+  readonly details: unknown;
+
+  constructor(message: string, status: number, body: ApiErrorBody | null) {
+    super(message);
+    this.name = "ApiClientError";
+    this.status = status;
+    this.code = body?.error?.code ?? null;
+    this.details = body?.error?.details ?? null;
+  }
+}
+
 export async function readJson<T>(response: Response): Promise<T> {
   const body = (await response.json().catch(() => null)) as
     | { data?: T }
@@ -11,7 +25,7 @@ export async function readJson<T>(response: Response): Promise<T> {
       return body.data as T;
     }
     const errorBody = body as ApiErrorBody | null;
-    throw new Error(formatApiError(errorBody, response.status));
+    throw new ApiClientError(formatApiError(errorBody, response.status), response.status, errorBody);
   }
 
   if (!body || !("data" in body)) {
@@ -19,6 +33,10 @@ export async function readJson<T>(response: Response): Promise<T> {
   }
 
   return body.data as T;
+}
+
+export function isApiAuthError(error: unknown): error is ApiClientError {
+  return error instanceof ApiClientError && error.status === 401;
 }
 
 function formatApiError(body: ApiErrorBody | null, status: number): string {

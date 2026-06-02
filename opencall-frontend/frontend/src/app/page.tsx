@@ -2348,7 +2348,7 @@ export default function DashboardPage() {
                     <div className="regionMetricHeader">
                         <div className="regionMetricValue">{activeRows.length}</div>
                       <div className="regionMetricLabel">ALL REGIONS</div>
-                      <div className="regionMetricSubtext">GLOBAL</div>
+                      <div className="regionMetricSubtext">OVERALL</div>
                     </div>
 
                     <div className="regionSegmentMetrics">

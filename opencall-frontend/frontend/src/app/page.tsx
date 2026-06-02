@@ -2623,7 +2623,7 @@ export default function DashboardPage() {
                     <p>Warranty priority: Installation first, then CISS (excludes 01-Trade), Print Fix, PC, Trade, and RCA.</p>
                   </div>
                 </div>
-                <div className="caseTypeGrid">
+                <div className="caseTypeGrid compactSix">
                   <div className={`caseTypeCard ${printCaseFilter === "installation" ? "active" : ""}`}>
                     <button type="button" className="caseTypeSummary" onClick={() => openRecordsWithFilter({ printCase: "installation" })}>
                       <span>Installation</span>
@@ -2741,14 +2741,15 @@ export default function DashboardPage() {
                 </div>
               </div>
 
-              <div className="caseTypeSection" style={{ borderLeft: "4px solid var(--accent)" }}>
+              <div className="segmentSplitGrid">
+              <div className="caseTypeSection segmentSplitSection">
                 <div className="sectionHeader">
                   <div>
                     <h3>Customer Segment Split</h3>
                     <p>Split counts for Consumer (Retail/Individual) and Commercial (Corporate/Business) cases.</p>
                   </div>
                 </div>
-                <div className="caseTypeGrid" style={{ gridTemplateColumns: "repeat(2, minmax(0, 1fr))" }}>
+                <div className="caseTypeGrid twoUp">
                   <div className={`caseTypeCard ${showConsumerOnly ? "active" : ""}`} style={{ padding: "16px" }}>
                     <button
                       type="button"
@@ -2800,14 +2801,14 @@ export default function DashboardPage() {
                 </div>
               </div>
 
-              <div className="caseTypeSection" style={{ borderLeft: "4px solid var(--accent)", marginTop: "24px" }}>
+              <div className="caseTypeSection segmentSplitSection">
                 <div className="sectionHeader">
                   <div>
                     <h3>Warranty Segment Split</h3>
                     <p>Split counts for Active Warranty and Non-Warranty (Trade) cases.</p>
                   </div>
                 </div>
-                <div className="caseTypeGrid" style={{ gridTemplateColumns: "repeat(2, minmax(0, 1fr))" }}>
+                <div className="caseTypeGrid twoUp">
                   <div className={`caseTypeCard ${showWarrantyOnly ? "active" : ""}`} style={{ padding: "16px" }}>
                     <button
                       type="button"
@@ -2861,7 +2862,9 @@ export default function DashboardPage() {
                 <p className="hint">
                   Click any highlighted "Manual Entry Required" cell or the row Edit button to enter manual data.
                 </p>
-              ) : null}        </div>
+              ) : null}
+              </div>
+              </div>
 
 
 

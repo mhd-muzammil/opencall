@@ -999,10 +999,30 @@ code {
   white-space: normal;
 }
 
+.segmentSplitGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+  align-items: start;
+}
+
+.segmentSplitSection {
+  border-left: 4px solid var(--accent);
+}
+
 .caseTypeGrid {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 12px;
+}
+
+.caseTypeGrid.twoUp {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.caseTypeGrid.compactSix {
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 10px;
 }
 
 .caseTypeCard {
@@ -1062,6 +1082,55 @@ code {
   color: var(--muted);
   font-size: 12px;
   font-weight: 700;
+}
+
+.caseTypeGrid.compactSix .caseTypeCard {
+  gap: 7px;
+  padding: 10px;
+}
+
+.caseTypeGrid.compactSix .caseTypeSummary {
+  gap: 5px;
+  min-height: 92px;
+  padding: 2px 2px 8px;
+}
+
+.caseTypeGrid.compactSix .caseTypeSummary span {
+  font-size: 11px;
+}
+
+.caseTypeGrid.compactSix .caseTypeSummary strong {
+  font-size: 30px;
+}
+
+.caseTypeGrid.compactSix .caseTypeSummary small {
+  display: -webkit-box;
+  overflow: hidden;
+  font-size: 10px;
+  line-height: 1.25;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.caseTypeGrid.compactSix .caseTypeRegionList {
+  gap: 4px;
+  padding-top: 6px;
+}
+
+.caseTypeGrid.compactSix .caseTypeRegionList button {
+  gap: 6px;
+  min-height: 26px;
+  padding: 4px 6px;
+}
+
+.caseTypeGrid.compactSix .caseTypeRegionList span {
+  font-size: 11px;
+}
+
+.caseTypeGrid.compactSix .caseTypeRegionList strong {
+  min-width: 24px;
+  padding: 2px 6px;
+  font-size: 11px;
 }
 
 .printCaseSplit {
@@ -1775,6 +1844,24 @@ td.missingCell.carriedForwardCell {
   .recordsHeroStats {
     grid-template-columns: 1fr;
   }
+
+  .segmentSplitGrid {
+    grid-template-columns: 1fr;
+  }
+
+  .caseTypeGrid.compactSix {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 1280px) and (min-width: 981px) {
+  .caseTypeGrid.compactSix {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .segmentSplitGrid {
+    grid-template-columns: 1fr;
+  }
 }
 
 .downloadActions {
@@ -1886,6 +1973,8 @@ td.missingCell.carriedForwardCell {
   .comparisonMetricGrid,
   .overviewStatsGrid,
   .caseTypeGrid,
+  .caseTypeGrid.twoUp,
+  .caseTypeGrid.compactSix,
   .recordsHero,
   .recordsHeroStats,
   .reportStats {

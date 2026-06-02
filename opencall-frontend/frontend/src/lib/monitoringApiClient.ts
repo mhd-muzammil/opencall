@@ -1,4 +1,5 @@
 import { WEB_API_BASE_URL } from "./api/webApiClient";
+import { readJson } from "./api/http";
 
 export type ActivityEventType =
   | "LOGIN_SUCCESS"
@@ -126,24 +127,6 @@ function authHeaders(token: string): HeadersInit {
     Authorization: `Bearer ${token}`,
     "Content-Type": "application/json",
   };
-}
-
-async function readJson<T>(response: Response): Promise<T> {
-  const text = await response.text();
-  let body: { data?: T; error?: { message?: string } } | null = null;
-  try {
-    body = text ? JSON.parse(text) : null;
-  } catch {
-    body = null;
-  }
-  if (!response.ok) {
-    const message = body?.error?.message ?? `Request failed ${response.status}`;
-    throw new Error(message);
-  }
-  if (!body || body.data === undefined) {
-    throw new Error("Unexpected API response");
-  }
-  return body.data;
 }
 
 export async function getMonitoringDashboard(

@@ -37,6 +37,7 @@ import {
   deleteReportHistory,
   deleteReportRow,
   getEngineersDropdown,
+  isApiAuthError,
 } from "../lib/apiClient";
 import type { DropdownEngineer } from "../lib/api/types";
 import { LoginScreen, SessionLoadingScreen } from "../features/auth/LoginScreen";
@@ -1486,6 +1487,34 @@ export default function DashboardPage() {
     void refreshHealth();
   }, []);
 
+  function handleSessionExpired() {
+    handleLogout();
+    setMessage("Session expired, please login again.");
+  }
+
+  function isCurrentSessionAuthError(error: unknown): boolean {
+    return Boolean(session) && isApiAuthError(error);
+  }
+
+  function handleBackgroundError(error: unknown) {
+    if (isCurrentSessionAuthError(error)) {
+      handleSessionExpired();
+      return;
+    }
+
+    setMessage(error instanceof Error ? error.message : "Operation failed");
+  }
+
+  async function refreshHistory() {
+    if (!session) return;
+
+    try {
+      setHistorySessions(await getReportHistory(session.token));
+    } catch (error) {
+      handleBackgroundError(error);
+    }
+  }
+
   useEffect(() => {
     if (session) {
       getReportHistory(session.token).then((sessions) => {
@@ -1510,15 +1539,10 @@ export default function DashboardPage() {
             void handleHistoryOpen(sessionToRestore);
           }
         }
-      }).catch((error) => {
-        if (error instanceof Error && (error.message.includes("expired") || error.message.includes("Invalid bearer") || error.message.includes("unauthorized") || error.message.includes("failed 401"))) {
-          handleLogout();
-          setMessage("Session expired, please login again.");
-        } else {
-          console.error(error);
-        }
-      });
-      getEngineersDropdown(session.token).then(res => setEngineersList(res.engineers)).catch(console.error);
+      }).catch(handleBackgroundError);
+      getEngineersDropdown(session.token)
+        .then((res) => setEngineersList(res.engineers))
+        .catch(handleBackgroundError);
     } else {
       setHistorySessions([]);
       setEngineersList([]);
@@ -1533,9 +1557,8 @@ export default function DashboardPage() {
     try {
       await action();
     } catch (error) {
-      if (error instanceof Error && (error.message.includes("expired") || error.message.includes("Invalid bearer") || error.message.includes("unauthorized") || error.message.includes("failed 401"))) {
-        handleLogout();
-        setMessage("Session expired, please login again.");
+      if (isCurrentSessionAuthError(error)) {
+        handleSessionExpired();
       } else {
         setMessage(error instanceof Error ? error.message : "Operation failed");
       }
@@ -1602,7 +1625,7 @@ export default function DashboardPage() {
       setIsUploadDrawerOpen(false);
       
       // Refresh history to get the draft
-      getReportHistory(session.token).then(setHistorySessions).catch(console.error);
+      await refreshHistory();
     });
   }
 
@@ -1645,7 +1668,7 @@ export default function DashboardPage() {
       setDraftOutput({});
       
       // Refresh history to see completed status
-      getReportHistory(session.token).then(setHistorySessions).catch(console.error);
+      await refreshHistory();
     });
   }
 
@@ -1730,8 +1753,10 @@ export default function DashboardPage() {
 
   async function handleHistoryRename(historySession: ReportHistorySession, newTitle: string) {
     if (!session) return;
-    await renameReportHistory(session.token, historySession.id, newTitle).catch(console.error);
-    getReportHistory(session.token).then(setHistorySessions).catch(console.error);
+    await runAction(async () => {
+      await renameReportHistory(session.token, historySession.id, newTitle);
+      await refreshHistory();
+    });
   }
 
 
@@ -1739,8 +1764,10 @@ export default function DashboardPage() {
   async function handleHistoryDelete(historySession: ReportHistorySession) {
     if (!session) return;
     if (!window.confirm("Are you sure you want to delete this session?")) return;
-    await deleteReportHistory(session.token, historySession.id).catch(console.error);
-    getReportHistory(session.token).then(setHistorySessions).catch(console.error);
+    await runAction(async () => {
+      await deleteReportHistory(session.token, historySession.id);
+      await refreshHistory();
+    });
   }
 
   const canUseBatches = Boolean(batchIds.flexUploadBatchId);

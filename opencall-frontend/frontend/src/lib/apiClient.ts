@@ -22,6 +22,7 @@ export {
   type UploadFileInput,
 } from "./api/openCallApiClient";
 export { WEB_API_BASE_URL, webApiClient } from "./api/webApiClient";
+export { ApiClientError, isApiAuthError } from "./api/http";
 
 import { webApiClient } from "./api/webApiClient";
 

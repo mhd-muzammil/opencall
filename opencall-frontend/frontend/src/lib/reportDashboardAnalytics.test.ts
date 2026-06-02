@@ -5,6 +5,7 @@ import {
   buildFlexOperationalAnalytics,
   buildOverallWoOtcBreakdown,
   buildRtplOperationalAnalytics,
+  buildRtplTimeCards,
   filterRowsByRegion,
   isTodayCallPlanVisibleRow,
   reportWithRows,
@@ -208,5 +209,70 @@ describe("reportDashboardAnalytics", () => {
 
     expect(isTodayCallPlanVisibleRow(visibleRow)).toBe(true);
     expect(isTodayCallPlanVisibleRow(requestToCancelRow)).toBe(false);
+  });
+
+  it("builds fixed RTPL time cards with carry-forward and checkpoint change details", () => {
+    const carriedRow = row(10, {
+      "Ticket ID": "WO-CARRY",
+      "RTPL status": "Part Pending",
+    });
+    carriedRow.carryForward.carriedForwardFields = ["rtpl_status"];
+
+    const cards = buildRtplTimeCards([carriedRow], [
+      {
+        id: "change-1",
+        rowId: "row-1",
+        reportId: "report-1",
+        serialNo: 1,
+        ticketId: "WO-1",
+        caseId: null,
+        workLocation: "ASPS01461",
+        fromStatus: "Actionable",
+        toStatus: "Need to Cancel",
+        changedAt: "2026-06-02T08:46:00.000Z",
+        changedBy: "user-1",
+      },
+      {
+        id: "change-2",
+        rowId: "row-2",
+        reportId: "report-1",
+        serialNo: 2,
+        ticketId: "WO-2",
+        caseId: null,
+        workLocation: "ASPS01461",
+        fromStatus: "Part Pending",
+        toStatus: "Actionable",
+        changedAt: "2026-06-02T11:00:00.000Z",
+        changedBy: "user-2",
+      },
+    ]);
+
+    expect(cards.map((card) => [card.label, card.status, card.count])).toEqual([
+      ["Upload Time", "Baseline", 1],
+      ["11:45 AM", "No Change", 0],
+      ["2:00 PM", "No Change", 0],
+      ["4:00 PM", "Changed", 1],
+      ["6:00 PM", "Changed", 1],
+    ]);
+    expect(cards[0]?.details[0]).toMatchObject({
+      type: "carry-forward",
+      ticketId: "WO-CARRY",
+      status: "Part Pending",
+    });
+    expect(cards[0]?.statusBreakdown).toEqual([
+      { status: "Part Pending", count: 1 },
+    ]);
+    expect(cards[3]?.details[0]).toMatchObject({
+      type: "change",
+      ticketId: "WO-1",
+      fromStatus: "Actionable",
+      toStatus: "Need to Cancel",
+    });
+    expect(cards[3]?.statusBreakdown).toEqual([
+      { status: "Need to Cancel", count: 1 },
+    ]);
+    expect(cards[4]?.statusBreakdown).toEqual([
+      { status: "Actionable", count: 1 },
+    ]);
   });
 });

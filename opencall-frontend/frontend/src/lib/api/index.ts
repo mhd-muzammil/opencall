@@ -7,6 +7,7 @@ export type {
   MatchPreviewResponse,
   ReportHistorySession,
   ReportRow,
+  RtplStatusChange,
   RuntimeHealthResponse,
   UploadBatch,
   UploadResponse,

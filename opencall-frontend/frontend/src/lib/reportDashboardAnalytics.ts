@@ -1,6 +1,51 @@
-import type { GeneratedReportResponse } from "./apiClient";
+import type { GeneratedReportResponse, RtplStatusChange } from "./apiClient";
 
 export const ALL_REGIONS_FILTER = "ALL";
+export const RTPL_CARRY_FORWARD_TIME_CARD_ID = "carry-forward";
+
+export const RTPL_TIME_CARD_DEFINITIONS = [
+  { id: RTPL_CARRY_FORWARD_TIME_CARD_ID, label: "Upload Time" },
+  { id: "1145", label: "11:45 AM", cutoffMinutes: 11 * 60 + 45 },
+  { id: "1400", label: "2:00 PM", cutoffMinutes: 14 * 60 },
+  { id: "1600", label: "4:00 PM", cutoffMinutes: 16 * 60 },
+  { id: "1800", label: "6:00 PM", cutoffMinutes: 18 * 60 },
+] as const;
+
+export type RtplTimeCardId = (typeof RTPL_TIME_CARD_DEFINITIONS)[number]["id"];
+
+export type RtplTimeCardDetail =
+  | {
+      type: "carry-forward";
+      rowId: string | null;
+      serialNo: number;
+      ticketId: string;
+      status: string;
+    }
+  | {
+      type: "change";
+      id?: string;
+      rowId: string;
+      serialNo: number;
+      ticketId: string;
+      fromStatus: string | null;
+      toStatus: string | null;
+      changedAt: string;
+      changedBy: string | null;
+    };
+
+export interface RtplStatusBreakdown {
+  status: string;
+  count: number;
+}
+
+export interface RtplTimeCard {
+  id: RtplTimeCardId;
+  label: string;
+  status: string;
+  count: number;
+  statusBreakdown: RtplStatusBreakdown[];
+  details: RtplTimeCardDetail[];
+}
 
 export interface RtplStatusMetric {
   status: string;
@@ -35,6 +80,77 @@ function rtplStatusForAnalytics(row: ReportRow): string {
 
 function normalizeFlexStatus(value: unknown): string {
   return cleanedString(value).replace(/\s+/g, " ").toLowerCase();
+}
+
+function istMinutesSinceMidnight(value: string): number | null {
+  const date = new Date(value);
+
+  if (Number.isNaN(date.getTime())) {
+    return null;
+  }
+
+  const parts = new Intl.DateTimeFormat("en-GB", {
+    timeZone: "Asia/Kolkata",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  }).formatToParts(date);
+  const hour = Number(parts.find((part) => part.type === "hour")?.value ?? "");
+  const minute = Number(parts.find((part) => part.type === "minute")?.value ?? "");
+
+  if (!Number.isFinite(hour) || !Number.isFinite(minute)) {
+    return null;
+  }
+
+  return hour * 60 + minute;
+}
+
+function rtplSlotIdForChange(change: RtplStatusChange): RtplTimeCardId {
+  const minutes = istMinutesSinceMidnight(change.changedAt);
+
+  if (minutes === null) {
+    return "1800";
+  }
+
+  for (const definition of RTPL_TIME_CARD_DEFINITIONS) {
+    if ("cutoffMinutes" in definition && minutes <= definition.cutoffMinutes) {
+      return definition.id;
+    }
+  }
+
+  return "1800";
+}
+
+function ticketIdForRow(row: ReportRow): string {
+  return cleanedString(row.output["Ticket ID"]) || String(row.serialNo);
+}
+
+function statusForRtplTimeDetail(detail: RtplTimeCardDetail): string {
+  if (detail.type === "carry-forward") {
+    return detail.status;
+  }
+
+  return cleanedString(detail.toStatus) || "Blank";
+}
+
+function buildStatusBreakdownFromDetails(
+  details: readonly RtplTimeCardDetail[],
+): RtplStatusBreakdown[] {
+  const counts = new Map<string, number>();
+
+  for (const detail of details) {
+    const status = statusForRtplTimeDetail(detail);
+
+    if (!status) {
+      continue;
+    }
+
+    counts.set(status, (counts.get(status) ?? 0) + 1);
+  }
+
+  return Array.from(counts.entries())
+    .map(([status, count]) => ({ status, count }))
+    .sort((a, b) => b.count - a.count || a.status.localeCompare(b.status));
 }
 
 export function isRequestToCancelFlexStatus(value: unknown): boolean {
@@ -92,6 +208,71 @@ export function buildFlexOperationalAnalytics(
   rows: readonly ReportRow[],
 ): RtplStatusMetric[] {
   return buildStatusAnalytics(rows, (row) => row.output["Flex Status"]);
+}
+
+export function buildRtplTimeCards(
+  rows: readonly ReportRow[],
+  changes: readonly RtplStatusChange[],
+): RtplTimeCard[] {
+  const detailsByCard = new Map<RtplTimeCardId, RtplTimeCardDetail[]>(
+    RTPL_TIME_CARD_DEFINITIONS.map((definition) => [definition.id, []]),
+  );
+
+  const carryForwardDetails = detailsByCard.get(RTPL_CARRY_FORWARD_TIME_CARD_ID);
+
+  for (const row of rows) {
+    if (!row.carryForward.carriedForwardFields.includes("rtpl_status")) {
+      continue;
+    }
+
+    const status = rtplStatusForAnalytics(row);
+
+    if (!status) {
+      continue;
+    }
+
+    carryForwardDetails?.push({
+      type: "carry-forward",
+      rowId: row.id,
+      serialNo: row.serialNo,
+      ticketId: ticketIdForRow(row),
+      status,
+    });
+  }
+
+  for (const change of changes) {
+    detailsByCard.get(rtplSlotIdForChange(change))?.push({
+      type: "change",
+      rowId: change.rowId,
+      serialNo: change.serialNo,
+      ticketId: change.ticketId || String(change.serialNo),
+      fromStatus: change.fromStatus,
+      toStatus: change.toStatus,
+      changedAt: change.changedAt,
+      changedBy: change.changedBy,
+      ...(change.id ? { id: change.id } : {}),
+    });
+  }
+
+  return RTPL_TIME_CARD_DEFINITIONS.map((definition) => {
+    const details = detailsByCard.get(definition.id) ?? [];
+    const isCarryForward = definition.id === RTPL_CARRY_FORWARD_TIME_CARD_ID;
+
+    return {
+      id: definition.id,
+      label: definition.label,
+      status: isCarryForward
+        ? details.length > 0
+          ? "Baseline"
+          : "No Baseline"
+        : details.length > 0
+          ? "Changed"
+          : "No Change",
+      count: details.length,
+      statusBreakdown: buildStatusBreakdownFromDetails(details),
+      details,
+    };
+  });
 }
 
 function buildStatusAnalytics(

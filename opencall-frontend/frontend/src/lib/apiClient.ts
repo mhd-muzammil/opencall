@@ -7,6 +7,7 @@ export type {
   MatchPreviewResponse,
   ReportHistorySession,
   ReportRow,
+  RtplStatusChange,
   RuntimeHealthResponse,
   UploadBatch,
   UploadResponse,
@@ -33,6 +34,7 @@ export const uploadReports = webApiClient.uploadReports;
 export const previewMatches = webApiClient.previewMatches;
 export const generateReport = webApiClient.generateReport;
 export const updateReportRow = webApiClient.updateReportRow;
+export const getRtplStatusChanges = webApiClient.getRtplStatusChanges;
 export const getReportHistory = webApiClient.getReportHistory;
 export const getReportHistoryById = webApiClient.getReportHistoryById;
 export const renameReportHistory = webApiClient.renameReportHistory;

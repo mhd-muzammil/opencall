@@ -6,6 +6,7 @@ import type {
   LoginResponse,
   MatchPreviewResponse,
   ReportHistorySession,
+  RtplStatusChange,
   RuntimeHealthResponse,
   UploadResponse,
   Engineer,
@@ -68,9 +69,15 @@ export interface OpenCallApiClient {
       segment?: string | null;
       case_created_time?: string | null;
       wip_aging?: string | null;
+      status_aging?: string | null;
       hp_owner_status?: string | null;
     };
   }): Promise<EditedReportRowResponse>;
+  getRtplStatusChanges(input: {
+    token: string;
+    reportId: string;
+    limit?: number;
+  }): Promise<RtplStatusChange[]>;
   deleteReportRow(token: string, rowId: string): Promise<{ success: boolean }>;
   getReportHistory(token: string): Promise<ReportHistorySession[]>;
   getReportHistoryById(token: string, id: string): Promise<ReportHistorySession>;
@@ -212,6 +219,18 @@ export function createOpenCallApiClient({
       });
 
       return readJson<EditedReportRowResponse>(response);
+    },
+
+    async getRtplStatusChanges(input) {
+      const params = new URLSearchParams({
+        reportId: input.reportId,
+        limit: String(input.limit ?? 50),
+      });
+      const response = await fetchImpl(url(`/api/v1/report-rows/rtpl-status-changes?${params.toString()}`), {
+        headers: authHeaders(input.token),
+      });
+
+      return readJson<RtplStatusChange[]>(response);
     },
 
     async deleteReportRow(token, rowId) {

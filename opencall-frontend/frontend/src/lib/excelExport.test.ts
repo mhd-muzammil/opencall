@@ -20,6 +20,16 @@ function outputRow(
   );
 }
 
+function standardColumnIndex(column: string): number {
+  const index = STANDARD_EXPORT_COLUMNS.indexOf(column as (typeof STANDARD_EXPORT_COLUMNS)[number]);
+
+  if (index < 0) {
+    throw new Error(`Missing standard export column: ${column}`);
+  }
+
+  return index;
+}
+
 function reportFixture(): GeneratedReportResponse {
   return {
     reportId: "report-1",
@@ -135,10 +145,10 @@ describe("buildReportExportMatrix", () => {
     expect(closedRow).toHaveLength(STANDARD_EXPORT_COLUMNS.length);
     expect(carriedRow?.[0]).toBe(1);
     expect(carriedRow?.[1]).toBe("WO-123");
-    expect(carriedRow?.[7]).toBe("Priya");
-    expect(carriedRow?.[21]).toBe("Manual Entry Required");
+    expect(carriedRow?.[standardColumnIndex("Engineer")]).toBe("Priya");
+    expect(carriedRow?.[standardColumnIndex("Customer Mail")]).toBe("Manual Entry Required");
     expect(closedRow?.[1]).toBe("WO-999");
-    expect(closedRow?.[7]).toBe("Alex");
+    expect(closedRow?.[standardColumnIndex("Engineer")]).toBe("Alex");
   });
 
   it("keeps closed synthetic rows visible even when output cells are blank", () => {
@@ -161,9 +171,9 @@ describe("buildReportExportMatrix", () => {
     const closedRow = matrix[1];
 
     expect(closedRow?.[0]).toBe(78);
-    expect(closedRow?.[4]).toBe("5");
-    expect(closedRow?.[5]).toBe("Pending");
-    expect(closedRow?.[11]).toBe("Open");
+    expect(closedRow?.[standardColumnIndex("WIP aging")]).toBe("5");
+    expect(closedRow?.[standardColumnIndex("RTPL status")]).toBe("Pending");
+    expect(closedRow?.[standardColumnIndex("Flex Status")]).toBe("Open");
   });
 
   it("splits xlsx workbook data into today call plan and closure sheets", () => {

@@ -153,10 +153,28 @@ export interface GeneratedReportResponse {
 
 export type ReportRow = GeneratedReportResponse["rows"][number];
 
+export interface RtplStatusChange {
+  id?: string;
+  rowId: string;
+  reportId: string;
+  serialNo: number;
+  ticketId: string;
+  caseId: string | null;
+  workLocation: string | null;
+  fromStatus: string | null;
+  toStatus: string | null;
+  changedAt: string;
+  changedBy: string | null;
+}
+
 export interface EditedReportRowResponse {
   id: string;
   reportId: string;
+  serialNo: number;
+  ticketId: string;
+  caseId: string | null;
   regionId: string | null;
+  workLocation: string | null;
   engineer: string | null;
   rtplStatus: string | null;
   customerMail: string | null;
@@ -167,6 +185,7 @@ export interface EditedReportRowResponse {
   segment: string | null;
   caseCreatedTime: string | null;
   wipAging: string | null;
+  statusAging: string | null;
   hpOwnerStatus: string | null;
   manualFieldsCompleted: boolean;
   manualFieldsMissing: string[];
@@ -175,6 +194,7 @@ export interface EditedReportRowResponse {
   rowEditable: boolean;
   carryForwardSource: "PREVIOUS_FINAL_REPORT";
   carriedForwardFields?: string[];
+  rtplStatusChange?: RtplStatusChange | null;
 }
 
 export interface RuntimeHealthResponse {

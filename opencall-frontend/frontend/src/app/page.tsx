@@ -21,6 +21,7 @@ import {
   login,
   previewMatches,
   updateReportRow,
+  getRtplStatusChanges,
   uploadReports,
   type DatabaseHealthResponse,
   type EditedReportRowResponse,
@@ -31,6 +32,7 @@ import {
   type UploadBatch,
   type UploadResponse,
   type ReportHistorySession,
+  type RtplStatusChange,
   getReportHistory,
   getReportHistoryById,
   renameReportHistory,
@@ -46,10 +48,12 @@ import {
   ALL_REGIONS_FILTER,
   buildFlexOperationalAnalytics,
   buildOverallWoOtcBreakdown,
-  buildRtplOperationalAnalytics,
+  buildRtplTimeCards,
   filterRowsByRegion,
   isTodayCallPlanVisibleRow,
   reportWithRows,
+  RTPL_CARRY_FORWARD_TIME_CARD_ID,
+  type RtplTimeCardId,
 } from "../lib/reportDashboardAnalytics";
 
 type SourceKey = "FLEX_WIP" | "RENDERWAYS" | "CALL_PLAN";
@@ -63,6 +67,7 @@ type ManualCarryForwardField =
   | "engineer"
   | "location"
   | "case_created_time"
+  | "status_aging"
   | "hp_owner_status"
   | "customer_mail"
   | "rca";
@@ -92,6 +97,8 @@ const PRINT_SEGMENT = "Print";
 const PRINT_INSTALLATION_WO_OTC_CODE = "05F";
 const TRADE_WO_OTC_CODE_KEYWORD = "TRADE";
 const LAST_HISTORY_SESSION_KEY = "opencall.lastHistorySessionId";
+const RTPL_MODAL_DETAIL_LIMIT = 12;
+const RTPL_STATUS_CHANGE_LIMIT = 200;
 
 const CHANGE_TYPE_LABELS: Record<ChangeType, string> = {
   NEW: "New",
@@ -234,6 +241,7 @@ const MANUAL_FIELD_BY_COLUMN: Partial<Record<string, ManualCarryForwardField>> =
   Engineer: "engineer",
   Location: "location",
   "Case Created Time": "case_created_time",
+  "Status Aging": "status_aging",
   "HP Owner Status": "hp_owner_status",
   "Customer Mail": "customer_mail",
   RCA: "rca",
@@ -245,6 +253,7 @@ const MANUAL_FIELD_LABELS: Record<ManualCarryForwardField, string> = {
   engineer: "Engineer",
   location: "Location",
   case_created_time: "Case Created Time",
+  status_aging: "Status Aging",
   hp_owner_status: "HP Owner Status",
   customer_mail: "Customer Mail",
   rca: "RCA",
@@ -256,6 +265,7 @@ const EDITABLE_COLUMN_API_FIELD: Partial<Record<string, string>> = {
   Engineer: "engineer",
   Location: "location",
   "Case Created Time": "case_created_time",
+  "Status Aging": "status_aging",
   "HP Owner Status": "hp_owner_status",
   "Customer Mail": "customer_mail",
   RCA: "rca",
@@ -271,6 +281,7 @@ const EDITED_RESPONSE_COLUMN: Partial<
     | "engineer"
     | "location"
     | "caseCreatedTime"
+    | "statusAging"
     | "hpOwnerStatus"
     | "customerMail"
     | "rca"
@@ -281,6 +292,7 @@ const EDITED_RESPONSE_COLUMN: Partial<
   Engineer: "engineer",
   Location: "location",
   "Case Created Time": "caseCreatedTime",
+  "Status Aging": "statusAging",
   "HP Owner Status": "hpOwnerStatus",
   "Customer Mail": "customerMail",
   RCA: "rca",
@@ -351,6 +363,26 @@ function formatDisplayDateTime(value: string | number | null | undefined): strin
   const dayPeriod = partValue("dayPeriod").toUpperCase();
 
   return `${partValue("day")}-${partValue("month")}-${partValue("year")} ${hour}:${partValue("minute")}:${partValue("second")} ${dayPeriod}`;
+}
+
+function formatRtplStatusValue(value: string | null | undefined): string {
+  const cleanValue = value?.trim();
+  return cleanValue ? cleanValue : "blank";
+}
+
+function formatRtplChangeTime(value: string): string {
+  const date = new Date(value);
+
+  if (Number.isNaN(date.getTime())) {
+    return value;
+  }
+
+  return new Intl.DateTimeFormat("en-IN", {
+    timeZone: "Asia/Kolkata",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: true,
+  }).format(date);
 }
 
 function parseEditableDateTime(value: string): number {
@@ -689,6 +721,7 @@ export default function DashboardPage() {
   const [upload, setUpload] = useState<UploadResponse | null>(null);
   const [preview, setPreview] = useState<MatchPreviewResponse | null>(null);
   const [report, setReport] = useState<GeneratedReportResponse | null>(null);
+  const [rtplStatusChanges, setRtplStatusChanges] = useState<RtplStatusChange[]>([]);
   const [editingSerialNo, setEditingSerialNo] = useState<number | null>(null);
   const [savingSerialNo, setSavingSerialNo] = useState<number | null>(null);
    const [draftOutput, setDraftOutput] = useState<Record<string, string | number>>({});
@@ -712,6 +745,11 @@ export default function DashboardPage() {
   const [selectedRegion, setSelectedRegion] = useState<string | null>(null);
   const [selectedWoOtcCode, setSelectedWoOtcCode] = useState<string | null>(null);
   const [selectedRtplRegion, setSelectedRtplRegion] = useState<string>(ALL_REGIONS_FILTER);
+  const [selectedRtplTimeCardId, setSelectedRtplTimeCardId] = useState<RtplTimeCardId>(
+    RTPL_CARRY_FORWARD_TIME_CARD_ID,
+  );
+  const [selectedRtplModalStatus, setSelectedRtplModalStatus] = useState<string | null>(null);
+  const [isRtplTimeModalOpen, setIsRtplTimeModalOpen] = useState(false);
   const [showCissOnly, setShowCissOnly] = useState(false);
   const [showRcaOnly, setShowRcaOnly] = useState(false);
   const [showTradeOnly, setShowTradeOnly] = useState(false);
@@ -737,6 +775,9 @@ export default function DashboardPage() {
     setSelectedRegion(null);
     setSelectedWoOtcCode(null);
     setSelectedRtplRegion(ALL_REGIONS_FILTER);
+    setSelectedRtplTimeCardId(RTPL_CARRY_FORWARD_TIME_CARD_ID);
+    setSelectedRtplModalStatus(null);
+    setIsRtplTimeModalOpen(false);
     setShowCissOnly(false);
     setShowRcaOnly(false);
     setShowTradeOnly(false);
@@ -1405,15 +1446,56 @@ export default function DashboardPage() {
     return filterRowsByRegion(activeRows, selectedRtplRegion);
   }, [activeRows, report, selectedRtplRegion]);
 
-  const rtplStatusMetrics = useMemo(
-    () => buildRtplOperationalAnalytics(rtplAnalyticsRows),
-    [rtplAnalyticsRows],
-  );
-
   const flexStatusMetrics = useMemo(
     () => buildFlexOperationalAnalytics(rtplAnalyticsRows),
     [rtplAnalyticsRows],
   );
+
+  const visibleRtplStatusChanges = useMemo(() => {
+    if (selectedRtplRegion === ALL_REGIONS_FILTER) {
+      return rtplStatusChanges;
+    }
+
+    return rtplStatusChanges.filter(
+      (change) => change.workLocation?.trim().toUpperCase() === selectedRtplRegion,
+    );
+  }, [rtplStatusChanges, selectedRtplRegion]);
+
+  const rtplTimeCards = useMemo(
+    () => buildRtplTimeCards(rtplAnalyticsRows, visibleRtplStatusChanges),
+    [rtplAnalyticsRows, visibleRtplStatusChanges],
+  );
+
+  const selectedRtplTimeCard = useMemo(
+    () =>
+      rtplTimeCards.find((card) => card.id === selectedRtplTimeCardId) ??
+      rtplTimeCards[0] ??
+      null,
+    [rtplTimeCards, selectedRtplTimeCardId],
+  );
+
+  const selectedRtplModalDetails = selectedRtplTimeCard
+    ? selectedRtplModalStatus
+      ? selectedRtplTimeCard.details.filter((detail) => {
+          const detailStatus =
+            detail.type === "carry-forward" ? detail.status : formatRtplStatusValue(detail.toStatus);
+          return detailStatus.trim().toLowerCase() === selectedRtplModalStatus.trim().toLowerCase();
+        })
+      : selectedRtplTimeCard.details
+    : [];
+  const visibleRtplTimeDetails = selectedRtplModalDetails.slice(0, RTPL_MODAL_DETAIL_LIMIT);
+  const hiddenRtplTimeDetailCount = selectedRtplTimeCard
+    ? Math.max(selectedRtplModalDetails.length - visibleRtplTimeDetails.length, 0)
+    : 0;
+
+  function openRtplCheckpointModal(
+    cardId: RtplTimeCardId,
+    status: string | null = null,
+  ): void {
+    setSelectedRtplTimeCardId(cardId);
+    setSelectedRtplModalStatus(status);
+    setIsRtplTimeModalOpen(true);
+  }
 
   const selectedRecords = useMemo(() => {
     if (!preview || !selectedPreviewCategory) return null;
@@ -1504,6 +1586,35 @@ export default function DashboardPage() {
 
     setMessage(error instanceof Error ? error.message : "Operation failed");
   }
+
+  useEffect(() => {
+    if (!session || !report?.reportId) {
+      setRtplStatusChanges([]);
+      return;
+    }
+
+    let cancelled = false;
+
+    getRtplStatusChanges({
+      token: session.token,
+      reportId: report.reportId,
+      limit: RTPL_STATUS_CHANGE_LIMIT,
+    })
+      .then((changes) => {
+        if (!cancelled) {
+          setRtplStatusChanges(changes);
+        }
+      })
+      .catch((error) => {
+        if (!cancelled) {
+          handleBackgroundError(error);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [report?.reportId, session]);
 
   async function refreshHistory() {
     if (!session) return;
@@ -1931,7 +2042,24 @@ export default function DashboardPage() {
         };
       });
       cancelEditing();
-      setMessage("Row saved.");
+      if (persisted.rtplStatusChange) {
+        const change = persisted.rtplStatusChange;
+        const changeKey = change.id ?? `${change.rowId}:${change.changedAt}`;
+
+        setRtplStatusChanges((currentChanges) => [
+          change,
+          ...currentChanges.filter(
+            (existingChange) =>
+              (existingChange.id ?? `${existingChange.rowId}:${existingChange.changedAt}`) !==
+              changeKey,
+          ),
+        ].slice(0, RTPL_STATUS_CHANGE_LIMIT));
+        setMessage(
+          `RTPL status changed for WO ${change.ticketId || row.output["Ticket ID"] || serialNo}: ${formatRtplStatusValue(change.fromStatus)} -> ${formatRtplStatusValue(change.toStatus)} at ${formatRtplChangeTime(change.changedAt)}.`,
+        );
+      } else {
+        setMessage("Row saved.");
+      }
     } catch (error) {
       setReport(currentReport);
       setMessage(error instanceof Error ? `Save failed: ${error.message}` : "Save failed");
@@ -2892,34 +3020,70 @@ export default function DashboardPage() {
                   ))}
                 </div>
 
-                {rtplStatusMetrics.length > 0 ? (
-                  <div className="rtplMetricGrid">
-                    {rtplStatusMetrics.map((metric) => (
+                <div className="rtplTimeCardGrid" aria-label="RTPL fixed checkpoint cards">
+                  {rtplTimeCards.map((card) => (
+                    <div
+                      key={card.id}
+                      className={`rtplTimeCard ${selectedRtplTimeCard?.id === card.id ? "active" : ""}`}
+                    >
                       <button
-                        className="rtplMetricCard"
-                        key={metric.status}
                         type="button"
-                        onClick={() =>
-                          openRecordsWithFilter({
-                            region:
-                              selectedRtplRegion === ALL_REGIONS_FILTER
-                                ? null
-                                : selectedRtplRegion,
-                            rtplStatus: metric.status,
-                          })
-                        }
-                        title={`Open ${metric.status} records`}
+                        className="rtplTimeCardMain"
+                        onClick={() => openRtplCheckpointModal(card.id)}
                       >
-                        <span>{metric.status}</span>
-                        <strong>{metric.count}</strong>
+                        <span>{card.label}</span>
+                        <strong>{card.status}</strong>
+                        <small>{formatNumber(card.count)} WO</small>
                       </button>
-                    ))}
-                  </div>
-                ) : (
-                  <div className="rtplEmptyState">
-                    No RTPL statuses for the selected region.
-                  </div>
-                )}
+                      {card.statusBreakdown.length > 0 ? (
+                        <div className="rtplTimeStatusList">
+                          {card.statusBreakdown.map((entry) => (
+                            <div
+                              key={entry.status}
+                              role="button"
+                              tabIndex={0}
+                              className="rtplTimeStatusItem"
+                              onPointerDown={(event) => {
+                                event.preventDefault();
+                                event.stopPropagation();
+                              }}
+                              onClick={(event) => {
+                                event.preventDefault();
+                                event.stopPropagation();
+                                openRecordsWithFilter({
+                                  region:
+                                    selectedRtplRegion === ALL_REGIONS_FILTER
+                                      ? null
+                                      : selectedRtplRegion,
+                                  rtplStatus: entry.status,
+                                });
+                              }}
+                              onKeyDown={(event) => {
+                                if (event.key !== "Enter" && event.key !== " ") {
+                                  return;
+                                }
+                                event.preventDefault();
+                                event.stopPropagation();
+                                openRecordsWithFilter({
+                                  region:
+                                    selectedRtplRegion === ALL_REGIONS_FILTER
+                                      ? null
+                                      : selectedRtplRegion,
+                                  rtplStatus: entry.status,
+                                });
+                              }}
+                            >
+                              <span>{entry.status}</span>
+                              <strong>{formatNumber(entry.count)}</strong>
+                            </div>
+                          ))}
+                        </div>
+                      ) : (
+                        <div className="rtplTimeStatusEmpty">No RTPL movement</div>
+                      )}
+                    </div>
+                  ))}
+                </div>
               </div>
 
               <div className="rtplAnalyticsSection">
@@ -3984,6 +4148,105 @@ export default function DashboardPage() {
               >
                 📥 Download Productivity Excel
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {isRtplTimeModalOpen && selectedRtplTimeCard && (
+        <div className="modalOverlay" onClick={() => setIsRtplTimeModalOpen(false)}>
+          <div className="modalCard rtplCheckpointModal" onClick={(event) => event.stopPropagation()}>
+            <div className="modalHeader">
+              <div className="modalTitleGroup">
+                <span className="modalEyebrow">RTPL Operational Checkpoint</span>
+                <h2 className="modalTitle">
+                  {selectedRtplTimeCard.label}:{" "}
+                  <span className="highlightText">
+                    {selectedRtplModalStatus ?? selectedRtplTimeCard.status}
+                  </span>
+                </h2>
+              </div>
+              <button
+                type="button"
+                className="modalCloseBtn"
+                onClick={() => setIsRtplTimeModalOpen(false)}
+                title="Close RTPL details"
+              >
+                &times;
+              </button>
+            </div>
+
+            <div className="rtplCheckpointBody">
+              <div className="rtplCheckpointSummary">
+                <div>
+                  <span>Checkpoint</span>
+                  <strong>{selectedRtplTimeCard.label}</strong>
+                </div>
+                <div>
+                  <span>Status</span>
+                  <strong>{selectedRtplModalStatus ?? selectedRtplTimeCard.status}</strong>
+                </div>
+                <div>
+                  <span>Work Orders</span>
+                  <strong>{formatNumber(selectedRtplModalDetails.length)}</strong>
+                </div>
+              </div>
+
+              {visibleRtplTimeDetails.length > 0 ? (
+                <div className="rtplCheckpointTable">
+                  <div className="rtplCheckpointTableHead">
+                    <span>Ticket ID</span>
+                    <span>RTPL Status</span>
+                    <span>Time</span>
+                  </div>
+                  <div className="rtplCheckpointRows">
+                    {visibleRtplTimeDetails.map((detail) =>
+                      detail.type === "carry-forward" ? (
+                        <div
+                          key={`rtpl-carry-${detail.rowId ?? detail.serialNo}`}
+                          className="rtplCheckpointRow"
+                        >
+                          <strong>WO {detail.ticketId}</strong>
+                          <span>Baseline status: {detail.status}</span>
+                          <small>Upload time</small>
+                        </div>
+                      ) : (
+                        <div
+                          key={detail.id ?? `rtpl-change-${detail.rowId}-${detail.changedAt}`}
+                          className="rtplCheckpointRow"
+                        >
+                          <strong>WO {detail.ticketId}</strong>
+                          <span>
+                            {formatRtplStatusValue(detail.fromStatus)} -&gt; {formatRtplStatusValue(detail.toStatus)}
+                          </span>
+                          <small>{formatRtplChangeTime(detail.changedAt)}</small>
+                        </div>
+                      ),
+                    )}
+                  </div>
+                </div>
+              ) : (
+                <div className="rtplEmptyState">
+                  No RTPL status movement recorded for this checkpoint
+                  {selectedRtplModalStatus ? ` and status ${selectedRtplModalStatus}` : ""}.
+                </div>
+              )}
+
+              {hiddenRtplTimeDetailCount > 0 ? (
+                <p className="rtplCheckpointFootnote">
+                  Showing {formatNumber(visibleRtplTimeDetails.length)} of {formatNumber(selectedRtplModalDetails.length)} work orders.
+                </p>
+              ) : null}
+
+              <div className="modalActions rtplCheckpointActions">
+                <button
+                  type="button"
+                  className="secondaryButton"
+                  onClick={() => setIsRtplTimeModalOpen(false)}
+                >
+                  Close
+                </button>
+              </div>
             </div>
           </div>
         </div>

@@ -2930,7 +2930,7 @@ export default function DashboardPage() {
                   )}
                 </div>
                 <div className="regionGrid">
-                  {renderRegionCard(
+                  {session?.user?.role !== "REGION_ADMIN" && renderRegionCard(
                     "ALL",
                     "All Regions",
                     "Overall",

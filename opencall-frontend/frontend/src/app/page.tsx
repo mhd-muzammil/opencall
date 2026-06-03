@@ -253,6 +253,177 @@ function isWarrantyCase(row: GeneratedReportResponse["rows"][number]): boolean {
   return !isTradeCase(row);
 }
 
+interface RegionStats {
+  count: number;
+  consumerCount: number;
+  commercialCount: number;
+  warrantyCount: number;
+  nonWarrantyCount: number;
+  
+  pcCount: number;
+  pcConsumer: number;
+  pcCommercial: number;
+  
+  printCount: number;
+  printConsumer: number;
+  printCommercial: number;
+  
+  installCount: number;
+  installConsumer: number;
+  installCommercial: number;
+  
+  cissCount: number;
+  cissConsumer: number;
+  
+  rcaCount: number;
+  rcaConsumer: number;
+  rcaCommercial: number;
+  
+  tradeCount: number;
+  tradePcCount: number;
+  tradePcConsumer: number;
+  tradePcCommercial: number;
+  tradePrintCount: number;
+  tradePrintConsumer: number;
+  tradePrintCommercial: number;
+  
+  woOtcCodeBreakdown: { code: string; count: number }[];
+}
+
+function calculateRegionStats(rows: GeneratedReportResponse["rows"][number][]): RegionStats {
+  const count = rows.length;
+  let consumerCount = 0;
+  let commercialCount = 0;
+  let warrantyCount = 0;
+  let nonWarrantyCount = 0;
+  
+  let pcCount = 0;
+  let pcConsumer = 0;
+  let pcCommercial = 0;
+  
+  let printCount = 0;
+  let printConsumer = 0;
+  let printCommercial = 0;
+  
+  let installCount = 0;
+  let installConsumer = 0;
+  let installCommercial = 0;
+  
+  let cissCount = 0;
+  let cissConsumer = 0;
+  
+  let rcaCount = 0;
+  let rcaConsumer = 0;
+  let rcaCommercial = 0;
+  
+  let tradeCount = 0;
+  let tradePcCount = 0;
+  let tradePcConsumer = 0;
+  let tradePcCommercial = 0;
+  let tradePrintCount = 0;
+  let tradePrintConsumer = 0;
+  let tradePrintCommercial = 0;
+  
+  const woOtcCodes = new Map<string, number>();
+  
+  for (const row of rows) {
+    const isConsumer = isConsumerCase(row);
+    const isWarranty = isWarrantyCase(row);
+    const isPc = isSegmentCase(row, PC_SEGMENT);
+    const isPrint = isPrintCase(row);
+    const isInstall = isPrintInstallationCase(row);
+    const isCiss = isCissCase(row);
+    const isRca = isRcaCase(row);
+    const isTrade = isTradeCase(row);
+    
+    const woOtcCode = String(row.output["WO OTC CODE"] || "Unspecified").trim() || "Unspecified";
+    woOtcCodes.set(woOtcCode, (woOtcCodes.get(woOtcCode) ?? 0) + 1);
+    
+    if (isConsumer) consumerCount++;
+    else commercialCount++;
+    
+    if (isWarranty) warrantyCount++;
+    else nonWarrantyCount++;
+    
+    if (isPc) {
+      pcCount++;
+      if (isConsumer) pcConsumer++;
+      else pcCommercial++;
+    }
+    
+    if (isPrint) {
+      printCount++;
+      if (isConsumer) printConsumer++;
+      else printCommercial++;
+    }
+    
+    if (isInstall) {
+      installCount++;
+      if (isConsumer) installConsumer++;
+      else installCommercial++;
+    }
+    
+    if (isCiss) {
+      cissCount++;
+      if (isConsumer) cissConsumer++;
+    }
+    
+    if (isRca) {
+      rcaCount++;
+      if (isConsumer) rcaConsumer++;
+      else rcaCommercial++;
+    }
+    
+    if (isTrade) {
+      tradeCount++;
+      if (isPc) {
+        tradePcCount++;
+        if (isConsumer) tradePcConsumer++;
+        else tradePcCommercial++;
+      }
+      if (isPrint) {
+        tradePrintCount++;
+        if (isConsumer) tradePrintConsumer++;
+        else tradePrintCommercial++;
+      }
+    }
+  }
+  
+  const woOtcCodeBreakdown = Array.from(woOtcCodes.entries())
+    .map(([code, count]) => ({ code, count }))
+    .sort((a, b) => b.count - a.count || a.code.localeCompare(b.code));
+    
+  return {
+    count,
+    consumerCount,
+    commercialCount,
+    warrantyCount,
+    nonWarrantyCount,
+    pcCount,
+    pcConsumer,
+    pcCommercial,
+    printCount,
+    printConsumer,
+    printCommercial,
+    installCount,
+    installConsumer,
+    installCommercial,
+    cissCount,
+    cissConsumer,
+    rcaCount,
+    rcaConsumer,
+    rcaCommercial,
+    tradeCount,
+    tradePcCount,
+    tradePcConsumer,
+    tradePcCommercial,
+    tradePrintCount,
+    tradePrintConsumer,
+    tradePrintCommercial,
+    woOtcCodeBreakdown,
+  };
+}
+
 const MANUAL_FIELD_BY_COLUMN: Partial<Record<string, ManualCarryForwardField>> = {
   "RTPL status": "rtpl_status",
   Segment: "segment",
@@ -897,62 +1068,28 @@ export default function DashboardPage() {
         },
       ]),
     );
-    const regionCounts = new Map<
-      string,
-      {
-        count: number;
-        consumerCount: number;
-        commercialCount: number;
-        warrantyCount: number;
-        nonWarrantyCount: number;
-        woOtcCodes: Map<string, number>;
-      }
-    >();
 
+    const rowsByRegion = new Map<string, GeneratedReportResponse["rows"][number][]>();
     for (const row of activeRows) {
       const aspCode = String(row.output["Work Location"] || "UNKNOWN").trim().toUpperCase() || "UNKNOWN";
-      const woOtcCode = String(row.output["WO OTC CODE"] || "Unspecified").trim() || "Unspecified";
-      const current =
-        regionCounts.get(aspCode) ?? {
-          count: 0,
-          consumerCount: 0,
-          commercialCount: 0,
-          warrantyCount: 0,
-          nonWarrantyCount: 0,
-          woOtcCodes: new Map<string, number>(),
-        };
-
-      current.count += 1;
-      if (isConsumerCase(row)) {
-        current.consumerCount += 1;
-      } else {
-        current.commercialCount += 1;
+      let list = rowsByRegion.get(aspCode);
+      if (!list) {
+        list = [];
+        rowsByRegion.set(aspCode, list);
       }
-      if (isWarrantyCase(row)) {
-        current.warrantyCount += 1;
-      } else {
-        current.nonWarrantyCount += 1;
-      }
-      current.woOtcCodes.set(woOtcCode, (current.woOtcCodes.get(woOtcCode) ?? 0) + 1);
-      regionCounts.set(aspCode, current);
+      list.push(row);
     }
 
-    return Array.from(regionCounts.entries())
-      .map(([aspCode, entry]) => {
+    return Array.from(rowsByRegion.entries())
+      .map(([aspCode, rows]) => {
         const metadata = regionMetadata.get(aspCode);
+        const stats = calculateRegionStats(rows);
 
         return {
           aspCode,
           regionName: metadata?.regionName ?? "Unknown Region",
-          count: entry.count,
-          consumerCount: entry.consumerCount,
-          commercialCount: entry.commercialCount,
-          warrantyCount: entry.warrantyCount,
-          nonWarrantyCount: entry.nonWarrantyCount,
           closedCount: metadata?.closedCount ?? 0,
-          woOtcCodeBreakdown: Array.from(entry.woOtcCodes.entries())
-            .map(([code, count]) => ({ code, count }))
-            .sort((a, b) => b.count - a.count || a.code.localeCompare(b.code)),
+          ...stats,
         };
       })
       .sort((a, b) => b.count - a.count || a.regionName.localeCompare(b.regionName));
@@ -962,27 +1099,27 @@ export default function DashboardPage() {
     if (!report) return [];
 
     return activeRegionBreakdown.map((entry) => {
-      const rows = filterRowsByRegion(activeRows, entry.aspCode);
-      const regionPrintRows = rows.filter(isPrintCase);
-      const regionPrintInstallationRows = regionPrintRows.filter(isPrintInstallationCase);
-
       return {
         aspCode: entry.aspCode,
         regionName: entry.regionName,
-        ciss: rows.filter(isCissCase).length,
-        pc: rows.filter((row) => isSegmentCase(row, PC_SEGMENT)).length,
-        print: regionPrintRows.length,
-        printInstallation: regionPrintInstallationRows.length,
-        printFix: regionPrintRows.length - regionPrintInstallationRows.length,
-        rca: rows.filter(isRcaCase).length,
-        trade: rows.filter(isTradeCase).length,
-        consumer: rows.filter(isConsumerCase).length,
-        commercial: rows.filter((row) => !isConsumerCase(row)).length,
-        warranty: rows.filter(isWarrantyCase).length,
-        nonWarranty: rows.filter(isTradeCase).length,
+        ciss: entry.cissCount,
+        pc: entry.pcCount,
+        print: entry.printCount,
+        printInstallation: entry.installCount,
+        printFix: entry.printCount - entry.installCount,
+        rca: entry.rcaCount,
+        trade: entry.tradeCount,
+        consumer: entry.consumerCount,
+        commercial: entry.commercialCount,
+        warranty: entry.warrantyCount,
+        nonWarranty: entry.tradeCount,
       };
     });
-  }, [activeRegionBreakdown, activeRows, report]);
+  }, [activeRegionBreakdown, report]);
+
+  const overallStats = useMemo(() => {
+    return calculateRegionStats(activeRows);
+  }, [activeRows]);
 
 
   const closedRows = useMemo(() => {
@@ -2377,6 +2514,220 @@ export default function DashboardPage() {
     setWorkspaceView("records");
   }
 
+  function renderRegionCard(
+    aspCode: string,
+    regionName: string,
+    subtitle: string,
+    stats: RegionStats,
+    isActive: boolean,
+  ) {
+    return (
+      <div 
+        className={`regionCard ${isActive ? "active" : ""}`}
+        onClick={() => openRecordsWithFilter({ region: aspCode })}
+        style={{ cursor: "pointer" }}
+      >
+        {/* Card Header */}
+        <div className="regionCardHeader">
+          <div className="regionCardValue">{stats.count}</div>
+          <div className="regionCardName">{regionName}</div>
+          <div className="regionCardSubtitle">{subtitle}</div>
+        </div>
+
+        {/* Primary Metrics (2x2 Grid of buttons/boxes) */}
+        <div className="regionSegmentGrid">
+          <div 
+            className={`regionSegmentBox ${selectedRegion === aspCode && showConsumerOnly ? "active" : ""}`}
+            onClick={(e) => {
+              e.stopPropagation();
+              openRecordsWithFilter({ region: aspCode, consumerOnly: true });
+            }}
+          >
+            <span className="segmentLabel">Consumer</span>
+            <span className="segmentCount">{stats.consumerCount}</span>
+          </div>
+          
+          <div 
+            className={`regionSegmentBox ${selectedRegion === aspCode && showCommercialOnly ? "active" : ""}`}
+            onClick={(e) => {
+              e.stopPropagation();
+              openRecordsWithFilter({ region: aspCode, commercialOnly: true });
+            }}
+          >
+            <span className="segmentLabel">Commercial</span>
+            <span className="segmentCount">{stats.commercialCount}</span>
+          </div>
+          
+          <div 
+            className={`regionSegmentBox ${selectedRegion === aspCode && showWarrantyOnly ? "active" : ""}`}
+            onClick={(e) => {
+              e.stopPropagation();
+              openRecordsWithFilter({ region: aspCode, warrantyOnly: true });
+            }}
+          >
+            <span className="segmentLabel">Warranty</span>
+            <span className="segmentCount">{stats.warrantyCount}</span>
+          </div>
+          
+          <div 
+            className={`regionSegmentBox ${selectedRegion === aspCode && showNonWarrantyOnly ? "active" : ""}`}
+            onClick={(e) => {
+              e.stopPropagation();
+              openRecordsWithFilter({ region: aspCode, nonWarrantyOnly: true });
+            }}
+          >
+            <span className="segmentLabel">Trade</span>
+            <span className="segmentCount">{stats.nonWarrantyCount}</span>
+          </div>
+        </div>
+
+        {/* Details Grid (Left and Right columns) */}
+        <div className="regionCardDetailsGrid">
+          {/* Left Column: Detail cards */}
+          <div className="regionCardDetailsCol">
+            <div 
+              className={`regionDetailMetricCard ${selectedRegion === aspCode && !showConsumerOnly && !showCommercialOnly && !showWarrantyOnly && !showNonWarrantyOnly && !showCissOnly && !showRcaOnly && !showTradeOnly && !showClosedOnly && !printCaseFilter ? "active" : ""}`}
+              onClick={(e) => {
+                e.stopPropagation();
+                openRecordsWithFilter({ region: aspCode });
+              }}
+            >
+              <div className="regionDetailMetricHeader">
+                <span className="regionDetailMetricTitle">PC Total</span>
+                <span className="regionDetailMetricCount">{stats.pcCount}</span>
+              </div>
+              <div className="regionDetailMetricSubtext">
+                commercial: {stats.pcCommercial} consumer: {stats.pcConsumer}
+              </div>
+            </div>
+
+            <div 
+              className={`regionDetailMetricCard ${selectedRegion === aspCode && printCaseFilter === "all" ? "active" : ""}`}
+              onClick={(e) => {
+                e.stopPropagation();
+                openRecordsWithFilter({ region: aspCode, printCase: "all" });
+              }}
+            >
+              <div className="regionDetailMetricHeader">
+                <span className="regionDetailMetricTitle">Print Total</span>
+                <span className="regionDetailMetricCount">{stats.printCount}</span>
+              </div>
+              <div className="regionDetailMetricSubtext">
+                commercial: {stats.printCommercial} consumer: {stats.printConsumer}
+              </div>
+            </div>
+
+            <div 
+              className={`regionDetailMetricCard ${selectedRegion === aspCode && printCaseFilter === "installation" ? "active" : ""}`}
+              onClick={(e) => {
+                e.stopPropagation();
+                openRecordsWithFilter({ region: aspCode, printCase: "installation" });
+              }}
+            >
+              <div className="regionDetailMetricHeader">
+                <span className="regionDetailMetricTitle">Install Total</span>
+                <span className="regionDetailMetricCount">{stats.installCount}</span>
+              </div>
+              <div className="regionDetailMetricSubtext">
+                commercial: {stats.installCommercial} consumer: {stats.installConsumer}
+              </div>
+            </div>
+
+            <div 
+              className={`regionDetailMetricCard ${selectedRegion === aspCode && showCissOnly ? "active" : ""}`}
+              onClick={(e) => {
+                e.stopPropagation();
+                openRecordsWithFilter({ region: aspCode, cissOnly: true });
+              }}
+            >
+              <div className="regionDetailMetricHeader">
+                <span className="regionDetailMetricTitle">CISS Case</span>
+                <span className="regionDetailMetricCount">{stats.cissCount}</span>
+              </div>
+              <div className="regionDetailMetricSubtext">
+                consumer: {stats.cissConsumer}
+              </div>
+            </div>
+
+            <div 
+              className={`regionDetailMetricCard ${selectedRegion === aspCode && showRcaOnly ? "active" : ""}`}
+              onClick={(e) => {
+                e.stopPropagation();
+                openRecordsWithFilter({ region: aspCode, rcaOnly: true });
+              }}
+            >
+              <div className="regionDetailMetricHeader">
+                <span className="regionDetailMetricTitle">RCA Case</span>
+                <span className="regionDetailMetricCount">{stats.rcaCount}</span>
+              </div>
+              <div className="regionDetailMetricSubtext">
+                commercial: {stats.rcaCommercial} consumer: {stats.rcaConsumer}
+              </div>
+            </div>
+          </div>
+
+          {/* Right Column: WO OTC Breakdown list */}
+          <div className="regionCardDetailsCol">
+            <div className="regionWoOtcHeader">WO OTC Breakdown</div>
+            {stats.woOtcCodeBreakdown.length > 0 ? (
+              <div className="regionWoOtcList">
+                {stats.woOtcCodeBreakdown.map(woCode => (
+                  <div 
+                    key={woCode.code}
+                    className={`regionWoOtcItem ${selectedRegion === aspCode && selectedWoOtcCode === woCode.code ? "active" : ""}`}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      openRecordsWithFilter({ region: aspCode, woOtcCode: woCode.code });
+                    }}
+                  >
+                    <span className="regionWoOtcCode">{woCode.code}</span>
+                    <span className="regionWoOtcCount">{woCode.count}</span>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="regionWoOtcEmpty">No records</div>
+            )}
+          </div>
+        </div>
+
+        {/* Bottom Section: Trade breakdown */}
+        <div className="regionTradeSection">
+          <div className="regionTradeHeader">Trade {stats.tradeCount}</div>
+          <div className="regionTradeGrid">
+            <div 
+              className="regionTradeMetricCard"
+              onClick={(e) => {
+                e.stopPropagation();
+                openRecordsWithFilter({ region: aspCode, tradeOnly: true, segment: PC_SEGMENT });
+              }}
+            >
+              <div className="regionTradeMetricLabel">PC Total</div>
+              <div className="regionTradeMetricSubtext">
+                comms: {stats.tradePcCommercial} cons: {stats.tradePcConsumer}
+              </div>
+              <div className="regionTradeMetricValue">{stats.tradePcCount}</div>
+            </div>
+            
+            <div 
+              className="regionTradeMetricCard"
+              onClick={(e) => {
+                e.stopPropagation();
+                openRecordsWithFilter({ region: aspCode, tradeOnly: true, printCase: "all" });
+              }}
+            >
+              <div className="regionTradeMetricLabel">Print Total</div>
+              <div className="regionTradeMetricSubtext">
+                comms: {stats.tradePrintCommercial} cons: {stats.tradePrintConsumer}
+              </div>
+              <div className="regionTradeMetricValue">{stats.tradePrintCount}</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   const selectedRtplStatusFilter = (() => {
     const values = colFilters.filters["RTPL status"];
 
@@ -2576,280 +2927,23 @@ export default function DashboardPage() {
                   )}
                 </div>
                 <div className="regionGrid">
-                  <div 
-                    className={`regionMetric ${selectedRegion === "ALL" && !selectedWoOtcCode && !showConsumerOnly && !showCommercialOnly && !showWarrantyOnly && !showNonWarrantyOnly ? "active" : ""}`}
-                    onClick={() => openRecordsWithFilter({ region: "ALL" })}
-                    style={{ cursor: "pointer", border: "2px solid var(--accent)", background: "var(--accent-tint)" }}
-                  >
-                    <div className="regionMetricHeader">
-                        <div className="regionMetricValue">{activeRows.length}</div>
-                      <div className="regionMetricLabel">ALL REGIONS</div>
-                      <div className="regionMetricSubtext">OVERALL</div>
-                    </div>
+                  {renderRegionCard(
+                    "ALL",
+                    "All Regions",
+                    "Overall",
+                    overallStats,
+                    selectedRegion === "ALL" && !selectedWoOtcCode && !showConsumerOnly && !showCommercialOnly && !showWarrantyOnly && !showNonWarrantyOnly,
+                  )}
 
-                    <div className="regionSegmentMetrics">
-                      <button
-                        type="button"
-                        className={`regionSegmentMetric ${selectedRegion === "ALL" && showConsumerOnly ? "active" : ""}`}
-                        style={{
-                          padding: "4px 6px",
-                          gap: "4px",
-                          ...(selectedRegion === "ALL" && showConsumerOnly ? { borderColor: "var(--accent)", background: "var(--accent-soft)", color: "var(--accent)" } : {})
-                        }}
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          openRecordsWithFilter({ region: "ALL", consumerOnly: true });
-                        }}
-                      >
-                        <span style={{ fontSize: "10px", textTransform: "none", fontWeight: "700" }}>Consumer</span>
-                        <strong
-                          style={{
-                            minWidth: "20px",
-                            padding: "2px 6px",
-                            fontSize: "11px",
-                            ...(selectedRegion === "ALL" && showConsumerOnly ? { background: "#ffffff", color: "var(--accent)" } : {})
-                          }}
-                        >
-                          {consumerRows.length}
-                        </strong>
-                      </button>
-                      <button
-                        type="button"
-                        className={`regionSegmentMetric ${selectedRegion === "ALL" && showCommercialOnly ? "active" : ""}`}
-                        style={{
-                          padding: "4px 6px",
-                          gap: "4px",
-                          ...(selectedRegion === "ALL" && showCommercialOnly ? { borderColor: "var(--accent)", background: "var(--accent-soft)", color: "var(--accent)" } : {})
-                        }}
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          openRecordsWithFilter({ region: "ALL", commercialOnly: true });
-                        }}
-                      >
-                        <span style={{ fontSize: "10px", textTransform: "none", fontWeight: "700" }}>Commercial</span>
-                        <strong
-                          style={{
-                            minWidth: "20px",
-                            padding: "2px 6px",
-                            fontSize: "11px",
-                            ...(selectedRegion === "ALL" && showCommercialOnly ? { background: "#ffffff", color: "var(--accent)" } : {})
-                          }}
-                        >
-                          {commercialRows.length}
-                        </strong>
-                      </button>
-                    </div>
-
-                    <div className="regionSegmentMetrics" style={{ marginTop: "8px" }}>
-                      <button
-                        type="button"
-                        className={`regionSegmentMetric ${selectedRegion === "ALL" && showWarrantyOnly ? "active" : ""}`}
-                        style={{
-                          padding: "4px 6px",
-                          gap: "4px",
-                          ...(selectedRegion === "ALL" && showWarrantyOnly ? { borderColor: "var(--accent)", background: "var(--accent-soft)", color: "var(--accent)" } : {})
-                        }}
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          openRecordsWithFilter({ region: "ALL", warrantyOnly: true });
-                        }}
-                      >
-                        <span style={{ fontSize: "9px", textTransform: "none", fontWeight: "700" }}>Warranty</span>
-                        <strong
-                          style={{
-                            minWidth: "20px",
-                            padding: "2px 6px",
-                            fontSize: "11px",
-                            ...(selectedRegion === "ALL" && showWarrantyOnly ? { background: "#ffffff", color: "var(--accent)" } : {})
-                          }}
-                        >
-                          {warrantyRows.length}
-                        </strong>
-                      </button>
-                      <button
-                        type="button"
-                        className={`regionSegmentMetric ${selectedRegion === "ALL" && showNonWarrantyOnly ? "active" : ""}`}
-                        style={{
-                          padding: "4px 6px",
-                          gap: "4px",
-                          ...(selectedRegion === "ALL" && showNonWarrantyOnly ? { borderColor: "var(--accent)", background: "var(--accent-soft)", color: "var(--accent)" } : {})
-                        }}
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          openRecordsWithFilter({ region: "ALL", nonWarrantyOnly: true });
-                        }}
-                      >
-                        <span style={{ fontSize: "9px", textTransform: "none", fontWeight: "700" }}>Non-Warranty</span>
-                        <strong
-                          style={{
-                            minWidth: "20px",
-                            padding: "2px 6px",
-                            fontSize: "11px",
-                            ...(selectedRegion === "ALL" && showNonWarrantyOnly ? { background: "#ffffff", color: "var(--accent)" } : {})
-                          }}
-                        >
-                          {nonWarrantyRows.length}
-                        </strong>
-                      </button>
-                    </div>
-                    
-                    {overallWoOtcBreakdown.length > 0 && (
-                      <div className="regionWoOtcList">
-                        {overallWoOtcBreakdown.map(woCode => (
-                          <div 
-                            key={woCode.code}
-                            className={`regionWoOtcItem ${(selectedRegion === "ALL" || !selectedRegion) && selectedWoOtcCode === woCode.code ? "active" : ""}`}
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              openRecordsWithFilter({ region: "ALL", woOtcCode: woCode.code });
-                            }}
-                          >
-                            <span className="regionWoOtcCode">{woCode.code}</span>
-                            <span className="regionWoOtcCount">{woCode.count}</span>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-
-                  {activeRegionBreakdown.filter((entry) => entry.count > 0).map((entry) => (
-                    <div 
-                      key={entry.aspCode} 
-                      className={`regionMetric ${selectedRegion === entry.aspCode && !selectedWoOtcCode && !showConsumerOnly && !showCommercialOnly && !showWarrantyOnly && !showNonWarrantyOnly ? "active" : ""}`}
-                      onClick={() => openRecordsWithFilter({ region: entry.aspCode })}
-                      style={{ cursor: "pointer" }}
-                    >
-                      <div className="regionMetricHeader">
-                        <div className="regionMetricValue">{entry.count}</div>
-                        <div className="regionMetricLabel">{entry.regionName}</div>
-                        <div className="regionMetricSubtext">{entry.aspCode}</div>
-                      </div>
-
-                      <div className="regionSegmentMetrics">
-                        <button
-                          type="button"
-                          className={`regionSegmentMetric ${selectedRegion === entry.aspCode && showConsumerOnly ? "active" : ""}`}
-                          style={{
-                            padding: "4px 6px",
-                            gap: "4px",
-                            ...(selectedRegion === entry.aspCode && showConsumerOnly ? { borderColor: "var(--accent)", background: "var(--accent-soft)", color: "var(--accent)" } : {})
-                          }}
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            openRecordsWithFilter({ region: entry.aspCode, consumerOnly: true });
-                          }}
-                        >
-                          <span style={{ fontSize: "10px", textTransform: "none", fontWeight: "700" }}>Consumer</span>
-                          <strong
-                            style={{
-                              minWidth: "20px",
-                              padding: "2px 6px",
-                              fontSize: "11px",
-                              ...(selectedRegion === entry.aspCode && showConsumerOnly ? { background: "#ffffff", color: "var(--accent)" } : {})
-                            }}
-                          >
-                            {entry.consumerCount}
-                          </strong>
-                        </button>
-                        <button
-                          type="button"
-                          className={`regionSegmentMetric ${selectedRegion === entry.aspCode && showCommercialOnly ? "active" : ""}`}
-                          style={{
-                            padding: "4px 6px",
-                            gap: "4px",
-                            ...(selectedRegion === entry.aspCode && showCommercialOnly ? { borderColor: "var(--accent)", background: "var(--accent-soft)", color: "var(--accent)" } : {})
-                          }}
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            openRecordsWithFilter({ region: entry.aspCode, commercialOnly: true });
-                          }}
-                        >
-                          <span style={{ fontSize: "10px", textTransform: "none", fontWeight: "700" }}>Commercial</span>
-                          <strong
-                            style={{
-                              minWidth: "20px",
-                              padding: "2px 6px",
-                              fontSize: "11px",
-                              ...(selectedRegion === entry.aspCode && showCommercialOnly ? { background: "#ffffff", color: "var(--accent)" } : {})
-                            }}
-                          >
-                            {entry.commercialCount}
-                          </strong>
-                        </button>
-                      </div>
-
-                      <div className="regionSegmentMetrics" style={{ marginTop: "8px" }}>
-                        <button
-                          type="button"
-                          className={`regionSegmentMetric ${selectedRegion === entry.aspCode && showWarrantyOnly ? "active" : ""}`}
-                          style={{
-                            padding: "4px 6px",
-                            gap: "4px",
-                            ...(selectedRegion === entry.aspCode && showWarrantyOnly ? { borderColor: "var(--accent)", background: "var(--accent-soft)", color: "var(--accent)" } : {})
-                          }}
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            openRecordsWithFilter({ region: entry.aspCode, warrantyOnly: true });
-                          }}
-                        >
-                          <span style={{ fontSize: "9px", textTransform: "none", fontWeight: "700" }}>Warranty</span>
-                          <strong
-                            style={{
-                              minWidth: "20px",
-                              padding: "2px 6px",
-                              fontSize: "11px",
-                              ...(selectedRegion === entry.aspCode && showWarrantyOnly ? { background: "#ffffff", color: "var(--accent)" } : {})
-                            }}
-                          >
-                            {entry.warrantyCount}
-                          </strong>
-                        </button>
-                        <button
-                          type="button"
-                          className={`regionSegmentMetric ${selectedRegion === entry.aspCode && showNonWarrantyOnly ? "active" : ""}`}
-                          style={{
-                            padding: "4px 6px",
-                            gap: "4px",
-                            ...(selectedRegion === entry.aspCode && showNonWarrantyOnly ? { borderColor: "var(--accent)", background: "var(--accent-soft)", color: "var(--accent)" } : {})
-                          }}
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            openRecordsWithFilter({ region: entry.aspCode, nonWarrantyOnly: true });
-                          }}
-                        >
-                          <span style={{ fontSize: "9px", textTransform: "none", fontWeight: "700" }}>Non-Warranty</span>
-                          <strong
-                            style={{
-                              minWidth: "20px",
-                              padding: "2px 6px",
-                              fontSize: "11px",
-                              ...(selectedRegion === entry.aspCode && showNonWarrantyOnly ? { background: "#ffffff", color: "var(--accent)" } : {})
-                            }}
-                          >
-                            {entry.nonWarrantyCount}
-                          </strong>
-                        </button>
-                      </div>
-
-                      {entry.woOtcCodeBreakdown && entry.woOtcCodeBreakdown.length > 0 && (
-                        <div className="regionWoOtcList">
-                          {entry.woOtcCodeBreakdown.map(woCode => (
-                            <div 
-                              key={woCode.code}
-                              className={`regionWoOtcItem ${selectedRegion === entry.aspCode && selectedWoOtcCode === woCode.code ? "active" : ""}`}
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                openRecordsWithFilter({ region: entry.aspCode, woOtcCode: woCode.code });
-                              }}
-                            >
-                              <span className="regionWoOtcCode">{woCode.code}</span>
-                              <span className="regionWoOtcCount">{woCode.count}</span>
-                            </div>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-                  ))}
+                  {activeRegionBreakdown.filter((entry) => entry.count > 0).map((entry) =>
+                    renderRegionCard(
+                      entry.aspCode,
+                      entry.regionName,
+                      entry.aspCode,
+                      entry,
+                      selectedRegion === entry.aspCode && !selectedWoOtcCode && !showConsumerOnly && !showCommercialOnly && !showWarrantyOnly && !showNonWarrantyOnly,
+                    ),
+                  )}
                 </div>
               </div>
               <div className="caseTypeSection">

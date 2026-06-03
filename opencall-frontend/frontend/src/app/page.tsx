@@ -290,6 +290,116 @@ interface RegionStats {
   woOtcCodeBreakdown: { code: string; count: number }[];
 }
 
+interface PivotSegmentOption {
+  value: string;
+  label: string;
+  count: number;
+}
+
+interface RtplWipPivotColumn {
+  key: string;
+  label: string;
+  total: number;
+  sortValue: number;
+}
+
+interface RtplWipPivotRow {
+  key: string;
+  status: string;
+  total: number;
+  cells: Record<string, number>;
+}
+
+interface RtplWipPivot {
+  segmentOptions: PivotSegmentOption[];
+  columns: RtplWipPivotColumn[];
+  rows: RtplWipPivotRow[];
+  grandTotal: number;
+}
+
+function pivotLabel(value: unknown, fallback = "(blank)"): string {
+  const label = String(value ?? "").trim();
+  return label.length > 0 ? label : fallback;
+}
+
+function pivotColumnKey(label: string): string {
+  return label
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-|-$/g, "") || "blank";
+}
+
+function buildRtplWipAgingPivot(
+  rows: readonly ReportRow[],
+  selectedSegments: readonly string[] | null,
+): RtplWipPivot {
+  const hasSegmentFilter = selectedSegments !== null;
+  const selectedSegmentSet = new Set(selectedSegments ?? []);
+  const segmentCounts = new Map<string, number>();
+  const columnTotals = new Map<string, RtplWipPivotColumn>();
+  const rowTotals = new Map<string, RtplWipPivotRow>();
+  let grandTotal = 0;
+
+  for (const row of rows) {
+    const ticketId = String(row.output["Ticket ID"] ?? "").trim();
+    if (!ticketId) {
+      continue;
+    }
+
+    const segment = pivotLabel(row.output.Segment);
+    segmentCounts.set(segment, (segmentCounts.get(segment) ?? 0) + 1);
+
+    if (hasSegmentFilter && !selectedSegmentSet.has(segment)) {
+      continue;
+    }
+
+    const status = pivotLabel(row.output["RTPL status"]);
+    const wipAgingLabel = pivotLabel(row.output["WIP aging"]);
+    const wipAgingNumber = parseWipAgingValue(row.output["WIP aging"]);
+    const columnKey = `wip-${pivotColumnKey(wipAgingLabel)}`;
+    const rowKey = `status-${pivotColumnKey(status)}`;
+
+    let column = columnTotals.get(columnKey);
+    if (!column) {
+      column = {
+        key: columnKey,
+        label: wipAgingLabel,
+        total: 0,
+        sortValue: wipAgingNumber ?? Number.MAX_SAFE_INTEGER,
+      };
+      columnTotals.set(columnKey, column);
+    }
+    column.total += 1;
+
+    let pivotRow = rowTotals.get(rowKey);
+    if (!pivotRow) {
+      pivotRow = {
+        key: rowKey,
+        status,
+        total: 0,
+        cells: {},
+      };
+      rowTotals.set(rowKey, pivotRow);
+    }
+    pivotRow.cells[columnKey] = (pivotRow.cells[columnKey] ?? 0) + 1;
+    pivotRow.total += 1;
+    grandTotal += 1;
+  }
+
+  return {
+    segmentOptions: Array.from(segmentCounts.entries())
+      .map(([label, count]) => ({ value: label, label, count }))
+      .sort((a, b) => b.count - a.count || a.label.localeCompare(b.label)),
+    columns: Array.from(columnTotals.values()).sort(
+      (a, b) => a.sortValue - b.sortValue || a.label.localeCompare(b.label),
+    ),
+    rows: Array.from(rowTotals.values()).sort(
+      (a, b) => b.total - a.total || a.status.localeCompare(b.status),
+    ),
+    grandTotal,
+  };
+}
+
 function calculateRegionStats(rows: GeneratedReportResponse["rows"][number][]): RegionStats {
   const count = rows.length;
   let consumerCount = 0;
@@ -952,6 +1062,10 @@ export default function DashboardPage() {
   const [selectedWoOtcCode, setSelectedWoOtcCode] = useState<string | null>(null);
   const [selectedRtplRegion, setSelectedRtplRegion] = useState<string>(ALL_REGIONS_FILTER);
   const [selectedRtplCaseScope, setSelectedRtplCaseScope] = useState<RtplCaseScope>("overall");
+  const [selectedPivotCaseScope, setSelectedPivotCaseScope] = useState<RtplCaseScope>("overall");
+  const [selectedPivotSegments, setSelectedPivotSegments] = useState<string[] | null>(null);
+  const [draftPivotSegments, setDraftPivotSegments] = useState<string[] | null>(null);
+  const [isPivotSegmentFilterOpen, setIsPivotSegmentFilterOpen] = useState(false);
   const [selectedRtplTimeCardId, setSelectedRtplTimeCardId] = useState<RtplTimeCardId>(
     RTPL_CARRY_FORWARD_TIME_CARD_ID,
   );
@@ -1003,6 +1117,10 @@ export default function DashboardPage() {
     setSelectedWoOtcCode(null);
     setSelectedRtplRegion(ALL_REGIONS_FILTER);
     setSelectedRtplCaseScope("overall");
+    setSelectedPivotCaseScope("overall");
+    setSelectedPivotSegments(null);
+    setDraftPivotSegments(null);
+    setIsPivotSegmentFilterOpen(false);
     setSelectedRtplTimeCardId(RTPL_CARRY_FORWARD_TIME_CARD_ID);
     setSelectedRtplModalStatus(null);
     setIsRtplTimeModalOpen(false);
@@ -1025,6 +1143,48 @@ export default function DashboardPage() {
     if (!report) return [];
     return report.rows.filter(isTodayCallPlanVisibleRow);
   }, [report]);
+
+  const pivotBaseRows = useMemo(() => {
+    switch (selectedPivotCaseScope) {
+      case "warranty":
+        return activeRows.filter(isWarrantyCase);
+      case "trade":
+        return activeRows.filter(isTradeCase);
+      case "overall":
+      default:
+        return activeRows;
+    }
+  }, [activeRows, selectedPivotCaseScope]);
+
+  const rtplWipPivot = useMemo(
+    () => buildRtplWipAgingPivot(pivotBaseRows, selectedPivotSegments),
+    [pivotBaseRows, selectedPivotSegments],
+  );
+
+  const draftPivotSegmentSet = useMemo(
+    () => new Set(draftPivotSegments ?? []),
+    [draftPivotSegments],
+  );
+
+  const pivotAllSegmentCount = useMemo(
+    () =>
+      rtplWipPivot.segmentOptions.reduce(
+        (total, option) => total + option.count,
+        0,
+      ),
+    [rtplWipPivot.segmentOptions],
+  );
+
+  const appliedPivotSegmentLabel =
+    selectedPivotSegments === null
+      ? "All Segments"
+      : selectedPivotSegments.length === 0
+        ? "No Segments"
+        : selectedPivotSegments.length === 1
+          ? selectedPivotSegments[0]
+          : `${selectedPivotSegments.length} Segments`;
+
+  const pivotSegmentFilterActive = selectedPivotSegments !== null;
 
   const cissRows = useMemo(() => {
     return activeRows.filter(isCissCase);
@@ -2464,6 +2624,8 @@ export default function DashboardPage() {
     rtplStatus,
     flexStatus,
     segment,
+    segments,
+    wipAging,
     printCase = null,
     cissOnly = false,
     rcaOnly = false,
@@ -2479,6 +2641,8 @@ export default function DashboardPage() {
     rtplStatus?: string | null;
     flexStatus?: string | null;
     segment?: string | null;
+    segments?: readonly string[] | null;
+    wipAging?: string | null;
     printCase?: PrintCaseFilter | null;
     cissOnly?: boolean;
     rcaOnly?: boolean;
@@ -2511,7 +2675,55 @@ export default function DashboardPage() {
     if (segment) {
       colFilters.setColumnFilter("Segment", new Set([segment]));
     }
+    if (segments !== null && segments !== undefined) {
+      colFilters.setColumnFilter("Segment", new Set(segments));
+    }
+    if (wipAging) {
+      colFilters.setColumnFilter("WIP aging", new Set([wipAging]));
+    }
     setWorkspaceView("records");
+  }
+
+  function openPivotSegmentFilter(): void {
+    setDraftPivotSegments(selectedPivotSegments);
+    setIsPivotSegmentFilterOpen(true);
+  }
+
+  function toggleDraftPivotSegment(segment: string): void {
+    setDraftPivotSegments((current) => {
+      const currentValues = current ?? rtplWipPivot.segmentOptions.map((option) => option.value);
+
+      return currentValues.includes(segment)
+        ? currentValues.filter((value) => value !== segment)
+        : [...currentValues, segment];
+    });
+  }
+
+  function applyPivotSegmentFilter(): void {
+    const allSegments = rtplWipPivot.segmentOptions.map((option) => option.value);
+    const nextSelection =
+      draftPivotSegments !== null && draftPivotSegments.length === allSegments.length
+        ? null
+        : draftPivotSegments;
+
+    setSelectedPivotSegments(nextSelection);
+    setIsPivotSegmentFilterOpen(false);
+  }
+
+  function openPivotRecords({
+    rtplStatus,
+    wipAging,
+  }: Readonly<{
+    rtplStatus?: string;
+    wipAging?: string;
+  }>): void {
+    openRecordsWithFilter({
+      segments: selectedPivotSegments,
+      rtplStatus: rtplStatus ?? null,
+      wipAging: wipAging ?? null,
+      warrantyOnly: selectedPivotCaseScope === "warranty",
+      tradeOnly: selectedPivotCaseScope === "trade",
+    });
   }
 
   function renderRegionCard(
@@ -3392,6 +3604,239 @@ export default function DashboardPage() {
                 ) : (
                   <div className="rtplEmptyState">
                     No Flex statuses for the selected region.
+                  </div>
+                )}
+              </div>
+
+              <div className="pivotSection">
+                <div className="sectionHeader pivotHeader">
+                  <div>
+                    <h3>RTPL Status by WIP Aging Pivot</h3>
+                    <p>
+                      Segment filter, WIP Aging columns, RTPL status rows, and Ticket ID count values.
+                    </p>
+                  </div>
+                  <span className="statusBadge neutral">
+                    {formatNumber(rtplWipPivot.grandTotal)} tickets
+                  </span>
+                </div>
+
+                <div className="pivotFilterRow">
+                <div className="pivotDropdownFilter" aria-label="Pivot segment filter">
+                  <span>Segment</span>
+                  <div className="pivotDropdownWrap">
+                    <button
+                      type="button"
+                      className={`pivotDropdownTrigger ${pivotSegmentFilterActive ? "active" : ""}`}
+                      onClick={() => {
+                        if (isPivotSegmentFilterOpen) {
+                          setIsPivotSegmentFilterOpen(false);
+                        } else {
+                          openPivotSegmentFilter();
+                        }
+                      }}
+                    >
+                      <span>{appliedPivotSegmentLabel}</span>
+                      <strong>{formatNumber(rtplWipPivot.grandTotal)}</strong>
+                      <small>▾</small>
+                    </button>
+
+                    {isPivotSegmentFilterOpen ? (
+                      <div className="pivotSegmentDropdown">
+                        <div className="pivotSegmentList">
+                          <label className="pivotSegmentDropdownItem pivotSegmentDropdownItemAll">
+                            <input
+                              type="checkbox"
+                              checked={draftPivotSegments === null}
+                              onChange={() => setDraftPivotSegments(null)}
+                            />
+                            <span>(Select All)</span>
+                            <strong>{formatNumber(pivotAllSegmentCount)}</strong>
+                          </label>
+
+                          {rtplWipPivot.segmentOptions.map((option) => (
+                            <label className="pivotSegmentDropdownItem" key={option.value}>
+                              <input
+                                type="checkbox"
+                                checked={draftPivotSegments === null || draftPivotSegmentSet.has(option.value)}
+                                onChange={() => toggleDraftPivotSegment(option.value)}
+                              />
+                              <span>{option.label}</span>
+                              <strong>{formatNumber(option.count)}</strong>
+                            </label>
+                          ))}
+                        </div>
+
+                        <div className="pivotSegmentActions">
+                          <button
+                            type="button"
+                            className="secondary"
+                            onClick={() => setDraftPivotSegments(null)}
+                          >
+                            Select All
+                          </button>
+                          <button
+                            type="button"
+                            className="secondary"
+                            onClick={() => setDraftPivotSegments([])}
+                          >
+                            Unselect All
+                          </button>
+                          <button
+                            type="button"
+                            className="secondary"
+                            onClick={() => setDraftPivotSegments(null)}
+                          >
+                            Clear
+                          </button>
+                          <button
+                            type="button"
+                            className="primary"
+                            onClick={applyPivotSegmentFilter}
+                          >
+                            Apply
+                          </button>
+                        </div>
+                      </div>
+                    ) : null}
+                  </div>
+                </div>
+
+                  <div className="pivotCaseScopeFilter" aria-label="Pivot warranty trade filter">
+                    <span>Case Type</span>
+                    <div className="pivotCaseScopeGroup">
+                      {RTPL_CASE_SCOPE_OPTIONS.map((option) => (
+                        <button
+                          key={option.value}
+                          type="button"
+                          className={`pivotCaseScopeButton ${selectedPivotCaseScope === option.value ? "active" : ""}`}
+                          onClick={() => setSelectedPivotCaseScope(option.value)}
+                        >
+                          {option.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+
+                {rtplWipPivot.rows.length > 0 && rtplWipPivot.columns.length > 0 ? (
+                  <div className="pivotTableWrap">
+                    <table className="pivotTable">
+                      <thead>
+                        <tr className="pivotContextRow">
+                          <th scope="col">Filters</th>
+                          <th scope="col" colSpan={rtplWipPivot.columns.length + 1}>
+                            Segment:{" "}
+                            {selectedPivotSegments === null
+                              ? "All Segments"
+                              : selectedPivotSegments.length > 0
+                                ? selectedPivotSegments.join(", ")
+                                : "No Segments"}
+                            {" | "}
+                            Case Type:{" "}
+                            {RTPL_CASE_SCOPE_OPTIONS.find((option) => option.value === selectedPivotCaseScope)?.label ?? "Overall"}
+                          </th>
+                        </tr>
+                        <tr>
+                          <th scope="col" className="pivotRowHeader">
+                            Count of Ticket ID
+                          </th>
+                          {rtplWipPivot.columns.map((column) => (
+                            <th key={column.key} scope="col">
+                              <button
+                                type="button"
+                                className="pivotHeaderButton"
+                                onClick={() => openPivotRecords({ wipAging: column.label })}
+                                title={`Open WIP aging ${column.label} records`}
+                              >
+                                {column.label}
+                              </button>
+                            </th>
+                          ))}
+                          <th scope="col" className="pivotGrandColumn">
+                            Grand Total
+                          </th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {rtplWipPivot.rows.map((pivotRow) => (
+                          <tr key={pivotRow.key}>
+                            <th scope="row" className="pivotRowLabel">
+                              <button
+                                type="button"
+                                onClick={() => openPivotRecords({ rtplStatus: pivotRow.status })}
+                                title={`Open ${pivotRow.status} records`}
+                              >
+                                {pivotRow.status}
+                              </button>
+                            </th>
+                            {rtplWipPivot.columns.map((column) => {
+                              const count = pivotRow.cells[column.key] ?? 0;
+
+                              return (
+                                <td key={`${pivotRow.key}-${column.key}`}>
+                                  {count > 0 ? (
+                                    <button
+                                      type="button"
+                                      className="pivotValueButton"
+                                      onClick={() =>
+                                        openPivotRecords({
+                                          rtplStatus: pivotRow.status,
+                                          wipAging: column.label,
+                                        })
+                                      }
+                                      title={`Open ${pivotRow.status}, WIP aging ${column.label}`}
+                                    >
+                                      {formatNumber(count)}
+                                    </button>
+                                  ) : (
+                                    <span className="pivotEmptyCell">-</span>
+                                  )}
+                                </td>
+                              );
+                            })}
+                            <td className="pivotGrandColumn">
+                              <button
+                                type="button"
+                                className="pivotTotalButton"
+                                onClick={() => openPivotRecords({ rtplStatus: pivotRow.status })}
+                              >
+                                {formatNumber(pivotRow.total)}
+                              </button>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                      <tfoot>
+                        <tr>
+                          <th scope="row">Grand Total</th>
+                          {rtplWipPivot.columns.map((column) => (
+                            <td key={`total-${column.key}`}>
+                              <button
+                                type="button"
+                                className="pivotTotalButton"
+                                onClick={() => openPivotRecords({ wipAging: column.label })}
+                              >
+                                {formatNumber(column.total)}
+                              </button>
+                            </td>
+                          ))}
+                          <td className="pivotGrandColumn">
+                            <button
+                              type="button"
+                              className="pivotTotalButton"
+                              onClick={() => openPivotRecords({})}
+                            >
+                              {formatNumber(rtplWipPivot.grandTotal)}
+                            </button>
+                          </td>
+                        </tr>
+                      </tfoot>
+                    </table>
+                  </div>
+                ) : (
+                  <div className="rtplEmptyState">
+                    No pivot data for the selected Segment filter.
                   </div>
                 )}
               </div>

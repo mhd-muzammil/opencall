@@ -2523,6 +2523,7 @@ export default function DashboardPage() {
   ) {
     return (
       <div 
+        key={`region-card-${aspCode || regionName}`}
         className={`regionCard ${isActive ? "active" : ""}`}
         onClick={() => openRecordsWithFilter({ region: aspCode })}
         style={{ cursor: "pointer" }}
@@ -3268,9 +3269,9 @@ export default function DashboardPage() {
                       </button>
                       {card.statusBreakdown.length > 0 ? (
                         <div className="rtplTimeStatusList">
-                          {card.statusBreakdown.map((entry) => (
+                          {card.statusBreakdown.map((entry, entryIndex) => (
                             <div
-                              key={entry.status}
+                              key={`${card.id}-${entry.status || "blank"}-${entryIndex}`}
                               role="button"
                               tabIndex={0}
                               className="rtplTimeStatusItem"
@@ -3365,10 +3366,10 @@ export default function DashboardPage() {
 
                 {flexStatusMetrics.length > 0 ? (
                   <div className="rtplMetricGrid">
-                    {flexStatusMetrics.map((metric) => (
+                    {flexStatusMetrics.map((metric, metricIndex) => (
                       <button
                         className="rtplMetricCard"
-                        key={metric.status}
+                        key={`${metric.status || "blank"}-${metricIndex}`}
                         type="button"
                         onClick={() =>
                           openRecordsWithFilter({

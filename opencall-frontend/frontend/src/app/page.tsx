@@ -299,11 +299,26 @@ const EDITED_RESPONSE_COLUMN: Partial<
 };
 
 function todayIsoDate(): string {
-  const now = new Date();
-  const year = now.getFullYear();
-  const month = String(now.getMonth() + 1).padStart(2, "0");
-  const day = String(now.getDate()).padStart(2, "0");
-  return `${year}-${month}-${day}`;
+  return dateIsoInIst(new Date());
+}
+
+function dateIsoInIst(value: string | Date): string {
+  const date = value instanceof Date ? value : new Date(value);
+
+  if (Number.isNaN(date.getTime())) {
+    return "";
+  }
+
+  const parts = new Intl.DateTimeFormat("en-GB", {
+    timeZone: "Asia/Kolkata",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(date);
+  const partValue = (type: string) =>
+    parts.find((part) => part.type === type)?.value ?? "";
+
+  return `${partValue("year")}-${partValue("month")}-${partValue("day")}`;
 }
 
 function formatDisplayDateOnly(dateStr: string): string {
@@ -731,6 +746,7 @@ export default function DashboardPage() {
    const [engineersList, setEngineersList] = useState<DropdownEngineer[]>([]);
    draftOutputRef.current = draftOutput;
   const [reportDate, setReportDate] = useState(todayIsoDate());
+  const [rtplAnalyticsDate, setRtplAnalyticsDate] = useState(todayIsoDate());
   const [dbHealth, setDbHealth] = useState<DatabaseHealthResponse | null>(null);
   const [runtimeHealth, setRuntimeHealth] =
     useState<RuntimeHealthResponse | null>(null);
@@ -1598,6 +1614,7 @@ export default function DashboardPage() {
     getRtplStatusChanges({
       token: session.token,
       reportId: report.reportId,
+      changeDate: rtplAnalyticsDate,
       limit: RTPL_STATUS_CHANGE_LIMIT,
     })
       .then((changes) => {
@@ -1614,7 +1631,7 @@ export default function DashboardPage() {
     return () => {
       cancelled = true;
     };
-  }, [report?.reportId, session]);
+  }, [report?.reportId, rtplAnalyticsDate, session]);
 
   async function refreshHistory() {
     if (!session) return;
@@ -1732,6 +1749,7 @@ export default function DashboardPage() {
       setSavingSerialNo(null);
       setDraftOutput({});
       setReportDate(todayIsoDate());
+      setRtplAnalyticsDate(todayIsoDate());
       setWorkspaceView("overview");
       setIsUploadDrawerOpen(false);
       
@@ -2046,14 +2064,16 @@ export default function DashboardPage() {
         const change = persisted.rtplStatusChange;
         const changeKey = change.id ?? `${change.rowId}:${change.changedAt}`;
 
-        setRtplStatusChanges((currentChanges) => [
-          change,
-          ...currentChanges.filter(
-            (existingChange) =>
-              (existingChange.id ?? `${existingChange.rowId}:${existingChange.changedAt}`) !==
-              changeKey,
-          ),
-        ].slice(0, RTPL_STATUS_CHANGE_LIMIT));
+        if (dateIsoInIst(change.changedAt) === rtplAnalyticsDate) {
+          setRtplStatusChanges((currentChanges) => [
+            change,
+            ...currentChanges.filter(
+              (existingChange) =>
+                (existingChange.id ?? `${existingChange.rowId}:${existingChange.changedAt}`) !==
+                changeKey,
+            ),
+          ].slice(0, RTPL_STATUS_CHANGE_LIMIT));
+        }
         setMessage(
           `RTPL status changed for WO ${change.ticketId || row.output["Ticket ID"] || serialNo}: ${formatRtplStatusValue(change.fromStatus)} -> ${formatRtplStatusValue(change.toStatus)} at ${formatRtplChangeTime(change.changedAt)}.`,
         );
@@ -3001,9 +3021,21 @@ export default function DashboardPage() {
                   <div>
                     <h3>RTPL Operational Analytics</h3>
                   </div>
-                  <span className="statusBadge neutral">
-                    {rtplAnalyticsRows.length} rows
-                  </span>
+                  <div className="rtplAnalyticsHeaderActions">
+                    <label className="rtplAnalyticsDatePicker">
+                      <span>Activity date</span>
+                      <input
+                        type="date"
+                        value={rtplAnalyticsDate}
+                        onChange={(event) => {
+                          setRtplAnalyticsDate(event.target.value || todayIsoDate());
+                        }}
+                      />
+                    </label>
+                    <span className="statusBadge neutral">
+                      {rtplAnalyticsRows.length} rows
+                    </span>
+                  </div>
                 </div>
 
                 <div className="regionFilterTabs" aria-label="RTPL analytics region filter">

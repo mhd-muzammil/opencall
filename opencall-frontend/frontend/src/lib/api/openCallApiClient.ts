@@ -76,6 +76,7 @@ export interface OpenCallApiClient {
   getRtplStatusChanges(input: {
     token: string;
     reportId: string;
+    changeDate?: string;
     limit?: number;
   }): Promise<RtplStatusChange[]>;
   deleteReportRow(token: string, rowId: string): Promise<{ success: boolean }>;
@@ -226,6 +227,9 @@ export function createOpenCallApiClient({
         reportId: input.reportId,
         limit: String(input.limit ?? 50),
       });
+      if (input.changeDate) {
+        params.set("changeDate", input.changeDate);
+      }
       const response = await fetchImpl(url(`/api/v1/report-rows/rtpl-status-changes?${params.toString()}`), {
         headers: authHeaders(input.token),
       });

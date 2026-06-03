@@ -3170,7 +3170,6 @@ export default function DashboardPage() {
                         onClick={() => openRtplCheckpointModal(card.id)}
                       >
                         <span>{card.label}</span>
-                        <strong>{card.status}</strong>
                         <small>{formatNumber(card.count)} WO</small>
                       </button>
                       {card.statusBreakdown.length > 0 ? (

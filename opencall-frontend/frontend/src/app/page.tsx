@@ -61,6 +61,7 @@ type FileField = "flexWipReport" | "renderwaysReport" | "callPlan";
 type ChangeType = "NEW" | "CLOSED" | "CARRIED" | "UPDATED";
 type ReportRow = GeneratedReportResponse["rows"][number];
 type PrintCaseFilter = "all" | "installation" | "fix";
+type RtplCaseScope = "overall" | "warranty" | "trade";
 type ManualCarryForwardField =
   | "rtpl_status"
   | "segment"
@@ -99,6 +100,16 @@ const TRADE_WO_OTC_CODE_KEYWORD = "TRADE";
 const LAST_HISTORY_SESSION_KEY = "opencall.lastHistorySessionId";
 const RTPL_MODAL_DETAIL_LIMIT = 12;
 const RTPL_STATUS_CHANGE_LIMIT = 200;
+
+const RTPL_CASE_SCOPE_OPTIONS: Array<{
+  value: RtplCaseScope;
+  label: string;
+  description: string;
+}> = [
+  { value: "overall", label: "Overall", description: "All active cases" },
+  { value: "warranty", label: "Warranty", description: "Excludes 01-Trade" },
+  { value: "trade", label: "Trade", description: "01-Trade / non-warranty" },
+];
 
 const CHANGE_TYPE_LABELS: Record<ChangeType, string> = {
   NEW: "New",
@@ -769,6 +780,7 @@ export default function DashboardPage() {
   const [selectedRegion, setSelectedRegion] = useState<string | null>(null);
   const [selectedWoOtcCode, setSelectedWoOtcCode] = useState<string | null>(null);
   const [selectedRtplRegion, setSelectedRtplRegion] = useState<string>(ALL_REGIONS_FILTER);
+  const [selectedRtplCaseScope, setSelectedRtplCaseScope] = useState<RtplCaseScope>("overall");
   const [selectedRtplTimeCardId, setSelectedRtplTimeCardId] = useState<RtplTimeCardId>(
     RTPL_CARRY_FORWARD_TIME_CARD_ID,
   );
@@ -819,6 +831,7 @@ export default function DashboardPage() {
     setSelectedRegion(null);
     setSelectedWoOtcCode(null);
     setSelectedRtplRegion(ALL_REGIONS_FILTER);
+    setSelectedRtplCaseScope("overall");
     setSelectedRtplTimeCardId(RTPL_CARRY_FORWARD_TIME_CARD_ID);
     setSelectedRtplModalStatus(null);
     setIsRtplTimeModalOpen(false);
@@ -1472,23 +1485,61 @@ export default function DashboardPage() {
       .sort((a, b) => b.closedCount - a.closedCount);
   }, [report]);
 
+  const rtplRowsForSelectedScope = useMemo(() => {
+    switch (selectedRtplCaseScope) {
+      case "warranty":
+        return activeRows.filter(isWarrantyCase);
+      case "trade":
+        return activeRows.filter(isTradeCase);
+      case "overall":
+      default:
+        return activeRows;
+    }
+  }, [activeRows, selectedRtplCaseScope]);
+
+  const rtplRowsForSelectedRegion = useMemo(
+    () => filterRowsByRegion(activeRows, selectedRtplRegion),
+    [activeRows, selectedRtplRegion],
+  );
+
+  const rtplCaseScopeOptions = useMemo(
+    () =>
+      RTPL_CASE_SCOPE_OPTIONS.map((option) => {
+        const count =
+          option.value === "warranty"
+            ? rtplRowsForSelectedRegion.filter(isWarrantyCase).length
+            : option.value === "trade"
+              ? rtplRowsForSelectedRegion.filter(isTradeCase).length
+              : rtplRowsForSelectedRegion.length;
+
+        return { ...option, count };
+      }),
+    [rtplRowsForSelectedRegion],
+  );
+
   const rtplRegionOptions = useMemo(() => {
     if (!report) return [];
 
     return [
-      { value: ALL_REGIONS_FILTER, label: "All", count: activeRows.length },
-      ...activeRegionBreakdown.map((entry) => ({
-        value: entry.aspCode,
-        label: entry.regionName,
-        count: entry.count,
-      })),
+      { value: ALL_REGIONS_FILTER, label: "All", count: rtplRowsForSelectedScope.length },
+      ...activeRegionBreakdown.map((entry) => {
+        const scopedCount = rtplRowsForSelectedScope.filter(
+          (row) => row.output["Work Location"] === entry.aspCode,
+        ).length;
+
+        return {
+          value: entry.aspCode,
+          label: entry.regionName,
+          count: scopedCount,
+        };
+      }),
     ];
-  }, [activeRegionBreakdown, activeRows.length, report]);
+  }, [activeRegionBreakdown, report, rtplRowsForSelectedScope]);
 
   const rtplAnalyticsRows = useMemo(() => {
     if (!report) return [];
-    return filterRowsByRegion(activeRows, selectedRtplRegion);
-  }, [activeRows, report, selectedRtplRegion]);
+    return filterRowsByRegion(rtplRowsForSelectedScope, selectedRtplRegion);
+  }, [report, rtplRowsForSelectedScope, selectedRtplRegion]);
 
   const flexStatusMetrics = useMemo(
     () => buildFlexOperationalAnalytics(rtplAnalyticsRows),
@@ -1496,14 +1547,23 @@ export default function DashboardPage() {
   );
 
   const visibleRtplStatusChanges = useMemo(() => {
-    if (selectedRtplRegion === ALL_REGIONS_FILTER) {
-      return rtplStatusChanges;
-    }
-
-    return rtplStatusChanges.filter(
-      (change) => change.workLocation?.trim().toUpperCase() === selectedRtplRegion,
+    const scopedTicketIds = new Set(
+      rtplAnalyticsRows
+        .map((row) => String(row.output["Ticket ID"] ?? "").trim())
+        .filter(Boolean),
     );
-  }, [rtplStatusChanges, selectedRtplRegion]);
+
+    return rtplStatusChanges.filter((change) => {
+      const matchesRegion =
+        selectedRtplRegion === ALL_REGIONS_FILTER ||
+        change.workLocation?.trim().toUpperCase() === selectedRtplRegion;
+      const matchesScope =
+        selectedRtplCaseScope === "overall" ||
+        scopedTicketIds.has(change.ticketId.trim());
+
+      return matchesRegion && matchesScope;
+    });
+  }, [rtplAnalyticsRows, rtplStatusChanges, selectedRtplCaseScope, selectedRtplRegion]);
 
   const rtplTimeCards = useMemo(
     () => buildRtplTimeCards(rtplAnalyticsRows, visibleRtplStatusChanges),
@@ -3048,6 +3108,9 @@ export default function DashboardPage() {
                 <div className="sectionHeader rtplAnalyticsHeader">
                   <div>
                     <h3>RTPL Operational Analytics</h3>
+                    <p>
+                      View RTPL movement by all cases, warranty cases, or 01-Trade non-warranty cases.
+                    </p>
                   </div>
                   <div className="rtplAnalyticsHeaderActions">
                     <label className="rtplAnalyticsDatePicker">
@@ -3064,6 +3127,21 @@ export default function DashboardPage() {
                       {rtplAnalyticsRows.length} rows
                     </span>
                   </div>
+                </div>
+
+                <div className="rtplScopeTabs" aria-label="RTPL analytics case type view">
+                  {rtplCaseScopeOptions.map((option) => (
+                    <button
+                      key={option.value}
+                      type="button"
+                      className={`rtplScopeTab ${selectedRtplCaseScope === option.value ? "active" : ""}`}
+                      onClick={() => setSelectedRtplCaseScope(option.value)}
+                    >
+                      <span>{option.label}</span>
+                      <small>{option.description}</small>
+                      <strong>{formatNumber(option.count)}</strong>
+                    </button>
+                  ))}
                 </div>
 
                 <div className="regionFilterTabs" aria-label="RTPL analytics region filter">
@@ -3116,6 +3194,8 @@ export default function DashboardPage() {
                                       ? null
                                       : selectedRtplRegion,
                                   rtplStatus: entry.status,
+                                  warrantyOnly: selectedRtplCaseScope === "warranty",
+                                  tradeOnly: selectedRtplCaseScope === "trade",
                                 });
                               }}
                               onKeyDown={(event) => {
@@ -3130,6 +3210,8 @@ export default function DashboardPage() {
                                       ? null
                                       : selectedRtplRegion,
                                   rtplStatus: entry.status,
+                                  warrantyOnly: selectedRtplCaseScope === "warranty",
+                                  tradeOnly: selectedRtplCaseScope === "trade",
                                 });
                               }}
                             >
@@ -3150,10 +3232,28 @@ export default function DashboardPage() {
                 <div className="sectionHeader rtplAnalyticsHeader">
                   <div>
                     <h3>Flex Operational Analytics</h3>
+                    <p>
+                      View Flex status load by all cases, warranty cases, or 01-Trade non-warranty cases.
+                    </p>
                   </div>
                   <span className="statusBadge neutral">
                     {rtplAnalyticsRows.length} rows
                   </span>
+                </div>
+
+                <div className="rtplScopeTabs" aria-label="Flex analytics case type view">
+                  {rtplCaseScopeOptions.map((option) => (
+                    <button
+                      key={option.value}
+                      type="button"
+                      className={`rtplScopeTab ${selectedRtplCaseScope === option.value ? "active" : ""}`}
+                      onClick={() => setSelectedRtplCaseScope(option.value)}
+                    >
+                      <span>{option.label}</span>
+                      <small>{option.description}</small>
+                      <strong>{formatNumber(option.count)}</strong>
+                    </button>
+                  ))}
                 </div>
 
                 <div className="regionFilterTabs" aria-label="Flex analytics region filter">
@@ -3184,6 +3284,8 @@ export default function DashboardPage() {
                                 ? null
                                 : selectedRtplRegion,
                             flexStatus: metric.status,
+                            warrantyOnly: selectedRtplCaseScope === "warranty",
+                            tradeOnly: selectedRtplCaseScope === "trade",
                           })
                         }
                         title={`Open ${metric.status} records`}

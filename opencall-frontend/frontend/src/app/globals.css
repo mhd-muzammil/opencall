@@ -2824,6 +2824,13 @@ td.missingCell.carriedForwardCell {
   font-weight: 700;
 }
 
+.rtplAnalyticsHeader p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 600;
+}
+
 .rtplAnalyticsHeaderActions {
   display: inline-flex;
   align-items: center;
@@ -2849,6 +2856,90 @@ td.missingCell.carriedForwardCell {
   background: white;
   color: var(--text);
   font: inherit;
+}
+
+.rtplScopeTabs {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+.rtplScopeTab {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-areas:
+    "label count"
+    "desc count";
+  align-items: center;
+  column-gap: 10px;
+  row-gap: 3px;
+  min-height: 56px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: #ffffff;
+  color: var(--text);
+  cursor: pointer;
+  font: inherit;
+  text-align: left;
+  transition: border-color 120ms ease, background 120ms ease, box-shadow 120ms ease;
+}
+
+.rtplScopeTab span {
+  grid-area: label;
+  min-width: 0;
+  font-size: 13px;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.rtplScopeTab small {
+  grid-area: desc;
+  min-width: 0;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 700;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.rtplScopeTab strong {
+  grid-area: count;
+  min-width: 48px;
+  padding: 5px 9px;
+  border-radius: 999px;
+  background: var(--surface-subtle);
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 900;
+  line-height: 1;
+  text-align: center;
+}
+
+.rtplScopeTab:hover:not(.active),
+.rtplScopeTab:focus-visible {
+  border-color: var(--accent);
+  background: #f8fbff;
+  box-shadow: 0 0 0 3px rgba(68, 62, 230, 0.1);
+  outline: none;
+}
+
+.rtplScopeTab.active {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  color: var(--accent);
+  box-shadow: 0 10px 20px rgba(68, 62, 230, 0.1);
+}
+
+.rtplScopeTab.active small {
+  color: #52627a;
+}
+
+.rtplScopeTab.active strong {
+  background: #ffffff;
+  color: var(--accent);
 }
 
 .regionFilterTabs {
@@ -3370,6 +3461,10 @@ td.missingCell.carriedForwardCell {
 }
 
 @media (max-width: 720px) {
+  .rtplScopeTabs {
+    grid-template-columns: 1fr;
+  }
+
   .rtplTimeCardGrid {
     grid-template-columns: 1fr;
   }

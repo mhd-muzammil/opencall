@@ -116,6 +116,17 @@ code {
   backdrop-filter: blur(14px);
 }
 
+.topBar.compact {
+  width: max-content;
+  min-height: 0;
+  margin-left: auto;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+  padding: 0;
+  backdrop-filter: none;
+}
+
 .topBar h1,
 .panel h2 {
   margin: 0;
@@ -382,6 +393,27 @@ code {
 
 .uploadAction span::before {
   content: "\21e7";
+}
+
+.headerCompactToggle {
+  width: 42px;
+  min-width: 42px;
+  padding: 0;
+}
+
+.headerCompactIcon {
+  width: 22px;
+  height: 22px;
+  color: var(--accent);
+}
+
+.headerCompactIcon path,
+.headerCompactIcon circle {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
 }
 
 .generateAction {
@@ -1933,6 +1965,12 @@ td.missingCell.carriedForwardCell {
 
   .topBar {
     align-items: stretch;
+  }
+
+  .topBar.compact {
+    align-items: center;
+    justify-content: flex-end;
+    width: max-content;
   }
 
   .sectionHeader {

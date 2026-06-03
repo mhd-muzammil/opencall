@@ -2476,168 +2476,216 @@ td.missingCell.carriedForwardCell {
 
 .regionGrid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(210px, 1fr));
-  gap: 12px;
+  grid-template-columns: repeat(auto-fit, minmax(360px, 1fr));
+  gap: 16px;
 }
 
-.regionMetric {
+.regionCard {
   display: flex;
   flex-direction: column;
   align-items: stretch;
   justify-content: flex-start;
-  padding: 12px;
+  padding: 20px;
   background: white;
   border: 1px solid var(--border);
-  border-radius: 8px;
-  box-shadow: 0 8px 20px rgba(15, 23, 42, 0.05);
+  border-radius: 10px;
+  box-shadow: 0 4px 20px rgba(15, 23, 42, 0.03);
   transition: all 0.2s ease;
 }
 
-.regionMetricHeader {
+.regionCard:hover {
+  border-color: var(--accent);
+  background: #fbfbfd;
+  box-shadow: 0 8px 30px rgba(15, 23, 42, 0.06);
+}
+
+.regionCard.active {
+  border: 2px solid var(--accent);
+  background: #f5f3ff;
+  box-shadow: 0 10px 35px rgba(79, 70, 229, 0.12);
+}
+
+.regionCardHeader {
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
   text-align: center;
+  margin-bottom: 14px;
 }
 
-.regionMetric:hover {
-  border-color: var(--accent);
-  background: #f8fafc;
-}
-
-.regionMetric.active {
-  border-color: var(--accent);
-  background: #f0f9ff;
-  box-shadow: 0 0 0 1px var(--accent);
-}
-
-.regionMetricValue {
-  font-size: 34px;
+.regionCardValue {
+  font-size: 38px;
   font-weight: 800;
   color: var(--accent);
   line-height: 1;
   margin-bottom: 4px;
 }
 
-.regionMetricLabel {
-  font-size: 12px;
-  font-weight: 700;
+.regionCardName {
+  font-size: 13px;
+  font-weight: 800;
   color: var(--text);
   text-transform: uppercase;
+  letter-spacing: 0.5px;
 }
 
-.regionMetricSubtext {
+.regionCardSubtitle {
   font-size: 10px;
   color: var(--muted);
   margin-top: 2px;
+  font-weight: 700;
 }
 
-.regionCissMetric {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 10px;
-  min-height: 34px;
-  margin-top: 12px;
-  border: 1px solid #c7d2fe;
-  border-radius: 6px;
-  background: #eef2ff;
-  color: var(--text);
-  padding: 6px 9px;
-  cursor: pointer;
-  transition: border-color 120ms ease, background 120ms ease, box-shadow 120ms ease;
-}
-
-.regionCissMetric:hover,
-.regionCissMetric:focus-visible {
-  border-color: var(--accent);
-  background: #e6ebff;
-  box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.1);
-  outline: none;
-}
-
-.regionCissMetric span {
-  color: var(--muted);
-  font-size: 11px;
-  font-weight: 800;
-  text-transform: uppercase;
-}
-
-.regionCissMetric strong {
-  min-width: 28px;
-  border-radius: 999px;
-  background: #ffffff;
-  color: var(--accent);
-  padding: 3px 8px;
-  font-size: 13px;
-  font-weight: 900;
-  text-align: center;
-}
-
-.regionSegmentMetrics {
+.regionSegmentGrid {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: 1fr 1fr;
   gap: 8px;
-  margin-top: 8px;
+  margin-bottom: 14px;
 }
 
-.regionSegmentMetric {
+.regionSegmentBox {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 8px;
-  min-height: 34px;
+  padding: 6px 12px;
+  background: white;
   border: 1px solid var(--border);
   border-radius: 6px;
+  transition: all 0.15s ease;
+  min-height: 34px;
+}
+
+.regionCard.active .regionSegmentBox {
   background: #ffffff;
-  color: var(--text);
-  padding: 6px 8px;
-  cursor: pointer;
-  text-align: left;
-  transition: border-color 120ms ease, background 120ms ease, box-shadow 120ms ease;
 }
 
-.regionSegmentMetric:hover,
-.regionSegmentMetric:focus-visible {
+.regionSegmentBox:hover {
   border-color: var(--accent);
-  background: #f8fbff;
-  box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.1);
-  outline: none;
+  background: var(--surface-subtle);
+  box-shadow: 0 2px 8px rgba(79, 70, 229, 0.08);
 }
 
-.regionSegmentMetric span {
-  color: var(--muted);
-  font-size: 11px;
-  font-weight: 800;
-  text-transform: uppercase;
-}
-
-.regionSegmentMetric strong {
-  min-width: 28px;
-  border-radius: 999px;
+.regionSegmentBox.active {
+  border-color: var(--accent);
   background: var(--accent-soft);
-  color: var(--accent);
-  padding: 3px 8px;
-  font-size: 13px;
+}
+
+.segmentLabel {
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.segmentCount {
+  font-size: 12px;
   font-weight: 900;
+  color: var(--accent);
+  background: var(--accent-soft);
+  padding: 2px 8px;
+  border-radius: 999px;
+  min-width: 24px;
   text-align: center;
+}
+
+.regionSegmentBox:hover .segmentCount,
+.regionSegmentBox.active .segmentCount {
+  background: white;
+}
+
+.regionCardDetailsGrid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  border-top: 1px dashed var(--border);
+  padding-top: 14px;
+  margin-bottom: 14px;
+}
+
+.regionCardDetailsCol {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.regionDetailMetricCard {
+  background: white;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 8px 10px;
+  transition: all 0.15s ease;
+}
+
+.regionCard.active .regionDetailMetricCard {
+  background: #ffffff;
+}
+
+.regionDetailMetricCard:hover {
+  border-color: var(--accent);
+  background: var(--surface-subtle);
+}
+
+.regionDetailMetricCard.active {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.regionDetailMetricHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.regionDetailMetricTitle {
+  font-size: 10.5px;
+  font-weight: 800;
+  color: var(--text);
+}
+
+.regionDetailMetricCount {
+  font-size: 11px;
+  font-weight: 900;
+  color: var(--accent);
+  background: var(--accent-soft);
+  padding: 2px 6px;
+  border-radius: 4px;
+  min-width: 20px;
+  text-align: center;
+}
+
+.regionDetailMetricCard:hover .regionDetailMetricCount,
+.regionDetailMetricCard.active .regionDetailMetricCount {
+  background: white;
+}
+
+.regionDetailMetricSubtext {
+  font-size: 9px;
+  color: var(--muted);
+  font-weight: 600;
+  margin-top: 4px;
+}
+
+.regionWoOtcHeader {
+  font-size: 9.5px;
+  font-weight: 800;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  text-align: center;
+  margin-bottom: 4px;
 }
 
 .regionWoOtcList {
-  margin-top: 12px;
-  border-top: 1px solid var(--border);
-  padding-top: 8px;
   display: flex;
   flex-direction: column;
   gap: 4px;
-  max-height: 250px;
+  max-height: 205px;
   overflow-y: auto;
-  padding-right: 4px;
+  padding-right: 2px;
 }
 
 .regionWoOtcList::-webkit-scrollbar {
-  width: 4px;
+  width: 3px;
 }
 
 .regionWoOtcList::-webkit-scrollbar-track {
@@ -2646,24 +2694,24 @@ td.missingCell.carriedForwardCell {
 
 .regionWoOtcList::-webkit-scrollbar-thumb {
   background: #cbd5e1;
-  border-radius: 4px;
+  border-radius: 3px;
 }
 
 .regionWoOtcItem {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  font-size: 11px;
-  padding: 4px 6px;
+  font-size: 10px;
+  padding: 4px 8px;
   border-radius: 4px;
-  background: var(--surface-subtle);
+  background: #f1f5f9;
   color: var(--text);
-  cursor: pointer;
-  transition: all 0.2s ease;
+  transition: all 0.15s ease;
 }
 
 .regionWoOtcItem:hover {
   background: #e2e8f0;
+  border-color: var(--accent);
 }
 
 .regionWoOtcItem.active {
@@ -2671,25 +2719,96 @@ td.missingCell.carriedForwardCell {
   color: white;
 }
 
-.regionClosedItem {
-  border: 1px solid #fecaca;
-  background: #fff1f2;
+.regionWoOtcCode {
+  font-weight: 700;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 130px;
 }
 
-.regionClosedItem:hover {
-  background: #ffe4e6;
+.regionWoOtcCount {
+  font-weight: 800;
+  background: rgba(0, 0, 0, 0.05);
+  padding: 1px 5px;
+  border-radius: 4px;
+  font-size: 9.5px;
 }
 
-.regionClosedItem .regionWoOtcCode,
-.regionClosedItem .regionWoOtcCount {
-  color: #b91c1c;
+.regionWoOtcItem.active .regionWoOtcCount {
+  background: rgba(255, 255, 255, 0.2);
+  color: white;
 }
 
-.regionClosedItem.active,
-.regionClosedItem.active .regionWoOtcCode,
-.regionClosedItem.active .regionWoOtcCount {
-  background: #dc2626;
-  color: #ffffff;
+.regionWoOtcEmpty {
+  font-size: 10px;
+  color: var(--muted);
+  text-align: center;
+  padding: 12px;
+  font-style: italic;
+}
+
+.regionTradeSection {
+  border-top: 1px dashed var(--border);
+  padding-top: 14px;
+  text-align: center;
+}
+
+.regionTradeHeader {
+  font-size: 11px;
+  font-weight: 800;
+  text-transform: uppercase;
+  color: var(--accent);
+  margin-bottom: 8px;
+  letter-spacing: 0.5px;
+}
+
+.regionTradeGrid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.regionTradeMetricCard {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  background: white;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 8px;
+  transition: all 0.15s ease;
+}
+
+.regionCard.active .regionTradeMetricCard {
+  background: #ffffff;
+}
+
+.regionTradeMetricCard:hover {
+  border-color: var(--accent);
+  background: var(--surface-subtle);
+  box-shadow: 0 2px 8px rgba(79, 70, 229, 0.06);
+}
+
+.regionTradeMetricLabel {
+  font-size: 10px;
+  font-weight: 800;
+  color: var(--text);
+}
+
+.regionTradeMetricSubtext {
+  font-size: 8px;
+  color: var(--muted);
+  font-weight: 700;
+  margin-top: 2px;
+}
+
+.regionTradeMetricValue {
+  font-size: 18px;
+  font-weight: 900;
+  color: var(--accent);
+  margin-top: 4px;
 }
 
 .closedCallsSection {

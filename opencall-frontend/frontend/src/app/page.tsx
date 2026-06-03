@@ -2576,7 +2576,7 @@ export default function DashboardPage() {
               openRecordsWithFilter({ region: aspCode, nonWarrantyOnly: true });
             }}
           >
-            <span className="segmentLabel">Non-Warranty</span>
+            <span className="segmentLabel">Trade</span>
             <span className="segmentCount">{stats.nonWarrantyCount}</span>
           </div>
         </div>

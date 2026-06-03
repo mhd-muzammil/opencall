@@ -1376,12 +1376,16 @@ code {
 }
 
 .recordsMode .reportPanel {
-  padding: 18px;
+  padding: 10px;
 }
 
 .recordsMode .tableWrap {
-  max-height: calc(100vh - 260px);
-  border-radius: 10px;
+  max-height: calc(100vh - 258px);
+  border-radius: 8px;
+}
+
+.recordsMode .recordsArea.summaryHidden .tableWrap {
+  max-height: calc(100vh - 132px);
 }
 
 .recordsHero {
@@ -1395,10 +1399,26 @@ code {
   padding: 18px;
 }
 
+.recordsMode .recordsArea {
+  gap: 8px;
+}
+
+.recordsMode .recordsHero {
+  grid-template-columns: minmax(260px, 0.95fr) minmax(520px, 1.25fr);
+  gap: 12px;
+  align-items: center;
+  border-radius: 8px;
+  padding: 10px 12px;
+}
+
 .recordsHero h2 {
   margin: 0;
   font-size: 30px;
   line-height: 1.1;
+}
+
+.recordsMode .recordsHero h2 {
+  font-size: 22px;
 }
 
 .recordsHero p:not(.eyebrow) {
@@ -1408,10 +1428,45 @@ code {
   font-weight: 700;
 }
 
+.recordsMode .recordsHero p:not(.eyebrow) {
+  margin-top: 4px;
+  font-size: 12px;
+}
+
+.recordsMode .recordsHero .eyebrow {
+  margin-bottom: 2px;
+  font-size: 11px;
+}
+
 .recordsHeroStats {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 10px;
+}
+
+.recordsMode .recordsHeroStats {
+  gap: 8px;
+}
+
+.recordsMode .recordsHeroStats .overviewStat {
+  gap: 4px;
+  min-height: 74px;
+  border-radius: 8px;
+  padding: 10px 12px;
+  box-shadow: none;
+}
+
+.recordsMode .recordsHeroStats .overviewStat span {
+  font-size: 11px;
+}
+
+.recordsMode .recordsHeroStats .overviewStat strong {
+  font-size: 30px;
+  line-height: 0.95;
+}
+
+.recordsMode .recordsHeroStats .overviewStat small {
+  font-size: 11px;
 }
 
 table {
@@ -1420,6 +1475,11 @@ table {
   border-collapse: separate;
   border-spacing: 0;
   background: #ffffff;
+}
+
+.recordsMode table {
+  min-width: max-content;
+  table-layout: fixed;
 }
 
 th,
@@ -1464,6 +1524,78 @@ td {
   border-bottom: 1px solid #f1f5f9;
 }
 
+.recordsMode th,
+.recordsMode td {
+  padding: 7px 8px;
+}
+
+.recordsMode .reportColumn {
+  max-width: 180px;
+}
+
+.recordsMode .reportColumn-s-no {
+  width: 54px;
+  min-width: 54px;
+}
+
+.recordsMode .reportColumn-ticket-id {
+  width: 136px;
+  min-width: 136px;
+}
+
+.recordsMode .reportColumn-case-id,
+.recordsMode .reportColumn-location,
+.recordsMode .reportColumn-work-location,
+.recordsMode .reportColumn-wo-otc-code,
+.recordsMode .reportColumn-wip-aging,
+.recordsMode .reportColumn-status-aging,
+.recordsMode .reportColumn-tat {
+  width: 86px;
+  min-width: 76px;
+}
+
+.recordsMode .reportColumn-segment,
+.recordsMode .reportColumn-engineer,
+.recordsMode .reportColumn-wip-aging-category {
+  width: 106px;
+  min-width: 92px;
+}
+
+.recordsMode .reportColumn-rtpl-status,
+.recordsMode .reportColumn-flex-status,
+.recordsMode .reportColumn-hp-owner-status {
+  width: 170px;
+  min-width: 150px;
+}
+
+.recordsMode .reportColumn-part,
+.recordsMode .reportColumn-product-name,
+.recordsMode .reportColumn-product-s-no,
+.recordsMode .reportColumn-product-line-name,
+.recordsMode .reportColumn-account-name,
+.recordsMode .reportColumn-customer-name,
+.recordsMode .reportColumn-contact,
+.recordsMode .reportColumn-customer-mail,
+.recordsMode .reportColumn-rca,
+.recordsMode .reportColumn-case-created-time {
+  width: 132px;
+  min-width: 112px;
+}
+
+.recordsMode td.reportColumn:not(.reportColumn-ticket-id) {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.recordsMode th {
+  font-size: 10px;
+}
+
+.recordsMode td {
+  font-size: 12px;
+  line-height: 1.25;
+}
+
 tbody tr:nth-child(even) td {
   background: #f8fafc;
 }
@@ -1477,8 +1609,18 @@ tbody tr:hover td {
   overflow: visible;
 }
 
+.recordsMode .changeCell {
+  width: 86px;
+  min-width: 76px;
+}
+
 .opsCell {
   min-width: 124px;
+}
+
+.recordsMode .opsCell {
+  width: 92px;
+  min-width: 84px;
 }
 
 .stickyActionColumn {
@@ -1488,6 +1630,11 @@ tbody tr:hover td {
   background: #ffffff;
   border-left: 1px solid var(--border);
   box-shadow: -4px 0 10px rgba(15, 23, 42, 0.02);
+}
+
+.recordsMode .stickyActionColumn {
+  width: 82px;
+  min-width: 82px;
 }
 
 tbody tr:nth-child(even) td.stickyActionColumn {
@@ -1714,6 +1861,12 @@ td.missingCell {
   position: relative;
 }
 
+.recordsMode td.missingCell,
+.recordsMode td.carriedForwardCell,
+.recordsMode td.missingCell.carriedForwardCell {
+  border-left-width: 2px;
+}
+
 td.missingCell::after {
   content: "";
   position: absolute;
@@ -1752,6 +1905,11 @@ td.missingCell.carriedForwardCell {
   max-width: 320px;
 }
 
+.recordsMode .cellValueWrap {
+  gap: 4px;
+  max-width: 260px;
+}
+
 .cellValueWrap > span:first-child {
   min-width: 0;
   overflow: hidden;
@@ -1767,10 +1925,22 @@ td.missingCell.carriedForwardCell {
   font-weight: 600;
 }
 
+.recordsMode .cellCarryFlag {
+  min-height: 16px;
+  padding: 2px 5px;
+  font-size: 9px;
+}
+
 .cellInput {
   min-width: 180px;
   min-height: 34px;
   padding: 6px 8px;
+}
+
+.recordsMode .cellInput {
+  min-height: 28px;
+  padding: 4px 7px;
+  font-size: 12px;
 }
 
 .rowActions {
@@ -1788,6 +1958,13 @@ td.missingCell.carriedForwardCell {
   display: inline-flex;
   align-items: center;
   gap: 4px;
+}
+
+.recordsMode .rowActions button,
+.recordsMode .stickyActionColumn > button.secondaryButton {
+  min-height: 28px;
+  padding: 3px 10px;
+  font-size: 12px;
 }
 
 /* Edit / Save / Cancel / Delete button specific designs */
@@ -1877,6 +2054,18 @@ td.missingCell.carriedForwardCell {
     grid-template-columns: 1fr;
   }
 
+  .recordsToolbar,
+  .recordsToolbarRight {
+    align-items: stretch;
+    flex-direction: column;
+    width: 100%;
+    min-width: 0;
+  }
+
+  .recordsMode .recordsSearchBar {
+    width: 100%;
+  }
+
   .segmentSplitGrid {
     grid-template-columns: 1fr;
   }
@@ -1904,15 +2093,40 @@ td.missingCell.carriedForwardCell {
   margin-bottom: 16px;
 }
 
+.recordsMode .downloadActions {
+  margin-bottom: 0;
+}
+
+.recordsToolbar {
+  align-items: center;
+}
+
+.recordsToolbarRight {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+  min-width: min(620px, 100%);
+}
+
 .downloadActionGroup {
   display: flex;
   flex-wrap: wrap;
   gap: 12px;
 }
 
+.recordsMode .downloadActionGroup {
+  gap: 8px;
+}
+
 .recordsSearchBar {
   width: min(440px, 100%);
   margin: -4px 0 14px;
+}
+
+.recordsMode .recordsSearchBar {
+  width: min(360px, 42vw);
+  margin: 0;
 }
 
 .recordsSearchBar input {
@@ -1921,10 +2135,20 @@ td.missingCell.carriedForwardCell {
   background: #ffffff;
 }
 
+.recordsMode .recordsSearchBar input {
+  min-height: 34px;
+  padding: 6px 10px;
+}
+
 .backToDashboardButton {
   min-height: 50px;
   padding: 0 18px;
   white-space: nowrap;
+}
+
+.recordsMode .backToDashboardButton {
+  min-height: 36px;
+  padding: 0 12px;
 }
 
 .downloadBtn {
@@ -1939,6 +2163,12 @@ td.missingCell.carriedForwardCell {
   border: 1px solid transparent;
   cursor: pointer;
   transition: all 0.2s ease;
+}
+
+.recordsMode .downloadBtn {
+  min-height: 36px;
+  padding: 6px 12px;
+  font-size: 12px;
 }
 
 .excelBtn {
@@ -3217,6 +3447,13 @@ th .colFilterWrap {
 
 .colFilterBtn.active:hover {
   background: var(--accent-strong);
+}
+
+.recordsMode .colFilterBtn {
+  width: 18px;
+  height: 18px;
+  min-width: 18px;
+  min-height: 18px;
 }
 
 /* Active filter indicator dot */

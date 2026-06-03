@@ -176,6 +176,13 @@ function normalizeWoOtcCode(value: string | number | null | undefined): string {
     .replace(/\s+/g, " ");
 }
 
+function tableColumnClassName(column: string): string {
+  return `reportColumn reportColumn-${column
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-|-$/g, "")}`;
+}
+
 function getWoOtcCodePrefix(value: string | number | null | undefined): string {
   return normalizeWoOtcCode(value).match(/^[A-Z0-9]+/)?.[0] ?? "";
 }
@@ -743,6 +750,7 @@ export default function DashboardPage() {
    const [isEditModalOpen, setIsEditModalOpen] = useState(false);
    const draftOutputRef = useRef(draftOutput);
    const hasAutoRestoredHistoryRef = useRef(false);
+   const recordsTableWrapRef = useRef<HTMLDivElement | null>(null);
    const [engineersList, setEngineersList] = useState<DropdownEngineer[]>([]);
    draftOutputRef.current = draftOutput;
   const [reportDate, setReportDate] = useState(todayIsoDate());
@@ -783,9 +791,29 @@ export default function DashboardPage() {
   const [wipAgingSort, setWipAgingSort] = useState<WipAgingSortDirection | null>(null);
   const [recordsSearchQuery, setRecordsSearchQuery] = useState("");
   const [workspaceView, setWorkspaceView] = useState<"overview" | "records">("overview");
+  const [isRecordsSummaryHidden, setIsRecordsSummaryHidden] = useState(false);
   const [showDayOverDayComparison, setShowDayOverDayComparison] = useState(false);
   const [showMatchPreviewSection, setShowMatchPreviewSection] = useState(false);
   const [showManualCarryForward, setShowManualCarryForward] = useState(false);
+
+  useEffect(() => {
+    if (workspaceView !== "records") {
+      setIsRecordsSummaryHidden(false);
+      return;
+    }
+
+    const handleWindowScroll = () => {
+      const tableScrolled = (recordsTableWrapRef.current?.scrollTop ?? 0) > 0;
+      setIsRecordsSummaryHidden(window.scrollY > 24 || tableScrolled);
+    };
+
+    handleWindowScroll();
+    window.addEventListener("scroll", handleWindowScroll, { passive: true });
+
+    return () => {
+      window.removeEventListener("scroll", handleWindowScroll);
+    };
+  }, [workspaceView]);
 
   useEffect(() => {
     setSelectedRegion(null);
@@ -3230,31 +3258,33 @@ export default function DashboardPage() {
               </div>
               </div>
 
-              <div className="recordsArea">
-                <div className="recordsHero">
-                <div>
-                  <p className="eyebrow">OpenCall</p>
-                  <h2>Records Workspace</h2>
-                  <p>
-                    {formatNumber(filteredRows.length)} of {formatNumber(regionFilteredRows.length)} records shown
-                    {recordsFilterLabel ? ` for ${recordsFilterLabel}` : ""}
-                  </p>
-                </div>
-                <div className="recordsHeroStats">
-                    <OverviewStat label="Visible" value={filteredRows.length} detail="After filters" />
-                    <OverviewStat label="Total" value={regionFilteredRows.length} detail="Current scope" tone="blue" />
-                    <OverviewStat
-                      label="Closed"
-                      value={scopedClosedRows.length}
-                      detail="Closed calls"
-                      tone="danger"
-                      onClick={() => openRecordsWithFilter({ closedOnly: true })}
-                      isActive={showClosedOnly}
-                    />
-                    <OverviewStat label="Manual" value={scopedManualCellCount} detail="Fields to complete" tone={scopedManualCellCount > 0 ? "danger" : "accent"} />
+              <div className={`recordsArea ${isRecordsSummaryHidden ? "summaryHidden" : ""}`}>
+                {!isRecordsSummaryHidden ? (
+                  <div className="recordsHero">
+                  <div>
+                    <p className="eyebrow">OpenCall</p>
+                    <h2>Records Workspace</h2>
+                    <p>
+                      {formatNumber(filteredRows.length)} of {formatNumber(regionFilteredRows.length)} records shown
+                      {recordsFilterLabel ? ` for ${recordsFilterLabel}` : ""}
+                    </p>
                   </div>
-                </div>
-              <div className="downloadActions">
+                  <div className="recordsHeroStats">
+                      <OverviewStat label="Visible" value={filteredRows.length} detail="After filters" />
+                      <OverviewStat label="Total" value={regionFilteredRows.length} detail="Current scope" tone="blue" />
+                      <OverviewStat
+                        label="Closed"
+                        value={scopedClosedRows.length}
+                        detail="Closed calls"
+                        tone="danger"
+                        onClick={() => openRecordsWithFilter({ closedOnly: true })}
+                        isActive={showClosedOnly}
+                      />
+                      <OverviewStat label="Manual" value={scopedManualCellCount} detail="Fields to complete" tone={scopedManualCellCount > 0 ? "danger" : "accent"} />
+                    </div>
+                  </div>
+                ) : null}
+              <div className="downloadActions recordsToolbar">
                 <div className="downloadActionGroup">
                   <button
                     className="downloadBtn excelBtn"
@@ -3299,23 +3329,25 @@ export default function DashboardPage() {
                     </button>
                   )}
                 </div>
-                <button
-                  type="button"
-                  className="secondaryButton backToDashboardButton"
-                  onClick={() => setWorkspaceView("overview")}
-                >
-                  Back to Dashboard
-                </button>
-              </div>
-              <div className="recordsSearchBar">
-                <input
-                  id="records-search"
-                  type="search"
-                  value={recordsSearchQuery}
-                  aria-label="Search records"
-                  placeholder="Search WO, case ID, trade..."
-                  onChange={(event) => setRecordsSearchQuery(event.target.value)}
-                />
+                <div className="recordsToolbarRight">
+                  <div className="recordsSearchBar">
+                    <input
+                      id="records-search"
+                      type="search"
+                      value={recordsSearchQuery}
+                      aria-label="Search records"
+                      placeholder="Search WO, case ID, trade..."
+                      onChange={(event) => setRecordsSearchQuery(event.target.value)}
+                    />
+                  </div>
+                  <button
+                    type="button"
+                    className="secondaryButton backToDashboardButton"
+                    onClick={() => setWorkspaceView("overview")}
+                  >
+                    Back to Dashboard
+                  </button>
+                </div>
               </div>
 
 
@@ -3348,7 +3380,14 @@ export default function DashboardPage() {
                 </div>
               )}
 
-              <div className="tableWrap">
+              <div
+                className="tableWrap"
+                ref={recordsTableWrapRef}
+                onScroll={(event) => {
+                  const hasTableScroll = event.currentTarget.scrollTop > 0;
+                  setIsRecordsSummaryHidden(hasTableScroll || window.scrollY > 24);
+                }}
+              >
                 <table>
                   <thead>
                     <tr>
@@ -3358,7 +3397,7 @@ export default function DashboardPage() {
                         const uniqueVals = colFilters.uniqueValuesMap.get(column) ?? [];
 
                         return (
-                          <th key={column}>
+                          <th key={column} className={tableColumnClassName(column)}>
                             {column}
                             {isFilterable && (
                               <ColumnFilterDropdown
@@ -3423,6 +3462,7 @@ export default function DashboardPage() {
                               <td
                                 key={column}
                                 className={[
+                                  tableColumnClassName(column),
                                   isManualRequired || needsManualEntry ? "missingCell" : "",
                                   isCarriedForward ? "carriedForwardCell" : "",
                                 ].filter(Boolean).join(" ") || undefined}

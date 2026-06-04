@@ -262,26 +262,10 @@ export function downloadRegionSummaryExcel(
   const engineerCount = uniqueEngineers.length;
 
   const getRowStatus = (r: GeneratedReportResponse["rows"][number]): string => {
-    const rtplStatus = isBod
-      ? String(r.comparison?.previousRtplStatus || r.output["RTPL status"] || "").trim()
-      : String(r.output["RTPL status"] || "").trim();
-    if (rtplStatus && rtplStatus !== "Manual Entry Required") {
-      return rtplStatus;
-    }
-    
-    const flexStatus = isBod
-      ? String(r.comparison?.previousFlexStatus || r.output["Flex Status"] || "").trim()
-      : String(r.output["Flex Status"] || "").trim();
-    if (flexStatus && flexStatus !== "Manual Entry Required") {
-      return flexStatus;
-    }
-
-    const hpOwnerStatus = String(r.output["HP Owner Status"] || "").trim();
-    if (hpOwnerStatus && hpOwnerStatus !== "Manual Entry Required") {
-      return hpOwnerStatus;
-    }
-
-    return "";
+    return (isBod
+      ? String(r.comparison?.previousRtplStatus || r.output["RTPL status"] || "")
+      : String(r.output["RTPL status"] || "")
+    ).trim();
   };
 
   const matchStatus = (

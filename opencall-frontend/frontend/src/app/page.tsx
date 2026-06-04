@@ -111,6 +111,14 @@ const RTPL_CASE_SCOPE_OPTIONS: Array<{
   { value: "trade", label: "Trade", description: "01-Trade / non-warranty" },
 ];
 
+const PIVOT_LOCATION_OPTIONS: Array<{ value: string; label: string }> = [
+  { value: "ASPS01461", label: "Chennai" },
+  { value: "ASPS01463", label: "Vellore" },
+  { value: "ASPS01465", label: "Salem" },
+  { value: "ASPS01489", label: "Kanchipuram" },
+  { value: "ASPS01511", label: "Hosur" },
+];
+
 const CHANGE_TYPE_LABELS: Record<ChangeType, string> = {
   NEW: "New",
   CLOSED: "Closed",
@@ -1066,6 +1074,9 @@ export default function DashboardPage() {
   const [selectedPivotSegments, setSelectedPivotSegments] = useState<string[] | null>(null);
   const [draftPivotSegments, setDraftPivotSegments] = useState<string[] | null>(null);
   const [isPivotSegmentFilterOpen, setIsPivotSegmentFilterOpen] = useState(false);
+  const [selectedPivotLocations, setSelectedPivotLocations] = useState<string[] | null>(null);
+  const [draftPivotLocations, setDraftPivotLocations] = useState<string[] | null>(null);
+  const [isPivotLocationFilterOpen, setIsPivotLocationFilterOpen] = useState(false);
   const [selectedRtplTimeCardId, setSelectedRtplTimeCardId] = useState<RtplTimeCardId>(
     RTPL_CARRY_FORWARD_TIME_CARD_ID,
   );
@@ -1123,6 +1134,9 @@ export default function DashboardPage() {
     setSelectedPivotSegments(null);
     setDraftPivotSegments(null);
     setIsPivotSegmentFilterOpen(false);
+    setSelectedPivotLocations(null);
+    setDraftPivotLocations(null);
+    setIsPivotLocationFilterOpen(false);
     setSelectedRtplTimeCardId(RTPL_CARRY_FORWARD_TIME_CARD_ID);
     setSelectedRtplModalStatus(null);
     setIsRtplTimeModalOpen(false);
@@ -1146,7 +1160,7 @@ export default function DashboardPage() {
     return report.rows.filter(isTodayCallPlanVisibleRow);
   }, [report]);
 
-  const pivotBaseRows = useMemo(() => {
+  const pivotCaseRows = useMemo(() => {
     switch (selectedPivotCaseScope) {
       case "warranty":
         return activeRows.filter(isWarrantyCase);
@@ -1158,6 +1172,17 @@ export default function DashboardPage() {
     }
   }, [activeRows, selectedPivotCaseScope]);
 
+  const pivotBaseRows = useMemo(() => {
+    if (selectedPivotLocations === null) {
+      return pivotCaseRows;
+    }
+
+    const selectedLocationSet = new Set(selectedPivotLocations);
+    return pivotCaseRows.filter((row) =>
+      selectedLocationSet.has(String(row.output["Work Location"] ?? "").trim().toUpperCase()),
+    );
+  }, [pivotCaseRows, selectedPivotLocations]);
+
   const rtplWipPivot = useMemo(
     () => buildRtplWipAgingPivot(pivotBaseRows, selectedPivotSegments),
     [pivotBaseRows, selectedPivotSegments],
@@ -1168,6 +1193,11 @@ export default function DashboardPage() {
     [draftPivotSegments],
   );
 
+  const draftPivotLocationSet = useMemo(
+    () => new Set(draftPivotLocations ?? []),
+    [draftPivotLocations],
+  );
+
   const pivotAllSegmentCount = useMemo(
     () =>
       rtplWipPivot.segmentOptions.reduce(
@@ -1175,6 +1205,22 @@ export default function DashboardPage() {
         0,
       ),
     [rtplWipPivot.segmentOptions],
+  );
+
+  const pivotLocationOptions = useMemo(
+    () =>
+      PIVOT_LOCATION_OPTIONS.map((option) => ({
+        ...option,
+        count: pivotCaseRows.filter(
+          (row) => String(row.output["Work Location"] ?? "").trim().toUpperCase() === option.value,
+        ).length,
+      })),
+    [pivotCaseRows],
+  );
+
+  const pivotAllLocationCount = useMemo(
+    () => pivotLocationOptions.reduce((total, option) => total + option.count, 0),
+    [pivotLocationOptions],
   );
 
   const appliedPivotSegmentLabel =
@@ -1187,6 +1233,17 @@ export default function DashboardPage() {
           : `${selectedPivotSegments.length} Segments`;
 
   const pivotSegmentFilterActive = selectedPivotSegments !== null;
+
+  const appliedPivotLocationLabel =
+    selectedPivotLocations === null
+      ? "All Locations"
+      : selectedPivotLocations.length === 0
+        ? "No Locations"
+        : selectedPivotLocations.length === 1
+          ? PIVOT_LOCATION_OPTIONS.find((option) => option.value === selectedPivotLocations[0])?.label ?? selectedPivotLocations[0]
+          : `${selectedPivotLocations.length} Locations`;
+
+  const pivotLocationFilterActive = selectedPivotLocations !== null;
 
   const cissRows = useMemo(() => {
     return activeRows.filter(isCissCase);
@@ -2627,6 +2684,7 @@ export default function DashboardPage() {
     flexStatus,
     segment,
     segments,
+    workLocations,
     wipAging,
     printCase = null,
     cissOnly = false,
@@ -2644,6 +2702,7 @@ export default function DashboardPage() {
     flexStatus?: string | null;
     segment?: string | null;
     segments?: readonly string[] | null;
+    workLocations?: readonly string[] | null;
     wipAging?: string | null;
     printCase?: PrintCaseFilter | null;
     cissOnly?: boolean;
@@ -2680,6 +2739,9 @@ export default function DashboardPage() {
     if (segments !== null && segments !== undefined) {
       colFilters.setColumnFilter("Segment", new Set(segments));
     }
+    if (workLocations !== null && workLocations !== undefined) {
+      colFilters.setColumnFilter("Work Location", new Set(workLocations));
+    }
     if (wipAging) {
       colFilters.setColumnFilter("WIP aging", new Set([wipAging]));
     }
@@ -2712,6 +2774,32 @@ export default function DashboardPage() {
     setIsPivotSegmentFilterOpen(false);
   }
 
+  function openPivotLocationFilter(): void {
+    setDraftPivotLocations(selectedPivotLocations);
+    setIsPivotLocationFilterOpen(true);
+  }
+
+  function toggleDraftPivotLocation(location: string): void {
+    setDraftPivotLocations((current) => {
+      const currentValues = current ?? PIVOT_LOCATION_OPTIONS.map((option) => option.value);
+
+      return currentValues.includes(location)
+        ? currentValues.filter((value) => value !== location)
+        : [...currentValues, location];
+    });
+  }
+
+  function applyPivotLocationFilter(): void {
+    const allLocations = PIVOT_LOCATION_OPTIONS.map((option) => option.value);
+    const nextSelection =
+      draftPivotLocations !== null && draftPivotLocations.length === allLocations.length
+        ? null
+        : draftPivotLocations;
+
+    setSelectedPivotLocations(nextSelection);
+    setIsPivotLocationFilterOpen(false);
+  }
+
   function openPivotRecords({
     rtplStatus,
     wipAging,
@@ -2721,6 +2809,7 @@ export default function DashboardPage() {
   }>): void {
     openRecordsWithFilter({
       segments: selectedPivotSegments,
+      workLocations: selectedPivotLocations,
       rtplStatus: rtplStatus ?? null,
       wipAging: wipAging ?? null,
       warrantyOnly: selectedPivotCaseScope === "warranty",
@@ -3723,6 +3812,86 @@ export default function DashboardPage() {
                       ))}
                     </div>
                   </div>
+
+                  <div className="pivotDropdownFilter" aria-label="Pivot location filter">
+                    <span>Location</span>
+                    <div className="pivotDropdownWrap pivotLocationWrap">
+                      <button
+                        type="button"
+                        className={`pivotDropdownTrigger ${pivotLocationFilterActive ? "active" : ""}`}
+                        onClick={() => {
+                          if (isPivotLocationFilterOpen) {
+                            setIsPivotLocationFilterOpen(false);
+                          } else {
+                            openPivotLocationFilter();
+                          }
+                        }}
+                      >
+                        <span>{appliedPivotLocationLabel}</span>
+                        <strong>{formatNumber(rtplWipPivot.grandTotal)}</strong>
+                        <small>▾</small>
+                      </button>
+
+                      {isPivotLocationFilterOpen ? (
+                        <div className="pivotSegmentDropdown pivotLocationDropdown">
+                          <div className="pivotSegmentList pivotLocationList">
+                            <label className="pivotSegmentDropdownItem pivotSegmentDropdownItemAll pivotLocationDropdownItem">
+                              <input
+                                type="checkbox"
+                                checked={draftPivotLocations === null}
+                                onChange={() => setDraftPivotLocations(null)}
+                              />
+                              <span>All locations</span>
+                              <strong>{formatNumber(pivotAllLocationCount)}</strong>
+                            </label>
+
+                            {pivotLocationOptions.map((option) => (
+                              <label className="pivotSegmentDropdownItem pivotLocationDropdownItem" key={option.value}>
+                                <input
+                                  type="checkbox"
+                                  checked={draftPivotLocations === null || draftPivotLocationSet.has(option.value)}
+                                  onChange={() => toggleDraftPivotLocation(option.value)}
+                                />
+                                <span>{option.label}</span>
+                                <strong>{formatNumber(option.count)}</strong>
+                              </label>
+                            ))}
+                          </div>
+
+                          <div className="pivotSegmentActions pivotLocationActions">
+                            <button
+                              type="button"
+                              className="secondary"
+                              onClick={() => setDraftPivotLocations(null)}
+                            >
+                              All
+                            </button>
+                            <button
+                              type="button"
+                              className="secondary"
+                              onClick={() => setDraftPivotLocations([])}
+                            >
+                              None
+                            </button>
+                            <button
+                              type="button"
+                              className="secondary"
+                              onClick={() => setDraftPivotLocations(null)}
+                            >
+                              Clear
+                            </button>
+                            <button
+                              type="button"
+                              className="primary"
+                              onClick={applyPivotLocationFilter}
+                            >
+                              Apply
+                            </button>
+                          </div>
+                        </div>
+                      ) : null}
+                    </div>
+                  </div>
                 </div>
 
                 {rtplWipPivot.rows.length > 0 && rtplWipPivot.columns.length > 0 ? (
@@ -3741,6 +3910,15 @@ export default function DashboardPage() {
                             {" | "}
                             Case Type:{" "}
                             {RTPL_CASE_SCOPE_OPTIONS.find((option) => option.value === selectedPivotCaseScope)?.label ?? "Overall"}
+                            {" | "}
+                            Location:{" "}
+                            {selectedPivotLocations === null
+                              ? "All Locations"
+                              : selectedPivotLocations.length > 0
+                                ? selectedPivotLocations
+                                    .map((location) => PIVOT_LOCATION_OPTIONS.find((option) => option.value === location)?.label ?? location)
+                                    .join(", ")
+                                : "No Locations"}
                           </th>
                         </tr>
                         <tr>

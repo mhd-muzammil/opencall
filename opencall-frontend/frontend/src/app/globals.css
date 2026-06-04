@@ -3374,6 +3374,52 @@ td.missingCell.carriedForwardCell {
   border-color: var(--accent);
 }
 
+.pivotLocationWrap {
+  width: 150px;
+}
+
+.pivotLocationDropdown {
+  width: 240px;
+}
+
+.pivotLocationList {
+  max-height: none;
+  overflow: visible;
+  padding: 4px;
+}
+
+.pivotLocationDropdownItem {
+  gap: 7px;
+  min-height: 28px;
+  padding: 4px 6px;
+}
+
+.pivotLocationDropdownItem input {
+  width: 14px;
+  height: 14px;
+}
+
+.pivotLocationDropdownItem strong {
+  min-width: 24px;
+  padding: 1px 6px;
+}
+
+.pivotLocationActions {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 4px;
+  padding: 6px;
+}
+
+.pivotLocationActions button {
+  min-height: 28px;
+  padding: 0 6px;
+  font-size: 11px;
+}
+
+.pivotLocationActions .primary {
+  grid-column: auto;
+}
+
 .pivotCaseScopeFilter {
   display: inline-flex;
   align-items: center;

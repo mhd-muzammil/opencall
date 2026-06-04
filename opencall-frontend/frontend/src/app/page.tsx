@@ -1095,6 +1095,12 @@ export default function DashboardPage() {
   const [isProductivityModalOpen, setIsProductivityModalOpen] = useState(false);
   const [productivityFilterType, setProductivityFilterType] = useState("Today");
   const [selectedProductivityValue, setSelectedProductivityValue] = useState("");
+  const [tnFilterType, setTnFilterType] = useState("Today");
+  const [selectedTnValue, setSelectedTnValue] = useState("");
+  const [eodBodFilterType, setEodBodFilterType] = useState("Today");
+  const [selectedEodBodValue, setSelectedEodBodValue] = useState("");
+  const [tnViewMode, setTnViewMode] = useState<"BOD" | "EOD">("EOD");
+  const [eodBodViewMode, setEodBodViewMode] = useState<"BOD" | "EOD">("EOD");
   const [printCaseFilter, setPrintCaseFilter] = useState<PrintCaseFilter | null>(null);
   const [wipAgingSort, setWipAgingSort] = useState<WipAgingSortDirection | null>(null);
   const [recordsSearchQuery, setRecordsSearchQuery] = useState("");
@@ -1153,6 +1159,12 @@ export default function DashboardPage() {
     setIsProductivityModalOpen(false);
     setProductivityFilterType("Today");
     setSelectedProductivityValue("");
+    setTnFilterType("Today");
+    setSelectedTnValue("");
+    setEodBodFilterType("Today");
+    setSelectedEodBodValue("");
+    setTnViewMode("EOD");
+    setEodBodViewMode("EOD");
   }, [report?.reportId]);
 
   const activeRows = useMemo(() => {
@@ -1410,6 +1422,232 @@ export default function DashboardPage() {
     });
   }, [report, selectedRegion, selectedWoOtcCode, tableBaseRows]);
 
+  const regionDateMetadata = useMemo(() => {
+    if (!report) return { monthsList: [], datesList: [], todayStr: "" };
+
+    const monthsSet = new Set<string>();
+    const datesSet = new Set<string>();
+
+    const getFormattedReportDate = (reportDateStr: string): string => {
+      const parts = reportDateStr.split("-");
+      if (parts.length === 3 && parts[0] && parts[1] && parts[2] && parts[0].length === 4) {
+        return `${parts[2]}-${parts[1]}-${parts[0]}`;
+      }
+      return reportDateStr;
+    };
+
+    const todayStr = report.reportDate ? getFormattedReportDate(report.reportDate) : "";
+
+    for (const r of regionFilteredRows) {
+      const createdTime = String(r.output["Case Created Time"] ?? "").trim();
+      if (createdTime && createdTime !== MANUAL_ENTRY_REQUIRED) {
+        const match = /^(\d{2})[-/](\d{2})[-/](\d{4})/.exec(createdTime);
+        if (match) {
+          const day = match[1] ?? "";
+          const monthCode = match[2] ?? "";
+          const year = match[3] ?? "";
+          
+          const monthIndex = parseInt(monthCode, 10) - 1;
+          const monthNames = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+          const monthName = monthNames[monthIndex] ?? "Unknown";
+          
+          monthsSet.add(`${monthName} ${year}`);
+          datesSet.add(`${day}-${monthCode}-${year}`);
+        }
+      }
+    }
+
+    const monthsList = Array.from(monthsSet).sort((a, b) => a.localeCompare(b));
+    const datesList = Array.from(datesSet).sort((a, b) => {
+      const parseDMY = (s: string) => {
+        const p = s.split("-");
+        const day = parseInt(p[0] ?? "0", 10);
+        const month = parseInt(p[1] ?? "0", 10) - 1;
+        const year = parseInt(p[2] ?? "0", 10);
+        return new Date(year, month, day).getTime();
+      };
+      return parseDMY(a) - parseDMY(b);
+    });
+
+    return { monthsList, datesList, todayStr };
+  }, [report, regionFilteredRows]);
+
+  const tnFilteredRows = useMemo(() => {
+    if (!report) return [];
+
+    let rows = regionFilteredRows;
+    const todayStr = regionDateMetadata.todayStr;
+
+    if (tnFilterType === "Today" && todayStr) {
+      rows = regionFilteredRows.filter(r => {
+        const createdTime = String(r.output["Case Created Time"] ?? "").trim();
+        if (createdTime && createdTime !== MANUAL_ENTRY_REQUIRED) {
+          const match = /^(\d{2})[-/](\d{2})[-/](\d{4})/.exec(createdTime);
+          if (match) {
+            const rowDate = `${match[1]}-${match[2]}-${match[3]}`;
+            return rowDate === todayStr;
+          }
+        }
+        return false;
+      });
+    } else if (tnFilterType === "Specific Date" && selectedTnValue) {
+      rows = regionFilteredRows.filter(r => {
+        const createdTime = String(r.output["Case Created Time"] ?? "").trim();
+        if (createdTime && createdTime !== MANUAL_ENTRY_REQUIRED) {
+          const match = /^(\d{2})[-/](\d{2})[-/](\d{4})/.exec(createdTime);
+          if (match) {
+            const rowDate = `${match[1]}-${match[2]}-${match[3]}`;
+            return rowDate === selectedTnValue;
+          }
+        }
+        return false;
+      });
+    } else if (tnFilterType === "Specific Month" && selectedTnValue) {
+      rows = regionFilteredRows.filter(r => {
+        const createdTime = String(r.output["Case Created Time"] ?? "").trim();
+        if (createdTime && createdTime !== MANUAL_ENTRY_REQUIRED) {
+          const match = /^(\d{2})[-/](\d{2})[-/](\d{4})/.exec(createdTime);
+          if (match) {
+            const monthCode = match[2] ?? "";
+            const year = match[3] ?? "";
+            const monthIndex = parseInt(monthCode, 10) - 1;
+            const monthNames = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+            const rowMonth = `${monthNames[monthIndex]} ${year}`;
+            return rowMonth === selectedTnValue;
+          }
+        }
+        return false;
+      });
+    }
+
+    return rows;
+  }, [report, regionFilteredRows, tnFilterType, selectedTnValue, regionDateMetadata]);
+
+  useEffect(() => {
+    if (tnFilterType === "Specific Date") {
+      if (!selectedTnValue || !regionDateMetadata.datesList.includes(selectedTnValue)) {
+        setSelectedTnValue(regionDateMetadata.datesList[0] || "");
+      }
+    } else if (tnFilterType === "Specific Month") {
+      if (!selectedTnValue || !regionDateMetadata.monthsList.includes(selectedTnValue)) {
+        setSelectedTnValue(regionDateMetadata.monthsList[0] || "");
+      }
+    } else {
+      setSelectedTnValue("");
+    }
+  }, [tnFilterType, regionDateMetadata.datesList, regionDateMetadata.monthsList, selectedTnValue]);
+
+  const tnDateLabel = useMemo(() => {
+    if (tnFilterType === "Today") {
+      return `Today (${regionDateMetadata.todayStr || ""})`;
+    }
+    if (tnFilterType === "Specific Date") {
+      return selectedTnValue || "Specific Date";
+    }
+    if (tnFilterType === "Specific Month") {
+      return selectedTnValue || "Specific Month";
+    }
+    return "All Dates";
+  }, [tnFilterType, regionDateMetadata.todayStr, selectedTnValue]);
+
+  const eodBodFilteredRows = useMemo(() => {
+    if (!report) return [];
+
+    let rows = regionFilteredRows;
+    const todayStr = regionDateMetadata.todayStr;
+
+    if (eodBodFilterType === "Today" && todayStr) {
+      rows = regionFilteredRows.filter(r => {
+        const createdTime = String(r.output["Case Created Time"] ?? "").trim();
+        if (createdTime && createdTime !== MANUAL_ENTRY_REQUIRED) {
+          const match = /^(\d{2})[-/](\d{2})[-/](\d{4})/.exec(createdTime);
+          if (match) {
+            const rowDate = `${match[1]}-${match[2]}-${match[3]}`;
+            return rowDate === todayStr;
+          }
+        }
+        return false;
+      });
+    } else if (eodBodFilterType === "Specific Date" && selectedEodBodValue) {
+      rows = regionFilteredRows.filter(r => {
+        const createdTime = String(r.output["Case Created Time"] ?? "").trim();
+        if (createdTime && createdTime !== MANUAL_ENTRY_REQUIRED) {
+          const match = /^(\d{2})[-/](\d{2})[-/](\d{4})/.exec(createdTime);
+          if (match) {
+            const rowDate = `${match[1]}-${match[2]}-${match[3]}`;
+            return rowDate === selectedEodBodValue;
+          }
+        }
+        return false;
+      });
+    } else if (eodBodFilterType === "Specific Month" && selectedEodBodValue) {
+      rows = regionFilteredRows.filter(r => {
+        const createdTime = String(r.output["Case Created Time"] ?? "").trim();
+        if (createdTime && createdTime !== MANUAL_ENTRY_REQUIRED) {
+          const match = /^(\d{2})[-/](\d{2})[-/](\d{4})/.exec(createdTime);
+          if (match) {
+            const monthCode = match[2] ?? "";
+            const year = match[3] ?? "";
+            const monthIndex = parseInt(monthCode, 10) - 1;
+            const monthNames = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+            const rowMonth = `${monthNames[monthIndex]} ${year}`;
+            return rowMonth === selectedEodBodValue;
+          }
+        }
+        return false;
+      });
+    }
+
+    return rows;
+  }, [report, regionFilteredRows, eodBodFilterType, selectedEodBodValue, regionDateMetadata]);
+
+  useEffect(() => {
+    if (eodBodFilterType === "Specific Date") {
+      if (!selectedEodBodValue || !regionDateMetadata.datesList.includes(selectedEodBodValue)) {
+        setSelectedEodBodValue(regionDateMetadata.datesList[0] || "");
+      }
+    } else if (eodBodFilterType === "Specific Month") {
+      if (!selectedEodBodValue || !regionDateMetadata.monthsList.includes(selectedEodBodValue)) {
+        setSelectedEodBodValue(regionDateMetadata.monthsList[0] || "");
+      }
+    } else {
+      setSelectedEodBodValue("");
+    }
+  }, [eodBodFilterType, regionDateMetadata.datesList, regionDateMetadata.monthsList, selectedEodBodValue]);
+
+  const eodBodDateLabel = useMemo(() => {
+    if (eodBodFilterType === "Today") {
+      return `Today (${regionDateMetadata.todayStr || ""})`;
+    }
+    if (eodBodFilterType === "Specific Date") {
+      return selectedEodBodValue || "Specific Date";
+    }
+    if (eodBodFilterType === "Specific Month") {
+      return selectedEodBodValue || "Specific Month";
+    }
+    return "All Dates";
+  }, [eodBodFilterType, regionDateMetadata.todayStr, selectedEodBodValue]);
+
+  const getParsedDateForExcel = (filterType: string, selectedValue: string) => {
+    if (filterType === "Today") {
+      return report?.reportDate || todayIsoDate();
+    }
+    if (filterType === "Specific Date" && selectedValue) {
+      const parts = selectedValue.split("-");
+      if (parts.length === 3) {
+        return `${parts[2]}-${parts[1]}-${parts[0]}`;
+      }
+    }
+    return selectedValue || "All Dates";
+  };
+
+  const getDayOfWeek = (dateStr: string): string => {
+    const date = new Date(dateStr);
+    if (Number.isNaN(date.getTime())) return "";
+    const days = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+    return days[date.getDay()] ?? "";
+  };
+
   // Column-filter hook: operates on rows already filtered by region/WO OTC
   const colFilters = useColumnFilters(regionFilteredRows);
 
@@ -1457,9 +1695,10 @@ export default function DashboardPage() {
   const regionKpiMetrics = useMemo(() => {
     if (!report || !selectedRegion || selectedRegion === "ALL") return null;
     
-    const rows = regionFilteredRows;
-    const active = rows.filter((r) => !r.carryForward.closedSyntheticRow);
-    const closed = rows.filter((r) => r.carryForward.closedSyntheticRow);
+    const rows = tnFilteredRows;
+    const isBod = tnViewMode === "BOD";
+    const active = isBod ? [...rows] : rows.filter((r) => !r.carryForward.closedSyntheticRow);
+    const closed = isBod ? [] : rows.filter((r) => r.carryForward.closedSyntheticRow);
     
     const getUniqueEngineers = (items: typeof rows) => {
       const list = items
@@ -1470,16 +1709,23 @@ export default function DashboardPage() {
     const uniqueEngineers = getUniqueEngineers(active);
     const engineerCount = uniqueEngineers.length;
     
+    const getRtplStatus = (r: typeof rows[number]) => {
+      if (isBod) {
+        return String(r.comparison?.previousRtplStatus || r.output["RTPL status"] || "").trim();
+      }
+      return String(r.output["RTPL status"] || "").trim();
+    };
+
     const countStatus = (statusList: string[]) => {
       return active.filter((r) => {
-        const s = String(r.output["RTPL status"] ?? "").trim().toLowerCase();
+        const s = getRtplStatus(r).toLowerCase();
         return statusList.some((item) => s === item.toLowerCase());
       }).length;
     };
     
     const countStatusContains = (keyword: string) => {
       return active.filter((r) => {
-        const s = String(r.output["RTPL status"] ?? "").trim().toLowerCase();
+        const s = getRtplStatus(r).toLowerCase();
         return s.includes(keyword.toLowerCase());
       }).length;
     };
@@ -1504,7 +1750,7 @@ export default function DashboardPage() {
     const tradeOpenCalls = active.filter(isTradeRow).length;
     
     const closedCancelled = closed.filter((r) => {
-      const s = String(r.output["RTPL status"] ?? "").trim().toLowerCase();
+      const s = getRtplStatus(r).toLowerCase();
       return s.includes("cancel");
     }).length;
     
@@ -1528,14 +1774,15 @@ export default function DashboardPage() {
       newCalls,
       tradeOpenCalls,
     };
-  }, [report, selectedRegion, regionFilteredRows]);
-
+  }, [report, selectedRegion, tnFilteredRows, tnViewMode]);
+ 
   const chennaiKpiMetrics = useMemo(() => {
     if (!report || !selectedRegion || selectedRegion === "ALL") return null;
     
-    const rows = regionFilteredRows;
-    const active = rows.filter((r) => !r.carryForward.closedSyntheticRow);
-    const closed = rows.filter((r) => r.carryForward.closedSyntheticRow);
+    const rows = eodBodFilteredRows;
+    const isBod = eodBodViewMode === "BOD";
+    const active = isBod ? [...rows] : rows.filter((r) => !r.carryForward.closedSyntheticRow);
+    const closed = isBod ? [] : rows.filter((r) => r.carryForward.closedSyntheticRow);
     
     const getUniqueEngineers = (items: typeof rows) => {
       const list = items
@@ -1546,6 +1793,20 @@ export default function DashboardPage() {
     const uniqueEngineers = getUniqueEngineers(active);
     const enggCount = uniqueEngineers.length;
     
+    const getRtplStatus = (r: typeof rows[number]) => {
+      if (isBod) {
+        return String(r.comparison?.previousRtplStatus || r.output["RTPL status"] || "").trim();
+      }
+      return String(r.output["RTPL status"] || "").trim();
+    };
+
+    const getWipAging = (r: typeof rows[number]) => {
+      if (isBod) {
+        return String(r.comparison?.previousWipAging || r.output["WIP aging"] || "").trim();
+      }
+      return String(r.output["WIP aging"] || "").trim();
+    };
+
     const parseWipAgingValue = (value: unknown): number | null => {
       const parsed = Number(String(value ?? "").trim());
       return Number.isFinite(parsed) ? parsed : null;
@@ -1553,7 +1814,7 @@ export default function DashboardPage() {
     
     const countStatus = (statusList: string[]) => {
       return active.filter((r) => {
-        const s = String(r.output["RTPL status"] ?? "").trim().toLowerCase();
+        const s = getRtplStatus(r).toLowerCase();
         return statusList.some((item) => s === item.toLowerCase());
       }).length;
     };
@@ -1564,15 +1825,15 @@ export default function DashboardPage() {
     const planned = countStatus(["Engg Assigned"]);
     const callAllocation = enggCount > 0 ? (planned / enggCount).toFixed(1) : "0.0";
     
-    const printOpenGe2 = active.filter(r => isPrintCase(r) && (parseWipAgingValue(r.output["WIP aging"]) ?? 0) >= 2).length;
-    const printActionableGe2 = active.filter(r => isPrintCase(r) && String(r.output["RTPL status"] ?? "").trim().toLowerCase() === "actionable" && (parseWipAgingValue(r.output["WIP aging"]) ?? 0) >= 2).length;
-    const printScheduledGe2 = active.filter(r => isPrintCase(r) && String(r.output["RTPL status"] ?? "").trim().toLowerCase() === "engg assigned" && (parseWipAgingValue(r.output["WIP aging"]) ?? 0) >= 2).length;
+    const printOpenGe2 = active.filter(r => isPrintCase(r) && (parseWipAgingValue(getWipAging(r)) ?? 0) >= 2).length;
+    const printActionableGe2 = active.filter(r => isPrintCase(r) && getRtplStatus(r).toLowerCase() === "actionable" && (parseWipAgingValue(getWipAging(r)) ?? 0) >= 2).length;
+    const printScheduledGe2 = active.filter(r => isPrintCase(r) && getRtplStatus(r).toLowerCase() === "engg assigned" && (parseWipAgingValue(getWipAging(r)) ?? 0) >= 2).length;
     
-    const openCallsGt10 = active.filter(r => (parseWipAgingValue(r.output["WIP aging"]) ?? 0) > 10).length;
-    const actionableGt10 = active.filter(r => String(r.output["RTPL status"] ?? "").trim().toLowerCase() === "actionable" && (parseWipAgingValue(r.output["WIP aging"]) ?? 0) > 10).length;
-    const scheduledGt10 = active.filter(r => String(r.output["RTPL status"] ?? "").trim().toLowerCase() === "engg assigned" && (parseWipAgingValue(r.output["WIP aging"]) ?? 0) > 10).length;
+    const openCallsGt10 = active.filter(r => (parseWipAgingValue(getWipAging(r)) ?? 0) > 10).length;
+    const actionableGt10 = active.filter(r => getRtplStatus(r).toLowerCase() === "actionable" && (parseWipAgingValue(getWipAging(r)) ?? 0) > 10).length;
+    const scheduledGt10 = active.filter(r => getRtplStatus(r).toLowerCase() === "engg assigned" && (parseWipAgingValue(getWipAging(r)) ?? 0) > 10).length;
     
-    const mpsGt1 = active.filter(r => String(r.output["RTPL status"] ?? "").trim().toLowerCase().includes("mps") && (parseWipAgingValue(r.output["WIP aging"]) ?? 0) > 1).length;
+    const mpsGt1 = active.filter(r => getRtplStatus(r).toLowerCase().includes("mps") && (parseWipAgingValue(getWipAging(r)) ?? 0) > 1).length;
     const eodCloser = closed.length;
     const newCalls = active.filter(r => r.comparison?.changeType === "NEW").length;
     
@@ -1580,22 +1841,22 @@ export default function DashboardPage() {
     const engAvlInField = enggCount;
     const enggProductivity = enggCount > 0 ? (eodCloser / enggCount).toFixed(1) : "0.0";
     
-    const missedToSchedule = active.filter(r => String(r.output["RTPL status"] ?? "").trim().toLowerCase().includes("missed") || String(r.output["RTPL status"] ?? "").trim().toLowerCase().includes("non avl")).length;
-    const missedByEng = active.filter(r => String(r.output["RTPL status"] ?? "").trim().toLowerCase().includes("high call")).length;
+    const missedToSchedule = active.filter(r => getRtplStatus(r).toLowerCase().includes("missed") || getRtplStatus(r).toLowerCase().includes("non avl")).length;
+    const missedByEng = active.filter(r => getRtplStatus(r).toLowerCase().includes("high call")).length;
     const gTotalMissed = missedToSchedule + missedByEng;
     const pctMissed = openCalls > 0 ? Math.round((gTotalMissed / openCalls) * 100) : 0;
     const closureAdherence = (eodCloser + gTotalMissed) > 0 ? Math.round((eodCloser / (eodCloser + gTotalMissed)) * 100) : 0;
     
     // NAF right table columns
     const flexBackend = active.filter(r => {
-      const s = String(r.output["RTPL status"] ?? "").trim().toLowerCase();
+      const s = getRtplStatus(r).toLowerCase();
       return s.includes("flex backend") || s.includes("backend");
     }).length;
-    const ssc = active.filter(r => String(r.output["RTPL status"] ?? "").trim().toLowerCase().includes("ssc")).length;
-    const hpBackend = active.filter(r => String(r.output["RTPL status"] ?? "").trim().toLowerCase().includes("hp backend")).length;
-    const obsCustomer = active.filter(r => String(r.output["RTPL status"] ?? "").trim().toLowerCase().includes("obs") || String(r.output["RTPL status"] ?? "").trim().toLowerCase().includes("customer")).length;
-    const cuPending = active.filter(r => String(r.output["RTPL status"] ?? "").trim().toLowerCase().includes("cu pending")).length;
-    const physicalClosed = active.filter(r => String(r.output["RTPL status"] ?? "").trim().toLowerCase().includes("physical closed") || String(r.output["RTPL status"] ?? "").trim().toLowerCase().includes("physically closed")).length;
+    const ssc = active.filter(r => getRtplStatus(r).toLowerCase().includes("ssc")).length;
+    const hpBackend = active.filter(r => getRtplStatus(r).toLowerCase().includes("hp backend")).length;
+    const obsCustomer = active.filter(r => getRtplStatus(r).toLowerCase().includes("obs") || getRtplStatus(r).toLowerCase().includes("customer")).length;
+    const cuPending = active.filter(r => getRtplStatus(r).toLowerCase().includes("cu pending")).length;
+    const physicalClosed = active.filter(r => getRtplStatus(r).toLowerCase().includes("physical closed") || getRtplStatus(r).toLowerCase().includes("physically closed")).length;
     
     const totalNaf = flexBackend + ssc + hpBackend + obsCustomer + cuPending + physicalClosed;
     const sscPct = totalNaf > 0 ? Math.round((ssc / totalNaf) * 100) : 0;
@@ -1634,7 +1895,7 @@ export default function DashboardPage() {
       totalNaf,
       sscPct,
     };
-  }, [report, selectedRegion, regionFilteredRows]);
+  }, [report, selectedRegion, eodBodFilteredRows, eodBodViewMode]);
 
   const engineerProductivityMetrics = useMemo(() => {
     if (!report) return { list: [], totalAttended: 0, monthsList: [], datesList: [], todayStr: "" };
@@ -4650,7 +4911,7 @@ export default function DashboardPage() {
             style={{ 
               background: "#ffffff", 
               borderRadius: "12px", 
-              width: "min(640px, 95vw)", 
+              width: "min(720px, 95vw)", 
               boxShadow: "0 20px 50px rgba(0, 0, 0, 0.15)", 
               padding: "24px", 
               display: "grid", 
@@ -4660,23 +4921,108 @@ export default function DashboardPage() {
             }} 
             onClick={(e) => e.stopPropagation()}
           >
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", borderBottom: "1px solid var(--border)", paddingBottom: "12px" }}>
-              <h2 style={{ margin: 0, fontSize: "18px", fontWeight: "700" }}>📊 {activeRegionName} KPI Performance Summary</h2>
-              <button 
-                type="button" 
-                className="secondaryButton" 
-                style={{ minHeight: "32px", padding: "0 12px", borderRadius: "6px", fontSize: "13px" }} 
-                onClick={() => setIsKpiModalOpen(false)}
-              >
-                Close
-              </button>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", borderBottom: "1px solid var(--border)", paddingBottom: "12px", gap: "16px", flexWrap: "wrap" }}>
+              <div style={{ display: "flex", flexDirection: "column", gap: "2px" }}>
+                <h2 style={{ margin: 0, fontSize: "18px", fontWeight: "700" }}>📊 {activeRegionName} KPI Summary ({tnViewMode} View)</h2>
+                <p style={{ margin: 0, fontSize: "12px", color: "var(--text-muted)" }}>
+                  Showing metrics breakdown for {activeRegionName}
+                </p>
+              </div>
+              <div style={{ display: "flex", gap: "12px", alignItems: "center", flexWrap: "wrap" }}>
+                {/* EOD/BOD Toggle Segment */}
+                <div style={{ display: "inline-flex", background: "#f1f5f9", borderRadius: "8px", padding: "2px", border: "1px solid #e2e8f0" }}>
+                  <button
+                    type="button"
+                    onClick={() => setTnViewMode("BOD")}
+                    style={{
+                      padding: "5px 12px",
+                      borderRadius: "6px",
+                      fontSize: "12px",
+                      fontWeight: "700",
+                      border: "none",
+                      cursor: "pointer",
+                      background: tnViewMode === "BOD" ? "#ffffff" : "transparent",
+                      color: tnViewMode === "BOD" ? "#0284c7" : "#475569",
+                      boxShadow: tnViewMode === "BOD" ? "0 1px 3px rgba(0,0,0,0.1)" : "none",
+                      transition: "all 0.15s ease"
+                    }}
+                  >
+                    🌅 BOD View
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setTnViewMode("EOD")}
+                    style={{
+                      padding: "5px 12px",
+                      borderRadius: "6px",
+                      fontSize: "12px",
+                      fontWeight: "700",
+                      border: "none",
+                      cursor: "pointer",
+                      background: tnViewMode === "EOD" ? "#ffffff" : "transparent",
+                      color: tnViewMode === "EOD" ? "#0284c7" : "#475569",
+                      boxShadow: tnViewMode === "EOD" ? "0 1px 3px rgba(0,0,0,0.1)" : "none",
+                      transition: "all 0.15s ease"
+                    }}
+                  >
+                    🌃 EOD View
+                  </button>
+                </div>
+
+                {/* Filter Type */}
+                <div style={{ display: "flex", gap: "6px", alignItems: "center" }}>
+                  <span style={{ fontSize: "12px", fontWeight: "600", color: "#475569" }}>Filter:</span>
+                  <select 
+                    value={tnFilterType} 
+                    onChange={(e) => setTnFilterType(e.target.value)}
+                    style={{ padding: "6px 10px", borderRadius: "6px", border: "1px solid var(--border)", fontSize: "12px", fontWeight: "600", outline: "none", background: "#f8fafc", cursor: "pointer" }}
+                  >
+                    <option value="Today">Today</option>
+                    <option value="Specific Date">Specific Date</option>
+                    <option value="Specific Month">Specific Month</option>
+                    <option value="All Dates">All History</option>
+                  </select>
+                </div>
+
+                {/* Conditional Specific Date / Specific Month value */}
+                {(tnFilterType === "Specific Date" || tnFilterType === "Specific Month") && (
+                  <div style={{ display: "flex", gap: "6px", alignItems: "center" }}>
+                    <span style={{ fontSize: "12px", fontWeight: "600", color: "#475569" }}>
+                      {tnFilterType === "Specific Date" ? "Date:" : "Month:"}
+                    </span>
+                    <select 
+                      value={selectedTnValue} 
+                      onChange={(e) => setSelectedTnValue(e.target.value)}
+                      style={{ padding: "6px 10px", borderRadius: "6px", border: "1px solid var(--border)", fontSize: "12px", fontWeight: "600", outline: "none", background: "#f8fafc", cursor: "pointer" }}
+                    >
+                      {tnFilterType === "Specific Date" 
+                        ? regionDateMetadata.datesList.map(d => (
+                            <option key={d} value={d}>{d}</option>
+                          ))
+                        : regionDateMetadata.monthsList.map(m => (
+                            <option key={m} value={m}>{m}</option>
+                          ))
+                      }
+                    </select>
+                  </div>
+                )}
+
+                <button 
+                  type="button" 
+                  className="secondaryButton" 
+                  style={{ minHeight: "32px", padding: "0 12px", borderRadius: "6px", fontSize: "13px" }} 
+                  onClick={() => setIsKpiModalOpen(false)}
+                >
+                  Close
+                </button>
+              </div>
             </div>
 
             <div style={{ maxHeight: "60vh", overflowY: "auto", paddingRight: "4px" }}>
               <table className="kpiSummaryTable" style={{ width: "100%", borderCollapse: "collapse", minWidth: "480px" }}>
                 <thead>
                   <tr style={{ background: "#0284c7", color: "#ffffff", fontWeight: "bold" }}>
-                    <td colSpan={2} style={{ padding: "10px", border: "1px solid #cbd5e1", fontSize: "13px" }}>{report?.reportDate || todayIsoDate()}</td>
+                    <td colSpan={2} style={{ padding: "10px", border: "1px solid #cbd5e1", fontSize: "13px" }}>Applied Period: {tnDateLabel} ({tnViewMode})</td>
                     <td style={{ padding: "10px", border: "1px solid #cbd5e1", textAlign: "right", fontSize: "13px" }}>{activeRegionName}</td>
                   </tr>
                   <tr style={{ background: "#fef08a", color: "#854d0e", fontWeight: "bold" }}>
@@ -4728,7 +5074,7 @@ export default function DashboardPage() {
                 type="button"
                 style={{ background: "linear-gradient(135deg, #0284c7, #0369a1)", borderColor: "#0284c7", display: "inline-flex", alignItems: "center", gap: "6px", color: "#ffffff" }}
                 onClick={() => {
-                  downloadRegionSummaryExcel(activeRegionName, report?.reportDate || todayIsoDate(), regionFilteredRows, false);
+                  downloadRegionSummaryExcel(activeRegionName, getParsedDateForExcel(tnFilterType, selectedTnValue), tnFilteredRows, false, tnViewMode === "BOD");
                 }}
               >
                 📥 Download Summary Excel
@@ -4755,16 +5101,101 @@ export default function DashboardPage() {
             }} 
             onClick={(e) => e.stopPropagation()}
           >
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", borderBottom: "1px solid var(--border)", paddingBottom: "12px" }}>
-              <h2 style={{ margin: 0, fontSize: "18px", fontWeight: "700" }}>📊 {activeRegionName} Dashboard Summary</h2>
-              <button 
-                type="button" 
-                className="secondaryButton" 
-                style={{ minHeight: "32px", padding: "0 12px", borderRadius: "6px", fontSize: "13px" }} 
-                onClick={() => setIsChennaiKpiModalOpen(false)}
-              >
-                Close
-              </button>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", borderBottom: "1px solid var(--border)", paddingBottom: "12px", gap: "16px", flexWrap: "wrap" }}>
+              <div style={{ display: "flex", flexDirection: "column", gap: "2px" }}>
+                <h2 style={{ margin: 0, fontSize: "18px", fontWeight: "700" }}>📊 {activeRegionName} Dashboard Summary ({eodBodViewMode} View)</h2>
+                <p style={{ margin: 0, fontSize: "12px", color: "var(--text-muted)" }}>
+                  Showing {eodBodViewMode} summary for {activeRegionName}
+                </p>
+              </div>
+              <div style={{ display: "flex", gap: "12px", alignItems: "center", flexWrap: "wrap" }}>
+                {/* EOD/BOD Toggle Segment */}
+                <div style={{ display: "inline-flex", background: "#f1f5f9", borderRadius: "8px", padding: "2px", border: "1px solid #e2e8f0" }}>
+                  <button
+                    type="button"
+                    onClick={() => setEodBodViewMode("BOD")}
+                    style={{
+                      padding: "5px 12px",
+                      borderRadius: "6px",
+                      fontSize: "12px",
+                      fontWeight: "700",
+                      border: "none",
+                      cursor: "pointer",
+                      background: eodBodViewMode === "BOD" ? "#ffffff" : "transparent",
+                      color: eodBodViewMode === "BOD" ? "#0284c7" : "#475569",
+                      boxShadow: eodBodViewMode === "BOD" ? "0 1px 3px rgba(0,0,0,0.1)" : "none",
+                      transition: "all 0.15s ease"
+                    }}
+                  >
+                    🌅 BOD View
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setEodBodViewMode("EOD")}
+                    style={{
+                      padding: "5px 12px",
+                      borderRadius: "6px",
+                      fontSize: "12px",
+                      fontWeight: "700",
+                      border: "none",
+                      cursor: "pointer",
+                      background: eodBodViewMode === "EOD" ? "#ffffff" : "transparent",
+                      color: eodBodViewMode === "EOD" ? "#0284c7" : "#475569",
+                      boxShadow: eodBodViewMode === "EOD" ? "0 1px 3px rgba(0,0,0,0.1)" : "none",
+                      transition: "all 0.15s ease"
+                    }}
+                  >
+                    🌃 EOD View
+                  </button>
+                </div>
+
+                {/* Filter Type */}
+                <div style={{ display: "flex", gap: "6px", alignItems: "center" }}>
+                  <span style={{ fontSize: "12px", fontWeight: "600", color: "#475569" }}>Filter:</span>
+                  <select 
+                    value={eodBodFilterType} 
+                    onChange={(e) => setEodBodFilterType(e.target.value)}
+                    style={{ padding: "6px 10px", borderRadius: "6px", border: "1px solid var(--border)", fontSize: "12px", fontWeight: "600", outline: "none", background: "#f8fafc", cursor: "pointer" }}
+                  >
+                    <option value="Today">Today</option>
+                    <option value="Specific Date">Specific Date</option>
+                    <option value="Specific Month">Specific Month</option>
+                    <option value="All Dates">All History</option>
+                  </select>
+                </div>
+
+                {/* Conditional Specific Date / Specific Month value */}
+                {(eodBodFilterType === "Specific Date" || eodBodFilterType === "Specific Month") && (
+                  <div style={{ display: "flex", gap: "6px", alignItems: "center" }}>
+                    <span style={{ fontSize: "12px", fontWeight: "600", color: "#475569" }}>
+                      {eodBodFilterType === "Specific Date" ? "Date:" : "Month:"}
+                    </span>
+                    <select 
+                      value={selectedEodBodValue} 
+                      onChange={(e) => setSelectedEodBodValue(e.target.value)}
+                      style={{ padding: "6px 10px", borderRadius: "6px", border: "1px solid var(--border)", fontSize: "12px", fontWeight: "600", outline: "none", background: "#f8fafc", cursor: "pointer" }}
+                    >
+                      {eodBodFilterType === "Specific Date" 
+                        ? regionDateMetadata.datesList.map(d => (
+                            <option key={d} value={d}>{d}</option>
+                          ))
+                        : regionDateMetadata.monthsList.map(m => (
+                            <option key={m} value={m}>{m}</option>
+                          ))
+                      }
+                    </select>
+                  </div>
+                )}
+
+                <button 
+                  type="button" 
+                  className="secondaryButton" 
+                  style={{ minHeight: "32px", padding: "0 12px", borderRadius: "6px", fontSize: "13px" }} 
+                  onClick={() => setIsChennaiKpiModalOpen(false)}
+                >
+                  Close
+                </button>
+              </div>
             </div>
 
             <div style={{ maxHeight: "60vh", overflowY: "auto", paddingRight: "4px" }}>
@@ -4778,7 +5209,12 @@ export default function DashboardPage() {
                           CHENNAI DASHBOARD
                         </td>
                         <td style={{ padding: "10px", border: "1px solid #cbd5e1", textAlign: "right", fontSize: "12px", background: "#f1f5f9" }}>
-                          Wednesday / {report?.reportDate ? formatDisplayDateOnly(report.reportDate) : "25th Mar"}
+                          {(() => {
+                            const dateParam = getParsedDateForExcel(eodBodFilterType, selectedEodBodValue);
+                            const day = getDayOfWeek(dateParam);
+                            const formatted = formatDisplayDateOnly(dateParam);
+                            return day ? `${day} / ${formatted}` : formatted;
+                          })()}
                         </td>
                       </tr>
                     </thead>
@@ -4847,7 +5283,10 @@ export default function DashboardPage() {
                       <tr style={{ background: "#ffedd5", color: "#c2410c", fontWeight: "bold" }}>
                         <td style={{ padding: "10px", border: "1px solid #cbd5e1", fontSize: "13px" }}>Date</td>
                         <td style={{ padding: "10px", border: "1px solid #cbd5e1", background: "#fef08a", color: "#854d0e", textAlign: "center", fontSize: "13px", fontWeight: "800" }}>
-                          {report?.reportDate ? formatDisplayDateOnly(report.reportDate) : "25th Feb"}
+                          {(() => {
+                            const dateParam = getParsedDateForExcel(eodBodFilterType, selectedEodBodValue);
+                            return formatDisplayDateOnly(dateParam);
+                          })()}
                         </td>
                       </tr>
                     </thead>
@@ -4905,7 +5344,7 @@ export default function DashboardPage() {
                 type="button"
                 style={{ background: "linear-gradient(135deg, #0ea5e9, #0284c7)", borderColor: "#0ea5e9", display: "inline-flex", alignItems: "center", gap: "6px", color: "#ffffff" }}
                 onClick={() => {
-                  downloadRegionSummaryExcel(activeRegionName, report?.reportDate || todayIsoDate(), regionFilteredRows, true);
+                  downloadRegionSummaryExcel(activeRegionName, getParsedDateForExcel(eodBodFilterType, selectedEodBodValue), eodBodFilteredRows, true, eodBodViewMode === "BOD");
                 }}
               >
                 📥 Download Summary Excel
@@ -5228,33 +5667,12 @@ export default function DashboardPage() {
                         value={String(draftOutput["RTPL status"] ?? "")}
                         manualEntryRequiredLabel="Entry"
                         onChange={(selected) => {
-                          if (selected === "Custom") {
-                            setDraftOutput((current) => ({
-                              ...current,
-                              "RTPL status": "",
-                            }));
-                          } else {
-                            setDraftOutput((current) => ({
-                              ...current,
-                              "RTPL status": selected,
-                            }));
-                          }
+                          setDraftOutput((current) => ({
+                            ...current,
+                            "RTPL status": selected,
+                          }));
                         }}
                       />
-                      {(draftOutput["RTPL status"] === "" || !RTPL_STATUS_OPTIONS.some((opt) => opt === String(draftOutput["RTPL status"]))) && (
-                        <input
-                          id="modal-rtpl-status-custom"
-                          className="modalInput customStatusInput"
-                          value={String(draftOutput["RTPL status"] ?? "")}
-                          onChange={(event) =>
-                            setDraftOutput((current) => ({
-                              ...current,
-                              "RTPL status": event.target.value,
-                            }))
-                          }
-                          placeholder="Enter custom status"
-                        />
-                      )}
                     </div>
                   </div>
 

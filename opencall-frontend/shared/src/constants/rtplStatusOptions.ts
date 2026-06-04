@@ -4,7 +4,7 @@
 export const RTPL_STATUS_GROUPS = [
   {
     group: "General Activity",
-    options: ["Actionable", "CX Pending", "Problem Resolution"]
+    options: ["Actionable", "CX Pending", "Problem Resolution", "work in progress", "under observation", "OTP", "WO-closed"]
   },
   {
     group: "Scheduling & Engineer",

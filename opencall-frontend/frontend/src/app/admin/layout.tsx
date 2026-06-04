@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import iconImg from "../icon.png";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState, type ReactNode } from "react";
 import { clearSession, readSession, type ClientSession } from "../../lib/session";
@@ -65,7 +66,11 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
       <aside className="adminSidebar">
         <div className="adminBrand">
           <div className="brandMark" aria-hidden="true">
-            OC
+            <img
+              src={iconImg.src}
+              alt=""
+              style={{ width: "100%", height: "100%", objectFit: "contain", borderRadius: "inherit" }}
+            />
           </div>
           <div>
             <p className="eyebrow">Open Call</p>

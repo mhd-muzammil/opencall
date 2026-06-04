@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from "react";
+import iconImg from "../app/icon.png";
 import type {
   DatabaseHealthResponse,
   LoginResponse,
@@ -152,9 +153,15 @@ export function AppHeader({
   return (
     <header className="topBar">
       <div className="brandBlock">
-        <div className="brandMark" aria-hidden="true">OC</div>
+        <div className="brandMark" aria-hidden="true">
+          <img
+            src={iconImg.src}
+            alt=""
+            style={{ width: "100%", height: "100%", objectFit: "contain", borderRadius: "inherit" }}
+          />
+        </div>
         <div>
-          <p className="eyebrow">Open Call</p>
+          <p className="eyebrow">RENDERWAYS TECHNOLOGY</p>
           <h1>{workspaceView === "records" ? "Records Workspace" : "Operational Overview"}</h1>
         </div>
       </div>

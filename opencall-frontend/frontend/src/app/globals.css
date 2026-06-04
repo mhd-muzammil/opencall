@@ -3174,6 +3174,398 @@ td.missingCell.carriedForwardCell {
   text-align: center;
 }
 
+.pivotSection {
+  display: grid;
+  gap: 12px;
+  margin-top: 16px;
+  padding: 16px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: #ffffff;
+}
+
+.pivotHeader {
+  margin-bottom: 0;
+}
+
+.pivotHeader h3 {
+  margin: 0 0 4px;
+  color: var(--text);
+  font-size: 15px;
+  font-weight: 800;
+}
+
+.pivotHeader p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.pivotFilterRow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 12px;
+  min-width: 0;
+}
+
+.pivotDropdownFilter {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.pivotDropdownFilter > span {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.pivotDropdownWrap {
+  position: relative;
+  width: min(320px, 100%);
+}
+
+.pivotDropdownTrigger {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-height: 36px;
+  padding: 6px 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: #ffffff;
+  color: var(--text);
+  cursor: pointer;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 800;
+  text-align: left;
+}
+
+.pivotDropdownTrigger span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pivotDropdownTrigger strong {
+  min-width: 28px;
+  padding: 2px 7px;
+  border-radius: 999px;
+  background: var(--surface-subtle);
+  color: var(--muted);
+  font-size: 11px;
+  text-align: center;
+}
+
+.pivotDropdownTrigger small {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.pivotDropdownTrigger:hover,
+.pivotDropdownTrigger:focus-visible,
+.pivotDropdownTrigger.active {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  color: var(--accent);
+  outline: none;
+}
+
+.pivotDropdownTrigger.active strong {
+  background: #ffffff;
+  color: var(--accent);
+}
+
+.pivotSegmentDropdown {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  z-index: 30;
+  width: min(320px, calc(100vw - 40px));
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: #ffffff;
+  box-shadow: 0 18px 38px rgba(15, 23, 42, 0.18);
+}
+
+.pivotSegmentList {
+  display: grid;
+  max-height: 230px;
+  overflow: auto;
+  padding: 6px;
+}
+
+.pivotSegmentDropdownItem {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  min-height: 30px;
+  padding: 5px 6px;
+  border-radius: 6px;
+  color: var(--text);
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 750;
+}
+
+.pivotSegmentDropdownItem:hover,
+.pivotSegmentDropdownItem:focus-within {
+  background: var(--accent-soft);
+}
+
+.pivotSegmentDropdownItem input {
+  width: 15px;
+  height: 15px;
+  accent-color: var(--accent);
+}
+
+.pivotSegmentDropdownItem span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pivotSegmentDropdownItem strong {
+  min-width: 26px;
+  padding: 2px 7px;
+  border-radius: 999px;
+  background: var(--surface-subtle);
+  color: var(--muted);
+  font-size: 11px;
+  text-align: center;
+}
+
+.pivotSegmentDropdownItemAll {
+  border-bottom: 1px solid #e6edf7;
+  border-radius: 6px 6px 0 0;
+  font-weight: 900;
+}
+
+.pivotSegmentActions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px;
+  padding: 8px;
+  border-top: 1px solid #e6edf7;
+  background: #f8fafc;
+}
+
+.pivotSegmentActions button {
+  min-height: 30px;
+  padding: 0 8px;
+  border-radius: 6px;
+  font-size: 12px;
+}
+
+.pivotSegmentActions .primary {
+  grid-column: 1 / -1;
+  background: var(--accent);
+  color: #ffffff;
+  border-color: var(--accent);
+}
+
+.pivotCaseScopeFilter {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.pivotCaseScopeFilter > span {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.pivotCaseScopeGroup {
+  display: inline-flex;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: #ffffff;
+}
+
+.pivotCaseScopeButton {
+  min-height: 36px;
+  padding: 0 12px;
+  border: none;
+  border-right: 1px solid var(--border);
+  border-radius: 0;
+  background: #ffffff;
+  color: var(--text);
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 850;
+}
+
+.pivotCaseScopeButton:last-child {
+  border-right: none;
+}
+
+.pivotCaseScopeButton:hover,
+.pivotCaseScopeButton:focus-visible {
+  background: #f8fbff;
+  color: var(--accent);
+  outline: none;
+}
+
+.pivotCaseScopeButton.active {
+  background: var(--accent);
+  color: #ffffff;
+}
+
+.pivotTableWrap {
+  width: 100%;
+  min-width: 0;
+  overflow: auto;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: #ffffff;
+}
+
+.pivotTable {
+  width: max-content;
+  min-width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+  color: var(--text);
+  font-size: 12px;
+}
+
+.pivotTable th,
+.pivotTable td {
+  min-width: 58px;
+  height: 34px;
+  padding: 6px 8px;
+  border-right: 1px solid #d7e0ee;
+  border-bottom: 1px solid #d7e0ee;
+  background: #ffffff;
+  text-align: right;
+  white-space: nowrap;
+}
+
+.pivotTable th:first-child,
+.pivotTable td:first-child {
+  border-left: 0;
+}
+
+.pivotTable thead th {
+  background: #dbe8ff;
+  color: #0f172a;
+  font-weight: 900;
+}
+
+.pivotContextRow th {
+  height: 30px;
+  background: #eef4ff;
+  color: #17324d;
+  text-align: left;
+}
+
+.pivotRowHeader,
+.pivotRowLabel,
+.pivotTable tfoot th {
+  position: sticky;
+  left: 0;
+  z-index: 2;
+  min-width: 210px;
+  max-width: 280px;
+  text-align: left;
+}
+
+.pivotTable thead .pivotRowHeader {
+  z-index: 3;
+}
+
+.pivotRowLabel,
+.pivotTable tfoot th {
+  background: #ffffff;
+  color: var(--text);
+  font-weight: 800;
+}
+
+.pivotRowLabel button,
+.pivotHeaderButton,
+.pivotValueButton,
+.pivotTotalButton {
+  min-height: 0;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  font: inherit;
+  font-weight: inherit;
+}
+
+.pivotRowLabel button {
+  max-width: 250px;
+  overflow: hidden;
+  text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pivotHeaderButton {
+  width: 100%;
+  text-align: right;
+}
+
+.pivotValueButton {
+  width: 100%;
+  color: #1f2a44;
+  font-weight: 750;
+  text-align: right;
+}
+
+.pivotValueButton:hover,
+.pivotTotalButton:hover,
+.pivotHeaderButton:hover,
+.pivotRowLabel button:hover {
+  color: var(--accent);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.pivotEmptyCell {
+  color: #94a3b8;
+}
+
+.pivotGrandColumn {
+  position: sticky;
+  right: 0;
+  z-index: 2;
+  min-width: 96px;
+  background: #eef4ff !important;
+  color: #0f172a;
+  font-weight: 900;
+}
+
+.pivotTable thead .pivotGrandColumn {
+  z-index: 3;
+}
+
+.pivotTable tfoot th,
+.pivotTable tfoot td {
+  background: #dbe8ff;
+  color: #0f172a;
+  font-weight: 900;
+}
+
+.pivotTable tfoot .pivotGrandColumn {
+  background: #c7dcff !important;
+}
+
 .rtplTimeCardGrid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
@@ -3572,6 +3964,41 @@ td.missingCell.carriedForwardCell {
 }
 
 @media (max-width: 720px) {
+  .pivotFilterRow {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .pivotDropdownFilter {
+    align-items: stretch;
+    flex-direction: column;
+    gap: 6px;
+  }
+
+  .pivotCaseScopeFilter {
+    align-items: stretch;
+    flex-direction: column;
+    gap: 6px;
+  }
+
+  .pivotCaseScopeGroup {
+    width: 100%;
+  }
+
+  .pivotCaseScopeButton {
+    flex: 1;
+  }
+
+  .pivotDropdownWrap {
+    width: 100%;
+  }
+
+  .pivotRowHeader,
+  .pivotRowLabel,
+  .pivotTable tfoot th {
+    min-width: 170px;
+  }
+
   .rtplScopeTabs {
     grid-template-columns: 1fr;
   }

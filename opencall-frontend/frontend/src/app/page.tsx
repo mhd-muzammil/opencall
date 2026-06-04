@@ -2348,6 +2348,44 @@ export default function DashboardPage() {
     }
   }
 
+  async function handleRefreshWorkspace() {
+    await runAction(async () => {
+      await refreshHealth();
+
+      if (!session) {
+        return;
+      }
+
+      const sessions = await getReportHistory(session.token);
+      setHistorySessions(sessions);
+
+      const currentSessionId = report?.sessionId ?? window.localStorage.getItem(LAST_HISTORY_SESSION_KEY);
+      const currentCompletedSession = currentSessionId
+        ? sessions.find(
+            (historySession) =>
+              historySession.id === currentSessionId &&
+              historySession.status === "COMPLETED" &&
+              Boolean(historySession.reportId),
+          )
+        : null;
+      const latestCompletedSession = sessions.find(
+        (historySession) =>
+          historySession.status === "COMPLETED" && Boolean(historySession.reportId),
+      );
+      const sessionToRefresh = currentCompletedSession ?? latestCompletedSession;
+
+      if (!sessionToRefresh) {
+        setMessage("Health refreshed. No completed report is available to reload.");
+        return;
+      }
+
+      await restoreHistorySession(sessionToRefresh, {
+        closeHistoryPanel: false,
+        successMessage: "Workspace refreshed with latest report data.",
+      });
+    });
+  }
+
   useEffect(() => {
     if (session) {
       getReportHistory(session.token).then((sessions) => {
@@ -2521,67 +2559,94 @@ export default function DashboardPage() {
     hasAutoRestoredHistoryRef.current = false;
   }
 
-  async function handleHistoryOpen(historySession: ReportHistorySession) {
-    if (!session) return;
-    await runAction(async () => {
-      const detail = await getReportHistoryById(session.token, historySession.id);
-      
-      // Create mock batch objects so frontend can use batchIds
-      const mockBatches: UploadBatch[] = [];
-      if (detail.flexUploadBatchId) {
-        mockBatches.push({ id: detail.flexUploadBatchId, sourceType: "FLEX_WIP", originalFileName: "", status: "PROCESSED", rowCount: 0, errorCount: 0, createdAt: detail.createdAt });
-      }
-      if (detail.renderwaysUploadBatchId) {
-        mockBatches.push({ id: detail.renderwaysUploadBatchId, sourceType: "RENDERWAYS", originalFileName: "", status: "PROCESSED", rowCount: 0, errorCount: 0, createdAt: detail.createdAt });
-      }
-      if (detail.callPlanUploadBatchId) {
-        mockBatches.push({ id: detail.callPlanUploadBatchId, sourceType: "CALL_PLAN", originalFileName: "", status: "PROCESSED", rowCount: 0, errorCount: 0, createdAt: detail.createdAt });
-      }
-      
-      // We restore the state. If it's DRAFT, we only have the batches.
-      // We can trigger a preview automatically.
-      setUpload({ batches: mockBatches, validations: [], parseSummaries: [] });
-      setPreview(null);
-      setReport(null);
-      setEditingSerialNo(null);
-      setSavingSerialNo(null);
-      setDraftOutput({});
-      setFiles({});
-      const isRegionAdmin = session.user.role === "REGION_ADMIN";
-      const effectiveRegionId = isRegionAdmin
-        ? session.user.regionId ?? ""
-        : detail.regionId || regionId;
-      if (!isRegionAdmin && detail.regionId) setRegionId(detail.regionId);
-      if (detail.reportDate) setReportDate(detail.reportDate);
-      window.localStorage.setItem(LAST_HISTORY_SESSION_KEY, detail.id);
+  async function restoreHistorySession(
+    historySession: ReportHistorySession,
+    {
+      closeHistoryPanel = true,
+      successMessage,
+    }: Readonly<{
+      closeHistoryPanel?: boolean;
+      successMessage?: string;
+    }> = {},
+  ): Promise<boolean> {
+    if (!session) return false;
 
-      // Fetch preview and report if applicable
-      const prev = await previewMatches({
+    const detail = await getReportHistoryById(session.token, historySession.id);
+
+    if (!detail.flexUploadBatchId) {
+      setMessage("Refresh failed: selected history session has no Flex upload batch.");
+      return false;
+    }
+
+    const mockBatches: UploadBatch[] = [];
+    if (detail.flexUploadBatchId) {
+      mockBatches.push({ id: detail.flexUploadBatchId, sourceType: "FLEX_WIP", originalFileName: "", status: "PROCESSED", rowCount: 0, errorCount: 0, createdAt: detail.createdAt });
+    }
+    if (detail.renderwaysUploadBatchId) {
+      mockBatches.push({ id: detail.renderwaysUploadBatchId, sourceType: "RENDERWAYS", originalFileName: "", status: "PROCESSED", rowCount: 0, errorCount: 0, createdAt: detail.createdAt });
+    }
+    if (detail.callPlanUploadBatchId) {
+      mockBatches.push({ id: detail.callPlanUploadBatchId, sourceType: "CALL_PLAN", originalFileName: "", status: "PROCESSED", rowCount: 0, errorCount: 0, createdAt: detail.createdAt });
+    }
+
+    setUpload({ batches: mockBatches, validations: [], parseSummaries: [] });
+    setPreview(null);
+    setReport(null);
+    setEditingSerialNo(null);
+    setSavingSerialNo(null);
+    setDraftOutput({});
+    setFiles({});
+
+    const isRegionAdmin = session.user.role === "REGION_ADMIN";
+    const effectiveRegionId = isRegionAdmin
+      ? session.user.regionId ?? ""
+      : detail.regionId || regionId;
+
+    if (!isRegionAdmin && detail.regionId) setRegionId(detail.regionId);
+    if (detail.reportDate) {
+      setReportDate(detail.reportDate);
+      setRtplAnalyticsDate(detail.reportDate);
+    }
+    window.localStorage.setItem(LAST_HISTORY_SESSION_KEY, detail.id);
+
+    const prev = await previewMatches({
+      token: session.token,
+      regionId: effectiveRegionId,
+      flexUploadBatchId: detail.flexUploadBatchId,
+      ...(detail.renderwaysUploadBatchId ? { renderwaysUploadBatchId: detail.renderwaysUploadBatchId } : {}),
+      ...(detail.callPlanUploadBatchId ? { callPlanUploadBatchId: detail.callPlanUploadBatchId } : {}),
+    });
+    setPreview(prev);
+
+    if (detail.status === "COMPLETED") {
+      const historyReportDate = detail.reportDate ?? detail.createdAt.slice(0, 10);
+      const rep = await generateReport({
         token: session.token,
         regionId: effectiveRegionId,
-        flexUploadBatchId: detail.flexUploadBatchId!,
+        reportDate: historyReportDate,
+        flexUploadBatchId: detail.flexUploadBatchId,
         ...(detail.renderwaysUploadBatchId ? { renderwaysUploadBatchId: detail.renderwaysUploadBatchId } : {}),
         ...(detail.callPlanUploadBatchId ? { callPlanUploadBatchId: detail.callPlanUploadBatchId } : {}),
       });
-      setPreview(prev);
+      setReport(rep);
+      window.localStorage.setItem(LAST_HISTORY_SESSION_KEY, rep.sessionId);
+    }
 
-      // If it's completed, we could ideally fetch the report.
-      // But since we don't have a getReport API, we'll just re-generate it to restore view
-      if (detail.status === "COMPLETED") {
-         const historyReportDate = detail.reportDate ?? detail.createdAt.slice(0, 10);
-         const rep = await generateReport({
-           token: session.token,
-           regionId: effectiveRegionId,
-           reportDate: historyReportDate,
-           flexUploadBatchId: detail.flexUploadBatchId!,
-           ...(detail.renderwaysUploadBatchId ? { renderwaysUploadBatchId: detail.renderwaysUploadBatchId } : {}),
-           ...(detail.callPlanUploadBatchId ? { callPlanUploadBatchId: detail.callPlanUploadBatchId } : {}),
-         });
-         setReport(rep);
-         window.localStorage.setItem(LAST_HISTORY_SESSION_KEY, rep.sessionId);
-      }
-      
+    if (closeHistoryPanel) {
       setIsHistoryPanelOpen(false);
+    }
+
+    if (successMessage) {
+      setMessage(successMessage);
+    }
+
+    return true;
+  }
+
+  async function handleHistoryOpen(historySession: ReportHistorySession) {
+    if (!session) return;
+    await runAction(async () => {
+      await restoreHistorySession(historySession);
     });
   }
 
@@ -3422,7 +3487,7 @@ export default function DashboardPage() {
         runtimeHealth={runtimeHealth}
         session={session}
         onWorkspaceViewChange={setWorkspaceView}
-        onRefreshHealth={() => void refreshHealth()}
+        onRefreshHealth={() => void handleRefreshWorkspace()}
         onOpenUpload={() => setIsUploadDrawerOpen(true)}
         onOpenHistory={() => setIsHistoryPanelOpen(true)}
         onGenerateReport={() => void handleGenerate()}

@@ -236,7 +236,7 @@ export function AppHeader({
             className="iconButton topIconButton refreshAction"
             type="button"
             onClick={onRefreshHealth}
-            title="Refresh health"
+            title="Refresh workspace"
           >
             <span aria-hidden="true" />
             Refresh

@@ -245,7 +245,9 @@ export function downloadRegionSummaryExcel(
   };
 
   // 1. Calculate the counts
-  const activeRows = isBod ? [...rows] : rows.filter((r) => !r.carryForward.closedSyntheticRow);
+  const activeRows = isBod
+    ? rows.filter((r) => r.comparison?.changeType !== "NEW")
+    : rows.filter((r) => !r.carryForward.closedSyntheticRow);
   const closedRows = isBod ? [] : rows.filter((r) => r.carryForward.closedSyntheticRow);
 
   // Engineers list
@@ -319,7 +321,7 @@ export function downloadRegionSummaryExcel(
     // NAF
     const flexBackend = activeRows.filter(r => {
       const s = getRtplStatus(r).toLowerCase();
-      return s.includes("flex backend") || s.includes("backend");
+      return s.includes("flex backend") || (s.includes("backend") && !s.includes("hp backend"));
     }).length;
     const ssc = activeRows.filter(r => getRtplStatus(r).toLowerCase().includes("ssc")).length;
     const hpBackend = activeRows.filter(r => getRtplStatus(r).toLowerCase().includes("hp backend")).length;
@@ -333,26 +335,26 @@ export function downloadRegionSummaryExcel(
     aoaData = [
       ["CHENNAI DASHBOARD", "", getDayOfWeek(reportDate) + " / " + formatDisplayDateOnly(reportDate), "", "Date", formatDisplayDateOnly(reportDate)],
       ["S.No", "Description", "Count", "", "Non Action-Field", totalNaf],
-      [1, "Total open call", openCalls, "", "Flex Backend", flexBackend || ""],
-      [2, "Total field Actionable call", actionable, "", "SSC", ssc || ""],
-      [3, "Total Call Scheduled", planned, "", "HP Backend", hpBackend || ""],
-      [4, "Call Allocation Engineer Wise", Number(callAllocation), "", "OBS-Customer", obsCustomer || ""],
-      [5, "Print - Open call (=>2 days)", printOpenGe2, "", "Cu Pending", cuPending || ""],
-      [6, "Print - Actionable call (=>2 days)", printActionableGe2, "", "Physical Closed", physicalClosed || ""],
+      [1, "Total open call", openCalls, "", "Flex Backend", flexBackend ?? 0],
+      [2, "Total field Actionable call", actionable, "", "SSC", ssc ?? 0],
+      [3, "Total Call Scheduled", planned, "", "HP Backend", hpBackend ?? 0],
+      [4, "Call Allocation Engineer Wise", Number(callAllocation), "", "OBS-Customer", obsCustomer ?? 0],
+      [5, "Print - Open call (=>2 days)", printOpenGe2, "", "Cu Pending", cuPending ?? 0],
+      [6, "Print - Actionable call (=>2 days)", printActionableGe2, "", "Physical Closed", physicalClosed ?? 0],
       [7, "Print - Scheduled (=>2 days)", printScheduledGe2, "", "Total NAF", totalNaf],
       [8, "Open call (>10 days)", openCallsGt10, "", "SSC%", `${sscPct}%`],
       [9, "Actionable call (>10 days)", actionableGt10, "", "", ""],
       [10, "Call Scheduled (>10 days)", scheduledGt10, "", "", ""],
-      [11, "MPS >1 Days", mpsGt1 || "", "", "", ""],
-      [12, "EOD Call Closer", eodCloser || "", "", "", ""],
-      [13, "New Calls Received", newCalls || "", "", "", ""],
+      [11, "MPS >1 Days", mpsGt1 ?? 0, "", "", ""],
+      [12, "EOD Call Closer", eodCloser ?? 0, "", "", ""],
+      [13, "New Calls Received", newCalls ?? 0, "", "", ""],
       [14, "CSO Days Inventory", csoDaysInventory === "#DIV/0!" ? "#DIV/0!" : Number(csoDaysInventory), "", "", ""],
       [15, "Total Eng Count", engineerCount, "", "", ""],
       [16, "Eng Avl in Field", engAvlInField, "", "", ""],
       [17, "Engineers Productivity", Number(enggProductivity), "", "", ""],
-      [18, "Missed to schedule field action calls due to non avl of Eng", missedToSchedule || "", "", "", ""],
-      [19, "Missed by Eng to attend scheduled Call (High call allocation)", missedByEng || "", "", "", ""],
-      [20, "G Total (Missed to schedule & Attend Daily basis)", gTotalMissed || "", "", "", ""],
+      [18, "Missed to schedule field action calls due to non avl of Eng", missedToSchedule ?? 0, "", "", ""],
+      [19, "Missed by Eng to attend scheduled Call (High call allocation)", missedByEng ?? 0, "", "", ""],
+      [20, "G Total (Missed to schedule & Attend Daily basis)", gTotalMissed ?? 0, "", "", ""],
       [21, "% - Missed to schedule & Attend Daily call", `${pctMissed}%`, "", "", ""],
       [22, "Closure Adherence", `${closureAdherence}%`, "", "", ""],
     ];
@@ -464,9 +466,9 @@ export function downloadEngineerProductivityExcel(
       item.assigned,
       item.attended,
       item.closed,
-      item.partOrdered || "",
-      item.underObservation || "",
-      item.cxReschedule || "",
+      item.partOrdered ?? 0,
+      item.underObservation ?? 0,
+      item.cxReschedule ?? 0,
     ]),
     ["Total Attended", "", "", totalAttended, "", "", "", ""],
   ];

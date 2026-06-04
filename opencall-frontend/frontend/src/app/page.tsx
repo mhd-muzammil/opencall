@@ -1691,7 +1691,9 @@ export default function DashboardPage() {
     
     const rows = tnFilteredRows;
     const isBod = tnViewMode === "BOD";
-    const active = isBod ? [...rows] : rows.filter((r) => !r.carryForward.closedSyntheticRow);
+    const active = isBod
+      ? rows.filter((r) => r.comparison?.changeType !== "NEW")
+      : rows.filter((r) => !r.carryForward.closedSyntheticRow);
     const closed = isBod ? [] : rows.filter((r) => r.carryForward.closedSyntheticRow);
     
     const getUniqueEngineers = (items: typeof rows) => {
@@ -1775,7 +1777,9 @@ export default function DashboardPage() {
     
     const rows = eodBodFilteredRows;
     const isBod = eodBodViewMode === "BOD";
-    const active = isBod ? [...rows] : rows.filter((r) => !r.carryForward.closedSyntheticRow);
+    const active = isBod
+      ? rows.filter((r) => r.comparison?.changeType !== "NEW")
+      : rows.filter((r) => !r.carryForward.closedSyntheticRow);
     const closed = isBod ? [] : rows.filter((r) => r.carryForward.closedSyntheticRow);
     
     const getUniqueEngineers = (items: typeof rows) => {
@@ -1844,7 +1848,7 @@ export default function DashboardPage() {
     // NAF right table columns
     const flexBackend = active.filter(r => {
       const s = getRtplStatus(r).toLowerCase();
-      return s.includes("flex backend") || s.includes("backend");
+      return s.includes("flex backend") || (s.includes("backend") && !s.includes("hp backend"));
     }).length;
     const ssc = active.filter(r => getRtplStatus(r).toLowerCase().includes("ssc")).length;
     const hpBackend = active.filter(r => getRtplStatus(r).toLowerCase().includes("hp backend")).length;
@@ -5222,16 +5226,16 @@ export default function DashboardPage() {
                         { id: 8, desc: "Open call (>10 days)", val: chennaiKpiMetrics.openCallsGt10 },
                         { id: 9, desc: "Actionable call (>10 days)", val: chennaiKpiMetrics.actionableGt10 },
                         { id: 10, desc: "Call Scheduled (>10 days)", val: chennaiKpiMetrics.scheduledGt10 },
-                        { id: 11, desc: "MPS >1 Days", val: chennaiKpiMetrics.mpsGt1 || "" },
-                        { id: 12, desc: "EOD Call Closer", val: chennaiKpiMetrics.eodCloser || "" },
-                        { id: 13, desc: "New Calls Received", val: chennaiKpiMetrics.newCalls || "" },
+                        { id: 11, desc: "MPS >1 Days", val: chennaiKpiMetrics.mpsGt1 ?? 0 },
+                        { id: 12, desc: "EOD Call Closer", val: chennaiKpiMetrics.eodCloser ?? 0 },
+                        { id: 13, desc: "New Calls Received", val: chennaiKpiMetrics.newCalls ?? 0 },
                         { id: 14, desc: "CSO Days Inventory", val: chennaiKpiMetrics.csoDaysInventory, isInventory: true },
                         { id: 15, desc: "Total Eng Count", val: chennaiKpiMetrics.enggCount },
                         { id: 16, desc: "Eng Avl in Field", val: chennaiKpiMetrics.engAvlInField },
                         { id: 17, desc: "Engineers Productivity", val: chennaiKpiMetrics.enggProductivity },
-                        { id: 18, desc: "Missed to schedule field action calls due to non avl of Eng", val: chennaiKpiMetrics.missedToSchedule || "" },
-                        { id: 19, desc: "Missed by Eng to attend scheduled Call (High call allocation)", val: chennaiKpiMetrics.missedByEng || "", isMissedByEng: true },
-                        { id: 20, desc: "G Total (Missed to schedule & Attend Daily basis)", val: chennaiKpiMetrics.gTotalMissed || "" },
+                        { id: 18, desc: "Missed to schedule field action calls due to non avl of Eng", val: chennaiKpiMetrics.missedToSchedule ?? 0 },
+                        { id: 19, desc: "Missed by Eng to attend scheduled Call (High call allocation)", val: chennaiKpiMetrics.missedByEng ?? 0, isMissedByEng: true },
+                        { id: 20, desc: "G Total (Missed to schedule & Attend Daily basis)", val: chennaiKpiMetrics.gTotalMissed ?? 0 },
                         { id: 21, desc: "% - Missed to schedule & Attend Daily call", val: `${chennaiKpiMetrics.pctMissed}%`, isPctMissed: true },
                         { id: 22, desc: "Closure Adherence", val: `${chennaiKpiMetrics.closureAdherence}%`, isAdherence: true },
                       ].map((m) => {
@@ -5285,12 +5289,12 @@ export default function DashboardPage() {
                     <tbody>
                       {[
                         { label: "Non Action-Field", val: chennaiKpiMetrics.totalNaf, isHeader: true },
-                        { label: "Flex Backend", val: chennaiKpiMetrics.flexBackend || "" },
-                        { label: "SSC", val: chennaiKpiMetrics.ssc || "" },
-                        { label: "HP Backend", val: chennaiKpiMetrics.hpBackend || "" },
-                        { label: "OBS-Customer", val: chennaiKpiMetrics.obsCustomer || "" },
-                        { label: "Cu Pending", val: chennaiKpiMetrics.cuPending || "" },
-                        { label: "Physical Closed", val: chennaiKpiMetrics.physicalClosed || "" },
+                        { label: "Flex Backend", val: chennaiKpiMetrics.flexBackend ?? 0 },
+                        { label: "SSC", val: chennaiKpiMetrics.ssc ?? 0 },
+                        { label: "HP Backend", val: chennaiKpiMetrics.hpBackend ?? 0 },
+                        { label: "OBS-Customer", val: chennaiKpiMetrics.obsCustomer ?? 0 },
+                        { label: "Cu Pending", val: chennaiKpiMetrics.cuPending ?? 0 },
+                        { label: "Physical Closed", val: chennaiKpiMetrics.physicalClosed ?? 0 },
                         { label: "Total NAF", val: chennaiKpiMetrics.totalNaf, isTotal: true },
                         { label: "SSC%", val: `${chennaiKpiMetrics.sscPct}%`, isSscPct: true },
                       ].map((r, index) => {

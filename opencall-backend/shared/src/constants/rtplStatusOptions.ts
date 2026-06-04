@@ -21,6 +21,9 @@ export const RTPL_STATUS_OPTIONS = [
   "Elevation HP Pending",
   "Elevation WP Pending",
   "OTP",
+  "work in progress",
+  "under observation",
+  "WO-closed",
 ] as const;
 
 export type RTPLStatusOption = (typeof RTPL_STATUS_OPTIONS)[number];

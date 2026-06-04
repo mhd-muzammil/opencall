@@ -5489,33 +5489,12 @@ export default function DashboardPage() {
                         value={String(draftOutput["RTPL status"] ?? "")}
                         manualEntryRequiredLabel="Entry"
                         onChange={(selected) => {
-                          if (selected === "Custom") {
-                            setDraftOutput((current) => ({
-                              ...current,
-                              "RTPL status": "",
-                            }));
-                          } else {
-                            setDraftOutput((current) => ({
-                              ...current,
-                              "RTPL status": selected,
-                            }));
-                          }
+                          setDraftOutput((current) => ({
+                            ...current,
+                            "RTPL status": selected,
+                          }));
                         }}
                       />
-                      {(draftOutput["RTPL status"] === "" || !RTPL_STATUS_OPTIONS.some((opt) => opt === String(draftOutput["RTPL status"]))) && (
-                        <input
-                          id="modal-rtpl-status-custom"
-                          className="modalInput customStatusInput"
-                          value={String(draftOutput["RTPL status"] ?? "")}
-                          onChange={(event) =>
-                            setDraftOutput((current) => ({
-                              ...current,
-                              "RTPL status": event.target.value,
-                            }))
-                          }
-                          placeholder="Enter custom status"
-                        />
-                      )}
                     </div>
                   </div>
 

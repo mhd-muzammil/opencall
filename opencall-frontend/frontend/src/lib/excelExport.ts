@@ -237,11 +237,19 @@ export function downloadRegionSummaryExcel(
     return String(r.output["WIP aging"] || "").trim();
   };
 
+  const isTradeRow = (r: GeneratedReportResponse["rows"][number]): boolean => {
+    const code = String(r.output["WO OTC CODE"] ?? "").trim().toUpperCase();
+    return code.includes("TRADE") || code.startsWith("01");
+  };
+  const isWarrantyRow = (r: GeneratedReportResponse["rows"][number]): boolean => {
+    return !isTradeRow(r);
+  };
+
   // 1. Calculate the counts
   const activeRows = isBod
-    ? rows.filter((r) => r.comparison?.changeType !== "NEW")
-    : rows.filter((r) => !r.carryForward.closedSyntheticRow);
-  const closedRows = isBod ? [] : rows.filter((r) => r.carryForward.closedSyntheticRow);
+    ? rows.filter((r) => r.comparison?.changeType !== "NEW" && isWarrantyRow(r))
+    : rows.filter((r) => !r.carryForward.closedSyntheticRow && isWarrantyRow(r));
+  const closedRows = isBod ? [] : rows.filter((r) => r.carryForward.closedSyntheticRow && isWarrantyRow(r));
 
   // Engineers list
   const getUniqueEngineers = (items: typeof rows) => {
@@ -253,27 +261,39 @@ export function downloadRegionSummaryExcel(
   const uniqueEngineers = getUniqueEngineers(activeRows);
   const engineerCount = uniqueEngineers.length;
 
+  const getRowStatus = (r: GeneratedReportResponse["rows"][number]): string => {
+    const rtplStatus = isBod
+      ? String(r.comparison?.previousRtplStatus || r.output["RTPL status"] || "").trim()
+      : String(r.output["RTPL status"] || "").trim();
+    if (rtplStatus && rtplStatus !== "Manual Entry Required") {
+      return rtplStatus;
+    }
+    
+    const flexStatus = isBod
+      ? String(r.comparison?.previousFlexStatus || r.output["Flex Status"] || "").trim()
+      : String(r.output["Flex Status"] || "").trim();
+    if (flexStatus && flexStatus !== "Manual Entry Required") {
+      return flexStatus;
+    }
+
+    const hpOwnerStatus = String(r.output["HP Owner Status"] || "").trim();
+    if (hpOwnerStatus && hpOwnerStatus !== "Manual Entry Required") {
+      return hpOwnerStatus;
+    }
+
+    return "";
+  };
+
   const matchStatus = (
     r: GeneratedReportResponse["rows"][number],
     keywords: string[],
     excludes: string[] = []
   ): boolean => {
-    const statuses = [
-      String(r.output["RTPL status"] || "").trim().toLowerCase(),
-      String(r.output["HP Owner Status"] || "").trim().toLowerCase(),
-      String(r.output["Flex Status"] || "").trim().toLowerCase(),
-      ...(isBod ? [
-        String(r.comparison?.previousRtplStatus || "").trim().toLowerCase(),
-        String(r.comparison?.previousFlexStatus || "").trim().toLowerCase()
-      ] : [])
-    ];
-
-    return statuses.some(s => {
-      if (!s || s === "manual entry required") return false;
-      const matchesKeyword = keywords.some(kw => s.includes(kw.toLowerCase()));
-      const matchesExclude = excludes.some(ex => s.includes(ex.toLowerCase()));
-      return matchesKeyword && !matchesExclude;
-    });
+    const s = getRowStatus(r).toLowerCase();
+    if (!s || s === "manual entry required") return false;
+    const matchesKeyword = keywords.some(kw => s.includes(kw.toLowerCase()));
+    const matchesExclude = excludes.some(ex => s.includes(ex.toLowerCase()));
+    return matchesKeyword && !matchesExclude;
   };
 
   const parseWipAgingValue = (value: unknown): number | null => {
@@ -387,12 +407,9 @@ export function downloadRegionSummaryExcel(
     const toBeCancelCount = activeRows.filter(r => matchStatus(r, ["Need to Cancel", "Need to Cancel Mail", "Request to Cancel"])).length;
     const newCallsCount = activeRows.filter((r) => r.comparison?.changeType === "NEW").length;
     
-    // Trade open calls helper (WO OTC CODE contains "TRADE" or starts with "01")
-    const isTradeRow = (r: GeneratedReportResponse["rows"][number]) => {
-      const code = String(r.output["WO OTC CODE"] ?? "").trim().toUpperCase();
-      return code.includes("TRADE") || code.startsWith("01");
-    };
-    const tradeOpenCallsCount = activeRows.filter(isTradeRow).length;
+    const tradeOpenCallsCount = isBod
+      ? rows.filter((r) => r.comparison?.changeType !== "NEW" && isTradeRow(r)).length
+      : rows.filter((r) => !r.carryForward.closedSyntheticRow && isTradeRow(r)).length;
  
     // Closed cancelled
     const closedCancelledCount = closedRows.filter((r) => matchStatus(r, ["cancel"])).length;

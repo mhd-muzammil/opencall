@@ -32,6 +32,13 @@ export type FilterableColumn = (typeof FILTERABLE_COLUMNS)[number];
 // ---------------------------------------------------------------------------
 
 /** Normalise a cell value to a stable string for comparison / display. */
+const FILTER_VALUE_ALIASES = new Map<string, string>([
+  ["SSC PENDING", "PART PENDING"],
+  ["SSC PENDING -> PART PENDING", "PART PENDING"],
+  ["SSC PENDING \u2192 PART PENDING", "PART PENDING"],
+  ["TO BE SCHEDULE", "TO BE SCHEDULED"],
+]);
+
 export function normalizeFilterValue(raw: unknown): string {
   const s = String(raw ?? "")
     .normalize("NFKC")
@@ -40,7 +47,9 @@ export function normalizeFilterValue(raw: unknown): string {
     .replace(/\s+/g, " ")
     .trim();
 
-  return s === "" ? "(blank)" : s.toUpperCase();
+  const normalized = s === "" ? "(blank)" : s.toUpperCase();
+
+  return FILTER_VALUE_ALIASES.get(normalized) ?? normalized;
 }
 
 function normalizeFilterState(filters: ColumnFilterState): ColumnFilterState {

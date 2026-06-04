@@ -51,6 +51,14 @@ describe("normalizeFilterValue", () => {
     expect(normalizeFilterValue("Visit Quote\u200b To\u200e Customer\ufeff")).toBe("VISIT QUOTE TO CUSTOMER");
   });
 
+  it("maps known business aliases to one filter value", () => {
+    expect(normalizeFilterValue("SSC Pending")).toBe("PART PENDING");
+    expect(normalizeFilterValue("SSC Pending -> Part Pending")).toBe("PART PENDING");
+    expect(normalizeFilterValue("SSC Pending \u2192 Part Pending")).toBe("PART PENDING");
+    expect(normalizeFilterValue("To be schedule")).toBe("TO BE SCHEDULED");
+    expect(normalizeFilterValue("to be scheduled")).toBe("TO BE SCHEDULED");
+  });
+
   it("returns (blank) for empty/null/undefined", () => {
     expect(normalizeFilterValue("")).toBe("(blank)");
     expect(normalizeFilterValue(null)).toBe("(blank)");
@@ -104,6 +112,22 @@ describe("extractUniqueValues", () => {
 
     expect(extractUniqueValues(rows, "RTPL status")).toEqual([
       { value: "VISIT QUOTE TO CUSTOMER", count: 3 },
+    ]);
+  });
+
+  it("groups known status aliases into one dropdown option", () => {
+    const rows = [
+      makeRow({ "RTPL status": "SSC Pending" }),
+      makeRow({ "RTPL status": "SSC Pending -> Part Pending" }),
+      makeRow({ "RTPL status": "SSC Pending \u2192 Part Pending" }),
+      makeRow({ "RTPL status": "Part Pending" }),
+      makeRow({ "RTPL status": "To be schedule" }),
+      makeRow({ "RTPL status": "to be scheduled" }),
+    ];
+
+    expect(extractUniqueValues(rows, "RTPL status")).toEqual([
+      { value: "PART PENDING", count: 4 },
+      { value: "TO BE SCHEDULED", count: 2 },
     ]);
   });
 

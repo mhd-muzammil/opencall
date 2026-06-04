@@ -3420,7 +3420,7 @@ export default function DashboardPage() {
               <div className="rtplAnalyticsSection">
                 <div className="sectionHeader rtplAnalyticsHeader">
                   <div>
-                    <h3>RTPL Operational Analytics</h3>
+                    <h3>RTPL DASHBOARD</h3>
                     <p>
                       View RTPL movement by all cases, warranty cases, or 01-Trade non-warranty cases.
                     </p>
@@ -3543,7 +3543,7 @@ export default function DashboardPage() {
               <div className="rtplAnalyticsSection">
                 <div className="sectionHeader rtplAnalyticsHeader">
                   <div>
-                    <h3>Flex Operational Analytics</h3>
+                    <h3>FLEX DASHBOARD</h3>
                     <p>
                       View Flex status load by all cases, warranty cases, or 01-Trade non-warranty cases.
                     </p>

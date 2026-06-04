@@ -50,6 +50,7 @@ import {
   buildOverallWoOtcBreakdown,
   buildRtplTimeCards,
   filterRowsByRegion,
+  hasRequestToCancelFlexStatus,
   isTodayCallPlanVisibleRow,
   reportWithRows,
   RTPL_CARRY_FORWARD_TIME_CARD_ID,
@@ -1093,11 +1094,11 @@ export default function DashboardPage() {
   const [isKpiModalOpen, setIsKpiModalOpen] = useState(false);
   const [isChennaiKpiModalOpen, setIsChennaiKpiModalOpen] = useState(false);
   const [isProductivityModalOpen, setIsProductivityModalOpen] = useState(false);
-  const [productivityFilterType, setProductivityFilterType] = useState("Today");
+  const [productivityFilterType, setProductivityFilterType] = useState("All Dates");
   const [selectedProductivityValue, setSelectedProductivityValue] = useState("");
-  const [tnFilterType, setTnFilterType] = useState("Today");
+  const [tnFilterType, setTnFilterType] = useState("All Dates");
   const [selectedTnValue, setSelectedTnValue] = useState("");
-  const [eodBodFilterType, setEodBodFilterType] = useState("Today");
+  const [eodBodFilterType, setEodBodFilterType] = useState("All Dates");
   const [selectedEodBodValue, setSelectedEodBodValue] = useState("");
   const [tnViewMode, setTnViewMode] = useState<"BOD" | "EOD">("EOD");
   const [eodBodViewMode, setEodBodViewMode] = useState<"BOD" | "EOD">("EOD");
@@ -1157,11 +1158,11 @@ export default function DashboardPage() {
     setIsKpiModalOpen(false);
     setIsChennaiKpiModalOpen(false);
     setIsProductivityModalOpen(false);
-    setProductivityFilterType("Today");
+    setProductivityFilterType("All Dates");
     setSelectedProductivityValue("");
-    setTnFilterType("Today");
+    setTnFilterType("All Dates");
     setSelectedTnValue("");
-    setEodBodFilterType("Today");
+    setEodBodFilterType("All Dates");
     setSelectedEodBodValue("");
     setTnViewMode("EOD");
     setEodBodViewMode("EOD");
@@ -1422,6 +1423,25 @@ export default function DashboardPage() {
     });
   }, [report, selectedRegion, selectedWoOtcCode, tableBaseRows]);
 
+  const kpiBaseRows = useMemo(() => {
+    if (!report) return [];
+    const filtered = report.rows.filter((row) => {
+      if (hasRequestToCancelFlexStatus(row)) return false;
+      const matchRegion = selectedRegion === "ALL" || !selectedRegion || row.output["Work Location"] === selectedRegion;
+      const matchCode = !selectedWoOtcCode || row.output["WO OTC CODE"] === selectedWoOtcCode;
+      return matchRegion && matchCode;
+    });
+
+    const seen = new Set<string>();
+    return filtered.filter((row) => {
+      const ticketId = String(row.output["Ticket ID"] ?? "").trim();
+      const key = (ticketId && ticketId !== MANUAL_ENTRY_REQUIRED) ? ticketId : String(row.serialNo);
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+  }, [report, selectedRegion, selectedWoOtcCode]);
+
   const regionDateMetadata = useMemo(() => {
     if (!report) return { monthsList: [], datesList: [], todayStr: "" };
 
@@ -1438,7 +1458,7 @@ export default function DashboardPage() {
 
     const todayStr = report.reportDate ? getFormattedReportDate(report.reportDate) : "";
 
-    for (const r of regionFilteredRows) {
+    for (const r of kpiBaseRows) {
       const createdTime = String(r.output["Case Created Time"] ?? "").trim();
       if (createdTime && createdTime !== MANUAL_ENTRY_REQUIRED) {
         const match = /^(\d{2})[-/](\d{2})[-/](\d{4})/.exec(createdTime);
@@ -1470,16 +1490,16 @@ export default function DashboardPage() {
     });
 
     return { monthsList, datesList, todayStr };
-  }, [report, regionFilteredRows]);
+  }, [report, kpiBaseRows]);
 
   const tnFilteredRows = useMemo(() => {
     if (!report) return [];
 
-    let rows = regionFilteredRows;
+    let rows = kpiBaseRows;
     const todayStr = regionDateMetadata.todayStr;
 
     if (tnFilterType === "Today" && todayStr) {
-      rows = regionFilteredRows.filter(r => {
+      rows = kpiBaseRows.filter(r => {
         const createdTime = String(r.output["Case Created Time"] ?? "").trim();
         if (createdTime && createdTime !== MANUAL_ENTRY_REQUIRED) {
           const match = /^(\d{2})[-/](\d{2})[-/](\d{4})/.exec(createdTime);
@@ -1491,7 +1511,7 @@ export default function DashboardPage() {
         return false;
       });
     } else if (tnFilterType === "Specific Date" && selectedTnValue) {
-      rows = regionFilteredRows.filter(r => {
+      rows = kpiBaseRows.filter(r => {
         const createdTime = String(r.output["Case Created Time"] ?? "").trim();
         if (createdTime && createdTime !== MANUAL_ENTRY_REQUIRED) {
           const match = /^(\d{2})[-/](\d{2})[-/](\d{4})/.exec(createdTime);
@@ -1503,7 +1523,7 @@ export default function DashboardPage() {
         return false;
       });
     } else if (tnFilterType === "Specific Month" && selectedTnValue) {
-      rows = regionFilteredRows.filter(r => {
+      rows = kpiBaseRows.filter(r => {
         const createdTime = String(r.output["Case Created Time"] ?? "").trim();
         if (createdTime && createdTime !== MANUAL_ENTRY_REQUIRED) {
           const match = /^(\d{2})[-/](\d{2})[-/](\d{4})/.exec(createdTime);
@@ -1521,7 +1541,7 @@ export default function DashboardPage() {
     }
 
     return rows;
-  }, [report, regionFilteredRows, tnFilterType, selectedTnValue, regionDateMetadata]);
+  }, [report, kpiBaseRows, tnFilterType, selectedTnValue, regionDateMetadata]);
 
   useEffect(() => {
     if (tnFilterType === "Specific Date") {
@@ -1553,11 +1573,11 @@ export default function DashboardPage() {
   const eodBodFilteredRows = useMemo(() => {
     if (!report) return [];
 
-    let rows = regionFilteredRows;
+    let rows = kpiBaseRows;
     const todayStr = regionDateMetadata.todayStr;
 
     if (eodBodFilterType === "Today" && todayStr) {
-      rows = regionFilteredRows.filter(r => {
+      rows = kpiBaseRows.filter(r => {
         const createdTime = String(r.output["Case Created Time"] ?? "").trim();
         if (createdTime && createdTime !== MANUAL_ENTRY_REQUIRED) {
           const match = /^(\d{2})[-/](\d{2})[-/](\d{4})/.exec(createdTime);
@@ -1569,7 +1589,7 @@ export default function DashboardPage() {
         return false;
       });
     } else if (eodBodFilterType === "Specific Date" && selectedEodBodValue) {
-      rows = regionFilteredRows.filter(r => {
+      rows = kpiBaseRows.filter(r => {
         const createdTime = String(r.output["Case Created Time"] ?? "").trim();
         if (createdTime && createdTime !== MANUAL_ENTRY_REQUIRED) {
           const match = /^(\d{2})[-/](\d{2})[-/](\d{4})/.exec(createdTime);
@@ -1581,7 +1601,7 @@ export default function DashboardPage() {
         return false;
       });
     } else if (eodBodFilterType === "Specific Month" && selectedEodBodValue) {
-      rows = regionFilteredRows.filter(r => {
+      rows = kpiBaseRows.filter(r => {
         const createdTime = String(r.output["Case Created Time"] ?? "").trim();
         if (createdTime && createdTime !== MANUAL_ENTRY_REQUIRED) {
           const match = /^(\d{2})[-/](\d{2})[-/](\d{4})/.exec(createdTime);
@@ -1599,7 +1619,7 @@ export default function DashboardPage() {
     }
 
     return rows;
-  }, [report, regionFilteredRows, eodBodFilterType, selectedEodBodValue, regionDateMetadata]);
+  }, [report, kpiBaseRows, eodBodFilterType, selectedEodBodValue, regionDateMetadata]);
 
   useEffect(() => {
     if (eodBodFilterType === "Specific Date") {
@@ -1905,6 +1925,16 @@ export default function DashboardPage() {
     if (selectedRegion && selectedRegion !== "ALL") {
       regionRows = report.rows.filter(r => r.output["Work Location"] === selectedRegion);
     }
+
+    // 1b. Deduplicate rows by Ticket ID to prevent duplicate engineer productivity counts
+    const seen = new Set<string>();
+    regionRows = regionRows.filter((row) => {
+      const ticketId = String(row.output["Ticket ID"] ?? "").trim();
+      const key = (ticketId && ticketId !== MANUAL_ENTRY_REQUIRED) ? ticketId : String(row.serialNo);
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
 
     // 2. Identify all unique months and dates in these rows
     const monthsSet = new Set<string>();

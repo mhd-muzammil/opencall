@@ -56,6 +56,7 @@ import {
   RTPL_CARRY_FORWARD_TIME_CARD_ID,
   type RtplTimeCardId,
 } from "../lib/reportDashboardAnalytics";
+import { getLatestCompletedReportSession } from "../lib/reportHistorySelection";
 
 type SourceKey = "FLEX_WIP" | "RENDERWAYS" | "CALL_PLAN";
 type FileField = "flexWipReport" | "renderwaysReport" | "callPlan";
@@ -2355,20 +2356,7 @@ export default function DashboardPage() {
       const sessions = await getReportHistory(session.token);
       setHistorySessions(sessions);
 
-      const currentSessionId = report?.sessionId ?? window.localStorage.getItem(LAST_HISTORY_SESSION_KEY);
-      const currentCompletedSession = currentSessionId
-        ? sessions.find(
-            (historySession) =>
-              historySession.id === currentSessionId &&
-              historySession.status === "COMPLETED" &&
-              Boolean(historySession.reportId),
-          )
-        : null;
-      const latestCompletedSession = sessions.find(
-        (historySession) =>
-          historySession.status === "COMPLETED" && Boolean(historySession.reportId),
-      );
-      const sessionToRefresh = currentCompletedSession ?? latestCompletedSession;
+      const sessionToRefresh = getLatestCompletedReportSession(sessions);
 
       if (!sessionToRefresh) {
         setMessage("Health refreshed. No completed report is available to reload.");
@@ -2389,18 +2377,7 @@ export default function DashboardPage() {
 
         if (!hasAutoRestoredHistoryRef.current && !report && !upload) {
           hasAutoRestoredHistoryRef.current = true;
-          const lastHistorySessionId = window.localStorage.getItem(LAST_HISTORY_SESSION_KEY);
-          const savedSession = sessions.find(
-            (historySession) =>
-              historySession.id === lastHistorySessionId &&
-              historySession.status === "COMPLETED" &&
-              historySession.reportId,
-          );
-          const latestCompletedSession = sessions.find(
-            (historySession) =>
-              historySession.status === "COMPLETED" && Boolean(historySession.reportId),
-          );
-          const sessionToRestore = savedSession ?? latestCompletedSession;
+          const sessionToRestore = getLatestCompletedReportSession(sessions);
 
           if (sessionToRestore) {
             void handleHistoryOpen(sessionToRestore);

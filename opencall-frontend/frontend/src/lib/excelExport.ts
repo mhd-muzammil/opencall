@@ -230,13 +230,6 @@ export function downloadRegionSummaryExcel(
     return days[date.getDay()] ?? "Wednesday";
   };
 
-  const getRtplStatus = (r: GeneratedReportResponse["rows"][number]): string => {
-    if (isBod) {
-      return String(r.comparison?.previousRtplStatus || r.output["RTPL status"] || "").trim();
-    }
-    return String(r.output["RTPL status"] || "").trim();
-  };
-
   const getWipAging = (r: GeneratedReportResponse["rows"][number]): string => {
     if (isBod) {
       return String(r.comparison?.previousWipAging || r.output["WIP aging"] || "").trim();
@@ -260,18 +253,27 @@ export function downloadRegionSummaryExcel(
   const uniqueEngineers = getUniqueEngineers(activeRows);
   const engineerCount = uniqueEngineers.length;
 
-  const countByRtplStatus = (statusList: string[]) => {
-    return activeRows.filter((r) => {
-      const status = getRtplStatus(r).toLowerCase();
-      return statusList.some((s) => status === s.toLowerCase());
-    }).length;
-  };
+  const matchStatus = (
+    r: GeneratedReportResponse["rows"][number],
+    keywords: string[],
+    excludes: string[] = []
+  ): boolean => {
+    const statuses = [
+      String(r.output["RTPL status"] || "").trim().toLowerCase(),
+      String(r.output["HP Owner Status"] || "").trim().toLowerCase(),
+      String(r.output["Flex Status"] || "").trim().toLowerCase(),
+      ...(isBod ? [
+        String(r.comparison?.previousRtplStatus || "").trim().toLowerCase(),
+        String(r.comparison?.previousFlexStatus || "").trim().toLowerCase()
+      ] : [])
+    ];
 
-  const countByRtplStatusContains = (keyword: string) => {
-    return activeRows.filter((r) => {
-      const status = getRtplStatus(r).toLowerCase();
-      return status.includes(keyword.toLowerCase());
-    }).length;
+    return statuses.some(s => {
+      if (!s || s === "manual entry required") return false;
+      const matchesKeyword = keywords.some(kw => s.includes(kw.toLowerCase()));
+      const matchesExclude = excludes.some(ex => s.includes(ex.toLowerCase()));
+      return matchesKeyword && !matchesExclude;
+    });
   };
 
   const parseWipAgingValue = (value: unknown): number | null => {
@@ -292,19 +294,19 @@ export function downloadRegionSummaryExcel(
 
   if (isChennai) {
     const openCalls = activeRows.length;
-    const actionable = countByRtplStatus(["Actionable"]);
-    const planned = countByRtplStatus(["Engg Assigned"]);
+    const actionable = activeRows.filter(r => matchStatus(r, ["actionable"], ["customer", "cust", "cx", "delay", "pending"])).length;
+    const planned = activeRows.filter(r => matchStatus(r, ["assigned", "scheduled", "onsite"], ["pending", "to be"])).length;
     const callAllocation = engineerCount > 0 ? (planned / engineerCount).toFixed(1) : "0.0";
     
     const printOpenGe2 = activeRows.filter(r => isPrintCase(r) && (parseWipAgingValue(getWipAging(r)) ?? 0) >= 2).length;
-    const printActionableGe2 = activeRows.filter(r => isPrintCase(r) && getRtplStatus(r).toLowerCase() === "actionable" && (parseWipAgingValue(getWipAging(r)) ?? 0) >= 2).length;
-    const printScheduledGe2 = activeRows.filter(r => isPrintCase(r) && getRtplStatus(r).toLowerCase() === "engg assigned" && (parseWipAgingValue(getWipAging(r)) ?? 0) >= 2).length;
+    const printActionableGe2 = activeRows.filter(r => isPrintCase(r) && matchStatus(r, ["actionable"], ["customer", "cust", "cx", "delay", "pending"]) && (parseWipAgingValue(getWipAging(r)) ?? 0) >= 2).length;
+    const printScheduledGe2 = activeRows.filter(r => isPrintCase(r) && matchStatus(r, ["assigned", "scheduled", "onsite"], ["pending", "to be"]) && (parseWipAgingValue(getWipAging(r)) ?? 0) >= 2).length;
     
     const openCallsGt10 = activeRows.filter(r => (parseWipAgingValue(getWipAging(r)) ?? 0) > 10).length;
-    const actionableGt10 = activeRows.filter(r => getRtplStatus(r).toLowerCase() === "actionable" && (parseWipAgingValue(getWipAging(r)) ?? 0) > 10).length;
-    const scheduledGt10 = activeRows.filter(r => getRtplStatus(r).toLowerCase() === "engg assigned" && (parseWipAgingValue(getWipAging(r)) ?? 0) > 10).length;
+    const actionableGt10 = activeRows.filter(r => matchStatus(r, ["actionable"], ["customer", "cust", "cx", "delay", "pending"]) && (parseWipAgingValue(getWipAging(r)) ?? 0) > 10).length;
+    const scheduledGt10 = activeRows.filter(r => matchStatus(r, ["assigned", "scheduled", "onsite"], ["pending", "to be"]) && (parseWipAgingValue(getWipAging(r)) ?? 0) > 10).length;
     
-    const mpsGt1 = activeRows.filter(r => getRtplStatus(r).toLowerCase().includes("mps") && (parseWipAgingValue(getWipAging(r)) ?? 0) > 1).length;
+    const mpsGt1 = activeRows.filter(r => matchStatus(r, ["mps"]) && (parseWipAgingValue(getWipAging(r)) ?? 0) > 1).length;
     const eodCloser = closedRows.length;
     const newCalls = activeRows.filter(r => r.comparison?.changeType === "NEW").length;
     
@@ -312,22 +314,19 @@ export function downloadRegionSummaryExcel(
     const engAvlInField = engineerCount;
     const enggProductivity = engineerCount > 0 ? (eodCloser / engineerCount).toFixed(1) : "0.0";
     
-    const missedToSchedule = activeRows.filter(r => getRtplStatus(r).toLowerCase().includes("missed") || getRtplStatus(r).toLowerCase().includes("non avl")).length;
-    const missedByEng = activeRows.filter(r => getRtplStatus(r).toLowerCase().includes("high call")).length;
+    const missedToSchedule = activeRows.filter(r => matchStatus(r, ["non avl", "missed to schedule", "to be scheduled", "assignment pending"])).length;
+    const missedByEng = activeRows.filter(r => matchStatus(r, ["high call", "missed by eng"])).length;
     const gTotalMissed = missedToSchedule + missedByEng;
     const pctMissed = openCalls > 0 ? Math.round((gTotalMissed / openCalls) * 100) : 0;
     const closureAdherence = (eodCloser + gTotalMissed) > 0 ? Math.round((eodCloser / (eodCloser + gTotalMissed)) * 100) : 0;
     
     // NAF
-    const flexBackend = activeRows.filter(r => {
-      const s = getRtplStatus(r).toLowerCase();
-      return s.includes("flex backend") || (s.includes("backend") && !s.includes("hp backend"));
-    }).length;
-    const ssc = activeRows.filter(r => getRtplStatus(r).toLowerCase().includes("ssc")).length;
-    const hpBackend = activeRows.filter(r => getRtplStatus(r).toLowerCase().includes("hp backend")).length;
-    const obsCustomer = activeRows.filter(r => getRtplStatus(r).toLowerCase().includes("obs") || getRtplStatus(r).toLowerCase().includes("customer")).length;
-    const cuPending = activeRows.filter(r => getRtplStatus(r).toLowerCase().includes("cu pending")).length;
-    const physicalClosed = activeRows.filter(r => getRtplStatus(r).toLowerCase().includes("physical closed") || getRtplStatus(r).toLowerCase().includes("physically closed")).length;
+    const flexBackend = activeRows.filter(r => matchStatus(r, ["flex backend", "backend"], ["hp backend"])).length;
+    const ssc = activeRows.filter(r => matchStatus(r, ["ssc"])).length;
+    const hpBackend = activeRows.filter(r => matchStatus(r, ["hp backend"])).length;
+    const obsCustomer = activeRows.filter(r => matchStatus(r, ["obs", "observation", "customer"], ["pending", "delay"])).length;
+    const cuPending = activeRows.filter(r => matchStatus(r, ["cu pending", "cust pending", "customer pending", "cust delay", "customer delay"])).length;
+    const physicalClosed = activeRows.filter(r => matchStatus(r, ["physical closed", "physically closed", "partner complete", "wo closed"], ["error"])).length;
     
     const totalNaf = flexBackend + ssc + hpBackend + obsCustomer + cuPending + physicalClosed;
     const sscPct = totalNaf > 0 ? Math.round((ssc / totalNaf) * 100) : 0;
@@ -375,32 +374,29 @@ export function downloadRegionSummaryExcel(
     // 2. Salem region KPI summaries
     const openCallsCount = activeRows.length;
     const closedCallsCount = closedRows.length;
-    const actionableCount = countByRtplStatus(["Actionable"]);
-    const plannedCount = countByRtplStatus(["Engg Assigned"]);
-    const enggOnsiteCount = countByRtplStatus(["Engg Assigned"]) + countByRtplStatusContains("onsite");
-    const toBeScheduleCount = countByRtplStatus(["To be Scheduled", "Engg Assignment Pending"]);
-    const cxRescheduleCount = countByRtplStatus(["CX Pending"]) + countByRtplStatusContains("reschedule") + countByRtplStatusContains("cx");
-    const sscPendingCount = countByRtplStatus(["SSC Pending → Part Pending"]);
-    const elevateTechCount = countByRtplStatus(["Elevation HP Pending", "Elevation Part Pending"]);
-    const underObservationCount = countByRtplStatus(["CRT Pending", "CT Validation Pending"]) + countByRtplStatusContains("observation");
-    const toBeYankCount = countByRtplStatus(["Need to Yank", "Yank"]);
-    const addPartOrderedCount = countByRtplStatus(["Additional Part", "Part Order Pending"]);
-    const toBeCancelCount = countByRtplStatus(["Need to Cancel", "Need to Cancel Mail"]);
+    const actionableCount = activeRows.filter(r => matchStatus(r, ["actionable"], ["customer", "cust", "cx", "delay", "pending"])).length;
+    const plannedCount = activeRows.filter(r => matchStatus(r, ["assigned", "scheduled", "onsite"], ["pending", "to be"])).length;
+    const enggOnsiteCount = activeRows.filter(r => matchStatus(r, ["assigned", "onsite"], ["pending", "to be"])).length;
+    const toBeScheduleCount = activeRows.filter(r => matchStatus(r, ["to be scheduled", "assignment pending", "non avl", "missed to schedule"])).length;
+    const cxRescheduleCount = activeRows.filter(r => matchStatus(r, ["cx pending", "reschedule", "cx", "cust delay", "customer delay", "customer pending"])).length;
+    const sscPendingCount = activeRows.filter(r => matchStatus(r, ["ssc pending", "ssc"])).length;
+    const elevateTechCount = activeRows.filter(r => matchStatus(r, ["elevation HP Pending", "elevation Part Pending", "elevation - HP Pending", "elevation - Partner Pending", "elevate"])).length;
+    const underObservationCount = activeRows.filter(r => matchStatus(r, ["CRT Pending", "CT Validation Pending", "observation", "under observation", "crt"])).length;
+    const toBeYankCount = activeRows.filter(r => matchStatus(r, ["Need to Yank", "Yank"])).length;
+    const addPartOrderedCount = activeRows.filter(r => matchStatus(r, ["Additional Part", "Part Order Pending", "Parts Hold", "Part need to order"])).length;
+    const toBeCancelCount = activeRows.filter(r => matchStatus(r, ["Need to Cancel", "Need to Cancel Mail", "Request to Cancel"])).length;
     const newCallsCount = activeRows.filter((r) => r.comparison?.changeType === "NEW").length;
     
     // Trade open calls helper (WO OTC CODE contains "TRADE" or starts with "01")
-    const isTradeRow = (r: typeof rows[number]) => {
+    const isTradeRow = (r: GeneratedReportResponse["rows"][number]) => {
       const code = String(r.output["WO OTC CODE"] ?? "").trim().toUpperCase();
       return code.includes("TRADE") || code.startsWith("01");
     };
     const tradeOpenCallsCount = activeRows.filter(isTradeRow).length;
  
     // Closed cancelled
-    const closedCancelledCount = closedRows.filter((r) => {
-      const status = getRtplStatus(r).toLowerCase();
-      return status.includes("cancel");
-    }).length;
-
+    const closedCancelledCount = closedRows.filter((r) => matchStatus(r, ["cancel"])).length;
+ 
     aoaData = [
       [reportDate, "", regionName],
       ["S.No", "Description", "Count"],
@@ -423,11 +419,11 @@ export function downloadRegionSummaryExcel(
       [17, "New calls", newCallsCount || 0],
       [18, "Trade Open Calls", tradeOpenCallsCount || 0],
     ];
-
+ 
     merges = [
       { s: { r: 0, c: 0 }, e: { r: 0, c: 1 } },
     ];
-
+ 
     colWidths = [
       { wch: 10 },
       { wch: 35 },

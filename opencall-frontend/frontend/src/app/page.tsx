@@ -1705,25 +1705,27 @@ export default function DashboardPage() {
     const uniqueEngineers = getUniqueEngineers(active);
     const engineerCount = uniqueEngineers.length;
     
-    const getRtplStatus = (r: typeof rows[number]) => {
-      if (isBod) {
-        return String(r.comparison?.previousRtplStatus || r.output["RTPL status"] || "").trim();
-      }
-      return String(r.output["RTPL status"] || "").trim();
-    };
+    const matchStatus = (
+      r: typeof rows[number],
+      keywords: string[],
+      excludes: string[] = []
+    ): boolean => {
+      const statuses = [
+        String(r.output["RTPL status"] || "").trim().toLowerCase(),
+        String(r.output["HP Owner Status"] || "").trim().toLowerCase(),
+        String(r.output["Flex Status"] || "").trim().toLowerCase(),
+        ...(isBod ? [
+          String(r.comparison?.previousRtplStatus || "").trim().toLowerCase(),
+          String(r.comparison?.previousFlexStatus || "").trim().toLowerCase()
+        ] : [])
+      ];
 
-    const countStatus = (statusList: string[]) => {
-      return active.filter((r) => {
-        const s = getRtplStatus(r).toLowerCase();
-        return statusList.some((item) => s === item.toLowerCase());
-      }).length;
-    };
-    
-    const countStatusContains = (keyword: string) => {
-      return active.filter((r) => {
-        const s = getRtplStatus(r).toLowerCase();
-        return s.includes(keyword.toLowerCase());
-      }).length;
+      return statuses.some(s => {
+        if (!s || s === "manual entry required") return false;
+        const matchesKeyword = keywords.some(kw => s.includes(kw.toLowerCase()));
+        const matchesExclude = excludes.some(ex => s.includes(ex.toLowerCase()));
+        return matchesKeyword && !matchesExclude;
+      });
     };
     
     const isTradeRow = (r: typeof rows[number]) => {
@@ -1731,24 +1733,21 @@ export default function DashboardPage() {
       return code.includes("TRADE") || code.startsWith("01");
     };
     
-    const actionable = countStatus(["Actionable"]);
-    const planned = countStatus(["Engg Assigned"]);
-    const enggOnsite = countStatus(["Engg Assigned"]) + countStatusContains("onsite");
-    const toBeSchedule = countStatus(["To be Scheduled", "Engg Assignment Pending"]);
-    const cxReschedule = countStatus(["CX Pending"]) + countStatusContains("reschedule") + countStatusContains("cx");
-    const sscPending = countStatus(["SSC Pending → Part Pending"]);
-    const elevateTech = countStatus(["Elevation HP Pending", "Elevation Part Pending"]);
-    const underObservation = countStatus(["CRT Pending", "CT Validation Pending"]) + countStatusContains("observation");
-    const toBeYank = countStatus(["Need to Yank", "Yank"]);
-    const addPartOrdered = countStatus(["Additional Part", "Part Order Pending"]);
-    const toBeCancel = countStatus(["Need to Cancel", "Need to Cancel Mail"]);
+    const actionable = active.filter(r => matchStatus(r, ["actionable"], ["customer", "cust", "cx", "delay", "pending"])).length;
+    const planned = active.filter(r => matchStatus(r, ["assigned", "scheduled", "onsite"], ["pending", "to be"])).length;
+    const enggOnsite = active.filter(r => matchStatus(r, ["assigned", "onsite"], ["pending", "to be"])).length;
+    const toBeSchedule = active.filter(r => matchStatus(r, ["to be scheduled", "assignment pending", "non avl", "missed to schedule"])).length;
+    const cxReschedule = active.filter(r => matchStatus(r, ["cx pending", "reschedule", "cx", "cust delay", "customer delay", "customer pending"])).length;
+    const sscPending = active.filter(r => matchStatus(r, ["ssc pending", "ssc"])).length;
+    const elevateTech = active.filter(r => matchStatus(r, ["elevation HP Pending", "elevation Part Pending", "elevation - HP Pending", "elevation - Partner Pending", "elevate"])).length;
+    const underObservation = active.filter(r => matchStatus(r, ["CRT Pending", "CT Validation Pending", "observation", "under observation", "crt"])).length;
+    const toBeYank = active.filter(r => matchStatus(r, ["Need to Yank", "Yank"])).length;
+    const addPartOrdered = active.filter(r => matchStatus(r, ["Additional Part", "Part Order Pending", "Parts Hold", "Part need to order"])).length;
+    const toBeCancel = active.filter(r => matchStatus(r, ["Need to Cancel", "Need to Cancel Mail", "Request to Cancel"])).length;
     const newCalls = active.filter((r) => r.comparison?.changeType === "NEW").length;
     const tradeOpenCalls = active.filter(isTradeRow).length;
     
-    const closedCancelled = closed.filter((r) => {
-      const s = getRtplStatus(r).toLowerCase();
-      return s.includes("cancel");
-    }).length;
+    const closedCancelled = closed.filter((r) => matchStatus(r, ["cancel"])).length;
     
     return {
       engineerCount,
@@ -1791,13 +1790,6 @@ export default function DashboardPage() {
     const uniqueEngineers = getUniqueEngineers(active);
     const enggCount = uniqueEngineers.length;
     
-    const getRtplStatus = (r: typeof rows[number]) => {
-      if (isBod) {
-        return String(r.comparison?.previousRtplStatus || r.output["RTPL status"] || "").trim();
-      }
-      return String(r.output["RTPL status"] || "").trim();
-    };
-
     const getWipAging = (r: typeof rows[number]) => {
       if (isBod) {
         return String(r.comparison?.previousWipAging || r.output["WIP aging"] || "").trim();
@@ -1809,29 +1801,45 @@ export default function DashboardPage() {
       const parsed = Number(String(value ?? "").trim());
       return Number.isFinite(parsed) ? parsed : null;
     };
-    
-    const countStatus = (statusList: string[]) => {
-      return active.filter((r) => {
-        const s = getRtplStatus(r).toLowerCase();
-        return statusList.some((item) => s === item.toLowerCase());
-      }).length;
+
+    const matchStatus = (
+      r: typeof rows[number],
+      keywords: string[],
+      excludes: string[] = []
+    ): boolean => {
+      const statuses = [
+        String(r.output["RTPL status"] || "").trim().toLowerCase(),
+        String(r.output["HP Owner Status"] || "").trim().toLowerCase(),
+        String(r.output["Flex Status"] || "").trim().toLowerCase(),
+        ...(isBod ? [
+          String(r.comparison?.previousRtplStatus || "").trim().toLowerCase(),
+          String(r.comparison?.previousFlexStatus || "").trim().toLowerCase()
+        ] : [])
+      ];
+
+      return statuses.some(s => {
+        if (!s || s === "manual entry required") return false;
+        const matchesKeyword = keywords.some(kw => s.includes(kw.toLowerCase()));
+        const matchesExclude = excludes.some(ex => s.includes(ex.toLowerCase()));
+        return matchesKeyword && !matchesExclude;
+      });
     };
     
     // Calculations:
     const openCalls = active.length;
-    const actionable = countStatus(["Actionable"]);
-    const planned = countStatus(["Engg Assigned"]);
+    const actionable = active.filter(r => matchStatus(r, ["actionable"], ["customer", "cust", "cx", "delay", "pending"])).length;
+    const planned = active.filter(r => matchStatus(r, ["assigned", "scheduled", "onsite"], ["pending", "to be"])).length;
     const callAllocation = enggCount > 0 ? (planned / enggCount).toFixed(1) : "0.0";
     
     const printOpenGe2 = active.filter(r => isPrintCase(r) && (parseWipAgingValue(getWipAging(r)) ?? 0) >= 2).length;
-    const printActionableGe2 = active.filter(r => isPrintCase(r) && getRtplStatus(r).toLowerCase() === "actionable" && (parseWipAgingValue(getWipAging(r)) ?? 0) >= 2).length;
-    const printScheduledGe2 = active.filter(r => isPrintCase(r) && getRtplStatus(r).toLowerCase() === "engg assigned" && (parseWipAgingValue(getWipAging(r)) ?? 0) >= 2).length;
+    const printActionableGe2 = active.filter(r => isPrintCase(r) && matchStatus(r, ["actionable"], ["customer", "cust", "cx", "delay", "pending"]) && (parseWipAgingValue(getWipAging(r)) ?? 0) >= 2).length;
+    const printScheduledGe2 = active.filter(r => isPrintCase(r) && matchStatus(r, ["assigned", "scheduled", "onsite"], ["pending", "to be"]) && (parseWipAgingValue(getWipAging(r)) ?? 0) >= 2).length;
     
     const openCallsGt10 = active.filter(r => (parseWipAgingValue(getWipAging(r)) ?? 0) > 10).length;
-    const actionableGt10 = active.filter(r => getRtplStatus(r).toLowerCase() === "actionable" && (parseWipAgingValue(getWipAging(r)) ?? 0) > 10).length;
-    const scheduledGt10 = active.filter(r => getRtplStatus(r).toLowerCase() === "engg assigned" && (parseWipAgingValue(getWipAging(r)) ?? 0) > 10).length;
+    const actionableGt10 = active.filter(r => matchStatus(r, ["actionable"], ["customer", "cust", "cx", "delay", "pending"]) && (parseWipAgingValue(getWipAging(r)) ?? 0) > 10).length;
+    const scheduledGt10 = active.filter(r => matchStatus(r, ["assigned", "scheduled", "onsite"], ["pending", "to be"]) && (parseWipAgingValue(getWipAging(r)) ?? 0) > 10).length;
     
-    const mpsGt1 = active.filter(r => getRtplStatus(r).toLowerCase().includes("mps") && (parseWipAgingValue(getWipAging(r)) ?? 0) > 1).length;
+    const mpsGt1 = active.filter(r => matchStatus(r, ["mps"]) && (parseWipAgingValue(getWipAging(r)) ?? 0) > 1).length;
     const eodCloser = closed.length;
     const newCalls = active.filter(r => r.comparison?.changeType === "NEW").length;
     
@@ -1839,22 +1847,19 @@ export default function DashboardPage() {
     const engAvlInField = enggCount;
     const enggProductivity = enggCount > 0 ? (eodCloser / enggCount).toFixed(1) : "0.0";
     
-    const missedToSchedule = active.filter(r => getRtplStatus(r).toLowerCase().includes("missed") || getRtplStatus(r).toLowerCase().includes("non avl")).length;
-    const missedByEng = active.filter(r => getRtplStatus(r).toLowerCase().includes("high call")).length;
+    const missedToSchedule = active.filter(r => matchStatus(r, ["non avl", "missed to schedule", "to be scheduled", "assignment pending"])).length;
+    const missedByEng = active.filter(r => matchStatus(r, ["high call", "missed by eng"])).length;
     const gTotalMissed = missedToSchedule + missedByEng;
     const pctMissed = openCalls > 0 ? Math.round((gTotalMissed / openCalls) * 100) : 0;
     const closureAdherence = (eodCloser + gTotalMissed) > 0 ? Math.round((eodCloser / (eodCloser + gTotalMissed)) * 100) : 0;
     
     // NAF right table columns
-    const flexBackend = active.filter(r => {
-      const s = getRtplStatus(r).toLowerCase();
-      return s.includes("flex backend") || (s.includes("backend") && !s.includes("hp backend"));
-    }).length;
-    const ssc = active.filter(r => getRtplStatus(r).toLowerCase().includes("ssc")).length;
-    const hpBackend = active.filter(r => getRtplStatus(r).toLowerCase().includes("hp backend")).length;
-    const obsCustomer = active.filter(r => getRtplStatus(r).toLowerCase().includes("obs") || getRtplStatus(r).toLowerCase().includes("customer")).length;
-    const cuPending = active.filter(r => getRtplStatus(r).toLowerCase().includes("cu pending")).length;
-    const physicalClosed = active.filter(r => getRtplStatus(r).toLowerCase().includes("physical closed") || getRtplStatus(r).toLowerCase().includes("physically closed")).length;
+    const flexBackend = active.filter(r => matchStatus(r, ["flex backend", "backend"], ["hp backend"])).length;
+    const ssc = active.filter(r => matchStatus(r, ["ssc"])).length;
+    const hpBackend = active.filter(r => matchStatus(r, ["hp backend"])).length;
+    const obsCustomer = active.filter(r => matchStatus(r, ["obs", "observation", "customer"], ["pending", "delay"])).length;
+    const cuPending = active.filter(r => matchStatus(r, ["cu pending", "cust pending", "customer pending", "cust delay", "customer delay"])).length;
+    const physicalClosed = active.filter(r => matchStatus(r, ["physical closed", "physically closed", "partner complete", "wo closed"], ["error"])).length;
     
     const totalNaf = flexBackend + ssc + hpBackend + obsCustomer + cuPending + physicalClosed;
     const sscPct = totalNaf > 0 ? Math.round((ssc / totalNaf) * 100) : 0;

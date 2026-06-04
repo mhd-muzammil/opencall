@@ -12,7 +12,7 @@ export const RTPL_STATUS_GROUPS = [
   },
   {
     group: "Parts & Inventory",
-    options: ["Part Order Pending", "Additional Part", "Good Part Received", "SSC Pending → Part Pending"]
+    options: ["Part Order Pending", "Additional Part", "Good Part Received", "Part Pending"]
   },
   {
     group: "Quotations & Payments",

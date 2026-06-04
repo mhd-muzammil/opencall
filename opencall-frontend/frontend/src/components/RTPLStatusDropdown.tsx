@@ -10,6 +10,24 @@ interface RTPLStatusDropdownProps {
   manualEntryRequiredLabel: string;
 }
 
+type StatusGroup = (typeof RTPL_STATUS_GROUPS)[number] | {
+  group: string;
+  options: readonly string[];
+};
+
+export function splitStatusGroupsForColumns(groups: readonly StatusGroup[]): [StatusGroup[], StatusGroup[]] {
+  const columns: [StatusGroup[], StatusGroup[]] = [[], []];
+  const weights: [number, number] = [0, 0];
+
+  for (const group of groups) {
+    const targetColumn: 0 | 1 = weights[0] <= weights[1] ? 0 : 1;
+    columns[targetColumn].push(group);
+    weights[targetColumn] += group.options.length + 1;
+  }
+
+  return columns;
+}
+
 export function RTPLStatusDropdown({ value, onChange, manualEntryRequiredLabel }: RTPLStatusDropdownProps) {
   const [isOpen, setIsOpen] = useState(false);
   const triggerRef = useRef<HTMLButtonElement>(null);
@@ -59,15 +77,17 @@ export function RTPLStatusDropdown({ value, onChange, manualEntryRequiredLabel }
         }}
         style={{
           textAlign: "left",
-          padding: "6px 8px",
+          padding: "5px 8px",
           borderRadius: "4px",
           border: "none",
           backgroundColor: isSelected ? "#e0e7ff" : "transparent",
           color: isSelected ? "#3730a3" : "#333",
           cursor: "pointer",
           fontSize: "13px",
+          lineHeight: 1.25,
           transition: "background 0.1s",
-          width: "100%"
+          width: "100%",
+          minHeight: "27px"
         }}
         onMouseEnter={(e) => {
           if (!isSelected) e.currentTarget.style.backgroundColor = "#f3f4f6";
@@ -87,9 +107,11 @@ export function RTPLStatusDropdown({ value, onChange, manualEntryRequiredLabel }
     return value;
   };
 
-  // Split groups into roughly two columns
-  const leftColumnGroups = RTPL_STATUS_GROUPS.slice(0, 5);
-  const rightColumnGroups = RTPL_STATUS_GROUPS.slice(5);
+  const statusGroups = [
+    ...RTPL_STATUS_GROUPS,
+    { group: "Other", options: ["Custom"] },
+  ] as const;
+  const [leftColumnGroups, rightColumnGroups] = splitStatusGroupsForColumns(statusGroups);
 
   return (
     <>
@@ -132,48 +154,38 @@ export function RTPLStatusDropdown({ value, onChange, manualEntryRequiredLabel }
               border: "1px solid #ddd",
               boxShadow: "0 10px 25px rgba(0,0,0,0.1)",
               borderRadius: "8px",
-              padding: "16px",
+              padding: "12px",
               zIndex: 99999,
-              width: "max-content",
-              maxWidth: "600px",
-              maxHeight: "80vh",
+              width: "min(560px, calc(100vw - 24px))",
+              maxHeight: "min(620px, calc(100vh - 24px))",
               overflowY: "auto"
             }}
           >
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "24px" }}>
-              <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
+            <div style={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr) minmax(0, 1fr)", gap: "14px" }}>
+              <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
                 {leftColumnGroups.map((group) => (
                   <div key={group.group}>
                     <div style={{ fontWeight: 600, fontSize: "11px", color: "#6b7280", marginBottom: "4px", textTransform: "uppercase", letterSpacing: "0.5px" }}>
                       {group.group}
                     </div>
                     <div style={{ display: "flex", flexDirection: "column", gap: "2px" }}>
-                      {group.options.map((option) => renderItem(option, option))}
+                      {group.options.map((option) => renderItem(option, option === "Custom" ? "Custom Manual Entry..." : option))}
                     </div>
                   </div>
                 ))}
               </div>
 
-              <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
+              <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
                 {rightColumnGroups.map((group) => (
                   <div key={group.group}>
                     <div style={{ fontWeight: 600, fontSize: "11px", color: "#6b7280", marginBottom: "4px", textTransform: "uppercase", letterSpacing: "0.5px" }}>
                       {group.group}
                     </div>
                     <div style={{ display: "flex", flexDirection: "column", gap: "2px" }}>
-                      {group.options.map((option) => renderItem(option, option))}
+                      {group.options.map((option) => renderItem(option, option === "Custom" ? "Custom Manual Entry..." : option))}
                     </div>
                   </div>
                 ))}
-
-                <div>
-                   <div style={{ fontWeight: 600, fontSize: "11px", color: "#6b7280", marginBottom: "4px", textTransform: "uppercase", letterSpacing: "0.5px" }}>
-                      Other
-                   </div>
-                   <div style={{ display: "flex", flexDirection: "column", gap: "2px" }}>
-                      {renderItem("Custom", "Custom Manual Entry...")}
-                   </div>
-                </div>
               </div>
             </div>
           </div>,

@@ -1094,11 +1094,11 @@ export default function DashboardPage() {
   const [isKpiModalOpen, setIsKpiModalOpen] = useState(false);
   const [isChennaiKpiModalOpen, setIsChennaiKpiModalOpen] = useState(false);
   const [isProductivityModalOpen, setIsProductivityModalOpen] = useState(false);
-  const [productivityFilterType, setProductivityFilterType] = useState("All Dates");
+  const [productivityFilterType, setProductivityFilterType] = useState("Today");
   const [selectedProductivityValue, setSelectedProductivityValue] = useState("");
-  const [tnFilterType, setTnFilterType] = useState("All Dates");
+  const [tnFilterType, setTnFilterType] = useState("Today");
   const [selectedTnValue, setSelectedTnValue] = useState("");
-  const [eodBodFilterType, setEodBodFilterType] = useState("All Dates");
+  const [eodBodFilterType, setEodBodFilterType] = useState("Today");
   const [selectedEodBodValue, setSelectedEodBodValue] = useState("");
   const [tnViewMode, setTnViewMode] = useState<"BOD" | "EOD">("EOD");
   const [eodBodViewMode, setEodBodViewMode] = useState<"BOD" | "EOD">("EOD");
@@ -1158,11 +1158,11 @@ export default function DashboardPage() {
     setIsKpiModalOpen(false);
     setIsChennaiKpiModalOpen(false);
     setIsProductivityModalOpen(false);
-    setProductivityFilterType("All Dates");
+    setProductivityFilterType("Today");
     setSelectedProductivityValue("");
-    setTnFilterType("All Dates");
+    setTnFilterType("Today");
     setSelectedTnValue("");
-    setEodBodFilterType("All Dates");
+    setEodBodFilterType("Today");
     setSelectedEodBodValue("");
     setTnViewMode("EOD");
     setEodBodViewMode("EOD");
@@ -1496,21 +1496,8 @@ export default function DashboardPage() {
     if (!report) return [];
 
     let rows = kpiBaseRows;
-    const todayStr = regionDateMetadata.todayStr;
 
-    if (tnFilterType === "Today" && todayStr) {
-      rows = kpiBaseRows.filter(r => {
-        const createdTime = String(r.output["Case Created Time"] ?? "").trim();
-        if (createdTime && createdTime !== MANUAL_ENTRY_REQUIRED) {
-          const match = /^(\d{2})[-/](\d{2})[-/](\d{4})/.exec(createdTime);
-          if (match) {
-            const rowDate = `${match[1]}-${match[2]}-${match[3]}`;
-            return rowDate === todayStr;
-          }
-        }
-        return false;
-      });
-    } else if (tnFilterType === "Specific Date" && selectedTnValue) {
+    if (tnFilterType === "Specific Date" && selectedTnValue) {
       rows = kpiBaseRows.filter(r => {
         const createdTime = String(r.output["Case Created Time"] ?? "").trim();
         if (createdTime && createdTime !== MANUAL_ENTRY_REQUIRED) {
@@ -1574,21 +1561,8 @@ export default function DashboardPage() {
     if (!report) return [];
 
     let rows = kpiBaseRows;
-    const todayStr = regionDateMetadata.todayStr;
 
-    if (eodBodFilterType === "Today" && todayStr) {
-      rows = kpiBaseRows.filter(r => {
-        const createdTime = String(r.output["Case Created Time"] ?? "").trim();
-        if (createdTime && createdTime !== MANUAL_ENTRY_REQUIRED) {
-          const match = /^(\d{2})[-/](\d{2})[-/](\d{4})/.exec(createdTime);
-          if (match) {
-            const rowDate = `${match[1]}-${match[2]}-${match[3]}`;
-            return rowDate === todayStr;
-          }
-        }
-        return false;
-      });
-    } else if (eodBodFilterType === "Specific Date" && selectedEodBodValue) {
+    if (eodBodFilterType === "Specific Date" && selectedEodBodValue) {
       rows = kpiBaseRows.filter(r => {
         const createdTime = String(r.output["Case Created Time"] ?? "").trim();
         if (createdTime && createdTime !== MANUAL_ENTRY_REQUIRED) {
@@ -1983,19 +1957,7 @@ export default function DashboardPage() {
 
     // 3. Filter rows based on type
     let filteredRowsForProd = regionRows;
-    if (productivityFilterType === "Today" && todayStr) {
-      filteredRowsForProd = regionRows.filter(r => {
-        const createdTime = String(r.output["Case Created Time"] ?? "").trim();
-        if (createdTime && createdTime !== MANUAL_ENTRY_REQUIRED) {
-          const match = /^(\d{2})[-/](\d{2})[-/](\d{4})/.exec(createdTime);
-          if (match) {
-            const rowDate = `${match[1]}-${match[2]}-${match[3]}`;
-            return rowDate === todayStr;
-          }
-        }
-        return false;
-      });
-    } else if (productivityFilterType === "Specific Date" && selectedProductivityValue) {
+    if (productivityFilterType === "Specific Date" && selectedProductivityValue) {
       filteredRowsForProd = regionRows.filter(r => {
         const createdTime = String(r.output["Case Created Time"] ?? "").trim();
         if (createdTime && createdTime !== MANUAL_ENTRY_REQUIRED) {

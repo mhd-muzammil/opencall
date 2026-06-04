@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import iconImg from "../../icon.png";
 import { useRouter } from "next/navigation";
 import { changeOwnPassword } from "../../../lib/adminApiClient";
 import {
@@ -66,7 +67,11 @@ export default function ChangeOwnPasswordPage() {
       <section className="loginCard">
         <div className="loginBrand">
           <div className="brandMark large" aria-hidden="true">
-            OC
+            <img
+              src={iconImg.src}
+              alt=""
+              style={{ width: "100%", height: "100%", objectFit: "contain", borderRadius: "inherit" }}
+            />
           </div>
           <div>
             <p className="eyebrow">Account</p>

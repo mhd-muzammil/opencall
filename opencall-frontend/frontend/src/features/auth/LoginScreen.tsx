@@ -1,3 +1,4 @@
+import iconImg from "../../app/icon.png";
 import type {
   DatabaseHealthResponse,
   RuntimeHealthResponse,
@@ -9,7 +10,13 @@ export function SessionLoadingScreen() {
     <main className="loginShell">
       <section className="loginCard loading">
         <div className="brandBlock">
-          <div className="brandMark" aria-hidden="true">OC</div>
+          <div className="brandMark" aria-hidden="true">
+            <img
+              src={iconImg.src}
+              alt=""
+              style={{ width: "100%", height: "100%", objectFit: "contain", borderRadius: "inherit" }}
+            />
+          </div>
           <div>
             <p className="eyebrow">Open Call</p>
             <h1>Loading workspace</h1>
@@ -45,7 +52,13 @@ export function LoginScreen({
     <main className="loginShell">
       <section className="loginCard">
         <div className="loginBrand">
-          <div className="brandMark large" aria-hidden="true">OC</div>
+          <div className="brandMark large" aria-hidden="true">
+            <img
+              src={iconImg.src}
+              alt=""
+              style={{ width: "100%", height: "100%", objectFit: "contain", borderRadius: "inherit" }}
+            />
+          </div>
           <div>
             <p className="eyebrow">Open Call</p>
             <h1>Operational Workspace</h1>

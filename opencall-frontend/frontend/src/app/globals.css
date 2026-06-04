@@ -152,11 +152,9 @@ code {
   height: 44px;
   flex: 0 0 44px;
   border-radius: 8px;
-  background: linear-gradient(135deg, var(--accent), #2563eb);
   color: #ffffff;
   font-size: 14px;
   font-weight: 900;
-  box-shadow: 0 12px 22px rgba(79, 70, 229, 0.22);
 }
 
 .brandMark.large {

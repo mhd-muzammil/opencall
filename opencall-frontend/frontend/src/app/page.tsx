@@ -139,7 +139,8 @@ const CHANGE_FIELD_LABELS: Record<string, string> = {
 };
 
 function isTradeCase(row: GeneratedReportResponse["rows"][number]): boolean {
-  return normalizeWoOtcCode(row.output["WO OTC CODE"]).includes(TRADE_WO_OTC_CODE_KEYWORD);
+  const code = normalizeWoOtcCode(row.output["WO OTC CODE"]);
+  return code.includes(TRADE_WO_OTC_CODE_KEYWORD) || code.startsWith("01");
 }
 
 function isCissCase(row: GeneratedReportResponse["rows"][number]): boolean {
@@ -1692,9 +1693,9 @@ export default function DashboardPage() {
     const rows = tnFilteredRows;
     const isBod = tnViewMode === "BOD";
     const active = isBod
-      ? rows.filter((r) => r.comparison?.changeType !== "NEW")
-      : rows.filter((r) => !r.carryForward.closedSyntheticRow);
-    const closed = isBod ? [] : rows.filter((r) => r.carryForward.closedSyntheticRow);
+      ? rows.filter((r) => r.comparison?.changeType !== "NEW" && isWarrantyCase(r))
+      : rows.filter((r) => !r.carryForward.closedSyntheticRow && isWarrantyCase(r));
+    const closed = isBod ? [] : rows.filter((r) => r.carryForward.closedSyntheticRow && isWarrantyCase(r));
     
     const getUniqueEngineers = (items: typeof rows) => {
       const list = items
@@ -1705,27 +1706,39 @@ export default function DashboardPage() {
     const uniqueEngineers = getUniqueEngineers(active);
     const engineerCount = uniqueEngineers.length;
     
+    const getRowStatus = (r: typeof rows[number]): string => {
+      const rtplStatus = isBod
+        ? String(r.comparison?.previousRtplStatus || r.output["RTPL status"] || "").trim()
+        : String(r.output["RTPL status"] || "").trim();
+      if (rtplStatus && rtplStatus !== "Manual Entry Required") {
+        return rtplStatus;
+      }
+      
+      const flexStatus = isBod
+        ? String(r.comparison?.previousFlexStatus || r.output["Flex Status"] || "").trim()
+        : String(r.output["Flex Status"] || "").trim();
+      if (flexStatus && flexStatus !== "Manual Entry Required") {
+        return flexStatus;
+      }
+
+      const hpOwnerStatus = String(r.output["HP Owner Status"] || "").trim();
+      if (hpOwnerStatus && hpOwnerStatus !== "Manual Entry Required") {
+        return hpOwnerStatus;
+      }
+
+      return "";
+    };
+
     const matchStatus = (
       r: typeof rows[number],
       keywords: string[],
       excludes: string[] = []
     ): boolean => {
-      const statuses = [
-        String(r.output["RTPL status"] || "").trim().toLowerCase(),
-        String(r.output["HP Owner Status"] || "").trim().toLowerCase(),
-        String(r.output["Flex Status"] || "").trim().toLowerCase(),
-        ...(isBod ? [
-          String(r.comparison?.previousRtplStatus || "").trim().toLowerCase(),
-          String(r.comparison?.previousFlexStatus || "").trim().toLowerCase()
-        ] : [])
-      ];
-
-      return statuses.some(s => {
-        if (!s || s === "manual entry required") return false;
-        const matchesKeyword = keywords.some(kw => s.includes(kw.toLowerCase()));
-        const matchesExclude = excludes.some(ex => s.includes(ex.toLowerCase()));
-        return matchesKeyword && !matchesExclude;
-      });
+      const s = getRowStatus(r).toLowerCase();
+      if (!s || s === "manual entry required") return false;
+      const matchesKeyword = keywords.some(kw => s.includes(kw.toLowerCase()));
+      const matchesExclude = excludes.some(ex => s.includes(ex.toLowerCase()));
+      return matchesKeyword && !matchesExclude;
     };
     
     const isTradeRow = (r: typeof rows[number]) => {
@@ -1745,7 +1758,9 @@ export default function DashboardPage() {
     const addPartOrdered = active.filter(r => matchStatus(r, ["Additional Part", "Part Order Pending", "Parts Hold", "Part need to order"])).length;
     const toBeCancel = active.filter(r => matchStatus(r, ["Need to Cancel", "Need to Cancel Mail", "Request to Cancel"])).length;
     const newCalls = active.filter((r) => r.comparison?.changeType === "NEW").length;
-    const tradeOpenCalls = active.filter(isTradeRow).length;
+    const tradeOpenCalls = isBod
+      ? rows.filter((r) => r.comparison?.changeType !== "NEW" && isTradeRow(r)).length
+      : rows.filter((r) => !r.carryForward.closedSyntheticRow && isTradeRow(r)).length;
     
     const closedCancelled = closed.filter((r) => matchStatus(r, ["cancel"])).length;
     
@@ -1777,9 +1792,9 @@ export default function DashboardPage() {
     const rows = eodBodFilteredRows;
     const isBod = eodBodViewMode === "BOD";
     const active = isBod
-      ? rows.filter((r) => r.comparison?.changeType !== "NEW")
-      : rows.filter((r) => !r.carryForward.closedSyntheticRow);
-    const closed = isBod ? [] : rows.filter((r) => r.carryForward.closedSyntheticRow);
+      ? rows.filter((r) => r.comparison?.changeType !== "NEW" && isWarrantyCase(r))
+      : rows.filter((r) => !r.carryForward.closedSyntheticRow && isWarrantyCase(r));
+    const closed = isBod ? [] : rows.filter((r) => r.carryForward.closedSyntheticRow && isWarrantyCase(r));
     
     const getUniqueEngineers = (items: typeof rows) => {
       const list = items
@@ -1802,27 +1817,39 @@ export default function DashboardPage() {
       return Number.isFinite(parsed) ? parsed : null;
     };
 
+    const getRowStatus = (r: typeof rows[number]): string => {
+      const rtplStatus = isBod
+        ? String(r.comparison?.previousRtplStatus || r.output["RTPL status"] || "").trim()
+        : String(r.output["RTPL status"] || "").trim();
+      if (rtplStatus && rtplStatus !== "Manual Entry Required") {
+        return rtplStatus;
+      }
+      
+      const flexStatus = isBod
+        ? String(r.comparison?.previousFlexStatus || r.output["Flex Status"] || "").trim()
+        : String(r.output["Flex Status"] || "").trim();
+      if (flexStatus && flexStatus !== "Manual Entry Required") {
+        return flexStatus;
+      }
+
+      const hpOwnerStatus = String(r.output["HP Owner Status"] || "").trim();
+      if (hpOwnerStatus && hpOwnerStatus !== "Manual Entry Required") {
+        return hpOwnerStatus;
+      }
+
+      return "";
+    };
+
     const matchStatus = (
       r: typeof rows[number],
       keywords: string[],
       excludes: string[] = []
     ): boolean => {
-      const statuses = [
-        String(r.output["RTPL status"] || "").trim().toLowerCase(),
-        String(r.output["HP Owner Status"] || "").trim().toLowerCase(),
-        String(r.output["Flex Status"] || "").trim().toLowerCase(),
-        ...(isBod ? [
-          String(r.comparison?.previousRtplStatus || "").trim().toLowerCase(),
-          String(r.comparison?.previousFlexStatus || "").trim().toLowerCase()
-        ] : [])
-      ];
-
-      return statuses.some(s => {
-        if (!s || s === "manual entry required") return false;
-        const matchesKeyword = keywords.some(kw => s.includes(kw.toLowerCase()));
-        const matchesExclude = excludes.some(ex => s.includes(ex.toLowerCase()));
-        return matchesKeyword && !matchesExclude;
-      });
+      const s = getRowStatus(r).toLowerCase();
+      if (!s || s === "manual entry required") return false;
+      const matchesKeyword = keywords.some(kw => s.includes(kw.toLowerCase()));
+      const matchesExclude = excludes.some(ex => s.includes(ex.toLowerCase()));
+      return matchesKeyword && !matchesExclude;
     };
     
     // Calculations:

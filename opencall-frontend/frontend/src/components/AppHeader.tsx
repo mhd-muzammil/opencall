@@ -243,7 +243,13 @@ export function AppHeader({
           </button>
           <details className="profileMenu">
             <summary aria-label="Open profile menu">
-              <span className="profileAvatar" aria-hidden="true">{userInitial}</span>
+              <span className="profileAvatar" aria-hidden="true" style={{ overflow: "hidden" }}>
+                <img
+                  src={iconImg.src}
+                  alt={userInitial}
+                  style={{ width: "100%", height: "100%", objectFit: "cover", borderRadius: "50%" }}
+                />
+              </span>
             </summary>
             <div className="profileDropdown">
               <div className="profileIdentity">

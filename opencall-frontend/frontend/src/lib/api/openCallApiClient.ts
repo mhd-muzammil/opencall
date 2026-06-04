@@ -232,6 +232,7 @@ export function createOpenCallApiClient({
       }
       const response = await fetchImpl(url(`/api/v1/report-rows/rtpl-status-changes?${params.toString()}`), {
         headers: authHeaders(input.token),
+        cache: "no-store",
       });
 
       return readJson<RtplStatusChange[]>(response);
@@ -249,6 +250,7 @@ export function createOpenCallApiClient({
     async getReportHistory(token) {
       const response = await fetchImpl(url("/api/v1/report-history"), {
         headers: authHeaders(token),
+        cache: "no-store",
       });
 
       return readJson<ReportHistorySession[]>(response);
@@ -257,6 +259,7 @@ export function createOpenCallApiClient({
     async getReportHistoryById(token, id) {
       const response = await fetchImpl(url(`/api/v1/report-history/${id}`), {
         headers: authHeaders(token),
+        cache: "no-store",
       });
 
       return readJson<ReportHistorySession>(response);

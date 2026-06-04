@@ -33,8 +33,24 @@ export type FilterableColumn = (typeof FILTERABLE_COLUMNS)[number];
 
 /** Normalise a cell value to a stable string for comparison / display. */
 export function normalizeFilterValue(raw: unknown): string {
-  const s = String(raw ?? "").trim();
-  return s === "" ? "(blank)" : s;
+  const s = String(raw ?? "")
+    .normalize("NFKC")
+    .replace(/[\u200b-\u200f\u202a-\u202e\u2060\ufeff]/g, "")
+    .replace(/\u00a0/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+
+  return s === "" ? "(blank)" : s.toUpperCase();
+}
+
+function normalizeFilterState(filters: ColumnFilterState): ColumnFilterState {
+  const normalizedFilters: ColumnFilterState = {};
+
+  for (const [column, values] of Object.entries(filters)) {
+    normalizedFilters[column] = new Set(Array.from(values, normalizeFilterValue));
+  }
+
+  return normalizedFilters;
 }
 
 /**
@@ -166,7 +182,9 @@ export function applyColumnFilters<
     return rows as T[];
   }
 
-  return rows.filter((row) => rowPassesFilters(row, filters));
+  const normalizedFilters = normalizeFilterState(filters);
+
+  return rows.filter((row) => rowPassesFilters(row, normalizedFilters));
 }
 
 /**

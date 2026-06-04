@@ -39,8 +39,16 @@ function makeRow(overrides: Record<string, string | number> = {}) {
 // ---------------------------------------------------------------------------
 
 describe("normalizeFilterValue", () => {
-  it("trims whitespace", () => {
-    expect(normalizeFilterValue("  hello  ")).toBe("hello");
+  it("trims whitespace and normalizes casing", () => {
+    expect(normalizeFilterValue("  hello  ")).toBe("HELLO");
+  });
+
+  it("collapses internal and non-breaking whitespace", () => {
+    expect(normalizeFilterValue("To\u00a0 Be   Scheduled")).toBe("TO BE SCHEDULED");
+  });
+
+  it("removes invisible unicode formatting characters", () => {
+    expect(normalizeFilterValue("Visit Quote\u200b To\u200e Customer\ufeff")).toBe("VISIT QUOTE TO CUSTOMER");
   });
 
   it("returns (blank) for empty/null/undefined", () => {
@@ -71,7 +79,31 @@ describe("extractUniqueValues", () => {
 
     expect(result).toEqual([
       { value: "PC", count: 2 },
-      { value: "Print", count: 1 },
+      { value: "PRINT", count: 1 },
+    ]);
+  });
+
+  it("groups values that differ only by casing or spacing", () => {
+    const rows = [
+      makeRow({ "RTPL status": "To Be Scheduled" }),
+      makeRow({ "RTPL status": "TO BE SCHEDULED" }),
+      makeRow({ "RTPL status": "To  Be\u00a0Scheduled" }),
+    ];
+
+    expect(extractUniqueValues(rows, "RTPL status")).toEqual([
+      { value: "TO BE SCHEDULED", count: 3 },
+    ]);
+  });
+
+  it("groups values that look identical but contain invisible characters", () => {
+    const rows = [
+      makeRow({ "RTPL status": "Visit Quote To Customer" }),
+      makeRow({ "RTPL status": "VISIT QUOTE TO CUSTOMER" }),
+      makeRow({ "RTPL status": "Visit Quote\u200b To\u200e Customer\ufeff" }),
+    ];
+
+    expect(extractUniqueValues(rows, "RTPL status")).toEqual([
+      { value: "VISIT QUOTE TO CUSTOMER", count: 3 },
     ]);
   });
 
@@ -156,9 +188,18 @@ describe("rowPassesFilters", () => {
   });
 
   it("passes when row matches a single filter", () => {
-    const row = makeRow({ Segment: "PC" });
+    const row = makeRow({ Segment: "pc" });
     const filters: ColumnFilterState = {
       Segment: new Set(["PC"]),
+    };
+
+    expect(rowPassesFilters(row, filters)).toBe(true);
+  });
+
+  it("passes when selected value casing or spacing differs from the row", () => {
+    const row = makeRow({ "RTPL status": "To  Be\u00a0Scheduled" });
+    const filters: ColumnFilterState = {
+      "RTPL status": new Set([normalizeFilterValue("to be scheduled")]),
     };
 
     expect(rowPassesFilters(row, filters)).toBe(true);
@@ -180,7 +221,7 @@ describe("rowPassesFilters", () => {
     expect(
       rowPassesFilters(row, {
         Segment: new Set(["PC"]),
-        "RTPL status": new Set(["Visit Quote Customer"]),
+        "RTPL status": new Set([normalizeFilterValue("Visit Quote Customer")]),
       }),
     ).toBe(true);
 
@@ -188,7 +229,7 @@ describe("rowPassesFilters", () => {
     expect(
       rowPassesFilters(row, {
         Segment: new Set(["PC"]),
-        "RTPL status": new Set(["Good Part Received"]),
+        "RTPL status": new Set([normalizeFilterValue("Good Part Received")]),
       }),
     ).toBe(false);
   });

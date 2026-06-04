@@ -7,6 +7,7 @@ import {
   activeFilterCount as countActiveFilters,
   isColumnFiltered as checkIsColumnFiltered,
   FILTERABLE_COLUMNS,
+  normalizeFilterValue,
   type ColumnFilterState,
   type ColumnUniqueEntry,
 } from "./columnFilter";
@@ -149,7 +150,7 @@ export function useColumnFilters<
     (column: string, values: Set<string>) => {
       setFilters((prev) => {
         const next = { ...prev };
-        next[column] = values;
+        next[column] = new Set(Array.from(values, normalizeFilterValue));
         return next;
       });
     },

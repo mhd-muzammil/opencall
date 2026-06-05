@@ -2772,11 +2772,11 @@ export default function DashboardPage() {
         return {
           ...latestReport,
           rows: latestReport.rows.map((latestRow) =>
-            latestRow.serialNo === serialNo
+            latestRow.id === row.id
               ? {
                   ...latestRow,
                   output: outputFromPersistedRow(
-                    { ...draftOutputRef.current, "S.no": latestRow.serialNo },
+                    { ...latestRow.output },
                     persisted,
                   ),
                   carryForward: {
@@ -2866,7 +2866,7 @@ export default function DashboardPage() {
 
         return {
           ...latestReport,
-          rows: latestReport.rows.filter((latestRow) => latestRow.serialNo !== serialNo),
+          rows: latestReport.rows.filter((latestRow) => latestRow.id !== row.id),
         };
       });
       cancelEditing();

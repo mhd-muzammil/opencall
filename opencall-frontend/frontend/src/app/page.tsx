@@ -2394,6 +2394,119 @@ export default function DashboardPage() {
     }
   }, [session]);
 
+  // Keep refs of active state to prevent rebuilding the interval timer on every input/button state change
+  const editingSerialNoRef = useRef(editingSerialNo);
+  editingSerialNoRef.current = editingSerialNo;
+
+  const savingSerialNoRef = useRef(savingSerialNo);
+  savingSerialNoRef.current = savingSerialNo;
+
+  const isBusyRef = useRef(isBusy);
+  isBusyRef.current = isBusy;
+
+  useEffect(() => {
+    if (!session || !report?.reportId || !upload) return;
+
+    const token = session.token;
+    const flexWipBatchId = upload.batches.find((b) => b.sourceType === "FLEX_WIP")?.id;
+    if (!flexWipBatchId) return;
+    const activeFlexWipBatchId: string = flexWipBatchId;
+
+    const renderwaysBatchId = upload.batches.find((b) => b.sourceType === "RENDERWAYS")?.id;
+    const callPlanBatchId = upload.batches.find((b) => b.sourceType === "CALL_PLAN")?.id;
+
+    const currentReportDate = report.reportDate;
+    const currentRegionId = regionId;
+    const currentReportId = report.reportId;
+
+    let timerId: NodeJS.Timeout;
+
+    async function poll() {
+      // Skip polling if saving, editing, or busy to prevent state conflicts
+      if (savingSerialNoRef.current !== null || isBusyRef.current) {
+        timerId = setTimeout(poll, 10000);
+        return;
+      }
+
+      try {
+        const [latestRep, latestStatusChanges] = await Promise.all([
+          generateReport({
+            token: token,
+            regionId: currentRegionId,
+            reportDate: currentReportDate,
+            flexUploadBatchId: activeFlexWipBatchId,
+            ...(renderwaysBatchId ? { renderwaysUploadBatchId: renderwaysBatchId } : {}),
+            ...(callPlanBatchId ? { callPlanUploadBatchId: callPlanBatchId } : {}),
+          }),
+          getRtplStatusChanges({
+            token: token,
+            reportId: currentReportId,
+            changeDate: rtplAnalyticsDate,
+            limit: RTPL_STATUS_CHANGE_LIMIT,
+          }),
+        ]);
+
+        // Verify the reportId hasn't changed in the background before updating state
+        setReport((prevReport) => {
+          if (!prevReport || prevReport.reportId !== latestRep.reportId) {
+            return prevReport;
+          }
+
+          // Merge latest rows, preserving the row that is currently being edited
+          const updatedRows = latestRep.rows.map((newRow) => {
+            if (editingSerialNoRef.current !== null && newRow.serialNo === editingSerialNoRef.current) {
+              const prevRow = prevReport.rows.find((r) => r.serialNo === editingSerialNoRef.current);
+              return prevRow ? prevRow : newRow;
+            }
+            return newRow;
+          });
+
+          return {
+            ...prevReport,
+            rows: updatedRows,
+            totalRows: latestRep.totalRows,
+            duplicateTicketCount: latestRep.duplicateTicketCount,
+            unmatchedTicketCount: latestRep.unmatchedTicketCount,
+            duplicateTracking: latestRep.duplicateTracking,
+            carryForward: latestRep.carryForward,
+            comparison: latestRep.comparison,
+            regionBreakdown: latestRep.regionBreakdown,
+          };
+        });
+
+        setRtplStatusChanges((prevChanges) => {
+          // Only update if changes have actually updated to avoid unnecessary renders
+          if (JSON.stringify(prevChanges) === JSON.stringify(latestStatusChanges)) {
+            return prevChanges;
+          }
+          return latestStatusChanges;
+        });
+
+      } catch (error) {
+        if (isApiAuthError(error)) {
+          handleBackgroundError(error);
+        } else {
+          console.error("Background poll failed:", error);
+        }
+      } finally {
+        timerId = setTimeout(poll, 10000);
+      }
+    }
+
+    timerId = setTimeout(poll, 10000);
+
+    return () => {
+      clearTimeout(timerId);
+    };
+  }, [
+    session,
+    report?.reportId,
+    upload?.batches,
+    regionId,
+    rtplAnalyticsDate,
+  ]);
+
+
   async function runAction(action: () => Promise<void>) {
     setIsBusy(true);
     setMessage(null);

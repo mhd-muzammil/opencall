@@ -5842,9 +5842,9 @@ export default function DashboardPage() {
                   {/* Segment */}
                   <div className="formField">
                     <label htmlFor="modal-segment">Segment</label>
-                    <input
+                    <select
                       id="modal-segment"
-                      className="modalInput"
+                      className="modalSelect"
                       value={String(draftOutput["Segment"] ?? "")}
                       onChange={(event) =>
                         setDraftOutput((current) => ({
@@ -5852,7 +5852,18 @@ export default function DashboardPage() {
                           "Segment": event.target.value,
                         }))
                       }
-                    />
+                    >
+                      <option value="">Entry</option>
+                      <option value="Print">Print</option>
+                      <option value="PC">PC</option>
+                      <option value="Install">Install</option>
+                      <option value="Trade">Trade</option>
+                      {draftOutput["Segment"] && 
+                       draftOutput["Segment"] !== MANUAL_ENTRY_REQUIRED && 
+                       !["Print", "PC", "Install", "Trade"].includes(String(draftOutput["Segment"])) && (
+                        <option value={String(draftOutput["Segment"])}>{String(draftOutput["Segment"])}</option>
+                      )}
+                    </select>
                   </div>
 
                   {/* Location */}

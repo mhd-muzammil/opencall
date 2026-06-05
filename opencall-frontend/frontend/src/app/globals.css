@@ -5390,7 +5390,7 @@ th .colFilterWrap {
   align-items: center;
   justify-content: center;
   padding: 20px;
-  animation: fadeIn 0.25s ease-out forwards;
+  animation: fadeIn 0.15s ease-out forwards;
 }
 
 .modalCard {
@@ -5402,7 +5402,7 @@ th .colFilterWrap {
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  animation: scaleUp 0.3s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
+  animation: scaleUp 0.18s cubic-bezier(0.16, 1, 0.3, 1) forwards;
 }
 
 .modalHeader {
@@ -5564,6 +5564,23 @@ th .colFilterWrap {
   gap: 8px;
 }
 
+.statusFieldContainer .cellInput {
+  width: 100% !important;
+  border: 1px solid var(--border) !important;
+  border-radius: 8px !important;
+  padding: 10px 12px !important;
+  font-size: 13.5px !important;
+  font-weight: 500 !important;
+  background: #ffffff !important;
+  color: var(--text) !important;
+  min-height: 40px !important;
+}
+
+.statusFieldContainer .cellInput:focus {
+  border-color: var(--accent) !important;
+  box-shadow: 0 0 0 3px var(--accent-ring) !important;
+}
+
 .customStatusInput {
   background: #fdfdfd;
   border-style: dashed;
@@ -5624,7 +5641,7 @@ th .colFilterWrap {
 @keyframes scaleUp {
   from {
     opacity: 0;
-    transform: scale(0.95) translateY(10px);
+    transform: scale(0.97) translateY(6px);
   }
   to {
     opacity: 1;

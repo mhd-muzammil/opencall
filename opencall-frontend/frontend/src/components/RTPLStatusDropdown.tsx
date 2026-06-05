@@ -127,6 +127,7 @@ export function RTPLStatusDropdown({ value, onChange, manualEntryRequiredLabel }
           width: "100%",
           cursor: "pointer",
           backgroundColor: "#fff",
+          color: "var(--text)",
           border: "1px solid #ddd",
           padding: "4px 8px",
           borderRadius: "4px",

@@ -4703,22 +4703,10 @@ export default function DashboardPage() {
                                   isManualRequired || needsManualEntry ? "missingCell" : "",
                                   isCarriedForward ? "carriedForwardCell" : "",
                                 ].filter(Boolean).join(" ") || undefined}
-                                onClick={
-                                  !isEditing && isManualRequired && !isReadOnly
-                                    ? () => startEditing(row)
-                                    : undefined
-                                }
-                                style={
-                                  !isEditing && isManualRequired && !isReadOnly
-                                    ? { cursor: "pointer" }
-                                    : undefined
-                                }
                                 title={
-                                  !isEditing && isManualRequired && !isReadOnly
-                                    ? "Click to edit manual entry"
-                                    : isCarriedForward
-                                      ? "Value carried from previous day"
-                                      : undefined
+                                  isCarriedForward
+                                    ? "Value carried from previous day"
+                                    : undefined
                                 }
                               >
                                 {isEditing && !isReadOnly ? (

@@ -24,6 +24,7 @@
 html,
 body {
   min-height: 100%;
+  scroll-behavior: smooth;
 }
 
 body {
@@ -1347,6 +1348,7 @@ code {
   scrollbar-width: thin;
   scrollbar-color: #cbd5e1 transparent;
   min-width: 0;
+  scroll-behavior: smooth;
 }
 
 .tableWrap::-webkit-scrollbar {
@@ -1936,9 +1938,12 @@ td.missingCell.carriedForwardCell {
 }
 
 .recordsMode .cellInput {
+  min-width: 0 !important;
+  width: 100% !important;
   min-height: 28px;
   padding: 4px 7px;
   font-size: 12px;
+  box-sizing: border-box;
 }
 
 .rowActions {
@@ -1958,7 +1963,20 @@ td.missingCell.carriedForwardCell {
   gap: 4px;
 }
 
-.recordsMode .rowActions button,
+.recordsMode .rowActions button {
+  min-height: 26px !important;
+  padding: 2px 10px !important;
+  font-size: 11px !important;
+}
+
+.recordsMode tr:has(.cellInput) td,
+.recordsMode tr:has(input) td,
+.recordsMode tr:has(select) td,
+.recordsMode tr:has(.rowActions) td {
+  padding-top: 1px !important;
+  padding-bottom: 1px !important;
+}
+
 .recordsMode .stickyActionColumn > button.secondaryButton {
   min-height: 28px;
   padding: 3px 10px;
@@ -5446,6 +5464,7 @@ th .colFilterWrap {
   display: flex;
   flex-direction: column;
   gap: 24px;
+  scroll-behavior: smooth;
 }
 
 /* Info Grid */

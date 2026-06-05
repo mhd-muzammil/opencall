@@ -5324,30 +5324,42 @@ th .colFilterWrap {
 
 /* --- Premium Modal and Ticket ID Link Styling --- */
 .ticketIdLink {
-  background: transparent;
-  color: var(--accent);
-  border: none;
-  padding: 0;
-  margin: 0;
-  font-weight: 700;
+  background: transparent !important;
+  color: var(--accent) !important;
+  border: none !important;
+  padding: 2px 6px !important;
+  margin: -2px -6px !important;
+  min-height: auto !important;
+  font-weight: 700 !important;
   text-decoration: underline;
   text-decoration-style: dotted;
   text-underline-offset: 3px;
   cursor: pointer;
-  min-height: auto;
-  transition: color 0.2s ease, transform 0.1s ease;
+  border-radius: 4px;
+  transition: color 0.15s ease, background 0.15s ease, transform 0.1s cubic-bezier(0.175, 0.885, 0.32, 1.275), text-decoration-color 0.15s ease;
+  display: inline-flex;
+  align-items: center;
+  line-height: normal;
+  transform: scale(1);
 }
 
 .ticketIdLink:hover {
-  color: var(--accent-strong);
+  color: var(--accent-strong) !important;
+  background: var(--accent-soft) !important;
   text-decoration-style: solid;
-  transform: translateY(-0.5px);
 }
 
 .ticketIdLink:focus {
-  outline: none;
+  outline: none !important;
+  background: var(--accent-soft) !important;
+  color: var(--accent-strong) !important;
   box-shadow: 0 0 0 2px var(--accent-ring);
-  border-radius: 4px;
+}
+
+.ticketIdLink:active {
+  transform: scale(0.92) !important;
+  background: var(--accent-ring) !important;
+  color: var(--accent-strong) !important;
 }
 
 .modalOverlay {

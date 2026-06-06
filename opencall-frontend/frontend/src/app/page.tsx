@@ -1141,6 +1141,7 @@ export default function DashboardPage() {
   const [showManualCarryForward, setShowManualCarryForward] = useState(false);
   const [showCaseTypeOverview, setShowCaseTypeOverview] = useState(false);
   const [showCustomerSegmentSplit, setShowCustomerSegmentSplit] = useState(false);
+  const [showClosedCallLedger, setShowClosedCallLedger] = useState(false);
 
   useEffect(() => {
     if (workspaceView !== "records") {
@@ -4471,7 +4472,7 @@ export default function DashboardPage() {
                 <CarryForwardSummaryPanel report={report} />
               )}
 
-              {overallClosedCount > 0 ? (
+              {showClosedCallLedger && overallClosedCount > 0 ? (
                 <div className="closedCallsSection">
                   <div className="closedCallsHeader">
                     <div>
@@ -5064,6 +5065,15 @@ export default function DashboardPage() {
                   style={{ width: "15px", height: "15px", cursor: "pointer", accentColor: "var(--accent)", margin: 0 }}
                 />
                 Show Customer Segment Split
+              </label>
+              <label style={{ display: "flex", alignItems: "center", gap: "8px", cursor: "pointer", fontSize: "12px", fontWeight: 600, color: "var(--text)", userSelect: "none" }}>
+                <input 
+                  type="checkbox" 
+                  checked={showClosedCallLedger} 
+                  onChange={(e) => setShowClosedCallLedger(e.target.checked)}
+                  style={{ width: "15px", height: "15px", cursor: "pointer", accentColor: "var(--accent)", margin: 0 }}
+                />
+                Show Closed Call Ledger
               </label>
             </div>
           )}

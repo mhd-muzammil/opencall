@@ -3369,43 +3369,11 @@ export default function DashboardPage() {
               }}
             >
               <div className="regionDetailMetricHeader">
-                <span className="regionDetailMetricTitle">Install Total</span>
+                <span className="regionDetailMetricTitle">Installation Total</span>
                 <span className="regionDetailMetricCount">{stats.installCount}</span>
               </div>
               <div className="regionDetailMetricSubtext">
                 commercial: {stats.installCommercial} consumer: {stats.installConsumer}
-              </div>
-            </div>
-
-            <div 
-              className={`regionDetailMetricCard ${selectedRegion === aspCode && showCissOnly ? "active" : ""}`}
-              onClick={(e) => {
-                e.stopPropagation();
-                openRecordsWithFilter({ region: aspCode, cissOnly: true });
-              }}
-            >
-              <div className="regionDetailMetricHeader">
-                <span className="regionDetailMetricTitle">CISS Case</span>
-                <span className="regionDetailMetricCount">{stats.cissCount}</span>
-              </div>
-              <div className="regionDetailMetricSubtext">
-                consumer: {stats.cissConsumer}
-              </div>
-            </div>
-
-            <div 
-              className={`regionDetailMetricCard ${selectedRegion === aspCode && showRcaOnly ? "active" : ""}`}
-              onClick={(e) => {
-                e.stopPropagation();
-                openRecordsWithFilter({ region: aspCode, rcaOnly: true });
-              }}
-            >
-              <div className="regionDetailMetricHeader">
-                <span className="regionDetailMetricTitle">RCA Case</span>
-                <span className="regionDetailMetricCount">{stats.rcaCount}</span>
-              </div>
-              <div className="regionDetailMetricSubtext">
-                commercial: {stats.rcaCommercial} consumer: {stats.rcaConsumer}
               </div>
             </div>
           </div>
@@ -3432,6 +3400,50 @@ export default function DashboardPage() {
             ) : (
               <div className="regionWoOtcEmpty">No records</div>
             )}
+          </div>
+        </div>
+
+        {/* CISS and RCA Cases Section */}
+        <div style={{
+          borderTop: "1px dashed var(--border)",
+          paddingTop: "14px",
+          marginBottom: "14px",
+          display: "grid",
+          gridTemplateColumns: "1fr 1fr",
+          gap: "8px"
+        }}>
+          <div 
+            className={`regionDetailMetricCard ${selectedRegion === aspCode && showCissOnly ? "active" : ""}`}
+            onClick={(e) => {
+              e.stopPropagation();
+              openRecordsWithFilter({ region: aspCode, cissOnly: true });
+            }}
+            style={{ margin: 0 }}
+          >
+            <div className="regionDetailMetricHeader">
+              <span className="regionDetailMetricTitle">CISS Case</span>
+              <span className="regionDetailMetricCount">{stats.cissCount}</span>
+            </div>
+            <div className="regionDetailMetricSubtext">
+              consumer: {stats.cissConsumer}
+            </div>
+          </div>
+
+          <div 
+            className={`regionDetailMetricCard ${selectedRegion === aspCode && showRcaOnly ? "active" : ""}`}
+            onClick={(e) => {
+              e.stopPropagation();
+              openRecordsWithFilter({ region: aspCode, rcaOnly: true });
+            }}
+            style={{ margin: 0 }}
+          >
+            <div className="regionDetailMetricHeader">
+              <span className="regionDetailMetricTitle">RCA Case</span>
+              <span className="regionDetailMetricCount">{stats.rcaCount}</span>
+            </div>
+            <div className="regionDetailMetricSubtext">
+              commercial: {stats.rcaCommercial} consumer: {stats.rcaConsumer}
+            </div>
           </div>
         </div>
 

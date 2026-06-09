@@ -1144,23 +1144,11 @@ export default function DashboardPage() {
   const [showClosedCallLedger, setShowClosedCallLedger] = useState(false);
 
   useEffect(() => {
-    if (workspaceView !== "records") {
-      setIsRecordsSummaryHidden(false);
-      return;
+    setIsRecordsSummaryHidden(false);
+    if (recordsTableWrapRef.current) {
+      recordsTableWrapRef.current.scrollTop = 0;
     }
-
-    const handleWindowScroll = () => {
-      const tableScrolled = (recordsTableWrapRef.current?.scrollTop ?? 0) > 0;
-      setIsRecordsSummaryHidden(window.scrollY > 24 || tableScrolled);
-    };
-
-    handleWindowScroll();
-    window.addEventListener("scroll", handleWindowScroll, { passive: true });
-
-    return () => {
-      window.removeEventListener("scroll", handleWindowScroll);
-    };
-  }, [workspaceView]);
+  }, [workspaceView, report?.reportId]);
 
   useEffect(() => {
     setSelectedRegion(null);
@@ -4661,8 +4649,8 @@ export default function DashboardPage() {
                 className="tableWrap"
                 ref={recordsTableWrapRef}
                 onScroll={(event) => {
-                  const hasTableScroll = event.currentTarget.scrollTop > 0;
-                  setIsRecordsSummaryHidden(hasTableScroll || window.scrollY > 24);
+                  const scrollTop = event.currentTarget.scrollTop;
+                  setIsRecordsSummaryHidden(scrollTop > 10);
                 }}
               >
                 <table>

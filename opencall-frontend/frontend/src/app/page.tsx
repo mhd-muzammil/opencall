@@ -1435,8 +1435,14 @@ export default function DashboardPage() {
     if (!report) return [];
     
     return tableBaseRows.filter((row) => {
-      const matchRegion = selectedRegion === "ALL" || !selectedRegion || row.output["Work Location"] === selectedRegion;
-      const matchCode = !selectedWoOtcCode || row.output["WO OTC CODE"] === selectedWoOtcCode;
+      const rowRegion = String(row.output["Work Location"] ?? "").trim().toUpperCase();
+      const targetRegion = String(selectedRegion ?? "").trim().toUpperCase();
+      const matchRegion = selectedRegion === "ALL" || !selectedRegion || rowRegion === targetRegion;
+      
+      const rowCode = String(row.output["WO OTC CODE"] ?? "").trim().toUpperCase();
+      const targetCode = String(selectedWoOtcCode ?? "").trim().toUpperCase();
+      const matchCode = !selectedWoOtcCode || rowCode === targetCode;
+      
       return matchRegion && matchCode;
     });
   }, [report, selectedRegion, selectedWoOtcCode, tableBaseRows]);
@@ -1445,8 +1451,14 @@ export default function DashboardPage() {
     if (!report) return [];
     const filtered = report.rows.filter((row) => {
       if (hasRequestToCancelFlexStatus(row)) return false;
-      const matchRegion = selectedRegion === "ALL" || !selectedRegion || row.output["Work Location"] === selectedRegion;
-      const matchCode = !selectedWoOtcCode || row.output["WO OTC CODE"] === selectedWoOtcCode;
+      const rowRegion = String(row.output["Work Location"] ?? "").trim().toUpperCase();
+      const targetRegion = String(selectedRegion ?? "").trim().toUpperCase();
+      const matchRegion = selectedRegion === "ALL" || !selectedRegion || rowRegion === targetRegion;
+      
+      const rowCode = String(row.output["WO OTC CODE"] ?? "").trim().toUpperCase();
+      const targetCode = String(selectedWoOtcCode ?? "").trim().toUpperCase();
+      const matchCode = !selectedWoOtcCode || rowCode === targetCode;
+      
       return matchRegion && matchCode;
     });
 
@@ -1688,11 +1700,14 @@ export default function DashboardPage() {
   const scopedClosedRows = useMemo(
     () =>
       closedRows.filter((row) => {
-        const matchRegion =
-          selectedRegion === "ALL" ||
-          !selectedRegion ||
-          row.output["Work Location"] === selectedRegion;
-        const matchCode = !selectedWoOtcCode || row.output["WO OTC CODE"] === selectedWoOtcCode;
+        const rowRegion = String(row.output["Work Location"] ?? "").trim().toUpperCase();
+        const targetRegion = String(selectedRegion ?? "").trim().toUpperCase();
+        const matchRegion = selectedRegion === "ALL" || !selectedRegion || rowRegion === targetRegion;
+        
+        const rowCode = String(row.output["WO OTC CODE"] ?? "").trim().toUpperCase();
+        const targetCode = String(selectedWoOtcCode ?? "").trim().toUpperCase();
+        const matchCode = !selectedWoOtcCode || rowCode === targetCode;
+        
         return matchRegion && matchCode;
       }),
     [closedRows, selectedRegion, selectedWoOtcCode],
@@ -1918,7 +1933,7 @@ export default function DashboardPage() {
     // 1. Filter rows by selectedRegion
     let regionRows = report.rows;
     if (selectedRegion && selectedRegion !== "ALL") {
-      regionRows = report.rows.filter(r => r.output["Work Location"] === selectedRegion);
+      regionRows = report.rows.filter(r => String(r.output["Work Location"] ?? "").trim().toUpperCase() === selectedRegion.trim().toUpperCase());
     }
 
     // 1b. Deduplicate rows by Ticket ID to prevent duplicate engineer productivity counts
@@ -2154,7 +2169,7 @@ export default function DashboardPage() {
       { value: ALL_REGIONS_FILTER, label: "All", count: rtplRowsForSelectedScope.length },
       ...activeRegionBreakdown.map((entry) => {
         const scopedCount = rtplRowsForSelectedScope.filter(
-          (row) => row.output["Work Location"] === entry.aspCode,
+          (row) => String(row.output["Work Location"] ?? "").trim().toUpperCase() === entry.aspCode.toUpperCase(),
         ).length;
 
         return {
@@ -3014,11 +3029,16 @@ export default function DashboardPage() {
 
     const scopedRows = (rows: readonly ReportRow[]): ReportRow[] =>
       rows.filter((row) => {
+        const rowRegion = String(row.output["Work Location"] ?? "").trim().toUpperCase();
+        const targetRegion = String(selectedRegion ?? "").trim().toUpperCase();
         const matchRegion =
           selectedRegion === "ALL" ||
           !selectedRegion ||
-          row.output["Work Location"] === selectedRegion;
-        const matchCode = !selectedWoOtcCode || row.output["WO OTC CODE"] === selectedWoOtcCode;
+          rowRegion === targetRegion;
+        
+        const rowCode = String(row.output["WO OTC CODE"] ?? "").trim().toUpperCase();
+        const targetCode = String(selectedWoOtcCode ?? "").trim().toUpperCase();
+        const matchCode = !selectedWoOtcCode || rowCode === targetCode;
         return matchRegion && matchCode;
       });
     const applyActiveTableFilters = (rows: readonly ReportRow[]): ReportRow[] => {

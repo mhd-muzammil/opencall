@@ -1144,22 +1144,7 @@ export default function DashboardPage() {
   const [showClosedCallLedger, setShowClosedCallLedger] = useState(false);
 
   useEffect(() => {
-    if (workspaceView !== "records") {
-      setIsRecordsSummaryHidden(false);
-      return;
-    }
-
-    const handleWindowScroll = () => {
-      const tableScrolled = (recordsTableWrapRef.current?.scrollTop ?? 0) > 0;
-      setIsRecordsSummaryHidden(window.scrollY > 24 || tableScrolled);
-    };
-
-    handleWindowScroll();
-    window.addEventListener("scroll", handleWindowScroll, { passive: true });
-
-    return () => {
-      window.removeEventListener("scroll", handleWindowScroll);
-    };
+    setIsRecordsSummaryHidden(false);
   }, [workspaceView]);
 
   useEffect(() => {
@@ -4660,10 +4645,6 @@ export default function DashboardPage() {
               <div
                 className="tableWrap"
                 ref={recordsTableWrapRef}
-                onScroll={(event) => {
-                  const hasTableScroll = event.currentTarget.scrollTop > 0;
-                  setIsRecordsSummaryHidden(hasTableScroll || window.scrollY > 24);
-                }}
               >
                 <table>
                   <thead>

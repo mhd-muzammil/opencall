@@ -486,19 +486,19 @@ function calculateRegionStats(rows: GeneratedReportResponse["rows"][number][]): 
     if (isWarranty) warrantyCount++;
     else nonWarrantyCount++;
     
-    if (isPc) {
+    if (isPc && isWarranty) {
       pcCount++;
       if (isConsumer) pcConsumer++;
       else pcCommercial++;
     }
     
-    if (isPrint) {
+    if (isPrint && isWarranty) {
       printCount++;
       if (isConsumer) printConsumer++;
       else printCommercial++;
     }
     
-    if (isInstall) {
+    if (isInstall && isWarranty) {
       installCount++;
       if (isConsumer) installConsumer++;
       else installCommercial++;
@@ -3339,10 +3339,10 @@ export default function DashboardPage() {
           <div className="regionCardDetailsCol">
             <div className="regionWoOtcHeader">Segment Product</div>
             <div 
-              className={`regionDetailMetricCard ${selectedRegion === aspCode && colFilters.filters.Segment?.has(PC_SEGMENT) ? "active" : ""}`}
+              className={`regionDetailMetricCard ${selectedRegion === aspCode && showWarrantyOnly && colFilters.filters.Segment?.has(PC_SEGMENT) ? "active" : ""}`}
               onClick={(e) => {
                 e.stopPropagation();
-                openRecordsWithFilter({ region: aspCode, segment: PC_SEGMENT });
+                openRecordsWithFilter({ region: aspCode, warrantyOnly: true, segment: PC_SEGMENT });
               }}
             >
               <div className="regionDetailMetricHeader">
@@ -3355,10 +3355,10 @@ export default function DashboardPage() {
             </div>
 
             <div 
-              className={`regionDetailMetricCard ${selectedRegion === aspCode && printCaseFilter === "fix" ? "active" : ""}`}
+              className={`regionDetailMetricCard ${selectedRegion === aspCode && showWarrantyOnly && printCaseFilter === "fix" ? "active" : ""}`}
               onClick={(e) => {
                 e.stopPropagation();
-                openRecordsWithFilter({ region: aspCode, printCase: "fix" });
+                openRecordsWithFilter({ region: aspCode, warrantyOnly: true, printCase: "fix" });
               }}
             >
               <div className="regionDetailMetricHeader">
@@ -3371,10 +3371,10 @@ export default function DashboardPage() {
             </div>
 
             <div 
-              className={`regionDetailMetricCard ${selectedRegion === aspCode && printCaseFilter === "installation" ? "active" : ""}`}
+              className={`regionDetailMetricCard ${selectedRegion === aspCode && showWarrantyOnly && printCaseFilter === "installation" ? "active" : ""}`}
               onClick={(e) => {
                 e.stopPropagation();
-                openRecordsWithFilter({ region: aspCode, printCase: "installation" });
+                openRecordsWithFilter({ region: aspCode, warrantyOnly: true, printCase: "installation" });
               }}
             >
               <div className="regionDetailMetricHeader">

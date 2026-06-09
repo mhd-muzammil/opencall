@@ -3335,18 +3335,18 @@ export default function DashboardPage() {
             </div>
 
             <div 
-              className={`regionDetailMetricCard ${selectedRegion === aspCode && printCaseFilter === "all" ? "active" : ""}`}
+              className={`regionDetailMetricCard ${selectedRegion === aspCode && printCaseFilter === "fix" ? "active" : ""}`}
               onClick={(e) => {
                 e.stopPropagation();
-                openRecordsWithFilter({ region: aspCode, printCase: "all" });
+                openRecordsWithFilter({ region: aspCode, printCase: "fix" });
               }}
             >
               <div className="regionDetailMetricHeader">
                 <span className="regionDetailMetricTitle">Print Total</span>
-                <span className="regionDetailMetricCount">{stats.printCount}</span>
+                <span className="regionDetailMetricCount">{stats.printCount - stats.installCount}</span>
               </div>
               <div className="regionDetailMetricSubtext">
-                commercial: {stats.printCommercial} consumer: {stats.printConsumer}
+                commercial: {stats.printCommercial - stats.installCommercial} consumer: {stats.printConsumer - stats.installConsumer}
               </div>
             </div>
 

@@ -3319,10 +3319,10 @@ export default function DashboardPage() {
           <div className="regionCardDetailsCol">
             <div className="regionWoOtcHeader">Segment Product</div>
             <div 
-              className={`regionDetailMetricCard ${selectedRegion === aspCode && !showConsumerOnly && !showCommercialOnly && !showWarrantyOnly && !showNonWarrantyOnly && !showCissOnly && !showRcaOnly && !showTradeOnly && !showClosedOnly && !printCaseFilter ? "active" : ""}`}
+              className={`regionDetailMetricCard ${selectedRegion === aspCode && colFilters.filters.Segment?.has(PC_SEGMENT) ? "active" : ""}`}
               onClick={(e) => {
                 e.stopPropagation();
-                openRecordsWithFilter({ region: aspCode });
+                openRecordsWithFilter({ region: aspCode, segment: PC_SEGMENT });
               }}
             >
               <div className="regionDetailMetricHeader">

@@ -3317,6 +3317,7 @@ export default function DashboardPage() {
         <div className="regionCardDetailsGrid">
           {/* Left Column: Detail cards */}
           <div className="regionCardDetailsCol">
+            <div className="regionWoOtcHeader">Segment Product</div>
             <div 
               className={`regionDetailMetricCard ${selectedRegion === aspCode && !showConsumerOnly && !showCommercialOnly && !showWarrantyOnly && !showNonWarrantyOnly && !showCissOnly && !showRcaOnly && !showTradeOnly && !showClosedOnly && !printCaseFilter ? "active" : ""}`}
               onClick={(e) => {

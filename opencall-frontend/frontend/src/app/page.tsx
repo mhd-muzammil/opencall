@@ -5247,7 +5247,6 @@ export default function DashboardPage() {
                     { id: 15, desc: "Add.Part ordered", val: regionKpiMetrics.addPartOrdered, alert: true },
                     { id: 16, desc: "To be Cancel", val: regionKpiMetrics.toBeCancel },
                     { id: 17, desc: "New calls", val: regionKpiMetrics.newCalls, alert: true },
-                    { id: 18, desc: "Trade Open Calls", val: regionKpiMetrics.tradeOpenCalls },
                   ].map((m) => (
                     <tr key={m.id} style={{ borderBottom: "1px solid #e2e8f0" }}>
                       <td style={{ padding: "6px", border: "1px solid #cbd5e1", textAlign: "center", background: "#f8fafc", fontWeight: "600", color: "#334155" }}>{m.id}</td>

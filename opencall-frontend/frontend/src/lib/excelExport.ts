@@ -418,7 +418,6 @@ export function downloadRegionSummaryExcel(
       [15, "Add.Part ordered", addPartOrderedCount || 0],
       [16, "To be Cancel", toBeCancelCount || 0],
       [17, "New calls", newCallsCount || 0],
-      [18, "Trade Open Calls", tradeOpenCallsCount || 0],
     ];
  
     merges = [

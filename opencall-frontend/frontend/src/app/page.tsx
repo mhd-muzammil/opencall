@@ -139,9 +139,30 @@ const CHANGE_FIELD_LABELS: Record<string, string> = {
   hp_owner_status: "HP Owner Status",
 };
 
+function segmentValue(row: GeneratedReportResponse["rows"][number]): string {
+  return String(row.output.Segment ?? "").trim().toLowerCase();
+}
+
 function isTradeCase(row: GeneratedReportResponse["rows"][number]): boolean {
   const code = normalizeWoOtcCode(row.output["WO OTC CODE"]);
-  return code.includes(TRADE_WO_OTC_CODE_KEYWORD) || code.startsWith("01");
+  if (code.includes(TRADE_WO_OTC_CODE_KEYWORD) || code.startsWith("01")) {
+    return true;
+  }
+  const segment = segmentValue(row);
+  // A "Trade" segment is non-warranty even when the OTC code is not 01/Trade.
+  if (segment === "trade") {
+    return true;
+  }
+  // A PC carrying a component field install code ("05F - Comp Field Install") is a
+  // billable/non-warranty PC job, so it belongs in Trade -> PC Total, not the
+  // warranty dashboard. (Blank/Install segments with 05F remain warranty installs.)
+  if (
+    segment === "pc" &&
+    getWoOtcCodePrefix(row.output["WO OTC CODE"]) === PRINT_INSTALLATION_WO_OTC_CODE
+  ) {
+    return true;
+  }
+  return false;
 }
 
 function isCissCase(row: GeneratedReportResponse["rows"][number]): boolean {
@@ -213,12 +234,14 @@ function isPcCase(row: GeneratedReportResponse["rows"][number]): boolean {
   if (isPrintInstallationCase(row)) {
     return false;
   }
-  const segment = String(row.output.Segment ?? "").trim().toLowerCase();
+  const segment = segmentValue(row);
   const prodLine = String(row.output["Product Line Name"] ?? "").trim().toLowerCase();
-  
+
+  // An explicit segment always wins.
   if (segment === "pc") return true;
   if (segment === "print") return false;
-  
+
+  // Segment is blank/unknown: fall back to Product Line keywords.
   return (
     prodLine.includes("notebook") ||
     prodLine.includes("desktop") ||
@@ -235,8 +258,12 @@ function isPrintCase(row: GeneratedReportResponse["rows"][number]): boolean {
 }
 
 function isPrintInstallationCase(row: GeneratedReportResponse["rows"][number]): boolean {
-  const segment = String(row.output.Segment ?? "").trim().toLowerCase();
-  return segment === "install" || getWoOtcCodePrefix(row.output["WO OTC CODE"]) === PRINT_INSTALLATION_WO_OTC_CODE;
+  const segment = segmentValue(row);
+  // An explicit segment always wins over the OTC code.
+  if (segment === "install") return true;
+  if (segment === "pc" || segment === "print") return false;
+  // Segment is blank/unknown: fall back to the print-installation OTC code (05F).
+  return getWoOtcCodePrefix(row.output["WO OTC CODE"]) === PRINT_INSTALLATION_WO_OTC_CODE;
 }
 
 function isPrintFixCase(row: GeneratedReportResponse["rows"][number]): boolean {
@@ -1142,6 +1169,7 @@ export default function DashboardPage() {
   const [showCommercialOnly, setShowCommercialOnly] = useState(false);
   const [showWarrantyOnly, setShowWarrantyOnly] = useState(false);
   const [showNonWarrantyOnly, setShowNonWarrantyOnly] = useState(false);
+  const [showPcOnly, setShowPcOnly] = useState(false);
   const [isKpiModalOpen, setIsKpiModalOpen] = useState(false);
   const [isChennaiKpiModalOpen, setIsChennaiKpiModalOpen] = useState(false);
   const [isProductivityModalOpen, setIsProductivityModalOpen] = useState(false);
@@ -1195,6 +1223,8 @@ export default function DashboardPage() {
     setShowCommercialOnly(false);
     setShowWarrantyOnly(false);
     setShowNonWarrantyOnly(false);
+    setShowPcOnly(false);
+    setPrintCaseFilter(null);
     setIsKpiModalOpen(false);
     setIsChennaiKpiModalOpen(false);
     setIsProductivityModalOpen(false);
@@ -1307,10 +1337,6 @@ export default function DashboardPage() {
     return activeRows.filter(isPcCase);
   }, [activeRows, report]);
 
-  const printRows = useMemo(() => {
-    return activeRows.filter(isPrintCase);
-  }, [activeRows]);
-
   const printInstallationRows = useMemo(() => {
     return activeRows.filter(isPrintInstallationCase);
   }, [activeRows]);
@@ -1418,17 +1444,33 @@ export default function DashboardPage() {
   const tableBaseRows = useMemo(() => {
     if (!report) return [];
     if (showClosedOnly) return closedRows;
-    if (showConsumerOnly) return consumerRows;
-    if (showCommercialOnly) return commercialRows;
-    if (showWarrantyOnly) return warrantyRows;
-    if (showNonWarrantyOnly) return nonWarrantyRows;
-    if (showCissOnly) return cissRows;
-    if (showRcaOnly) return rcaRows;
-    if (showTradeOnly) return tradeRows;
-    if (printCaseFilter === "all") return printRows;
-    if (printCaseFilter === "installation") return printInstallationRows;
-    if (printCaseFilter === "fix") return printFixRows;
-    return activeRows;
+
+    // Customer / warranty / special-case scope (mutually exclusive).
+    const scopeRows = showConsumerOnly
+      ? consumerRows
+      : showCommercialOnly
+        ? commercialRows
+        : showWarrantyOnly
+          ? warrantyRows
+          : showNonWarrantyOnly
+            ? nonWarrantyRows
+            : showCissOnly
+              ? cissRows
+              : showRcaOnly
+                ? rcaRows
+                : showTradeOnly
+                  ? tradeRows
+                  : activeRows;
+
+    // The segment-product filter composes on top of the scope above so that
+    // e.g. "warranty + PC" shows only warranty PC cases, and "trade + PC" shows
+    // only trade PC cases. It uses the same isPcCase/isPrint* predicates the
+    // card counts are built from, so the records shown match the displayed count.
+    if (showPcOnly) return scopeRows.filter(isPcCase);
+    if (printCaseFilter === "all") return scopeRows.filter(isPrintCase);
+    if (printCaseFilter === "installation") return scopeRows.filter(isPrintInstallationCase);
+    if (printCaseFilter === "fix") return scopeRows.filter(isPrintFixCase);
+    return scopeRows;
   }, [
     activeRows,
     cissRows,
@@ -1438,9 +1480,6 @@ export default function DashboardPage() {
     warrantyRows,
     nonWarrantyRows,
     printCaseFilter,
-    printFixRows,
-    printInstallationRows,
-    printRows,
     rcaRows,
     showCissOnly,
     showClosedOnly,
@@ -1448,6 +1487,7 @@ export default function DashboardPage() {
     showCommercialOnly,
     showWarrantyOnly,
     showNonWarrantyOnly,
+    showPcOnly,
     showRcaOnly,
     showTradeOnly,
     tradeRows,
@@ -3082,6 +3122,7 @@ export default function DashboardPage() {
     const hasTradeFilter = showTradeOnly;
     const hasClosedFilter = showClosedOnly;
     const hasPrintFilter = printCaseFilter !== null;
+    const hasPcFilter = showPcOnly;
     const isRtplRegionFiltered = selectedRtplRegion !== ALL_REGIONS_FILTER;
 
     let exportRows: ReportRow[] | null = null;
@@ -3089,36 +3130,46 @@ export default function DashboardPage() {
     if (hasClosedFilter) {
       const scopedClosedRows = scopedRows(closedRows);
       exportRows = applyActiveTableFilters(scopedClosedRows);
-    } else if (hasConsumerFilter) {
-      const scopedConsumerRows = scopedRows(consumerRows);
-      exportRows = applyActiveTableFilters(scopedConsumerRows);
-    } else if (hasCommercialFilter) {
-      const scopedCommercialRows = scopedRows(commercialRows);
-      exportRows = applyActiveTableFilters(scopedCommercialRows);
-    } else if (hasWarrantyFilter) {
-      const scopedWarrantyRows = scopedRows(warrantyRows);
-      exportRows = applyActiveTableFilters(scopedWarrantyRows);
-    } else if (hasNonWarrantyFilter) {
-      const scopedNonWarrantyRows = scopedRows(nonWarrantyRows);
-      exportRows = applyActiveTableFilters(scopedNonWarrantyRows);
-    } else if (hasCissFilter) {
-      const scopedCissRows = scopedRows(cissRows);
-      exportRows = applyActiveTableFilters(scopedCissRows);
-    } else if (hasRcaFilter) {
-      const scopedRcaRows = scopedRows(rcaRows);
-      exportRows = applyActiveTableFilters(scopedRcaRows);
-    } else if (hasTradeFilter) {
-      const scopedTradeRows = scopedRows(tradeRows);
-      exportRows = applyActiveTableFilters(scopedTradeRows);
-    } else if (hasPrintFilter) {
-      const printScopedRows =
-        printCaseFilter === "installation"
-          ? printInstallationRows
+    } else if (
+      hasConsumerFilter ||
+      hasCommercialFilter ||
+      hasWarrantyFilter ||
+      hasNonWarrantyFilter ||
+      hasCissFilter ||
+      hasRcaFilter ||
+      hasTradeFilter ||
+      hasPrintFilter ||
+      hasPcFilter
+    ) {
+      // Customer / warranty / special-case scope (mutually exclusive)...
+      const scopeRows = hasConsumerFilter
+        ? consumerRows
+        : hasCommercialFilter
+          ? commercialRows
+          : hasWarrantyFilter
+            ? warrantyRows
+            : hasNonWarrantyFilter
+              ? nonWarrantyRows
+              : hasCissFilter
+                ? cissRows
+                : hasRcaFilter
+                  ? rcaRows
+                  : hasTradeFilter
+                    ? tradeRows
+                    : activeRows;
+
+      // ...with the segment-product filter composed on top, mirroring the
+      // displayed table (tableBaseRows).
+      const scopedProductRows = hasPcFilter
+        ? scopeRows.filter(isPcCase)
+        : printCaseFilter === "installation"
+          ? scopeRows.filter(isPrintInstallationCase)
           : printCaseFilter === "fix"
-            ? printFixRows
-            : printRows;
-      const scopedPrintRows = scopedRows(printScopedRows);
-      exportRows = applyActiveTableFilters(scopedPrintRows);
+            ? scopeRows.filter(isPrintFixCase)
+            : printCaseFilter === "all"
+              ? scopeRows.filter(isPrintCase)
+              : scopeRows;
+      exportRows = applyActiveTableFilters(scopedRows(scopedProductRows));
     } else if (isRtplRegionFiltered && !hasExistingExportFilter && !hasColumnFilter && !hasRecordsSearchFilter) {
       exportRows = rtplAnalyticsRows;
     } else if (hasExistingExportFilter || hasColumnFilter || hasRecordsSearchFilter) {
@@ -3157,6 +3208,7 @@ export default function DashboardPage() {
     workLocations,
     wipAging,
     printCase = null,
+    pcOnly = false,
     cissOnly = false,
     rcaOnly = false,
     tradeOnly = false,
@@ -3175,6 +3227,7 @@ export default function DashboardPage() {
     workLocations?: readonly string[] | null;
     wipAging?: string | null;
     printCase?: PrintCaseFilter | null;
+    pcOnly?: boolean;
     cissOnly?: boolean;
     rcaOnly?: boolean;
     tradeOnly?: boolean;
@@ -3194,6 +3247,7 @@ export default function DashboardPage() {
     setShowCommercialOnly(commercialOnly);
     setShowWarrantyOnly(warrantyOnly);
     setShowNonWarrantyOnly(nonWarrantyOnly);
+    setShowPcOnly(pcOnly);
     setPrintCaseFilter(printCase);
     setSelectedRtplRegion(region && region !== "ALL" ? region : ALL_REGIONS_FILTER);
     colFilters.resetAll();
@@ -3360,11 +3414,11 @@ export default function DashboardPage() {
           {/* Left Column: Detail cards */}
           <div className="regionCardDetailsCol">
             <div className="regionWoOtcHeader">Segment Product</div>
-            <div 
-              className={`regionDetailMetricCard ${selectedRegion === aspCode && showWarrantyOnly && colFilters.filters.Segment?.has(PC_SEGMENT) ? "active" : ""}`}
+            <div
+              className={`regionDetailMetricCard ${selectedRegion === aspCode && showWarrantyOnly && showPcOnly ? "active" : ""}`}
               onClick={(e) => {
                 e.stopPropagation();
-                openRecordsWithFilter({ region: aspCode, warrantyOnly: true, segment: PC_SEGMENT });
+                openRecordsWithFilter({ region: aspCode, warrantyOnly: true, pcOnly: true });
               }}
             >
               <div className="regionDetailMetricHeader">
@@ -3486,7 +3540,7 @@ export default function DashboardPage() {
               className="regionTradeMetricCard"
               onClick={(e) => {
                 e.stopPropagation();
-                openRecordsWithFilter({ region: aspCode, tradeOnly: true, segment: PC_SEGMENT });
+                openRecordsWithFilter({ region: aspCode, tradeOnly: true, pcOnly: true });
               }}
             >
               <div className="regionTradeMetricLabel">PC Total</div>
@@ -3573,6 +3627,7 @@ export default function DashboardPage() {
     showCissOnly ? "CISS cases" : null,
     showRcaOnly ? "RCA cases" : null,
     showTradeOnly ? "Trade cases" : null,
+    showPcOnly ? "PC cases" : null,
     selectedPrintCaseFilter,
     selectedRegion && selectedRegion !== "ALL" ? selectedRegion : null,
     selectedWoOtcCode ? selectedWoOtcCode : null,

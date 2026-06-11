@@ -209,12 +209,34 @@ function getWoOtcCodePrefix(value: string | number | null | undefined): string {
   return normalizeWoOtcCode(value).match(/^[A-Z0-9]+/)?.[0] ?? "";
 }
 
-function isPrintInstallationCase(row: GeneratedReportResponse["rows"][number]): boolean {
-  return getWoOtcCodePrefix(row.output["WO OTC CODE"]) === PRINT_INSTALLATION_WO_OTC_CODE;
+function isPcCase(row: GeneratedReportResponse["rows"][number]): boolean {
+  if (isPrintInstallationCase(row)) {
+    return false;
+  }
+  const segment = String(row.output.Segment ?? "").trim().toLowerCase();
+  const prodLine = String(row.output["Product Line Name"] ?? "").trim().toLowerCase();
+  
+  if (segment === "pc") return true;
+  if (segment === "print") return false;
+  
+  return (
+    prodLine.includes("notebook") ||
+    prodLine.includes("desktop") ||
+    prodLine.includes("chromebook") ||
+    prodLine.includes("workstation") ||
+    prodLine.includes("display") ||
+    prodLine.includes("pc") ||
+    prodLine.includes("mws")
+  );
 }
 
 function isPrintCase(row: GeneratedReportResponse["rows"][number]): boolean {
-  return isSegmentCase(row, PRINT_SEGMENT) || isPrintInstallationCase(row);
+  return !isPcCase(row);
+}
+
+function isPrintInstallationCase(row: GeneratedReportResponse["rows"][number]): boolean {
+  const segment = String(row.output.Segment ?? "").trim().toLowerCase();
+  return segment === "install" || getWoOtcCodePrefix(row.output["WO OTC CODE"]) === PRINT_INSTALLATION_WO_OTC_CODE;
 }
 
 function isPrintFixCase(row: GeneratedReportResponse["rows"][number]): boolean {
@@ -470,7 +492,7 @@ function calculateRegionStats(rows: GeneratedReportResponse["rows"][number][]): 
   for (const row of rows) {
     const isConsumer = isConsumerCase(row);
     const isWarranty = isWarrantyCase(row);
-    const isPc = isSegmentCase(row, PC_SEGMENT);
+    const isPc = isPcCase(row);
     const isPrint = isPrintCase(row);
     const isInstall = isPrintInstallationCase(row);
     const isCiss = isCissCase(row);
@@ -1282,7 +1304,7 @@ export default function DashboardPage() {
 
   const pcRows = useMemo(() => {
     if (!report) return [];
-    return activeRows.filter((row) => isSegmentCase(row, PC_SEGMENT));
+    return activeRows.filter(isPcCase);
   }, [activeRows, report]);
 
   const printRows = useMemo(() => {

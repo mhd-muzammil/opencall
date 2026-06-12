@@ -7,3 +7,4 @@ export * from "./MatchPreviewSection";
 export * from "./RTPLTimeModal";
 export * from "./ProductivityModal";
 export * from "./KPISummaryModal";
+export * from "./ChennaiKPIModal";

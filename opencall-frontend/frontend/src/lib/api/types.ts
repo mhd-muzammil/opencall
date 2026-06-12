@@ -122,6 +122,12 @@ export interface GeneratedReportResponse {
     id: string | null;
     serialNo: number;
     output: Record<string, string | number>;
+    // Server-side enriched source fields included in the API payload. Used for
+    // values that are intentionally not part of the exported output columns
+    // (e.g. Customer Type, which drives the Consumer/Commercial split).
+    enriched?: {
+      customer_type?: string | null;
+    } | null;
     comparison: {
       changeType: "NEW" | "CLOSED" | "CARRIED" | "UPDATED" | null;
       previousFlexStatus: string | null;

@@ -277,6 +277,14 @@ function isRcaCase(row: GeneratedReportResponse["rows"][number]): boolean {
 }
 
 function isConsumerCase(row: GeneratedReportResponse["rows"][number]): boolean {
+  // Authoritative source: the Renderways "Customer Type" field, carried through
+  // on the enriched row. "Commercial" => commercial, "Consumer" => consumer.
+  const customerType = String(row.enriched?.customer_type ?? "").trim().toLowerCase();
+  if (customerType === "commercial") return false;
+  if (customerType === "consumer") return true;
+
+  // Fallback heuristic for rows that lack a Customer Type (e.g. unmatched rows
+  // with no Renderways record). Best-effort guess from product line / account.
   const segment = String(row.output.Segment ?? "").trim().toLowerCase();
   const prodLine = String(row.output["Product Line Name"] ?? "").trim().toLowerCase();
   const account = String(row.output["Account Name"] ?? "").trim().toLowerCase();

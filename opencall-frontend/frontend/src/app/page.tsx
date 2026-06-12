@@ -63,7 +63,16 @@ import {
   countManualRequiredCells,
   rowMatchesRecordSearch,
   batchIdBySource,
+  formatFieldList,
 } from "../features/dashboard/utils";
+import {
+  Metric,
+  OverviewStat,
+  ChangeTypeBadge,
+  CarryForwardBadge,
+  CarryForwardSummaryPanel,
+  ComparisonSummaryPanel,
+} from "../features/dashboard/components";
 import {
   FILTERABLE_COLUMNS,
   type WipAgingSortDirection,
@@ -144,12 +153,6 @@ const RTPL_CASE_SCOPE_OPTIONS: Array<{
   { value: "trade", label: "Trade", description: "01-Trade / non-warranty" },
 ];
 
-const CHANGE_TYPE_LABELS: Record<ChangeType, string> = {
-  NEW: "New",
-  CLOSED: "Closed",
-  UPDATED: "Updated",
-  CARRIED: "Carried",
-};
 
 
 // Phase 3: case-classification, WO-OTC, sort, and pure helpers moved to
@@ -178,17 +181,6 @@ const MANUAL_FIELD_BY_COLUMN: Partial<Record<string, ManualCarryForwardField>> =
   RCA: "rca",
 };
 
-const MANUAL_FIELD_LABELS: Record<ManualCarryForwardField, string> = {
-  rtpl_status: "RTPL status",
-  segment: "Segment",
-  engineer: "Engineer",
-  location: "Location",
-  case_created_time: "Case Created Time",
-  status_aging: "Status Aging",
-  hp_owner_status: "HP Owner Status",
-  customer_mail: "Customer Mail",
-  rca: "RCA",
-};
 
 const EDITABLE_COLUMN_API_FIELD: Partial<Record<string, string>> = {
   "RTPL status": "rtpl_status",
@@ -230,256 +222,6 @@ const EDITED_RESPONSE_COLUMN: Partial<
 };
 
 
-function Metric({
-  label,
-  value,
-  onClick,
-  isActive,
-}: Readonly<{
-  label: string;
-  value: string | number;
-  onClick?: () => void;
-  isActive?: boolean;
-}>) {
-  const displayValue = typeof value === "number" ? formatNumber(value) : value;
-
-  return (
-    <div
-      className="metric"
-      onClick={onClick}
-      style={
-        onClick
-          ? {
-              cursor: "pointer",
-              borderColor: isActive ? "var(--accent)" : undefined,
-              background: isActive ? "var(--surface-subtle)" : undefined,
-            }
-          : undefined
-      }
-      role={onClick ? "button" : undefined}
-    >
-      <span>{label}</span>
-      <strong>{displayValue}</strong>
-    </div>
-  );
-}
-
-function OverviewStat({
-  label,
-  value,
-  detail,
-  tone = "accent",
-  onClick,
-  isActive,
-}: Readonly<{
-  label: string;
-  value: number;
-  detail: string;
-  tone?: "accent" | "blue" | "warn" | "danger";
-  onClick?: () => void;
-  isActive?: boolean;
-}>) {
-  return (
-    <div
-      className={`overviewStat ${tone} ${isActive ? "active" : ""}`}
-      onClick={onClick}
-      role={onClick ? "button" : undefined}
-    >
-      <span>{label}</span>
-      <strong>{formatNumber(value)}</strong>
-      <small>{detail}</small>
-    </div>
-  );
-}
-
-
-function formatFieldList(fields: readonly string[]): string {
-  if (fields.length === 0) {
-    return "None";
-  }
-
-  return fields
-    .map((field) => MANUAL_FIELD_LABELS[field as ManualCarryForwardField] ?? field)
-    .join(", ");
-}
-
-
-function ChangeTypeBadge({
-  comparison,
-}: Readonly<{
-  comparison: GeneratedReportResponse["rows"][number]["comparison"];
-}>) {
-  const changeType = comparison?.changeType;
-
-  if (!changeType) {
-    return <span className="changeBadge none">Not compared</span>;
-  }
-
-  const entries = Object.entries(comparison.changedFields);
-
-  return (
-    <span className="changeTooltipWrap" tabIndex={0}>
-      <span className={`changeBadge ${changeType.toLowerCase()}`}>
-        {CHANGE_TYPE_LABELS[changeType]}
-      </span>
-      <span className="changeTooltip" role="tooltip">
-        <strong>{comparison.changeSummary ?? CHANGE_TYPE_LABELS[changeType]}</strong>
-        {entries.length > 0 ? (
-          <span className="changeTooltipList">
-            {entries.map(([field, change]) => (
-              <span key={field}>
-                <b>{CHANGE_FIELD_LABELS[field] ?? field}</b>
-                <span>
-                  {formatComparisonValue(change.from)} → {formatComparisonValue(change.to)}
-                </span>
-              </span>
-            ))}
-          </span>
-        ) : (
-          <span className="changeTooltipMuted">
-            {changeType === "NEW"
-              ? "No previous row"
-              : changeType === "CLOSED"
-                ? "Not present in current report table"
-                : "No field changes"}
-          </span>
-        )}
-        {comparison.previousFlexStatus || comparison.previousRtplStatus || comparison.previousWipAging ? (
-          <span className="changeTooltipPrevious">
-            Prev Flex: {formatComparisonValue(comparison.previousFlexStatus)}
-            {" · "}
-            Prev RTPL: {formatComparisonValue(comparison.previousRtplStatus)}
-            {" · "}
-            Prev WIP: {formatComparisonValue(comparison.previousWipAging)}
-          </span>
-        ) : null}
-      </span>
-    </span>
-  );
-}
-
-function CarryForwardBadge({
-  carryForward,
-}: Readonly<{
-  carryForward: GeneratedReportResponse["rows"][number]["carryForward"];
-}>) {
-  if (carryForward.closedSyntheticRow) {
-    return (
-      <span
-        className="opsBadge closed"
-        title="Closed work order carried from the previous final report"
-      >
-        Closed
-      </span>
-    );
-  }
-
-  if (carryForward.carriedForwardFields.length > 0) {
-    return (
-      <span
-        className="opsBadge carried"
-        title={`Value carried from previous day: ${formatFieldList(carryForward.carriedForwardFields)}`}
-      >
-        Carried
-      </span>
-    );
-  }
-
-  if (carryForward.changeType === "NEW_WORK_ORDER") {
-    return (
-      <span
-        className="opsBadge new"
-        title="New work order; manual fields must be completed today"
-      >
-        New WO
-      </span>
-    );
-  }
-
-  if (carryForward.manualFieldsMissing.length > 0) {
-    return (
-      <span
-        className="opsBadge manual"
-        title={`Manual entry required: ${formatFieldList(carryForward.manualFieldsMissing)}`}
-      >
-        Manual
-      </span>
-    );
-  }
-
-  return (
-    <span className="opsBadge complete" title="Manual fields are complete">
-      Complete
-    </span>
-  );
-}
-
-function CarryForwardSummaryPanel({
-  report,
-}: Readonly<{
-  report: GeneratedReportResponse;
-}>) {
-  return (
-    <div className="carryForwardPanel">
-      <div className="comparisonPanelHeader">
-        <div>
-          <h3>Manual Field Carry-Forward</h3>
-          <p>Uses the previous final human-edited report for this region.</p>
-        </div>
-        <StatusPill tone={report.carryForward.totalFieldsCarried > 0 ? "good" : "neutral"}>
-          {report.carryForward.totalFieldsCarried > 0 ? "Applied" : "No carried fields"}
-        </StatusPill>
-      </div>
-      <div className="comparisonMetricGrid">
-        <Metric label="Fields Carried" value={report.carryForward.totalFieldsCarried} />
-        <Metric label="Rows Auto Completed" value={report.carryForward.rowsAutoCompleted} />
-        <Metric label="Rows Still Manual" value={report.carryForward.rowsStillManual} />
-        <Metric
-          label="Closed Rows"
-          value={report.rows.filter((row) => row.carryForward.closedSyntheticRow).length}
-        />
-      </div>
-    </div>
-  );
-}
-
-function ComparisonSummaryPanel({
-  report,
-}: Readonly<{
-  report: GeneratedReportResponse;
-}>) {
-  if (report.comparison.skipped || !report.comparison.summary) {
-    return (
-      <div className="comparisonPanel skipped">
-        <div>
-          <h3>Day-over-Day Comparison</h3>
-          <p>No previous-day final report was available for this region.</p>
-        </div>
-        <StatusPill tone="neutral">Skipped</StatusPill>
-      </div>
-    );
-  }
-
-  const summary = report.comparison.summary;
-
-  return (
-    <div className="comparisonPanel">
-      <div className="comparisonPanelHeader">
-        <div>
-          <h3>Day-over-Day Comparison</h3>
-          <p>Compared with session {report.comparison.previousSessionId}</p>
-        </div>
-        <StatusPill tone="good">Compared</StatusPill>
-      </div>
-      <div className="comparisonMetricGrid">
-        <Metric label="New" value={summary.new_count} />
-        <Metric label="Closed" value={summary.closed_count} />
-        <Metric label="Updated" value={summary.updated_count} />
-        <Metric label="Carried" value={summary.carried_count} />
-      </div>
-    </div>
-  );
-}
 
 export default function DashboardPage() {
   const [username, setUsername] = useState("");

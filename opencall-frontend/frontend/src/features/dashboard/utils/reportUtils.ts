@@ -1,8 +1,8 @@
 // Pure report/row utilities extracted from app/page.tsx (Phase 3).
 // Moved verbatim — no behavior changes.
 import { DAILY_CALL_PLAN_COLUMNS } from "@opencall/shared";
-import { MANUAL_ENTRY_REQUIRED } from "../constants";
-import type { ReportRow, SourceKey } from "../types";
+import { MANUAL_ENTRY_REQUIRED, MANUAL_FIELD_LABELS } from "../constants";
+import type { ReportRow, SourceKey, ManualCarryForwardField } from "../types";
 import type { WipAgingSortDirection } from "../../../lib/columnFilter";
 import type { UploadBatch } from "../../../lib/apiClient";
 
@@ -99,4 +99,14 @@ export function batchIdBySource(
   sourceType: SourceKey,
 ): string {
   return batches.find((batch) => batch.sourceType === sourceType)?.id ?? "";
+}
+
+export function formatFieldList(fields: readonly string[]): string {
+  if (fields.length === 0) {
+    return "None";
+  }
+
+  return fields
+    .map((field) => MANUAL_FIELD_LABELS[field as ManualCarryForwardField] ?? field)
+    .join(", ");
 }

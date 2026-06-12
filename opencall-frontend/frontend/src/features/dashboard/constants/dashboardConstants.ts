@@ -1,10 +1,11 @@
 // Dashboard constants extracted from app/page.tsx (Phase 1: constants only).
 // Values are moved verbatim — no behavior changes.
 //
-// NOTE: Type-coupled config arrays (SOURCE_LABELS, FILE_FIELDS,
-// RTPL_CASE_SCOPE_OPTIONS, CHANGE_TYPE_LABELS, MANUAL_FIELD_BY_COLUMN) remain in
-// page.tsx until Phase 2, when they move here together with their local types
-// (avoids duplicating types / import cycles).
+// NOTE: Some type-coupled config arrays (SOURCE_LABELS, FILE_FIELDS,
+// RTPL_CASE_SCOPE_OPTIONS, MANUAL_FIELD_BY_COLUMN) still live in page.tsx and move
+// here in a later pass. CHANGE_TYPE_LABELS / MANUAL_FIELD_LABELS were relocated
+// here in Phase 4 because the extracted presentational components depend on them.
+import type { ChangeType, ManualCarryForwardField } from "../types";
 
 export const MANUAL_ENTRY_REQUIRED = "Manual Entry Required";
 export const CISS_PRODUCT_LINE = "CISS";
@@ -33,4 +34,23 @@ export const CHANGE_FIELD_LABELS: Record<string, string> = {
   engineer: "Engineer",
   location: "Location",
   hp_owner_status: "HP Owner Status",
+};
+
+export const CHANGE_TYPE_LABELS: Record<ChangeType, string> = {
+  NEW: "New",
+  CLOSED: "Closed",
+  UPDATED: "Updated",
+  CARRIED: "Carried",
+};
+
+export const MANUAL_FIELD_LABELS: Record<ManualCarryForwardField, string> = {
+  rtpl_status: "RTPL status",
+  segment: "Segment",
+  engineer: "Engineer",
+  location: "Location",
+  case_created_time: "Case Created Time",
+  status_aging: "Status Aging",
+  hp_owner_status: "HP Owner Status",
+  customer_mail: "Customer Mail",
+  rca: "RCA",
 };

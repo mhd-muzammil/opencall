@@ -11,6 +11,19 @@ import { UploadDrawer } from "../components/UploadDrawer";
 import { RTPLStatusDropdown } from "../components/RTPLStatusDropdown";
 import { useColumnFilters } from "../lib/useColumnFilters";
 import {
+  MANUAL_ENTRY_REQUIRED,
+  CISS_PRODUCT_LINE,
+  PC_SEGMENT,
+  PRINT_SEGMENT,
+  PRINT_INSTALLATION_WO_OTC_CODE,
+  TRADE_WO_OTC_CODE_KEYWORD,
+  LAST_HISTORY_SESSION_KEY,
+  RTPL_MODAL_DETAIL_LIMIT,
+  RTPL_STATUS_CHANGE_LIMIT,
+  PIVOT_LOCATION_OPTIONS,
+  CHANGE_FIELD_LABELS,
+} from "../features/dashboard/constants";
+import {
   FILTERABLE_COLUMNS,
   type WipAgingSortDirection,
 } from "../lib/columnFilter";
@@ -93,15 +106,7 @@ const FILE_FIELDS: Array<{
   { field: "callPlan", source: "CALL_PLAN", label: "Call Plan Reports", required: false, multiple: true },
 ];
 
-const MANUAL_ENTRY_REQUIRED = "Manual Entry Required";
-const CISS_PRODUCT_LINE = "CISS";
-const PC_SEGMENT = "PC";
-const PRINT_SEGMENT = "Print";
-const PRINT_INSTALLATION_WO_OTC_CODE = "05F";
-const TRADE_WO_OTC_CODE_KEYWORD = "TRADE";
-const LAST_HISTORY_SESSION_KEY = "opencall.lastHistorySessionId";
-const RTPL_MODAL_DETAIL_LIMIT = 12;
-const RTPL_STATUS_CHANGE_LIMIT = 200;
+// Phase 1: scalar constants moved to features/dashboard/constants.
 
 const RTPL_CASE_SCOPE_OPTIONS: Array<{
   value: RtplCaseScope;
@@ -113,14 +118,6 @@ const RTPL_CASE_SCOPE_OPTIONS: Array<{
   { value: "trade", label: "Trade", description: "01-Trade / non-warranty" },
 ];
 
-const PIVOT_LOCATION_OPTIONS: Array<{ value: string; label: string }> = [
-  { value: "ASPS01461", label: "Chennai" },
-  { value: "ASPS01463", label: "Vellore" },
-  { value: "ASPS01465", label: "Salem" },
-  { value: "ASPS01489", label: "Kanchipuram" },
-  { value: "ASPS01511", label: "Hosur" },
-];
-
 const CHANGE_TYPE_LABELS: Record<ChangeType, string> = {
   NEW: "New",
   CLOSED: "Closed",
@@ -128,16 +125,6 @@ const CHANGE_TYPE_LABELS: Record<ChangeType, string> = {
   CARRIED: "Carried",
 };
 
-const CHANGE_FIELD_LABELS: Record<string, string> = {
-  flex_status: "Flex Status",
-  rtpl_status: "RTPL status",
-  wip_aging: "WIP aging",
-  wip_aging_category: "WIP Aging Category",
-  tat: "TAT",
-  engineer: "Engineer",
-  location: "Location",
-  hp_owner_status: "HP Owner Status",
-};
 
 function segmentValue(row: GeneratedReportResponse["rows"][number]): string {
   return String(row.output.Segment ?? "").trim().toLowerCase();

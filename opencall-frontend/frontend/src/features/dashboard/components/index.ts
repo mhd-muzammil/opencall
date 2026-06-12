@@ -12,3 +12,5 @@ export * from "./RTPLAnalytics";
 export * from "./CaseTypeCards";
 export * from "./CustomerSegmentCards";
 export * from "./RTPLPivotTable";
+export * from "./RegionCard";
+export * from "./RegionBreakdown";

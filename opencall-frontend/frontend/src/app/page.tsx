@@ -22,6 +22,7 @@ import {
   RTPL_STATUS_CHANGE_LIMIT,
   PIVOT_LOCATION_OPTIONS,
   CHANGE_FIELD_LABELS,
+  RTPL_CASE_SCOPE_OPTIONS,
 } from "../features/dashboard/constants";
 import type {
   SourceKey,
@@ -78,6 +79,7 @@ import {
   useRegionAnalytics,
   useKpiMetrics,
   useRtplPivot,
+  useRtplAnalytics,
 } from "../features/dashboard/hooks";
 import {
   FILTERABLE_COLUMNS,
@@ -149,15 +151,6 @@ const FILE_FIELDS: Array<{
 
 // Phase 1: scalar constants moved to features/dashboard/constants.
 
-const RTPL_CASE_SCOPE_OPTIONS: Array<{
-  value: RtplCaseScope;
-  label: string;
-  description: string;
-}> = [
-  { value: "overall", label: "Overall", description: "All active cases" },
-  { value: "warranty", label: "Warranty", description: "Excludes 01-Trade" },
-  { value: "trade", label: "Trade", description: "01-Trade / non-warranty" },
-];
 
 
 
@@ -901,98 +894,27 @@ export default function DashboardPage() {
   );
 
 
-  const rtplRowsForSelectedScope = useMemo(() => {
-    switch (selectedRtplCaseScope) {
-      case "warranty":
-        return activeRows.filter(isWarrantyCase);
-      case "trade":
-        return activeRows.filter(isTradeCase);
-      case "overall":
-      default:
-        return activeRows;
-    }
-  }, [activeRows, selectedRtplCaseScope]);
 
-  const rtplRowsForSelectedRegion = useMemo(
-    () => filterRowsByRegion(activeRows, selectedRtplRegion),
-    [activeRows, selectedRtplRegion],
-  );
-
-  const rtplCaseScopeOptions = useMemo(
-    () =>
-      RTPL_CASE_SCOPE_OPTIONS.map((option) => {
-        const count =
-          option.value === "warranty"
-            ? rtplRowsForSelectedRegion.filter(isWarrantyCase).length
-            : option.value === "trade"
-              ? rtplRowsForSelectedRegion.filter(isTradeCase).length
-              : rtplRowsForSelectedRegion.length;
-
-        return { ...option, count };
-      }),
-    [rtplRowsForSelectedRegion],
-  );
-
-  const rtplRegionOptions = useMemo(() => {
-    if (!report) return [];
-
-    return [
-      { value: ALL_REGIONS_FILTER, label: "All", count: rtplRowsForSelectedScope.length },
-      ...activeRegionBreakdown.map((entry) => {
-        const scopedCount = rtplRowsForSelectedScope.filter(
-          (row) => String(row.output["Work Location"] ?? "").trim().toUpperCase() === entry.aspCode.toUpperCase(),
-        ).length;
-
-        return {
-          value: entry.aspCode,
-          label: entry.regionName,
-          count: scopedCount,
-        };
-      }),
-    ];
-  }, [activeRegionBreakdown, report, rtplRowsForSelectedScope]);
-
-  const rtplAnalyticsRows = useMemo(() => {
-    if (!report) return [];
-    return filterRowsByRegion(rtplRowsForSelectedScope, selectedRtplRegion);
-  }, [report, rtplRowsForSelectedScope, selectedRtplRegion]);
-
-  const flexStatusMetrics = useMemo(
-    () => buildFlexOperationalAnalytics(rtplAnalyticsRows),
-    [rtplAnalyticsRows],
-  );
-
-  const visibleRtplStatusChanges = useMemo(() => {
-    const scopedTicketIds = new Set(
-      rtplAnalyticsRows
-        .map((row) => String(row.output["Ticket ID"] ?? "").trim())
-        .filter(Boolean),
-    );
-
-    return rtplStatusChanges.filter((change) => {
-      const matchesRegion =
-        selectedRtplRegion === ALL_REGIONS_FILTER ||
-        change.workLocation?.trim().toUpperCase() === selectedRtplRegion;
-      const matchesScope =
-        selectedRtplCaseScope === "overall" ||
-        scopedTicketIds.has(change.ticketId.trim());
-
-      return matchesRegion && matchesScope;
-    });
-  }, [rtplAnalyticsRows, rtplStatusChanges, selectedRtplCaseScope, selectedRtplRegion]);
-
-  const rtplTimeCards = useMemo(
-    () => buildRtplTimeCards(rtplAnalyticsRows, visibleRtplStatusChanges),
-    [rtplAnalyticsRows, visibleRtplStatusChanges],
-  );
-
-  const selectedRtplTimeCard = useMemo(
-    () =>
-      rtplTimeCards.find((card) => card.id === selectedRtplTimeCardId) ??
-      rtplTimeCards[0] ??
-      null,
-    [rtplTimeCards, selectedRtplTimeCardId],
-  );
+  // Phase 5: RTPL analytics memos moved to features/dashboard/hooks/useRtplAnalytics.
+  const {
+    rtplRowsForSelectedScope,
+    rtplRowsForSelectedRegion,
+    rtplCaseScopeOptions,
+    rtplRegionOptions,
+    rtplAnalyticsRows,
+    flexStatusMetrics,
+    visibleRtplStatusChanges,
+    rtplTimeCards,
+    selectedRtplTimeCard,
+  } = useRtplAnalytics({
+    activeRows,
+    selectedRtplCaseScope,
+    selectedRtplRegion,
+    activeRegionBreakdown,
+    report,
+    rtplStatusChanges,
+    selectedRtplTimeCardId,
+  });
 
   const selectedRtplModalDetails = selectedRtplTimeCard
     ? selectedRtplModalStatus

@@ -2,10 +2,10 @@
 // Values are moved verbatim — no behavior changes.
 //
 // NOTE: Some type-coupled config arrays (SOURCE_LABELS, FILE_FIELDS,
-// RTPL_CASE_SCOPE_OPTIONS, MANUAL_FIELD_BY_COLUMN) still live in page.tsx and move
-// here in a later pass. CHANGE_TYPE_LABELS / MANUAL_FIELD_LABELS were relocated
-// here in Phase 4 because the extracted presentational components depend on them.
-import type { ChangeType, ManualCarryForwardField } from "../types";
+// MANUAL_FIELD_BY_COLUMN) still live in page.tsx and move here in a later pass.
+// CHANGE_TYPE_LABELS / MANUAL_FIELD_LABELS (Phase 4) and RTPL_CASE_SCOPE_OPTIONS
+// (Phase 5) were relocated here because extracted components/hooks depend on them.
+import type { ChangeType, ManualCarryForwardField, RtplCaseScope } from "../types";
 
 export const MANUAL_ENTRY_REQUIRED = "Manual Entry Required";
 export const CISS_PRODUCT_LINE = "CISS";
@@ -54,3 +54,13 @@ export const MANUAL_FIELD_LABELS: Record<ManualCarryForwardField, string> = {
   customer_mail: "Customer Mail",
   rca: "RCA",
 };
+
+export const RTPL_CASE_SCOPE_OPTIONS: Array<{
+  value: RtplCaseScope;
+  label: string;
+  description: string;
+}> = [
+  { value: "overall", label: "Overall", description: "All active cases" },
+  { value: "warranty", label: "Warranty", description: "Excludes 01-Trade" },
+  { value: "trade", label: "Trade", description: "01-Trade / non-warranty" },
+];

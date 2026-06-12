@@ -74,6 +74,9 @@ import {
   ComparisonSummaryPanel,
 } from "../features/dashboard/components";
 import {
+  useRecordRowSets,
+} from "../features/dashboard/hooks";
+import {
   FILTERABLE_COLUMNS,
   type WipAgingSortDirection,
 } from "../lib/columnFilter";
@@ -348,10 +351,37 @@ export default function DashboardPage() {
     setEodBodViewMode("EOD");
   }, [report?.reportId]);
 
-  const activeRows = useMemo(() => {
-    if (!report) return [];
-    return report.rows.filter(isTodayCallPlanVisibleRow);
-  }, [report]);
+  // Phase 5: record row-set memos moved to features/dashboard/hooks/useRecordRowSets.
+  const {
+    activeRows,
+    cissRows,
+    pcRows,
+    printInstallationRows,
+    printFixRows,
+    rcaRows,
+    tradeRows,
+    closedRows,
+    consumerRows,
+    commercialRows,
+    warrantyRows,
+    nonWarrantyRows,
+    tableBaseRows,
+    regionFilteredRows,
+  } = useRecordRowSets({
+    report,
+    showClosedOnly,
+    showConsumerOnly,
+    showCommercialOnly,
+    showWarrantyOnly,
+    showNonWarrantyOnly,
+    showCissOnly,
+    showRcaOnly,
+    showTradeOnly,
+    showPcOnly,
+    printCaseFilter,
+    selectedRegion,
+    selectedWoOtcCode,
+  });
 
   const pivotCaseRows = useMemo(() => {
     switch (selectedPivotCaseScope) {
@@ -438,30 +468,6 @@ export default function DashboardPage() {
 
   const pivotLocationFilterActive = selectedPivotLocations !== null;
 
-  const cissRows = useMemo(() => {
-    return activeRows.filter(isCissCase);
-  }, [activeRows]);
-
-  const pcRows = useMemo(() => {
-    if (!report) return [];
-    return activeRows.filter(isPcCase);
-  }, [activeRows, report]);
-
-  const printInstallationRows = useMemo(() => {
-    return activeRows.filter(isPrintInstallationCase);
-  }, [activeRows]);
-
-  const printFixRows = useMemo(() => {
-    return activeRows.filter(isPrintFixCase);
-  }, [activeRows]);
-
-  const rcaRows = useMemo(() => {
-    return activeRows.filter(isRcaCase);
-  }, [activeRows]);
-
-  const tradeRows = useMemo(() => {
-    return activeRows.filter(isTradeCase);
-  }, [activeRows]);
 
   const activeRegionBreakdown = useMemo(() => {
     if (!report) return [];
@@ -530,94 +536,6 @@ export default function DashboardPage() {
   }, [activeRows]);
 
 
-  const closedRows = useMemo(() => {
-    if (!report) return [];
-    return report.rows.filter((row) => row.carryForward.closedSyntheticRow);
-  }, [report]);
-
-  const consumerRows = useMemo(() => {
-    return activeRows.filter(isConsumerCase);
-  }, [activeRows]);
-
-  const commercialRows = useMemo(() => {
-    return activeRows.filter((row) => !isConsumerCase(row));
-  }, [activeRows]);
-
-  const warrantyRows = useMemo(() => {
-    return activeRows.filter(isWarrantyCase);
-  }, [activeRows]);
-
-  const nonWarrantyRows = useMemo(() => {
-    return activeRows.filter(isTradeCase);
-  }, [activeRows]);
-
-  const tableBaseRows = useMemo(() => {
-    if (!report) return [];
-    if (showClosedOnly) return closedRows;
-
-    // Customer / warranty / special-case scope (mutually exclusive).
-    const scopeRows = showConsumerOnly
-      ? consumerRows
-      : showCommercialOnly
-        ? commercialRows
-        : showWarrantyOnly
-          ? warrantyRows
-          : showNonWarrantyOnly
-            ? nonWarrantyRows
-            : showCissOnly
-              ? cissRows
-              : showRcaOnly
-                ? rcaRows
-                : showTradeOnly
-                  ? tradeRows
-                  : activeRows;
-
-    // The segment-product filter composes on top of the scope above so that
-    // e.g. "warranty + PC" shows only warranty PC cases, and "trade + PC" shows
-    // only trade PC cases. It uses the same isPcCase/isPrint* predicates the
-    // card counts are built from, so the records shown match the displayed count.
-    if (showPcOnly) return scopeRows.filter(isPcCase);
-    if (printCaseFilter === "all") return scopeRows.filter(isPrintCase);
-    if (printCaseFilter === "installation") return scopeRows.filter(isPrintInstallationCase);
-    if (printCaseFilter === "fix") return scopeRows.filter(isPrintFixCase);
-    return scopeRows;
-  }, [
-    activeRows,
-    cissRows,
-    closedRows,
-    consumerRows,
-    commercialRows,
-    warrantyRows,
-    nonWarrantyRows,
-    printCaseFilter,
-    rcaRows,
-    showCissOnly,
-    showClosedOnly,
-    showConsumerOnly,
-    showCommercialOnly,
-    showWarrantyOnly,
-    showNonWarrantyOnly,
-    showPcOnly,
-    showRcaOnly,
-    showTradeOnly,
-    tradeRows,
-  ]);
-
-  const regionFilteredRows = useMemo(() => {
-    if (!report) return [];
-    
-    return tableBaseRows.filter((row) => {
-      const rowRegion = String(row.output["Work Location"] ?? "").trim().toUpperCase();
-      const targetRegion = String(selectedRegion ?? "").trim().toUpperCase();
-      const matchRegion = selectedRegion === "ALL" || !selectedRegion || rowRegion === targetRegion;
-      
-      const rowCode = String(row.output["WO OTC CODE"] ?? "").trim().toUpperCase();
-      const targetCode = String(selectedWoOtcCode ?? "").trim().toUpperCase();
-      const matchCode = !selectedWoOtcCode || rowCode === targetCode;
-      
-      return matchRegion && matchCode;
-    });
-  }, [report, selectedRegion, selectedWoOtcCode, tableBaseRows]);
 
   const kpiBaseRows = useMemo(() => {
     if (!report) return [];

@@ -77,6 +77,7 @@ import {
   useRecordRowSets,
   useRegionAnalytics,
   useKpiMetrics,
+  useRtplPivot,
 } from "../features/dashboard/hooks";
 import {
   FILTERABLE_COLUMNS,
@@ -385,68 +386,25 @@ export default function DashboardPage() {
     selectedWoOtcCode,
   });
 
-  const pivotCaseRows = useMemo(() => {
-    switch (selectedPivotCaseScope) {
-      case "warranty":
-        return activeRows.filter(isWarrantyCase);
-      case "trade":
-        return activeRows.filter(isTradeCase);
-      case "overall":
-      default:
-        return activeRows;
-    }
-  }, [activeRows, selectedPivotCaseScope]);
 
-  const pivotBaseRows = useMemo(() => {
-    if (selectedPivotLocations === null) {
-      return pivotCaseRows;
-    }
-
-    const selectedLocationSet = new Set(selectedPivotLocations);
-    return pivotCaseRows.filter((row) =>
-      selectedLocationSet.has(String(row.output["Work Location"] ?? "").trim().toUpperCase()),
-    );
-  }, [pivotCaseRows, selectedPivotLocations]);
-
-  const rtplWipPivot = useMemo(
-    () => buildRtplWipAgingPivot(pivotBaseRows, selectedPivotSegments),
-    [pivotBaseRows, selectedPivotSegments],
-  );
-
-  const draftPivotSegmentSet = useMemo(
-    () => new Set(draftPivotSegments ?? []),
-    [draftPivotSegments],
-  );
-
-  const draftPivotLocationSet = useMemo(
-    () => new Set(draftPivotLocations ?? []),
-    [draftPivotLocations],
-  );
-
-  const pivotAllSegmentCount = useMemo(
-    () =>
-      rtplWipPivot.segmentOptions.reduce(
-        (total, option) => total + option.count,
-        0,
-      ),
-    [rtplWipPivot.segmentOptions],
-  );
-
-  const pivotLocationOptions = useMemo(
-    () =>
-      PIVOT_LOCATION_OPTIONS.map((option) => ({
-        ...option,
-        count: pivotCaseRows.filter(
-          (row) => String(row.output["Work Location"] ?? "").trim().toUpperCase() === option.value,
-        ).length,
-      })),
-    [pivotCaseRows],
-  );
-
-  const pivotAllLocationCount = useMemo(
-    () => pivotLocationOptions.reduce((total, option) => total + option.count, 0),
-    [pivotLocationOptions],
-  );
+  // Phase 5: RTPL/WIP pivot memos moved to features/dashboard/hooks/useRtplPivot.
+  const {
+    pivotCaseRows,
+    pivotBaseRows,
+    rtplWipPivot,
+    draftPivotSegmentSet,
+    draftPivotLocationSet,
+    pivotAllSegmentCount,
+    pivotLocationOptions,
+    pivotAllLocationCount,
+  } = useRtplPivot({
+    activeRows,
+    selectedPivotCaseScope,
+    selectedPivotLocations,
+    selectedPivotSegments,
+    draftPivotSegments,
+    draftPivotLocations,
+  });
 
   const appliedPivotSegmentLabel =
     selectedPivotSegments === null

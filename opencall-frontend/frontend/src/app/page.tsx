@@ -81,6 +81,7 @@ import {
   useRtplPivot,
   useRtplAnalytics,
   useProductivityAnalytics,
+  useExportRows,
 } from "../features/dashboard/hooks";
 import {
   FILTERABLE_COLUMNS,
@@ -520,37 +521,27 @@ export default function DashboardPage() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [reportId]);
 
-  // Final visible rows: region-filtered → column-filtered
-  const columnFilteredRows = useMemo(
-    () => colFilters.filteredRows(regionFilteredRows),
-    [colFilters, regionFilteredRows],
-  );
-
-  const filteredRows = useMemo(
-    () =>
-      sortRowsByWipAging(
-        columnFilteredRows.filter((row) => rowMatchesRecordSearch(row, recordsSearchQuery)),
-        wipAgingSort,
-      ),
-    [columnFilteredRows, recordsSearchQuery, wipAgingSort],
-  );
-
-  const scopedClosedRows = useMemo(
-    () =>
-      closedRows.filter((row) => {
-        const rowRegion = String(row.output["Work Location"] ?? "").trim().toUpperCase();
-        const targetRegion = String(selectedRegion ?? "").trim().toUpperCase();
-        const matchRegion = selectedRegion === "ALL" || !selectedRegion || rowRegion === targetRegion;
-        
-        const rowCode = String(row.output["WO OTC CODE"] ?? "").trim().toUpperCase();
-        const targetCode = String(selectedWoOtcCode ?? "").trim().toUpperCase();
-        const matchCode = !selectedWoOtcCode || rowCode === targetCode;
-        
-        return matchRegion && matchCode;
-      }),
-    [closedRows, selectedRegion, selectedWoOtcCode],
-  );
-
+  // Phase 5: export/visible-row memos moved to features/dashboard/hooks/useExportRows
+  // (called after colFilters, which stays in page.tsx).
+  const {
+    columnFilteredRows,
+    filteredRows,
+    scopedClosedRows,
+    scopedManualCellCount,
+    selectedRecords,
+    batchIds,
+  } = useExportRows({
+    colFilters,
+    regionFilteredRows,
+    recordsSearchQuery,
+    wipAgingSort,
+    closedRows,
+    selectedRegion,
+    selectedWoOtcCode,
+    preview,
+    selectedPreviewCategory,
+    upload,
+  });
 
   // Phase 5: KPI-metric memos moved to features/dashboard/hooks/useKpiMetrics.
   const {
@@ -583,10 +574,6 @@ export default function DashboardPage() {
   }, [productivityFilterType, engineerProductivityMetrics.datesList, engineerProductivityMetrics.monthsList, selectedProductivityValue]);
 
 
-  const scopedManualCellCount = useMemo(
-    () => countManualRequiredCells(filteredRows),
-    [filteredRows],
-  );
 
 
 
@@ -634,42 +621,7 @@ export default function DashboardPage() {
     setIsRtplTimeModalOpen(true);
   }
 
-  const selectedRecords = useMemo(() => {
-    if (!preview || !selectedPreviewCategory) return null;
-    const { enrichedRows } = preview;
-    switch (selectedPreviewCategory) {
-      case "Renderways":
-        return enrichedRows;
-      case "Flex matched":
-        return enrichedRows.filter(
-          (r) => r.match_status === "MATCHED" || r.match_status === "CALLPLAN_MISSING",
-        );
-      case "Call Plan matched":
-        return enrichedRows.filter(
-          (r) => r.match_status === "MATCHED" || r.match_status === "FLEX_MISSING",
-        );
-      case "Flex missing":
-        return enrichedRows.filter(
-          (r) => r.match_status === "FLEX_MISSING" || r.match_status === "BOTH_MISSING",
-        );
-      case "Call Plan missing":
-        return enrichedRows.filter(
-          (r) => r.match_status === "CALLPLAN_MISSING" || r.match_status === "BOTH_MISSING",
-        );
-      default:
-        return null;
-    }
-  }, [preview, selectedPreviewCategory]);
 
-  const batchIds = useMemo(() => {
-    const batches = upload?.batches ?? [];
-
-    return {
-      flexUploadBatchId: batchIdBySource(batches, "FLEX_WIP"),
-      renderwaysUploadBatchId: batchIdBySource(batches, "RENDERWAYS"),
-      callPlanUploadBatchId: batchIdBySource(batches, "CALL_PLAN"),
-    };
-  }, [upload]);
 
   async function refreshHealth() {
     const [database, runtime] = await Promise.allSettled([

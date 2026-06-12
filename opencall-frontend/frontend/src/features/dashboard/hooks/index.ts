@@ -4,3 +4,4 @@ export * from "./useKpiMetrics";
 export * from "./useRtplPivot";
 export * from "./useRtplAnalytics";
 export * from "./useProductivityAnalytics";
+export * from "./useExportRows";

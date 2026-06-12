@@ -38,6 +38,33 @@ import type {
   RtplWipPivot,
 } from "../features/dashboard/types";
 import {
+  isTradeCase,
+  isCissCase,
+  isPcCase,
+  isPrintCase,
+  isPrintInstallationCase,
+  isPrintFixCase,
+  isRcaCase,
+  isConsumerCase,
+  isWarrantyCase,
+  calculateRegionStats,
+  buildRtplWipAgingPivot,
+  todayIsoDate,
+  dateIsoInIst,
+  formatDisplayDateOnly,
+  formatDisplayDateTime,
+  formatRtplChangeTime,
+  parseEditableDateTime,
+  sortRowsByWipAging,
+  tableColumnClassName,
+  formatNumber,
+  formatRtplStatusValue,
+  formatComparisonValue,
+  countManualRequiredCells,
+  rowMatchesRecordSearch,
+  batchIdBySource,
+} from "../features/dashboard/utils";
+import {
   FILTERABLE_COLUMNS,
   type WipAgingSortDirection,
 } from "../lib/columnFilter";
@@ -125,434 +152,19 @@ const CHANGE_TYPE_LABELS: Record<ChangeType, string> = {
 };
 
 
-function segmentValue(row: GeneratedReportResponse["rows"][number]): string {
-  return String(row.output.Segment ?? "").trim().toLowerCase();
-}
+// Phase 3: case-classification, WO-OTC, sort, and pure helpers moved to
+// features/dashboard/utils.
 
-function isTradeCase(row: GeneratedReportResponse["rows"][number]): boolean {
-  const code = normalizeWoOtcCode(row.output["WO OTC CODE"]);
-  if (code.includes(TRADE_WO_OTC_CODE_KEYWORD) || code.startsWith("01")) {
-    return true;
-  }
-  const segment = segmentValue(row);
-  // A "Trade" segment is non-warranty even when the OTC code is not 01/Trade.
-  if (segment === "trade") {
-    return true;
-  }
-  // A PC carrying a component field install code ("05F - Comp Field Install") is a
-  // billable/non-warranty PC job, so it belongs in Trade -> PC Total, not the
-  // warranty dashboard. (Blank/Install segments with 05F remain warranty installs.)
-  if (
-    segment === "pc" &&
-    getWoOtcCodePrefix(row.output["WO OTC CODE"]) === PRINT_INSTALLATION_WO_OTC_CODE
-  ) {
-    return true;
-  }
-  return false;
-}
-
-function isCissCase(row: GeneratedReportResponse["rows"][number]): boolean {
-  if (isTradeCase(row)) {
-    return false;
-  }
-  return String(row.output["Product Line Name"] ?? "")
-    .trim()
-    .toUpperCase()
-    .includes(CISS_PRODUCT_LINE);
-}
-
-function isSegmentCase(
-  row: GeneratedReportResponse["rows"][number],
-  segment: string,
-): boolean {
-  return String(row.output.Segment ?? "").trim().toLowerCase() === segment.toLowerCase();
-}
-
-function parseWipAgingValue(value: unknown): number | null {
-  const parsed = Number(String(value ?? "").trim());
-  return Number.isFinite(parsed) ? parsed : null;
-}
-
-function sortRowsByWipAging(
-  rows: readonly ReportRow[],
-  direction: WipAgingSortDirection | null,
-): ReportRow[] {
-  if (!direction) {
-    return [...rows];
-  }
-
-  return [...rows].sort((a, b) => {
-    const aValue = parseWipAgingValue(a.output["WIP aging"]);
-    const bValue = parseWipAgingValue(b.output["WIP aging"]);
-
-    if (aValue !== null && bValue !== null) {
-      return direction === "lowToHigh" ? aValue - bValue : bValue - aValue;
-    }
-
-    if (aValue !== null) return -1;
-    if (bValue !== null) return 1;
-
-    return a.serialNo - b.serialNo;
-  });
-}
-
-function normalizeWoOtcCode(value: string | number | null | undefined): string {
-  return String(value ?? "")
-    .trim()
-    .toUpperCase()
-    .replace(/[–—−]/g, "-")
-    .replace(/\s*-\s*/g, "-")
-    .replace(/\s+/g, " ");
-}
-
-function tableColumnClassName(column: string): string {
-  return `reportColumn reportColumn-${column
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-|-$/g, "")}`;
-}
-
-function getWoOtcCodePrefix(value: string | number | null | undefined): string {
-  return normalizeWoOtcCode(value).match(/^[A-Z0-9]+/)?.[0] ?? "";
-}
-
-function isPcCase(row: GeneratedReportResponse["rows"][number]): boolean {
-  if (isPrintInstallationCase(row)) {
-    return false;
-  }
-  const segment = segmentValue(row);
-  const prodLine = String(row.output["Product Line Name"] ?? "").trim().toLowerCase();
-
-  // An explicit segment always wins.
-  if (segment === "pc") return true;
-  if (segment === "print") return false;
-
-  // Segment is blank/unknown: fall back to Product Line keywords.
-  return (
-    prodLine.includes("notebook") ||
-    prodLine.includes("desktop") ||
-    prodLine.includes("chromebook") ||
-    prodLine.includes("workstation") ||
-    prodLine.includes("display") ||
-    prodLine.includes("pc") ||
-    prodLine.includes("mws")
-  );
-}
-
-function isPrintCase(row: GeneratedReportResponse["rows"][number]): boolean {
-  return !isPcCase(row);
-}
-
-function isPrintInstallationCase(row: GeneratedReportResponse["rows"][number]): boolean {
-  const segment = segmentValue(row);
-  // An explicit segment always wins over the OTC code.
-  if (segment === "install") return true;
-  if (segment === "pc" || segment === "print") return false;
-  // Segment is blank/unknown: fall back to the print-installation OTC code (05F).
-  return getWoOtcCodePrefix(row.output["WO OTC CODE"]) === PRINT_INSTALLATION_WO_OTC_CODE;
-}
-
-function isPrintFixCase(row: GeneratedReportResponse["rows"][number]): boolean {
-  return isPrintCase(row) && !isPrintInstallationCase(row);
-}
-
-function isRcaCase(row: GeneratedReportResponse["rows"][number]): boolean {
-  const rca = String(row.output.RCA ?? "").trim();
-
-  return rca.length > 0 && rca !== MANUAL_ENTRY_REQUIRED;
-}
-
-function isConsumerCase(row: GeneratedReportResponse["rows"][number]): boolean {
-  // Authoritative source: the Renderways "Customer Type" field, carried through
-  // on the enriched row. "Commercial" => commercial, "Consumer" => consumer.
-  const customerType = String(row.enriched?.customer_type ?? "").trim().toLowerCase();
-  if (customerType === "commercial") return false;
-  if (customerType === "consumer") return true;
-
-  // Fallback heuristic for rows that lack a Customer Type (e.g. unmatched rows
-  // with no Renderways record). Best-effort guess from product line / account.
-  const segment = String(row.output.Segment ?? "").trim().toLowerCase();
-  const prodLine = String(row.output["Product Line Name"] ?? "").trim().toLowerCase();
-  const account = String(row.output["Account Name"] ?? "").trim().toLowerCase();
-  const custName = String(row.output["Customer Name"] ?? "").trim().toLowerCase();
-
-  // 1. Direct explicit checks
-  if (segment.includes("consumer") || prodLine.includes("consumer")) {
-    return true;
-  }
-  if (segment.includes("commercial") || prodLine.includes("commercial") || segment.includes("enterprise") || prodLine.includes("enterprise")) {
-    return false;
-  }
-
-  // 2. High-fidelity corporate/business account checks
-  const corporateKeywords = ["pvt", "ltd", "corp", "inc", "bank", "technologies", "solutions", "limited", "enterprise", "tcs", "wipro", "infosys", "cognizant", "hcl"];
-  if (corporateKeywords.some(keyword => account.includes(keyword))) {
-    return false;
-  }
-
-  // 3. Retail/Individual checks
-  if (account === "individual" || account === "consumer" || account.includes("retail")) {
-    return true;
-  }
-
-  // 4. Fallbacks for individuals (e.g. empty account or same as customer name)
-  if (account === "" || account === custName) {
-    return true;
-  }
-
-  return false;
-}
-
-function isWarrantyCase(row: GeneratedReportResponse["rows"][number]): boolean {
-  return !isTradeCase(row);
-}
+// Phase 3: PC/Print/Install/Consumer/Warranty classification moved to
+// features/dashboard/utils/caseClassification.
 
 // Phase 2: RegionStats and RtplWipPivot* interfaces moved to
 // features/dashboard/types.
 
-function pivotLabel(value: unknown, fallback = "(blank)"): string {
-  const label = String(value ?? "").trim();
-  return label.length > 0 ? label : fallback;
-}
+// Phase 3: pivot helpers moved to features/dashboard/utils/pivotUtils.
 
-function pivotColumnKey(label: string): string {
-  return label
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-|-$/g, "") || "blank";
-}
+// Phase 3: getOtcSortWeight moved to features/dashboard/utils/regionUtils.
 
-function buildRtplWipAgingPivot(
-  rows: readonly ReportRow[],
-  selectedSegments: readonly string[] | null,
-): RtplWipPivot {
-  const hasSegmentFilter = selectedSegments !== null;
-  const selectedSegmentSet = new Set(selectedSegments ?? []);
-  const segmentCounts = new Map<string, number>();
-  const columnTotals = new Map<string, RtplWipPivotColumn>();
-  const rowTotals = new Map<string, RtplWipPivotRow>();
-  let grandTotal = 0;
-
-  for (const row of rows) {
-    const ticketId = String(row.output["Ticket ID"] ?? "").trim();
-    if (!ticketId) {
-      continue;
-    }
-
-    const segment = pivotLabel(row.output.Segment);
-    segmentCounts.set(segment, (segmentCounts.get(segment) ?? 0) + 1);
-
-    if (hasSegmentFilter && !selectedSegmentSet.has(segment)) {
-      continue;
-    }
-
-    const status = pivotLabel(row.output["RTPL status"]);
-    const wipAgingLabel = pivotLabel(row.output["WIP aging"]);
-    const wipAgingNumber = parseWipAgingValue(row.output["WIP aging"]);
-    const columnKey = `wip-${pivotColumnKey(wipAgingLabel)}`;
-    const rowKey = `status-${pivotColumnKey(status)}`;
-
-    let column = columnTotals.get(columnKey);
-    if (!column) {
-      column = {
-        key: columnKey,
-        label: wipAgingLabel,
-        total: 0,
-        sortValue: wipAgingNumber ?? Number.MAX_SAFE_INTEGER,
-      };
-      columnTotals.set(columnKey, column);
-    }
-    column.total += 1;
-
-    let pivotRow = rowTotals.get(rowKey);
-    if (!pivotRow) {
-      pivotRow = {
-        key: rowKey,
-        status,
-        total: 0,
-        cells: {},
-      };
-      rowTotals.set(rowKey, pivotRow);
-    }
-    pivotRow.cells[columnKey] = (pivotRow.cells[columnKey] ?? 0) + 1;
-    pivotRow.total += 1;
-    grandTotal += 1;
-  }
-
-  return {
-    segmentOptions: Array.from(segmentCounts.entries())
-      .map(([label, count]) => ({ value: label, label, count }))
-      .sort((a, b) => b.count - a.count || a.label.localeCompare(b.label)),
-    columns: Array.from(columnTotals.values()).sort(
-      (a, b) => a.sortValue - b.sortValue || a.label.localeCompare(b.label),
-    ),
-    rows: Array.from(rowTotals.values()).sort(
-      (a, b) => b.total - a.total || a.status.localeCompare(b.status),
-    ),
-    grandTotal,
-  };
-}
-
-function getOtcSortWeight(code: string): number {
-  const normalized = code.trim().toUpperCase();
-  if (normalized.includes("TRADE")) {
-    return 6;
-  }
-  if (normalized.startsWith("05F") || normalized.startsWith("O5F")) {
-    return 1;
-  }
-  if (normalized.startsWith("05K") || normalized.startsWith("O5K")) {
-    return 2;
-  }
-  if (normalized.startsWith("02N") || normalized.startsWith("O2N")) {
-    return 3;
-  }
-  if (normalized.startsWith("00C") || normalized.startsWith("OOC")) {
-    return 4;
-  }
-  return 5;
-}
-
-function calculateRegionStats(rows: GeneratedReportResponse["rows"][number][]): RegionStats {
-  const count = rows.length;
-  let consumerCount = 0;
-  let commercialCount = 0;
-  let warrantyCount = 0;
-  let nonWarrantyCount = 0;
-  
-  let pcCount = 0;
-  let pcConsumer = 0;
-  let pcCommercial = 0;
-  
-  let printCount = 0;
-  let printConsumer = 0;
-  let printCommercial = 0;
-  
-  let installCount = 0;
-  let installConsumer = 0;
-  let installCommercial = 0;
-  
-  let cissCount = 0;
-  let cissConsumer = 0;
-  
-  let rcaCount = 0;
-  let rcaConsumer = 0;
-  let rcaCommercial = 0;
-  
-  let tradeCount = 0;
-  let tradePcCount = 0;
-  let tradePcConsumer = 0;
-  let tradePcCommercial = 0;
-  let tradePrintCount = 0;
-  let tradePrintConsumer = 0;
-  let tradePrintCommercial = 0;
-  
-  const woOtcCodes = new Map<string, number>();
-  
-  for (const row of rows) {
-    const isConsumer = isConsumerCase(row);
-    const isWarranty = isWarrantyCase(row);
-    const isPc = isPcCase(row);
-    const isPrint = isPrintCase(row);
-    const isInstall = isPrintInstallationCase(row);
-    const isCiss = isCissCase(row);
-    const isRca = isRcaCase(row);
-    const isTrade = isTradeCase(row);
-    
-    const woOtcCode = String(row.output["WO OTC CODE"] || "Unspecified").trim() || "Unspecified";
-    woOtcCodes.set(woOtcCode, (woOtcCodes.get(woOtcCode) ?? 0) + 1);
-    
-    if (isConsumer) consumerCount++;
-    else commercialCount++;
-    
-    if (isWarranty) warrantyCount++;
-    else nonWarrantyCount++;
-    
-    if (isPc && isWarranty) {
-      pcCount++;
-      if (isConsumer) pcConsumer++;
-      else pcCommercial++;
-    }
-    
-    if (isPrint && isWarranty) {
-      printCount++;
-      if (isConsumer) printConsumer++;
-      else printCommercial++;
-    }
-    
-    if (isInstall && isWarranty) {
-      installCount++;
-      if (isConsumer) installConsumer++;
-      else installCommercial++;
-    }
-    
-    if (isCiss) {
-      cissCount++;
-      if (isConsumer) cissConsumer++;
-    }
-    
-    if (isRca) {
-      rcaCount++;
-      if (isConsumer) rcaConsumer++;
-      else rcaCommercial++;
-    }
-    
-    if (isTrade) {
-      tradeCount++;
-      if (isPc) {
-        tradePcCount++;
-        if (isConsumer) tradePcConsumer++;
-        else tradePcCommercial++;
-      }
-      if (isPrint) {
-        tradePrintCount++;
-        if (isConsumer) tradePrintConsumer++;
-        else tradePrintCommercial++;
-      }
-    }
-  }
-  
-  const woOtcCodeBreakdown = Array.from(woOtcCodes.entries())
-    .map(([code, count]) => ({ code, count }))
-    .sort((a, b) => {
-      const weightA = getOtcSortWeight(a.code);
-      const weightB = getOtcSortWeight(b.code);
-      if (weightA !== weightB) {
-        return weightA - weightB;
-      }
-      return a.code.localeCompare(b.code);
-    });
-    
-  return {
-    count,
-    consumerCount,
-    commercialCount,
-    warrantyCount,
-    nonWarrantyCount,
-    pcCount,
-    pcConsumer,
-    pcCommercial,
-    printCount,
-    printConsumer,
-    printCommercial,
-    installCount,
-    installConsumer,
-    installCommercial,
-    cissCount,
-    cissConsumer,
-    rcaCount,
-    rcaConsumer,
-    rcaCommercial,
-    tradeCount,
-    tradePcCount,
-    tradePcConsumer,
-    tradePcCommercial,
-    tradePrintCount,
-    tradePrintConsumer,
-    tradePrintCommercial,
-    woOtcCodeBreakdown,
-  };
-}
 
 const MANUAL_FIELD_BY_COLUMN: Partial<Record<string, ManualCarryForwardField>> = {
   "RTPL status": "rtpl_status",
@@ -617,141 +229,6 @@ const EDITED_RESPONSE_COLUMN: Partial<
   RCA: "rca",
 };
 
-function todayIsoDate(): string {
-  return dateIsoInIst(new Date());
-}
-
-function dateIsoInIst(value: string | Date): string {
-  const date = value instanceof Date ? value : new Date(value);
-
-  if (Number.isNaN(date.getTime())) {
-    return "";
-  }
-
-  const parts = new Intl.DateTimeFormat("en-GB", {
-    timeZone: "Asia/Kolkata",
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-  }).formatToParts(date);
-  const partValue = (type: string) =>
-    parts.find((part) => part.type === type)?.value ?? "";
-
-  return `${partValue("year")}-${partValue("month")}-${partValue("day")}`;
-}
-
-function formatDisplayDateOnly(dateStr: string): string {
-  const date = new Date(dateStr);
-  if (Number.isNaN(date.getTime())) return dateStr;
-  const day = date.getDate();
-  const monthNames = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
-  const month = monthNames[date.getMonth()];
-  
-  let suffix = "th";
-  if (day === 1 || day === 21 || day === 31) suffix = "st";
-  else if (day === 2 || day === 22) suffix = "nd";
-  else if (day === 3 || day === 23) suffix = "rd";
-  
-  return `${day}${suffix} ${month}`;
-}
-
-function formatNumber(value: number): string {
-  return new Intl.NumberFormat("en-IN").format(value);
-}
-
-function pad2(value: number): string {
-  return String(value).padStart(2, "0");
-}
-
-function formatDisplayDateTime(value: string | number | null | undefined): string | number {
-  if (value === null || value === undefined || value === "") {
-    return MANUAL_ENTRY_REQUIRED;
-  }
-
-  if (typeof value === "number") {
-    return value;
-  }
-
-  const normalizedValue = value.includes(" ") && /[+-]\d{2}:?\d{2}$/.test(value)
-    ? value.replace(" ", "T")
-    : value;
-  const date = new Date(normalizedValue);
-
-  if (Number.isNaN(date.getTime())) {
-    return value;
-  }
-
-  const parts = new Intl.DateTimeFormat("en-GB", {
-    timeZone: "Asia/Kolkata",
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-    second: "2-digit",
-    hour12: true,
-  }).formatToParts(date);
-  const partValue = (type: string) =>
-    parts.find((part) => part.type === type)?.value ?? "";
-  const hour = pad2(Number(partValue("hour")));
-  const dayPeriod = partValue("dayPeriod").toUpperCase();
-
-  return `${partValue("day")}-${partValue("month")}-${partValue("year")} ${hour}:${partValue("minute")}:${partValue("second")} ${dayPeriod}`;
-}
-
-function formatRtplStatusValue(value: string | null | undefined): string {
-  const cleanValue = value?.trim();
-  return cleanValue ? cleanValue : "blank";
-}
-
-function formatRtplChangeTime(value: string): string {
-  const date = new Date(value);
-
-  if (Number.isNaN(date.getTime())) {
-    return value;
-  }
-
-  return new Intl.DateTimeFormat("en-IN", {
-    timeZone: "Asia/Kolkata",
-    hour: "2-digit",
-    minute: "2-digit",
-    hour12: true,
-  }).format(date);
-}
-
-function parseEditableDateTime(value: string): number {
-  const displayDateTime = /^(\d{1,2})[-/](\d{1,2})[-/](\d{4})\s+(\d{1,2}):(\d{2})(?::(\d{2}))?\s*(AM|PM)$/i.exec(value.trim());
-
-  if (displayDateTime) {
-    const [, day, month, year, hour, minute, second = "0", meridiem] = displayDateTime;
-    let normalizedHour = Number(hour);
-    const normalizedMeridiem = String(meridiem).toUpperCase();
-
-    if (normalizedMeridiem === "AM" && normalizedHour === 12) {
-      normalizedHour = 0;
-    } else if (normalizedMeridiem === "PM" && normalizedHour < 12) {
-      normalizedHour += 12;
-    }
-
-    return new Date(
-      Number(year),
-      Number(month) - 1,
-      Number(day),
-      normalizedHour,
-      Number(minute),
-      Number(second),
-    ).getTime();
-  }
-
-  return Date.parse(value);
-}
-
-function batchIdBySource(
-  batches: readonly UploadBatch[],
-  sourceType: SourceKey,
-): string {
-  return batches.find((batch) => batch.sourceType === sourceType)?.id ?? "";
-}
 
 function Metric({
   label,
@@ -815,9 +292,6 @@ function OverviewStat({
   );
 }
 
-function formatComparisonValue(value: string | null): string {
-  return value === null || value.trim() === "" ? "blank" : value;
-}
 
 function formatFieldList(fields: readonly string[]): string {
   if (fields.length === 0) {
@@ -829,45 +303,6 @@ function formatFieldList(fields: readonly string[]): string {
     .join(", ");
 }
 
-function countManualRequiredCells(rows: readonly ReportRow[]): number {
-  return rows.reduce((count, row) => {
-    const outputMissingCount = Object.values(row.output).filter(
-      (value) => value === MANUAL_ENTRY_REQUIRED,
-    ).length;
-    return count + Math.max(outputMissingCount, row.carryForward.manualFieldsMissing.length);
-  }, 0);
-}
-
-function normalizeRecordSearchValue(value: unknown): string {
-  return String(value ?? "").trim().toLowerCase();
-}
-
-function rowMatchesRecordSearch(row: ReportRow, query: string): boolean {
-  const terms = query
-    .trim()
-    .toLowerCase()
-    .split(/\s+/)
-    .filter(Boolean);
-
-  if (terms.length === 0) {
-    return true;
-  }
-
-  const searchableText = [
-    row.serialNo,
-    row.comparison?.changeType,
-    ...DAILY_CALL_PLAN_COLUMNS.flatMap((column) => [
-      column,
-      row.output[column],
-    ]),
-    ...row.carryForward.carriedForwardFields,
-    ...row.carryForward.manualFieldsMissing,
-  ]
-    .map(normalizeRecordSearchValue)
-    .join(" ");
-
-  return terms.every((term) => searchableText.includes(term));
-}
 
 function ChangeTypeBadge({
   comparison,

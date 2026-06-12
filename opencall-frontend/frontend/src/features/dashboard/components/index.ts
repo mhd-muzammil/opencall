@@ -9,3 +9,4 @@ export * from "./ProductivityModal";
 export * from "./KPISummaryModal";
 export * from "./ChennaiKPIModal";
 export * from "./RTPLAnalytics";
+export * from "./CaseTypeCards";

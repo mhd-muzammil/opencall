@@ -10,3 +10,4 @@ export * from "./KPISummaryModal";
 export * from "./ChennaiKPIModal";
 export * from "./RTPLAnalytics";
 export * from "./CaseTypeCards";
+export * from "./CustomerSegmentCards";

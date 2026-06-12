@@ -5,3 +5,4 @@ export * from "./DashboardToggles";
 export * from "./ClosedCallLedger";
 export * from "./MatchPreviewSection";
 export * from "./RTPLTimeModal";
+export * from "./ProductivityModal";

@@ -8,3 +8,4 @@ export * from "./RTPLTimeModal";
 export * from "./ProductivityModal";
 export * from "./KPISummaryModal";
 export * from "./ChennaiKPIModal";
+export * from "./RTPLAnalytics";

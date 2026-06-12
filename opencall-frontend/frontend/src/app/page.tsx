@@ -23,6 +23,20 @@ import {
   PIVOT_LOCATION_OPTIONS,
   CHANGE_FIELD_LABELS,
 } from "../features/dashboard/constants";
+import type {
+  SourceKey,
+  FileField,
+  ChangeType,
+  ReportRow,
+  PrintCaseFilter,
+  RtplCaseScope,
+  ManualCarryForwardField,
+  ReportRowPatchValues,
+  RegionStats,
+  RtplWipPivotColumn,
+  RtplWipPivotRow,
+  RtplWipPivot,
+} from "../features/dashboard/types";
 import {
   FILTERABLE_COLUMNS,
   type WipAgingSortDirection,
@@ -71,22 +85,7 @@ import {
 } from "../lib/reportDashboardAnalytics";
 import { getLatestCompletedReportSession } from "../lib/reportHistorySelection";
 
-type SourceKey = "FLEX_WIP" | "RENDERWAYS" | "CALL_PLAN";
-type FileField = "flexWipReport" | "renderwaysReport" | "callPlan";
-type ChangeType = "NEW" | "CLOSED" | "CARRIED" | "UPDATED";
-type ReportRow = GeneratedReportResponse["rows"][number];
-type PrintCaseFilter = "all" | "installation" | "fix";
-type RtplCaseScope = "overall" | "warranty" | "trade";
-type ManualCarryForwardField =
-  | "rtpl_status"
-  | "segment"
-  | "engineer"
-  | "location"
-  | "case_created_time"
-  | "status_aging"
-  | "hp_owner_status"
-  | "customer_mail"
-  | "rca";
+// Phase 2: dashboard/analytics types moved to features/dashboard/types.
 
 const SOURCE_LABELS: Record<SourceKey, string> = {
   FLEX_WIP: "Flex WIP",
@@ -308,69 +307,8 @@ function isWarrantyCase(row: GeneratedReportResponse["rows"][number]): boolean {
   return !isTradeCase(row);
 }
 
-interface RegionStats {
-  count: number;
-  consumerCount: number;
-  commercialCount: number;
-  warrantyCount: number;
-  nonWarrantyCount: number;
-  
-  pcCount: number;
-  pcConsumer: number;
-  pcCommercial: number;
-  
-  printCount: number;
-  printConsumer: number;
-  printCommercial: number;
-  
-  installCount: number;
-  installConsumer: number;
-  installCommercial: number;
-  
-  cissCount: number;
-  cissConsumer: number;
-  
-  rcaCount: number;
-  rcaConsumer: number;
-  rcaCommercial: number;
-  
-  tradeCount: number;
-  tradePcCount: number;
-  tradePcConsumer: number;
-  tradePcCommercial: number;
-  tradePrintCount: number;
-  tradePrintConsumer: number;
-  tradePrintCommercial: number;
-  
-  woOtcCodeBreakdown: { code: string; count: number }[];
-}
-
-interface PivotSegmentOption {
-  value: string;
-  label: string;
-  count: number;
-}
-
-interface RtplWipPivotColumn {
-  key: string;
-  label: string;
-  total: number;
-  sortValue: number;
-}
-
-interface RtplWipPivotRow {
-  key: string;
-  status: string;
-  total: number;
-  cells: Record<string, number>;
-}
-
-interface RtplWipPivot {
-  segmentOptions: PivotSegmentOption[];
-  columns: RtplWipPivotColumn[];
-  rows: RtplWipPivotRow[];
-  grandTotal: number;
-}
+// Phase 2: RegionStats and RtplWipPivot* interfaces moved to
+// features/dashboard/types.
 
 function pivotLabel(value: unknown, fallback = "(blank)"): string {
   const label = String(value ?? "").trim();
@@ -652,7 +590,7 @@ const EDITABLE_COLUMN_API_FIELD: Partial<Record<string, string>> = {
   RCA: "rca",
 };
 
-type ReportRowPatchValues = Parameters<typeof updateReportRow>[0]["values"];
+// Phase 2: ReportRowPatchValues moved to features/dashboard/types.
 
 const EDITED_RESPONSE_COLUMN: Partial<
   Record<string, keyof Pick<

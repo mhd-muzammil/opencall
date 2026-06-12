@@ -14,3 +14,4 @@ export * from "./CustomerSegmentCards";
 export * from "./RTPLPivotTable";
 export * from "./RegionCard";
 export * from "./RegionBreakdown";
+export * from "./EditRecordModal";

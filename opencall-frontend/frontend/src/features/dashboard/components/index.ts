@@ -11,3 +11,4 @@ export * from "./ChennaiKPIModal";
 export * from "./RTPLAnalytics";
 export * from "./CaseTypeCards";
 export * from "./CustomerSegmentCards";
+export * from "./RTPLPivotTable";

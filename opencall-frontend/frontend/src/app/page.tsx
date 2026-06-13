@@ -61,6 +61,7 @@ import {
   rowMatchesRecordSearch,
   batchIdBySource,
   formatFieldList,
+  computeOperationalHealth,
 } from "../features/dashboard/utils";
 import {
   OverviewStat,
@@ -1485,11 +1486,14 @@ export default function DashboardPage() {
     region,
     woOtcCode,
     rtplStatus,
+    rtplStatuses,
     flexStatus,
     segment,
     segments,
     workLocations,
     wipAging,
+    wipAgings,
+    engineers,
     printCase = null,
     pcOnly = false,
     cissOnly = false,
@@ -1504,11 +1508,14 @@ export default function DashboardPage() {
     region?: string | null;
     woOtcCode?: string | null;
     rtplStatus?: string | null;
+    rtplStatuses?: readonly string[] | null;
     flexStatus?: string | null;
     segment?: string | null;
     segments?: readonly string[] | null;
     workLocations?: readonly string[] | null;
     wipAging?: string | null;
+    wipAgings?: readonly string[] | null;
+    engineers?: readonly string[] | null;
     printCase?: PrintCaseFilter | null;
     pcOnly?: boolean;
     cissOnly?: boolean;
@@ -1537,6 +1544,9 @@ export default function DashboardPage() {
     if (rtplStatus) {
       colFilters.setColumnFilter("RTPL status", new Set([rtplStatus]));
     }
+    if (rtplStatuses && rtplStatuses.length > 0) {
+      colFilters.setColumnFilter("RTPL status", new Set(rtplStatuses));
+    }
     if (flexStatus) {
       colFilters.setColumnFilter("Flex Status", new Set([flexStatus]));
     }
@@ -1551,6 +1561,12 @@ export default function DashboardPage() {
     }
     if (wipAging) {
       colFilters.setColumnFilter("WIP aging", new Set([wipAging]));
+    }
+    if (wipAgings && wipAgings.length > 0) {
+      colFilters.setColumnFilter("WIP aging", new Set(wipAgings));
+    }
+    if (engineers && engineers.length > 0) {
+      colFilters.setColumnFilter("Engineer", new Set(engineers));
     }
     setWorkspaceView("records");
   }
@@ -1635,6 +1651,26 @@ export default function DashboardPage() {
     colFilters.resetAll();
   };
 
+  // Drives the overview region dropdown. Switching region clears any case-type
+  // scope (same reset as "Show All Regions") so the chosen region starts clean.
+  const selectOverviewRegion = (value: string) => {
+    setSelectedWoOtcCode(null);
+    setShowClosedOnly(false);
+    setShowCissOnly(false);
+    setShowRcaOnly(false);
+    setShowTradeOnly(false);
+    setPrintCaseFilter(null);
+    colFilters.resetAll();
+
+    if (value === "ALL") {
+      setSelectedRegion(null);
+      setSelectedRtplRegion(ALL_REGIONS_FILTER);
+    } else {
+      setSelectedRegion(value);
+      setSelectedRtplRegion(value);
+    }
+  };
+
   const selectedRtplStatusFilter = (() => {
     const values = colFilters.filters["RTPL status"];
 
@@ -1702,34 +1738,60 @@ export default function DashboardPage() {
     selectedFlexStatusFilter,
   ].filter(Boolean).join(" / ");
 
+  // Open rows scoped to the region chosen in the overview dropdown (null/"ALL"
+  // → every region). Drives the operational-health header cards below.
+  const regionScopedActiveRows = useMemo(() => {
+    if (!selectedRegion || selectedRegion === "ALL") return activeRows;
+    const target = selectedRegion.trim().toUpperCase();
+    return activeRows.filter(
+      (row) => String(row.output["Work Location"] ?? "").trim().toUpperCase() === target,
+    );
+  }, [activeRows, selectedRegion]);
+
+  // Operational-health signals for the overview header — "what needs attention
+  // now" rather than raw volume totals (which are surfaced lower on the page).
+  const operationalHealth = useMemo(
+    () => computeOperationalHealth(regionScopedActiveRows),
+    [regionScopedActiveRows],
+  );
+
   const overviewMetrics: MetricsGridItem[] = report
     ? [
         {
-          label: "Today Calls",
-          value: activeRows.length,
-          detail: "Open active records",
-          onClick: () => openRecordsWithFilter({ region: null }),
+          label: "Actionable Now",
+          value: operationalHealth.actionable.count,
+          detail: "Ready to dispatch",
+          tone: "blue",
+          ...(operationalHealth.actionable.count > 0
+            ? { onClick: () => openRecordsWithFilter({ region: selectedRegion, rtplStatuses: operationalHealth.actionable.values }) }
+            : {}),
         },
         {
-          label: "Closed Calls",
-          value: closedRows.length,
-          detail: "Open closed records",
-          tone: "danger",
-          onClick: () => openRecordsWithFilter({ closedOnly: true }),
-          isActive: showClosedOnly,
+          label: `Aged ≥${operationalHealth.aged.threshold}d`,
+          value: operationalHealth.aged.count,
+          detail: operationalHealth.aged.count > 0 ? "At-risk backlog" : "Nothing breaching",
+          tone: operationalHealth.aged.count > 0 ? "danger" : "accent",
+          ...(operationalHealth.aged.count > 0
+            ? { onClick: () => openRecordsWithFilter({ region: selectedRegion, wipAgings: operationalHealth.aged.values }) }
+            : {}),
         },
         {
-          label: "Duplicates",
-          value: report.duplicateTicketCount,
-          detail: "Needs review",
+          label: "Awaiting Customer",
+          value: operationalHealth.awaitingCustomer.count,
+          detail: "Blocked on customer",
           tone: "warn",
+          ...(operationalHealth.awaitingCustomer.count > 0
+            ? { onClick: () => openRecordsWithFilter({ region: selectedRegion, rtplStatuses: operationalHealth.awaitingCustomer.values }) }
+            : {}),
         },
         {
-          label: "Manual Required",
-          value: incompleteCellCount,
-          detail: incompleteCellCount > 0 ? "Open records to edit" : "All manual fields clear",
-          tone: incompleteCellCount > 0 ? "danger" : "accent",
-          onClick: () => openRecordsWithFilter({ region: null }),
+          label: "Unassigned",
+          value: operationalHealth.unassigned.count,
+          detail: `of ${operationalHealth.openCount} open`,
+          tone: "warn",
+          ...(operationalHealth.unassigned.count > 0
+            ? { onClick: () => openRecordsWithFilter({ region: selectedRegion, engineers: operationalHealth.unassigned.values }) }
+            : {}),
         },
       ]
     : [];
@@ -1806,8 +1868,26 @@ export default function DashboardPage() {
             <section className="panel reportPanel">
               <div className="overviewReportContent">
               <div className="sectionHeader">
-                <div>
-                  <h2>Generated Report</h2>
+                <div className="overviewRegionPicker">
+                  {session?.user?.role === "REGION_ADMIN" ? (
+                    <h2>{report.regionBreakdown[0]?.regionName ?? "My Region"}</h2>
+                  ) : (
+                    <select
+                      className="overviewRegionSelect"
+                      aria-label="Select region"
+                      value={selectedRegion ?? "ALL"}
+                      onChange={(event) => selectOverviewRegion(event.target.value)}
+                    >
+                      <option value="ALL">All Regions</option>
+                      {activeRegionBreakdown
+                        .filter((entry) => entry.count > 0)
+                        .map((entry) => (
+                          <option key={entry.aspCode || entry.regionName} value={entry.aspCode}>
+                            {entry.regionName}
+                          </option>
+                        ))}
+                    </select>
+                  )}
                   <p>{report.reportId}</p>
                 </div>
                 <MetricsGrid items={overviewMetrics} />

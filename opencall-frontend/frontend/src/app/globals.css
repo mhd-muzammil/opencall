@@ -350,6 +350,36 @@ code {
   white-space: nowrap;
 }
 
+/* Region picker that replaces the overview title. Styled to read like the
+   heading it stands in for. */
+.overviewRegionPicker {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.overviewRegionSelect {
+  max-width: 280px;
+  padding: 8px 34px 8px 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface);
+  color: var(--text);
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.2;
+  cursor: pointer;
+}
+
+.overviewRegionSelect:hover {
+  border-color: var(--accent);
+}
+
+.overviewRegionSelect:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
 .secondaryButton,
 .iconButton {
   border: 1px solid var(--border);

@@ -85,6 +85,7 @@ function reportFixture(): GeneratedReportResponse {
           previousWipAging: null,
           changedFields: {},
           changeSummary: "New ticket",
+          flexStatusUnchangedDays: null,
         },
         carryForward: {
           carriedForwardFields: ["engineer"],
@@ -114,6 +115,7 @@ function reportFixture(): GeneratedReportResponse {
           previousWipAging: "5",
           changedFields: {},
           changeSummary: "Ticket closed",
+          flexStatusUnchangedDays: null,
         },
         carryForward: {
           carriedForwardFields: [],

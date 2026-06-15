@@ -141,6 +141,13 @@ export interface GeneratedReportResponse {
         }
       >;
       changeSummary: string | null;
+      /**
+       * Consecutive days this ticket's Flex Status has stayed the same
+       * (1 = first day at this status). Populated by the backend day-over-day
+       * pass; null when unavailable (e.g. no previous report yet). Drives the
+       * stale-Flex-Status banner at the top of the records page.
+       */
+      flexStatusUnchangedDays: number | null;
     } | null;
     carryForward: {
       carriedForwardFields: string[];

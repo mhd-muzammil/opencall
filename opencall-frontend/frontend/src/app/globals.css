@@ -941,29 +941,6 @@ code {
   color: var(--danger);
 }
 
-.recordsCta {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 16px;
-  border: 1px solid var(--accent-ring);
-  border-radius: 10px;
-  background: linear-gradient(135deg, #eef2ff 0%, #ffffff 68%);
-  padding: 18px;
-}
-
-.recordsCta h3 {
-  margin: 0;
-  font-size: 18px;
-}
-
-.recordsCta p {
-  margin: 5px 0 0;
-  color: var(--muted);
-  font-size: 13px;
-  font-weight: 650;
-}
-
 .comparisonPanel {
   display: grid;
   gap: 12px;
@@ -1367,6 +1344,48 @@ code {
   padding: 2px 6px;
 }
 
+/* Always-visible horizontal scrollbar pinned to the top of the records table.
+   It is a thin proxy whose inner spacer matches the table's scrollWidth; its
+   scrollLeft is two-way-synced with .tableWrap (see page.tsx). */
+.tableScrollTop {
+  position: sticky;
+  top: 0;
+  z-index: 13;
+  width: 100%;
+  height: 12px;
+  overflow-x: auto;
+  overflow-y: hidden;
+  background: #ffffff;
+  border: 1px solid var(--border);
+  border-bottom: 0;
+  border-radius: 12px 12px 0 0;
+  scrollbar-width: thin;
+  scrollbar-color: #cbd5e1 transparent;
+}
+
+.tableScrollTopSpacer {
+  height: 1px;
+}
+
+.tableScrollTop::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+.tableScrollTop::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.tableScrollTop::-webkit-scrollbar-thumb {
+  background-color: #cbd5e1;
+  border-radius: 999px;
+  border: 2px solid transparent;
+}
+
+.tableScrollTop::-webkit-scrollbar-thumb:hover {
+  background-color: #94a3b8;
+}
+
 .tableWrap {
   width: 100%;
   max-height: 540px;
@@ -1378,7 +1397,18 @@ code {
   scrollbar-width: thin;
   scrollbar-color: #cbd5e1 transparent;
   min-width: 0;
-  scroll-behavior: smooth;
+  /* No smooth scrolling: the top proxy scrollbar syncs the table via
+     `tableWrap.scrollLeft = ...`, and `scroll-behavior: smooth` would animate
+     that assignment — making proxy-driven horizontal scroll lag behind the
+     thumb. Instant sync keeps the two scrollbars locked together. */
+  scroll-behavior: auto;
+}
+
+/* When the top proxy scrollbar sits directly above the table, square off the
+   adjoining corners so they read as one connected surface. */
+.tableScrollTop + .tableWrap {
+  border-top-left-radius: 0;
+  border-top-right-radius: 0;
 }
 
 .tableWrap::-webkit-scrollbar {
@@ -1402,7 +1432,248 @@ code {
 
 .recordsArea {
   display: grid;
+  /* Pin the single column to the container's visible width (minmax(0, 1fr))
+     so no child — the stale-Flex banner or the wide records table — can size to
+     its content and stretch the column past the screen edge. */
+  grid-template-columns: minmax(0, 1fr);
   gap: 14px;
+}
+
+/* Stale Flex Status warning banner at the top of the records table. */
+.staleFlexBanner {
+  border: 1px solid #f1c277;
+  border-left: 4px solid var(--warning);
+  border-radius: 8px;
+  background: #fffaf0;
+  color: #7a4a05;
+  padding: 12px 14px;
+  /* Allow the banner to shrink to the grid column instead of overflowing it. */
+  min-width: 0;
+}
+
+.staleFlexBannerHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.staleFlexBannerSummary {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--warning);
+}
+
+/* "View all (N)" / "Hide list" toggle. */
+.staleFlexToggle {
+  flex-shrink: 0;
+  min-height: 28px;
+  padding: 4px 12px;
+  border: 1px solid var(--warning);
+  border-radius: 6px;
+  background: #ffffff;
+  color: var(--warning);
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.staleFlexToggle:hover {
+  background: var(--warning);
+  color: #ffffff;
+}
+
+.staleFlexBannerList {
+  margin: 8px 0 0;
+  padding-left: 18px;
+  display: grid;
+  gap: 3px;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.4;
+}
+
+/* Expanded, scrollable mini-table listing every stale ticket. */
+.staleFlexPanel {
+  margin-top: 10px;
+  /* Stretch the list to fill the banner's full width so it no longer sits as a
+     small square with empty space to its right. */
+  width: 100%;
+  max-height: 240px;
+  /* Contain BOTH axes: keep any overflow scrolling inside this bounded box so a
+     long cell value can never blow the mini-table out into the document (which
+     produced a runaway horizontal page scroll). */
+  overflow: auto;
+  border: 1px solid #f1c277;
+  border-radius: 6px;
+  background: #ffffff;
+  scrollbar-width: thin;
+  scrollbar-color: #e2b06a transparent;
+}
+
+.staleFlexPanel::-webkit-scrollbar {
+  width: 8px;
+}
+
+.staleFlexPanel::-webkit-scrollbar-thumb {
+  background-color: #e2b06a;
+  border-radius: 999px;
+  border: 2px solid transparent;
+}
+
+.staleFlexTable {
+  width: 100%;
+  /* Fixed layout so columns size to the table width and long values truncate
+     (via the td ellipsis rules) instead of expanding a cell and forcing the
+     table — and the page — to scroll horizontally without bound. */
+  table-layout: fixed;
+  border-collapse: separate;
+  border-spacing: 0;
+}
+
+.staleFlexTable th {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  padding: 7px 12px;
+  background: #fff5e6;
+  color: var(--warning);
+  font-size: 10px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  text-align: left;
+  white-space: nowrap;
+  border-bottom: 1px solid #f1c277;
+  box-shadow: none;
+}
+
+/* Neutralize the global header divider pseudo-element inside this mini-table. */
+.staleFlexTable th::after {
+  display: none;
+}
+
+.staleFlexTable td {
+  padding: 6px 12px;
+  font-size: 12px;
+  font-weight: 600;
+  color: #5b4012;
+  background: transparent;
+  border-bottom: 1px solid #fbe6cc;
+  white-space: nowrap;
+  max-width: 220px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.staleFlexDaysCol {
+  width: 64px;
+  text-align: center !important;
+}
+
+.staleFlexDaysBadge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 28px;
+  padding: 1px 8px;
+  border-radius: 6px;
+  font-size: 11px;
+  font-weight: 800;
+  background: #fde7c4;
+  color: var(--warning);
+}
+
+.staleFlexTicket {
+  font-weight: 800;
+  color: var(--warning);
+}
+
+.staleFlexRow {
+  cursor: pointer;
+  transition: background 0.12s ease;
+}
+
+/* Override the global zebra/hover td backgrounds for this warning-toned table. */
+.staleFlexTable tbody tr:nth-child(even) td {
+  background: #fffaf0;
+}
+
+.staleFlexRow:hover td,
+.staleFlexRow:focus-visible td {
+  background: #fff5e6 !important;
+}
+
+.staleFlexRow:focus-visible {
+  outline: none;
+}
+
+/* Severity escalation by unchanged-day count (warning palette). */
+.staleFlexRow.staleSeverityMedium td:not(.staleFlexDaysCol) {
+  color: #8a4f00;
+}
+
+.staleFlexRow.staleSeverityMedium .staleFlexDaysBadge {
+  background: #f7c889;
+  color: #7a4500;
+}
+
+.staleFlexRow.staleSeverityHigh td:not(.staleFlexDaysCol) {
+  color: var(--danger);
+}
+
+.staleFlexRow.staleSeverityHigh .staleFlexDaysBadge {
+  background: #f8d2cf;
+  color: var(--danger);
+}
+
+/* "View all" full-details modal. The inline .staleFlexPanel is capped at a
+   compact square; the modal needs the full width to show every column. */
+.staleFlexModal {
+  width: min(720px, 95vw);
+}
+
+.staleFlexModalBody {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 18px 24px 20px;
+  overflow: hidden;
+}
+
+.staleFlexModalPanel {
+  max-height: 60vh;
+  overflow: auto;
+  border: 1px solid #f1c277;
+  border-radius: 6px;
+  background: #ffffff;
+  scrollbar-width: thin;
+  scrollbar-color: #e2b06a transparent;
+}
+
+.staleFlexModalPanel::-webkit-scrollbar {
+  width: 8px;
+}
+
+.staleFlexModalPanel::-webkit-scrollbar-thumb {
+  background-color: #e2b06a;
+  border-radius: 999px;
+  border: 2px solid transparent;
+}
+
+.recordsMode .staleFlexBanner {
+  padding: 8px 12px;
+}
+
+.recordsMode .staleFlexBannerSummary {
+  font-size: 12px;
+}
+
+.recordsMode .staleFlexBannerList {
+  margin-top: 5px;
+  font-size: 11px;
 }
 
 .recordsMode .reportPanel {
@@ -1418,11 +1689,10 @@ code {
   max-height: calc(100vh - 132px);
 }
 
+/* Records hero now holds only the summary stat cards (the title block was
+   removed); render them as a clean full-width row inside the framed surface. */
 .recordsHero {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(420px, 0.8fr);
-  gap: 18px;
-  align-items: end;
+  display: block;
   border: 1px solid var(--border);
   border-radius: 12px;
   background: linear-gradient(135deg, #ffffff 0%, #f5f8ff 100%);
@@ -1434,38 +1704,8 @@ code {
 }
 
 .recordsMode .recordsHero {
-  grid-template-columns: minmax(260px, 0.95fr) minmax(520px, 1.25fr);
-  gap: 12px;
-  align-items: center;
   border-radius: 8px;
   padding: 10px 12px;
-}
-
-.recordsHero h2 {
-  margin: 0;
-  font-size: 30px;
-  line-height: 1.1;
-}
-
-.recordsMode .recordsHero h2 {
-  font-size: 22px;
-}
-
-.recordsHero p:not(.eyebrow) {
-  margin: 8px 0 0;
-  color: var(--muted);
-  font-size: 14px;
-  font-weight: 700;
-}
-
-.recordsMode .recordsHero p:not(.eyebrow) {
-  margin-top: 4px;
-  font-size: 12px;
-}
-
-.recordsMode .recordsHero .eyebrow {
-  margin-bottom: 2px;
-  font-size: 11px;
 }
 
 .recordsHeroStats {
@@ -1682,11 +1922,12 @@ th.stickyActionColumn {
   box-shadow: -4px 0 10px rgba(15, 23, 42, 0.02);
 }
 
-/* Sticky S.no (First Column) Styling */
+/* Sticky S.no (First Column) Styling. Kept above the frozen Ticket ID column so
+   the two read as one frozen block with a clean seam at their boundary. */
 .tableWrap th:first-child {
   position: sticky;
   left: 0;
-  z-index: 12; /* Sticky header has higher z-index than content */
+  z-index: 13; /* Sticky header, above the frozen Ticket ID header */
   background: #f8fafc;
   border-right: 1px solid var(--border);
   box-shadow: 4px 0 10px rgba(15, 23, 42, 0.03);
@@ -1695,7 +1936,7 @@ th.stickyActionColumn {
 .tableWrap td:first-child {
   position: sticky;
   left: 0;
-  z-index: 7; /* Sticky content has lower z-index than sticky headers */
+  z-index: 8; /* Sticky content, above the frozen Ticket ID body cells */
   background: #ffffff;
   border-right: 1px solid var(--border);
   box-shadow: 4px 0 10px rgba(15, 23, 42, 0.03);
@@ -1710,6 +1951,37 @@ th.stickyActionColumn {
 
 /* Hover effect for sticky first column */
 .tableWrap tbody tr:hover td:first-child {
+  background: #f1f5f9 !important;
+}
+
+/* Frozen "Ticket ID" column (records mode only). It is always the 2nd rendered
+   cell because "S.no" and "Ticket ID" can never be hidden, and the table uses
+   table-layout:fixed so its left offset == the S.no column width (54px). It sits
+   immediately to the right of the frozen S.no column and stays visible while
+   scrolling the table horizontally. */
+.recordsMode .tableWrap th:nth-child(2) {
+  position: sticky;
+  left: 54px;
+  z-index: 12;
+  background: #f8fafc;
+  border-right: 1px solid var(--border);
+  box-shadow: 4px 0 10px rgba(15, 23, 42, 0.03);
+}
+
+.recordsMode .tableWrap td:nth-child(2) {
+  position: sticky;
+  left: 54px;
+  z-index: 7;
+  background: #ffffff;
+  border-right: 1px solid var(--border);
+  box-shadow: 4px 0 10px rgba(15, 23, 42, 0.03);
+}
+
+.recordsMode .tableWrap tbody tr:nth-child(even) td:nth-child(2) {
+  background: #f8fafc;
+}
+
+.recordsMode .tableWrap tbody tr:hover td:nth-child(2) {
   background: #f1f5f9 !important;
 }
 
@@ -1999,10 +2271,12 @@ td.missingCell.carriedForwardCell {
   font-size: 11px !important;
 }
 
-.recordsMode tr:has(.cellInput) td,
-.recordsMode tr:has(input) td,
-.recordsMode tr:has(select) td,
-.recordsMode tr:has(.rowActions) td {
+/* Compact vertical padding for the single row being edited inline. Scoped to
+   tbody + the editor class (.cellInput is rendered only in the editing row) so
+   it never matches a non-editing row (whose Edit button is wrapped in
+   .rowActions) and never collapses the header row when a column-filter dropdown
+   renders inputs inside a <th>. */
+.recordsMode tbody tr:has(.cellInput) td {
   padding-top: 1px !important;
   padding-bottom: 1px !important;
 }
@@ -2066,6 +2340,165 @@ td.missingCell.carriedForwardCell {
   transform: translateY(-1px);
 }
 
+/* Columns visibility dropdown (Excel/ERP-style) in the records toolbar. */
+.columnsMenu {
+  position: relative;
+  display: inline-flex;
+}
+
+.columnsMenuTrigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+}
+
+.columnsMenuTrigger.active {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.columnsMenuCount {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: 999px;
+  background: var(--accent);
+  color: #ffffff;
+  font-size: 10px;
+  font-weight: 800;
+}
+
+.columnsMenuPopover {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 100;
+  display: flex;
+  flex-direction: column;
+  width: 240px;
+  max-height: 380px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: #ffffff;
+  box-shadow: 0 8px 24px rgba(21, 32, 43, 0.14);
+  overflow: hidden;
+}
+
+.columnsMenuHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--border);
+  background: #fbfcfd;
+  font-size: 11px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+}
+
+.columnsMenuReset {
+  min-height: 24px;
+  padding: 2px 8px;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  background: #ffffff;
+  color: var(--accent);
+  font-size: 11px;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.columnsMenuReset:hover:not(:disabled) {
+  background: var(--accent-soft);
+}
+
+.columnsMenuReset:disabled {
+  color: var(--muted);
+  cursor: default;
+  opacity: 0.6;
+}
+
+.columnsMenuList {
+  flex: 1;
+  overflow-y: auto;
+  padding: 4px 0;
+  max-height: 320px;
+  scrollbar-width: thin;
+  scrollbar-color: #cbd5e1 transparent;
+}
+
+.columnsMenuList::-webkit-scrollbar {
+  width: 5px;
+}
+
+.columnsMenuList::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border-radius: 4px;
+}
+
+.columnsMenuItem {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 10px;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text);
+  user-select: none;
+  transition: background 0.1s;
+}
+
+.columnsMenuItem:hover {
+  background: var(--surface-subtle);
+}
+
+.columnsMenuItem.locked {
+  cursor: default;
+  color: var(--muted);
+}
+
+.columnsMenuItem input[type="checkbox"] {
+  width: 15px;
+  height: 15px;
+  min-width: 15px;
+  min-height: 15px;
+  accent-color: var(--accent);
+  cursor: pointer;
+  margin: 0;
+}
+
+.columnsMenuItem.locked input[type="checkbox"] {
+  cursor: default;
+}
+
+.columnsMenuLabel {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.columnsMenuLock {
+  flex-shrink: 0;
+  font-size: 9px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+  background: var(--surface-subtle);
+  padding: 1px 6px;
+  border-radius: 999px;
+}
+
 @media (max-width: 980px) {
   .topBar {
     grid-template-columns: 1fr;
@@ -2091,13 +2524,12 @@ td.missingCell.carriedForwardCell {
   .metricGrid,
   .overviewStatsGrid,
   .caseTypeGrid,
-  .recordsHero,
   .comparisonMetricGrid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .recordsHeroStats {
-    grid-template-columns: 1fr;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .recordsToolbar,
@@ -2289,14 +2721,12 @@ td.missingCell.carriedForwardCell {
   .caseTypeGrid,
   .caseTypeGrid.twoUp,
   .caseTypeGrid.compactSix,
-  .recordsHero,
   .recordsHeroStats,
   .reportStats {
     grid-template-columns: 1fr;
     min-width: 0;
   }
 
-  .recordsCta,
   .downloadActions,
   .workspaceTabs {
     align-items: stretch;

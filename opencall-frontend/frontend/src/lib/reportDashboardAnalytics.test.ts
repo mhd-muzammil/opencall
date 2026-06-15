@@ -160,6 +160,7 @@ describe("reportDashboardAnalytics", () => {
       previousWipAging: "2",
       changedFields: {},
       changeSummary: "No tracked changes",
+      flexStatusUnchangedDays: null,
     };
 
     const metrics = buildRtplOperationalAnalytics([carriedRow]);

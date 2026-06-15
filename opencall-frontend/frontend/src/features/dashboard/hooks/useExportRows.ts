@@ -51,7 +51,9 @@ export function useExportRows(params: {
   const filteredRows = useMemo(
     () =>
       sortRowsByWipAging(
-        columnFilteredRows.filter((row) => rowMatchesRecordSearch(row, recordsSearchQuery)),
+        columnFilteredRows.filter((row) =>
+          rowMatchesRecordSearch(row, recordsSearchQuery),
+        ),
         wipAgingSort,
       ),
     [columnFilteredRows, recordsSearchQuery, wipAgingSort],

@@ -63,8 +63,8 @@ import {
   formatFieldList,
   computeOperationalHealth,
 } from "../features/dashboard/utils";
+
 import {
-  OverviewStat,
   ChangeTypeBadge,
   CarryForwardBadge,
   CarryForwardSummaryPanel,
@@ -147,6 +147,18 @@ const SOURCE_LABELS: Record<SourceKey, string> = {
   RENDERWAYS: "Renderways",
   CALL_PLAN: "Call Plan",
 };
+
+// A ticket whose Flex Status has not changed for this many consecutive days (or
+// more) is surfaced in the stale-Flex-Status banner at the top of the records
+// page. Backed by row.comparison.flexStatusUnchangedDays.
+const STALE_FLEX_THRESHOLD_DAYS = 2;
+
+// localStorage key for persisting which records-table columns are hidden.
+const HIDDEN_COLUMNS_STORAGE_KEY = "opencall.records.hiddenColumns";
+
+// Columns that can never be hidden from the records table. "Ticket ID" is the
+// frozen-left identifier column and "S.no" is the row index.
+const ALWAYS_VISIBLE_COLUMNS = new Set<string>(["S.no", "Ticket ID"]);
 
 const FILE_FIELDS: Array<{
   field: FileField;
@@ -250,6 +262,8 @@ export default function DashboardPage() {
    const draftOutputRef = useRef(draftOutput);
    const hasAutoRestoredHistoryRef = useRef(false);
    const recordsTableWrapRef = useRef<HTMLDivElement | null>(null);
+   const recordsScrollTopRef = useRef<HTMLDivElement | null>(null);
+   const recordsScrollTopSpacerRef = useRef<HTMLDivElement | null>(null);
    const [engineersList, setEngineersList] = useState<DropdownEngineer[]>([]);
    draftOutputRef.current = draftOutput;
   const [reportDate, setReportDate] = useState(todayIsoDate());
@@ -304,6 +318,14 @@ export default function DashboardPage() {
   const [printCaseFilter, setPrintCaseFilter] = useState<PrintCaseFilter | null>(null);
   const [wipAgingSort, setWipAgingSort] = useState<WipAgingSortDirection | null>(null);
   const [recordsSearchQuery, setRecordsSearchQuery] = useState("");
+  // View-only column visibility (Excel/ERP-style). Hidden columns are removed
+  // from the rendered table only — exports always output the full column set.
+  // "S.no" and "Ticket ID" are always visible (Ticket ID may be frozen-left).
+  const [hiddenColumns, setHiddenColumns] = useState<Set<string>>(new Set());
+  const [isColumnsMenuOpen, setIsColumnsMenuOpen] = useState(false);
+  const columnsMenuRef = useRef<HTMLDivElement | null>(null);
+  // Whether the stale-Flex-Status "View all" details modal is open.
+  const [isStaleModalOpen, setIsStaleModalOpen] = useState(false);
   const [workspaceView, setWorkspaceView] = useState<"overview" | "records">("overview");
   const [isRecordsSummaryHidden, setIsRecordsSummaryHidden] = useState(false);
   const [showDayOverDayComparison, setShowDayOverDayComparison] = useState(false);
@@ -319,6 +341,68 @@ export default function DashboardPage() {
       recordsTableWrapRef.current.scrollTop = 0;
     }
   }, [workspaceView, report?.reportId]);
+
+  // Restore persisted column visibility on mount (ERP convenience). Falls back
+  // to "all visible" on any parse error or missing key.
+  useEffect(() => {
+    try {
+      const stored = window.localStorage.getItem(HIDDEN_COLUMNS_STORAGE_KEY);
+      if (!stored) return;
+      const parsed: unknown = JSON.parse(stored);
+      if (Array.isArray(parsed)) {
+        const restored = parsed.filter(
+          (c): c is string =>
+            typeof c === "string" && !ALWAYS_VISIBLE_COLUMNS.has(c),
+        );
+        if (restored.length > 0) {
+          setHiddenColumns(new Set(restored));
+        }
+      }
+    } catch {
+      /* ignore malformed storage */
+    }
+  }, []);
+
+  // Persist column visibility whenever it changes.
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(
+        HIDDEN_COLUMNS_STORAGE_KEY,
+        JSON.stringify([...hiddenColumns]),
+      );
+    } catch {
+      /* storage may be unavailable (private mode); non-fatal */
+    }
+  }, [hiddenColumns]);
+
+  // Close the Columns visibility menu on outside pointerdown or Escape.
+  useEffect(() => {
+    if (!isColumnsMenuOpen) {
+      return;
+    }
+
+    function handlePointerDown(event: PointerEvent) {
+      const target = event.target as Node | null;
+      if (target && columnsMenuRef.current?.contains(target)) {
+        return;
+      }
+      setIsColumnsMenuOpen(false);
+    }
+
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape") {
+        setIsColumnsMenuOpen(false);
+      }
+    }
+
+    window.addEventListener("pointerdown", handlePointerDown, true);
+    window.addEventListener("keydown", handleKeyDown);
+
+    return () => {
+      window.removeEventListener("pointerdown", handlePointerDown, true);
+      window.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [isColumnsMenuOpen]);
 
   useEffect(() => {
     setSelectedRegion(null);
@@ -535,8 +619,6 @@ export default function DashboardPage() {
   const {
     columnFilteredRows,
     filteredRows,
-    scopedClosedRows,
-    scopedManualCellCount,
     selectedRecords,
     batchIds,
   } = useExportRows({
@@ -551,6 +633,70 @@ export default function DashboardPage() {
     selectedPreviewCategory,
     upload,
   });
+
+  // View-only set of columns currently rendered in the records table. Driven by
+  // hiddenColumns; the underlying data/exports are untouched.
+  const visibleColumns = useMemo(
+    () => DAILY_CALL_PLAN_COLUMNS.filter((c) => !hiddenColumns.has(c)),
+    [hiddenColumns],
+  );
+
+  // Keep the top proxy scrollbar's spacer width matched to the inner <table>'s
+  // real content width so the proxy thumb and the table scroll in lock-step.
+  // We measure the actual <table> element (its scrollWidth — the full content
+  // extent regardless of the wrapper's clipping) after layout, recomputing on:
+  // mount (via rAF, so the first paint has settled), visible-row changes,
+  // column-visibility changes, summary collapse, and any resize of the table or
+  // window. The proxy only renders in records mode, so this is a no-op elsewhere.
+  useEffect(() => {
+    const tableWrap = recordsTableWrapRef.current;
+    const spacer = recordsScrollTopSpacerRef.current;
+    if (!tableWrap || !spacer) {
+      return;
+    }
+
+    let rafId = 0;
+
+    function updateWidth() {
+      const wrap = recordsTableWrapRef.current;
+      const inner = recordsScrollTopSpacerRef.current;
+      if (!wrap || !inner) {
+        return;
+      }
+      // Prefer the inner <table>'s own scrollWidth (true content width); fall
+      // back to the wrapper's scrollWidth if the table isn't mounted yet.
+      const table = wrap.querySelector("table");
+      const contentWidth = table
+        ? Math.max(table.scrollWidth, table.offsetWidth)
+        : wrap.scrollWidth;
+      const nextWidth = `${contentWidth}px`;
+      if (inner.style.width !== nextWidth) {
+        inner.style.width = nextWidth;
+      }
+    }
+
+    // Measure after the browser has laid out the current frame.
+    function scheduleUpdate() {
+      cancelAnimationFrame(rafId);
+      rafId = requestAnimationFrame(updateWidth);
+    }
+
+    scheduleUpdate();
+
+    const innerTable = tableWrap.querySelector("table");
+    const resizeObserver = new ResizeObserver(() => scheduleUpdate());
+    resizeObserver.observe(tableWrap);
+    if (innerTable) {
+      resizeObserver.observe(innerTable);
+    }
+    window.addEventListener("resize", scheduleUpdate);
+
+    return () => {
+      cancelAnimationFrame(rafId);
+      resizeObserver.disconnect();
+      window.removeEventListener("resize", scheduleUpdate);
+    };
+  }, [workspaceView, filteredRows, isRecordsSummaryHidden, hiddenColumns]);
 
   // Phase 5: KPI-metric memos moved to features/dashboard/hooks/useKpiMetrics.
   const {
@@ -1671,73 +1817,6 @@ export default function DashboardPage() {
     }
   };
 
-  const selectedRtplStatusFilter = (() => {
-    const values = colFilters.filters["RTPL status"];
-
-    if (!values || values.size === 0) {
-      return null;
-    }
-
-    if (values.size === 1) {
-      return Array.from(values)[0];
-    }
-
-    return `${values.size} RTPL statuses`;
-  })();
-
-  const selectedFlexStatusFilter = (() => {
-    const values = colFilters.filters["Flex Status"];
-
-    if (!values || values.size === 0) {
-      return null;
-    }
-
-    if (values.size === 1) {
-      return Array.from(values)[0];
-    }
-
-    return `${values.size} Flex statuses`;
-  })();
-
-  const selectedSegmentFilter = (() => {
-    const values = colFilters.filters.Segment;
-
-    if (!values || values.size === 0) {
-      return null;
-    }
-
-    if (values.size === 1) {
-      return `${Array.from(values)[0]} cases`;
-    }
-
-    return `${values.size} segments`;
-  })();
-
-  const selectedPrintCaseFilter =
-    printCaseFilter === "installation"
-      ? "Print installation"
-      : printCaseFilter === "fix"
-        ? "Print fix"
-        : printCaseFilter === "all"
-          ? "Print cases"
-          : null;
-
-  const recordsFilterLabel = [
-    showClosedOnly ? "Closed calls" : null,
-    showConsumerOnly ? "Consumer cases" : null,
-    showCommercialOnly ? "Commercial cases" : null,
-    showCissOnly ? "CISS cases" : null,
-    showRcaOnly ? "RCA cases" : null,
-    showTradeOnly ? "Trade cases" : null,
-    showPcOnly ? "PC cases" : null,
-    selectedPrintCaseFilter,
-    selectedRegion && selectedRegion !== "ALL" ? selectedRegion : null,
-    selectedWoOtcCode ? selectedWoOtcCode : null,
-    selectedSegmentFilter,
-    selectedRtplStatusFilter,
-    selectedFlexStatusFilter,
-  ].filter(Boolean).join(" / ");
-
   // Open rows scoped to the region chosen in the overview dropdown (null/"ALL"
   // → every region). Drives the operational-health header cards below.
   const regionScopedActiveRows = useMemo(() => {
@@ -1795,6 +1874,65 @@ export default function DashboardPage() {
         },
       ]
     : [];
+
+  // Tickets in the visible set whose Flex Status has gone unchanged for at least
+  // STALE_FLEX_THRESHOLD_DAYS, worst offenders first. flexStatusUnchangedDays may
+  // be null/undefined until the backend day-over-day pass ships — guarded here so
+  // the banner simply stays empty (and hidden) in that case.
+  const staleFlexRows = useMemo(
+    () =>
+      filteredRows
+        .filter((row) => {
+          const days = row.comparison?.flexStatusUnchangedDays;
+          return days != null && days >= STALE_FLEX_THRESHOLD_DAYS;
+        })
+        .sort(
+          (a, b) =>
+            (b.comparison?.flexStatusUnchangedDays ?? 0) -
+            (a.comparison?.flexStatusUnchangedDays ?? 0),
+        ),
+    [filteredRows],
+  );
+  // Filter the records table down to a single stale ticket and close the
+  // details modal — the simplest reliable "jump to ticket" (reuses the search
+  // filter).
+  function jumpToStaleTicket(ticketId: string): void {
+    if (!ticketId) {
+      return;
+    }
+    setRecordsSearchQuery(ticketId);
+    setIsStaleModalOpen(false);
+  }
+
+  // Escalate emphasis with the unchanged-day count (tasteful, warning-palette).
+  function staleSeverityClass(days: number): string {
+    if (days >= STALE_FLEX_THRESHOLD_DAYS * 3) {
+      return "staleSeverityHigh";
+    }
+    if (days >= STALE_FLEX_THRESHOLD_DAYS * 2) {
+      return "staleSeverityMedium";
+    }
+    return "staleSeverityLow";
+  }
+
+  // Two-way scrollLeft sync between the top proxy scrollbar and the table. The
+  // equality check terminates the feedback loop: once the paired element is set
+  // to this element's scrollLeft, its own onScroll sees the values already match
+  // and stops — no boolean flag needed (robust to coalesced scroll events).
+  function handleTableWrapScroll(event: React.UIEvent<HTMLDivElement>): void {
+    setIsRecordsSummaryHidden(event.currentTarget.scrollTop > 10);
+    const proxy = recordsScrollTopRef.current;
+    if (proxy && proxy.scrollLeft !== event.currentTarget.scrollLeft) {
+      proxy.scrollLeft = event.currentTarget.scrollLeft;
+    }
+  }
+
+  function handleTopScroll(event: React.UIEvent<HTMLDivElement>): void {
+    const tableWrap = recordsTableWrapRef.current;
+    if (tableWrap && tableWrap.scrollLeft !== event.currentTarget.scrollLeft) {
+      tableWrap.scrollLeft = event.currentTarget.scrollLeft;
+    }
+  }
 
   if (!isSessionLoaded) {
     return <SessionLoadingScreen />;
@@ -2011,43 +2149,66 @@ export default function DashboardPage() {
               ) : null}
 
 
-              <div className="recordsCta">
-                <div>
-                  <h3>Records Workspace</h3>
-                  <p>Open the full Excel-style table on its own screen for filtering, editing, and export.</p>
-                </div>
-                <button type="button" onClick={() => setWorkspaceView("records")}>
-                  Open Records
-                </button>
-              </div>
               </div>
 
               <div className={`recordsArea ${isRecordsSummaryHidden ? "summaryHidden" : ""}`}>
-                {!isRecordsSummaryHidden ? (
-                  <div className="recordsHero">
-                  <div>
-                    <p className="eyebrow">OpenCall</p>
-                    <h2>Records Workspace</h2>
-                    <p>
-                      {formatNumber(filteredRows.length)} of {formatNumber(regionFilteredRows.length)} records shown
-                      {recordsFilterLabel ? ` for ${recordsFilterLabel}` : ""}
+              {staleFlexRows.length > 0 ? (
+                <div className="staleFlexBanner" role="status">
+                  <div className="staleFlexBannerHeader">
+                    <p className="staleFlexBannerSummary">
+                      <span aria-hidden="true">⚠</span>{" "}
+                      {formatNumber(staleFlexRows.length)} record(s) have an unchanged Flex
+                      Status for {STALE_FLEX_THRESHOLD_DAYS}+ days
                     </p>
+                    <button
+                      type="button"
+                      className="staleFlexToggle"
+                      onClick={() => setIsStaleModalOpen(true)}
+                    >
+                      View all ({formatNumber(staleFlexRows.length)})
+                    </button>
                   </div>
-                  <div className="recordsHeroStats">
-                      <OverviewStat label="Visible" value={filteredRows.length} detail="After filters" />
-                      <OverviewStat label="Total" value={regionFilteredRows.length} detail="Current scope" tone="blue" />
-                      <OverviewStat
-                        label="Closed"
-                        value={scopedClosedRows.length}
-                        detail="Closed calls"
-                        tone="danger"
-                        onClick={() => openRecordsWithFilter({ closedOnly: true })}
-                        isActive={showClosedOnly}
-                      />
-                      <OverviewStat label="Manual" value={scopedManualCellCount} detail="Fields to complete" tone={scopedManualCellCount > 0 ? "danger" : "accent"} />
-                    </div>
+                  {/* Compact inline list: Ticket ID + Days only. Full details
+                      (Flex Status / Location / Engineer) open in the modal. */}
+                  <div className="staleFlexPanel">
+                    <table className="staleFlexTable">
+                      <thead>
+                        <tr>
+                          <th>Ticket ID</th>
+                          <th className="staleFlexDaysCol">Days</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {staleFlexRows.map((row) => {
+                          const ticketId = String(row.output["Ticket ID"] ?? "");
+                          const days = row.comparison?.flexStatusUnchangedDays ?? 0;
+                          return (
+                            <tr
+                              key={row.serialNo}
+                              className={`staleFlexRow ${staleSeverityClass(days)}`}
+                              role="button"
+                              tabIndex={0}
+                              title={`Filter records to ticket ${ticketId || "—"}`}
+                              onClick={() => jumpToStaleTicket(ticketId)}
+                              onKeyDown={(event) => {
+                                if (event.key === "Enter" || event.key === " ") {
+                                  event.preventDefault();
+                                  jumpToStaleTicket(ticketId);
+                                }
+                              }}
+                            >
+                              <td className="staleFlexTicket">{ticketId || "—"}</td>
+                              <td className="staleFlexDaysCol">
+                                <span className="staleFlexDaysBadge">{days}</span>
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
                   </div>
-                ) : null}
+                </div>
+              ) : null}
               <div className="downloadActions recordsToolbar">
                 <div className="downloadActionGroup">
                   <button
@@ -2104,6 +2265,78 @@ export default function DashboardPage() {
                       onChange={(event) => setRecordsSearchQuery(event.target.value)}
                     />
                   </div>
+                  <div className="columnsMenu" ref={columnsMenuRef}>
+                    <button
+                      type="button"
+                      className={`secondaryButton columnsMenuTrigger ${hiddenColumns.size > 0 ? "active" : ""}`}
+                      aria-haspopup="menu"
+                      aria-expanded={isColumnsMenuOpen}
+                      onClick={() => setIsColumnsMenuOpen((open) => !open)}
+                      title="Show or hide table columns"
+                    >
+                      <svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+                        <rect x="1.5" y="2.5" width="13" height="11" rx="1.5" stroke="currentColor" />
+                        <path d="M6 2.5v11M10 2.5v11" stroke="currentColor" />
+                      </svg>
+                      Columns
+                      {hiddenColumns.size > 0 ? (
+                        <span className="columnsMenuCount">{hiddenColumns.size}</span>
+                      ) : null}
+                    </button>
+                    {isColumnsMenuOpen ? (
+                      <div className="columnsMenuPopover" role="menu">
+                        <div className="columnsMenuHeader">
+                          <span>Show columns</span>
+                          <button
+                            type="button"
+                            className="columnsMenuReset"
+                            disabled={hiddenColumns.size === 0}
+                            onClick={() => setHiddenColumns(new Set())}
+                          >
+                            Show all
+                          </button>
+                        </div>
+                        <div className="columnsMenuList">
+                          {DAILY_CALL_PLAN_COLUMNS.map((column) => {
+                            const locked = ALWAYS_VISIBLE_COLUMNS.has(column);
+                            const isVisible = !hiddenColumns.has(column);
+                            return (
+                              <label
+                                key={column}
+                                className={`columnsMenuItem ${locked ? "locked" : ""}`}
+                              >
+                                <input
+                                  type="checkbox"
+                                  checked={isVisible}
+                                  disabled={locked}
+                                  onChange={() => {
+                                    if (locked) {
+                                      return;
+                                    }
+                                    setHiddenColumns((current) => {
+                                      const next = new Set(current);
+                                      if (next.has(column)) {
+                                        next.delete(column);
+                                      } else {
+                                        next.add(column);
+                                      }
+                                      return next;
+                                    });
+                                  }}
+                                />
+                                <span className="columnsMenuLabel">{column}</span>
+                                {locked ? (
+                                  <span className="columnsMenuLock" title="Always visible">
+                                    Locked
+                                  </span>
+                                ) : null}
+                              </label>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    ) : null}
+                  </div>
                   <button
                     type="button"
                     className="secondaryButton backToDashboardButton"
@@ -2145,17 +2378,22 @@ export default function DashboardPage() {
               )}
 
               <div
+                className="tableScrollTop"
+                ref={recordsScrollTopRef}
+                onScroll={handleTopScroll}
+                aria-hidden="true"
+              >
+                <div className="tableScrollTopSpacer" ref={recordsScrollTopSpacerRef} />
+              </div>
+              <div
                 className="tableWrap"
                 ref={recordsTableWrapRef}
-                onScroll={(event) => {
-                  const scrollTop = event.currentTarget.scrollTop;
-                  setIsRecordsSummaryHidden(scrollTop > 10);
-                }}
+                onScroll={handleTableWrapScroll}
               >
                 <table>
                   <thead>
                     <tr>
-                      {DAILY_CALL_PLAN_COLUMNS.map((column) => {
+                      {visibleColumns.map((column) => {
                         const isFilterable = colFilters.isFilterable(column);
                         const isFiltered = colFilters.isColumnFiltered(column);
                         const uniqueVals = colFilters.uniqueValuesMap.get(column) ?? [];
@@ -2203,7 +2441,7 @@ export default function DashboardPage() {
                               : undefined
                           }
                         >
-                          {DAILY_CALL_PLAN_COLUMNS.map((column) => {
+                          {visibleColumns.map((column) => {
                             const value =
                               column === "S.no"
                                 ? visibleSerialNo
@@ -2361,13 +2599,15 @@ export default function DashboardPage() {
                                 </button>
                               </div>
                             ) : (
-                              <button
-                                type="button"
-                                className="secondaryButton"
-                                onClick={() => startEditing(row)}
-                              >
-                                Edit
-                              </button>
+                              <div className="rowActions">
+                                <button
+                                  type="button"
+                                  className="secondaryButton"
+                                  onClick={() => startEditing(row)}
+                                >
+                                  Edit
+                                </button>
+                              </div>
                             )}
                           </td>
                         </tr>
@@ -2515,6 +2755,93 @@ export default function DashboardPage() {
           cancelEditing={cancelEditing}
           saveEditing={saveEditing}
         />
+      )}
+
+      {/* Full details for stale Flex Status tickets — opened from "View all". */}
+      {isStaleModalOpen && staleFlexRows.length > 0 && (
+        <div className="modalOverlay" onClick={() => setIsStaleModalOpen(false)}>
+          <div
+            className="modalCard staleFlexModal"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="modalHeader">
+              <div className="modalTitleGroup">
+                <span className="modalEyebrow">Unchanged Flex Status</span>
+                <h2 className="modalTitle">
+                  {formatNumber(staleFlexRows.length)} record(s) unchanged for{" "}
+                  <span className="highlightText">
+                    {STALE_FLEX_THRESHOLD_DAYS}+ days
+                  </span>
+                </h2>
+              </div>
+              <button
+                type="button"
+                className="modalCloseBtn"
+                onClick={() => setIsStaleModalOpen(false)}
+                title="Close"
+              >
+                &times;
+              </button>
+            </div>
+
+            <div className="staleFlexModalBody">
+              <div className="staleFlexModalPanel">
+                <table className="staleFlexTable">
+                  <thead>
+                    <tr>
+                      <th>Ticket ID</th>
+                      <th>Flex Status</th>
+                      <th className="staleFlexDaysCol">Days</th>
+                      <th>Location</th>
+                      <th>Engineer</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {staleFlexRows.map((row) => {
+                      const ticketId = String(row.output["Ticket ID"] ?? "");
+                      const days = row.comparison?.flexStatusUnchangedDays ?? 0;
+                      const engineer = String(row.output["Engineer"] ?? "").trim();
+                      return (
+                        <tr
+                          key={row.serialNo}
+                          className={`staleFlexRow ${staleSeverityClass(days)}`}
+                          role="button"
+                          tabIndex={0}
+                          title={`Filter records to ticket ${ticketId || "—"}`}
+                          onClick={() => jumpToStaleTicket(ticketId)}
+                          onKeyDown={(event) => {
+                            if (event.key === "Enter" || event.key === " ") {
+                              event.preventDefault();
+                              jumpToStaleTicket(ticketId);
+                            }
+                          }}
+                        >
+                          <td className="staleFlexTicket">{ticketId || "—"}</td>
+                          <td>{String(row.output["Flex Status"] ?? "—")}</td>
+                          <td className="staleFlexDaysCol">
+                            <span className="staleFlexDaysBadge">{days}</span>
+                          </td>
+                          <td>{String(row.output["Location"] ?? "—")}</td>
+                          <td>{engineer || "—"}</td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+
+              <div className="modalActions">
+                <button
+                  type="button"
+                  className="secondaryButton"
+                  onClick={() => setIsStaleModalOpen(false)}
+                >
+                  Close
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
       )}
     </main>
   );

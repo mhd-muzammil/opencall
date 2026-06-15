@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { ASP_CODE_REGION_MAP } from "@opencall/shared";
 import {
   selectWipAgingRangeValues,
   sortWipAgingFilterValues,
@@ -48,6 +49,14 @@ export function ColumnFilterDropdown({
   const allValues = useMemo(
     () => uniqueValues.map((entry) => entry.value),
     [uniqueValues],
+  );
+  // Work Location is stored/filtered by ASP code but shown as the region name.
+  const labelFor = useCallback(
+    (value: string) =>
+      column === "Work Location"
+        ? ASP_CODE_REGION_MAP[value.trim()] ?? value
+        : value,
+    [column],
   );
 
   useEffect(() => {
@@ -100,10 +109,12 @@ export function ColumnFilterDropdown({
 
     if (!search.trim()) return sortedValues;
     const lowerSearch = search.toLowerCase();
-    return sortedValues.filter((entry) =>
-      entry.value.toLowerCase().includes(lowerSearch),
+    return sortedValues.filter(
+      (entry) =>
+        entry.value.toLowerCase().includes(lowerSearch) ||
+        labelFor(entry.value).toLowerCase().includes(lowerSearch),
     );
-  }, [isWipAgingColumn, uniqueValues, search, wipAgingValueSort]);
+  }, [isWipAgingColumn, uniqueValues, search, wipAgingValueSort, labelFor]);
 
   const toggleDraft = useCallback(
     (value: string) => {
@@ -262,7 +273,7 @@ export function ColumnFilterDropdown({
                     checked={checked}
                     onChange={() => toggleDraft(entry.value)}
                   />
-                  <span className="colFilterValue">{entry.value}</span>
+                  <span className="colFilterValue">{labelFor(entry.value)}</span>
                   <span className="colFilterCount">{entry.count}</span>
                 </label>
               );

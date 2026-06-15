@@ -1,6 +1,6 @@
 "use client";
 
-import { DAILY_CALL_PLAN_COLUMNS, RTPL_STATUS_OPTIONS, RTPL_STATUS_GROUPS } from "@opencall/shared";
+import { DAILY_CALL_PLAN_COLUMNS, RTPL_STATUS_OPTIONS, RTPL_STATUS_GROUPS, ASP_CODE_REGION_MAP } from "@opencall/shared";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { ColumnFilterDropdown } from "../components/ColumnFilterDropdown";
 import { AppHeader } from "../components/AppHeader";
@@ -2753,7 +2753,13 @@ export default function DashboardPage() {
                                         {String(value ?? "")}
                                       </button>
                                     ) : (
-                                      <span>{value === MANUAL_ENTRY_REQUIRED ? "Entry" : String(value ?? "")}</span>
+                                      <span>
+                                        {value === MANUAL_ENTRY_REQUIRED
+                                          ? "Entry"
+                                          : column === "Work Location"
+                                            ? ASP_CODE_REGION_MAP[String(value ?? "").trim()] ?? String(value ?? "")
+                                            : String(value ?? "")}
+                                      </span>
                                     )}
                                     {isCarriedForward ? (
                                       <span className="cellCarryFlag">Carried</span>

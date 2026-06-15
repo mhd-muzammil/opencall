@@ -1863,13 +1863,39 @@ export default function DashboardPage() {
   const overviewMetrics: MetricsGridItem[] = report
     ? [
         {
-          label: "Actionable Now",
-          value: operationalHealth.actionable.count,
-          detail: "Ready to dispatch",
+          label: "Actionable & Planned",
+          value: "",
+          detail: "",
+          customRender: () => (
+            <div className="activityCustomCard">
+              <div
+                className="activityCol clickableCol"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  if (operationalHealth.actionable.count > 0) {
+                    openRecordsWithFilter({ region: selectedRegion, rtplStatuses: operationalHealth.actionable.values });
+                  }
+                }}
+              >
+                <span className="activityLabel">Actionable</span>
+                <strong className="activityVal">{operationalHealth.actionable.count}</strong>
+              </div>
+              <div className="activityDivider" />
+              <div
+                className="activityCol clickableCol"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  if (operationalHealth.planned.count > 0) {
+                    openRecordsWithFilter({ region: selectedRegion, rtplStatuses: operationalHealth.planned.values });
+                  }
+                }}
+              >
+                <span className="activityLabel">Planned</span>
+                <strong className="activityVal">{operationalHealth.planned.count}</strong>
+              </div>
+            </div>
+          ),
           tone: "blue",
-          ...(operationalHealth.actionable.count > 0
-            ? { onClick: () => openRecordsWithFilter({ region: selectedRegion, rtplStatuses: operationalHealth.actionable.values }) }
-            : {}),
         },
         {
           label: "At-Risk Backlog",

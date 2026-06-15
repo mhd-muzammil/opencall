@@ -12,6 +12,7 @@ describe("computeOperationalHealth", () => {
     const health = computeOperationalHealth([]);
     expect(health.openCount).toBe(0);
     expect(health.actionable.count).toBe(0);
+    expect(health.planned.count).toBe(0);
     expect(health.aged.count).toBe(0);
     expect(health.partPending.count).toBe(0);
     expect(health.unassigned.count).toBe(0);
@@ -22,11 +23,22 @@ describe("computeOperationalHealth", () => {
     const rows = [
       row({ "RTPL status": "Actionable" }),
       row({ "RTPL status": "Actionable - Cx Pending" }), // excluded by 'cx'/'pending'
-      row({ "RTPL status": "Assigned" }),
+      row({ "RTPL status": "Assigned" }), // not an actionable keyword
     ];
     const health = computeOperationalHealth(rows);
     expect(health.actionable.count).toBe(1);
     expect(health.actionable.values).toEqual(["Actionable"]);
+  });
+
+  it("counts planned calls but excludes pending/to-be variants", () => {
+    const rows = [
+      row({ "RTPL status": "Engg Assigned" }),
+      row({ "RTPL status": "To be Scheduled" }), // excluded by 'to be'
+      row({ "RTPL status": "Actionable" }), // not a planned keyword
+    ];
+    const health = computeOperationalHealth(rows);
+    expect(health.planned.count).toBe(1);
+    expect(health.planned.values).toEqual(["Engg Assigned"]);
   });
 
   it("counts part-pending calls and collects their raw statuses", () => {

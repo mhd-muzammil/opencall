@@ -942,11 +942,13 @@ code {
 }
 
 /* Overrides for parent card padding when hosting custom multi-column layouts */
+.overviewStat:has(.activityCustomCard),
 .overviewStat:has(.partsPendingCustomCard),
 .overviewStat:has(.agedCustomCard) {
   padding: 12px 6px;
 }
 
+.activityCustomCard,
 .partsPendingCustomCard,
 .agedCustomCard {
   display: flex;
@@ -957,6 +959,7 @@ code {
   gap: 4px;
 }
 
+.activityCol,
 .partsPendingCol,
 .agedCol {
   display: flex;
@@ -969,6 +972,7 @@ code {
   text-align: center;
 }
 
+.activityLabel,
 .partsPendingLabel,
 .agedLabel {
   color: var(--muted);
@@ -978,6 +982,13 @@ code {
   line-height: 1.2;
   white-space: nowrap;
   letter-spacing: 0.2px;
+}
+
+.activityVal {
+  color: #2563eb;
+  font-size: 28px;
+  font-weight: 800;
+  line-height: 1;
 }
 
 .partsPendingVal {
@@ -994,6 +1005,7 @@ code {
   line-height: 1;
 }
 
+.activityDivider,
 .partsPendingDivider,
 .agedDivider {
   width: 1px;

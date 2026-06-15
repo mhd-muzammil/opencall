@@ -18,6 +18,8 @@ export const DEFAULT_AGING_THRESHOLD = 10;
 
 const ACTIONABLE_KEYWORDS = ["actionable"];
 const ACTIONABLE_EXCLUDES = ["customer", "cust", "cx", "delay", "pending"];
+const PLANNED_KEYWORDS = ["assigned", "scheduled", "onsite"];
+const PLANNED_EXCLUDES = ["pending", "to be"];
 const PART_PENDING_KEYWORDS = ["Part Pending"];
 const PART_PENDING_EXCLUDES = ["Order"];
 const PART_ORDER_PENDING_KEYWORDS = ["Part Order Pending"];
@@ -53,6 +55,7 @@ export interface OperationalBucket {
 export interface OperationalHealth {
   openCount: number;
   actionable: OperationalBucket;
+  planned: OperationalBucket;
   partPending: OperationalBucket & {
     partPendingCount: number;
     partPendingValues: string[];
@@ -76,6 +79,7 @@ export function computeOperationalHealth(
   agingThreshold: number = DEFAULT_AGING_THRESHOLD,
 ): OperationalHealth {
   const actionableValues = new Set<string>();
+  const plannedValues = new Set<string>();
   const partPendingValues = new Set<string>();
   const partPendingOnlyValues = new Set<string>();
   const partOrderPendingValues = new Set<string>();
@@ -85,6 +89,7 @@ export function computeOperationalHealth(
   const aged10PlusValues = new Set<string>();
   const unassignedValues = new Set<string>();
   let actionableCount = 0;
+  let plannedCount = 0;
   let partPendingCount = 0;
   let partOrderPendingCount = 0;
   let agedCount = 0;
@@ -98,6 +103,10 @@ export function computeOperationalHealth(
     if (statusMatches(status, ACTIONABLE_KEYWORDS, ACTIONABLE_EXCLUDES)) {
       actionableCount += 1;
       actionableValues.add(status);
+    }
+    if (statusMatches(status, PLANNED_KEYWORDS, PLANNED_EXCLUDES)) {
+      plannedCount += 1;
+      plannedValues.add(status);
     }
     
     // Check Part Pending (excludes Order to prevent double matching)
@@ -149,6 +158,7 @@ export function computeOperationalHealth(
   return {
     openCount,
     actionable: { count: actionableCount, values: Array.from(actionableValues) },
+    planned: { count: plannedCount, values: Array.from(plannedValues) },
     partPending: {
       count: partPendingCount + partOrderPendingCount,
       values: Array.from(partPendingValues),

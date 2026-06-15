@@ -1491,6 +1491,58 @@ code {
   border-top-right-radius: 0;
 }
 
+/* Records table zone. Transparent normally (its children flow in the records
+   grid as before); a full-screen overlay when maximized via "Full Record". */
+.recordsTableZone {
+  display: contents;
+}
+
+.recordsTableZone.maximized {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  position: fixed;
+  inset: 0;
+  z-index: 95; /* above the sticky header (20), below modals (100) */
+  background: var(--surface, #ffffff);
+  padding: 12px 16px 16px;
+}
+
+/* In full screen, let the table fill the remaining height instead of its
+   fixed max-height. */
+.recordsTableZone.maximized .tableWrap {
+  flex: 1 1 auto;
+  max-height: none;
+  min-height: 0;
+}
+
+.recordsTableZoneBar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.recordsTableZoneTitle {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  font-size: 15px;
+  font-weight: 800;
+  color: #0f172a;
+}
+
+.recordsTableZoneCount {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--muted, #64748b);
+}
+
+.recordsTableZoneSearch {
+  flex: 1 1 220px;
+  max-width: 360px;
+}
+
 .tableWrap::-webkit-scrollbar {
   width: 8px;
   height: 8px;

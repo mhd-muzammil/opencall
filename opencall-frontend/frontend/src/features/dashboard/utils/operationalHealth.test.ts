@@ -13,7 +13,7 @@ describe("computeOperationalHealth", () => {
     expect(health.openCount).toBe(0);
     expect(health.actionable.count).toBe(0);
     expect(health.aged.count).toBe(0);
-    expect(health.awaitingCustomer.count).toBe(0);
+    expect(health.partPending.count).toBe(0);
     expect(health.unassigned.count).toBe(0);
     expect(health.aged.threshold).toBe(DEFAULT_AGING_THRESHOLD);
   });
@@ -29,16 +29,20 @@ describe("computeOperationalHealth", () => {
     expect(health.actionable.values).toEqual(["Actionable"]);
   });
 
-  it("counts awaiting-customer calls and collects their raw statuses", () => {
+  it("counts part-pending calls and collects their raw statuses", () => {
     const rows = [
-      row({ "RTPL status": "Cx Pending" }),
-      row({ "RTPL status": "Customer Delay" }),
+      row({ "RTPL status": "Part Pending" }),
+      row({ "RTPL status": "Part Order Pending" }),
       row({ "RTPL status": "Actionable" }),
     ];
     const health = computeOperationalHealth(rows);
-    expect(health.awaitingCustomer.count).toBe(2);
-    expect(new Set(health.awaitingCustomer.values)).toEqual(
-      new Set(["Cx Pending", "Customer Delay"]),
+    expect(health.partPending.count).toBe(2);
+    expect(health.partPending.partPendingCount).toBe(1);
+    expect(health.partPending.partPendingValues).toEqual(["Part Pending"]);
+    expect(health.partPending.partOrderPendingCount).toBe(1);
+    expect(health.partPending.partOrderPendingValues).toEqual(["Part Order Pending"]);
+    expect(new Set(health.partPending.values)).toEqual(
+      new Set(["Part Pending", "Part Order Pending"]),
     );
   });
 
@@ -46,12 +50,24 @@ describe("computeOperationalHealth", () => {
     const rows = [
       row({ "WIP aging": "12" }),
       row({ "WIP aging": "10" }), // boundary is inclusive
+      row({ "WIP aging": "7" }),
+      row({ "WIP aging": "5" }),
       row({ "WIP aging": "3" }),
       row({ "WIP aging": "n/a" }), // non-numeric ignored
     ];
     const health = computeOperationalHealth(rows);
     expect(health.aged.count).toBe(2);
     expect(new Set(health.aged.values)).toEqual(new Set(["12", "10"]));
+
+    // Check custom aging buckets
+    expect(health.aged.aged5PlusCount).toBe(4); // 12, 10, 7, 5
+    expect(new Set(health.aged.aged5PlusValues)).toEqual(new Set(["12", "10", "7", "5"]));
+
+    expect(health.aged.aged7PlusCount).toBe(3); // 12, 10, 7
+    expect(new Set(health.aged.aged7PlusValues)).toEqual(new Set(["12", "10", "7"]));
+
+    expect(health.aged.aged10PlusCount).toBe(2); // 12, 10
+    expect(new Set(health.aged.aged10PlusValues)).toEqual(new Set(["12", "10"]));
   });
 
   it("respects a custom aging threshold", () => {

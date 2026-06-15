@@ -18,14 +18,9 @@ export const DEFAULT_AGING_THRESHOLD = 10;
 
 const ACTIONABLE_KEYWORDS = ["actionable"];
 const ACTIONABLE_EXCLUDES = ["customer", "cust", "cx", "delay", "pending"];
-const AWAITING_CUSTOMER_KEYWORDS = [
-  "cx pending",
-  "reschedule",
-  "cx",
-  "cust delay",
-  "customer delay",
-  "customer pending",
-];
+const PART_PENDING_KEYWORDS = ["Part Pending"];
+const PART_PENDING_EXCLUDES = ["Order"];
+const PART_ORDER_PENDING_KEYWORDS = ["Part Order Pending"];
 
 const MANUAL_ENTRY_LOWER = MANUAL_ENTRY_REQUIRED.toLowerCase();
 
@@ -58,8 +53,21 @@ export interface OperationalBucket {
 export interface OperationalHealth {
   openCount: number;
   actionable: OperationalBucket;
-  awaitingCustomer: OperationalBucket;
-  aged: OperationalBucket & { threshold: number };
+  partPending: OperationalBucket & {
+    partPendingCount: number;
+    partPendingValues: string[];
+    partOrderPendingCount: number;
+    partOrderPendingValues: string[];
+  };
+  aged: OperationalBucket & {
+    threshold: number;
+    aged5PlusCount: number;
+    aged5PlusValues: string[];
+    aged7PlusCount: number;
+    aged7PlusValues: string[];
+    aged10PlusCount: number;
+    aged10PlusValues: string[];
+  };
   unassigned: OperationalBucket;
 }
 
@@ -68,12 +76,21 @@ export function computeOperationalHealth(
   agingThreshold: number = DEFAULT_AGING_THRESHOLD,
 ): OperationalHealth {
   const actionableValues = new Set<string>();
-  const awaitingValues = new Set<string>();
+  const partPendingValues = new Set<string>();
+  const partPendingOnlyValues = new Set<string>();
+  const partOrderPendingValues = new Set<string>();
   const agedValues = new Set<string>();
+  const aged5PlusValues = new Set<string>();
+  const aged7PlusValues = new Set<string>();
+  const aged10PlusValues = new Set<string>();
   const unassignedValues = new Set<string>();
   let actionableCount = 0;
-  let awaitingCount = 0;
+  let partPendingCount = 0;
+  let partOrderPendingCount = 0;
   let agedCount = 0;
+  let aged5PlusCount = 0;
+  let aged7PlusCount = 0;
+  let aged10PlusCount = 0;
   let unassignedCount = 0;
 
   for (const row of activeRows) {
@@ -82,15 +99,40 @@ export function computeOperationalHealth(
       actionableCount += 1;
       actionableValues.add(status);
     }
-    if (statusMatches(status, AWAITING_CUSTOMER_KEYWORDS)) {
-      awaitingCount += 1;
-      awaitingValues.add(status);
+    
+    // Check Part Pending (excludes Order to prevent double matching)
+    if (statusMatches(status, PART_PENDING_KEYWORDS, PART_PENDING_EXCLUDES)) {
+      partPendingCount += 1;
+      partPendingValues.add(status);
+      partPendingOnlyValues.add(status);
+    }
+    
+    // Check Part Order Pending
+    if (statusMatches(status, PART_ORDER_PENDING_KEYWORDS)) {
+      partOrderPendingCount += 1;
+      partPendingValues.add(status);
+      partOrderPendingValues.add(status);
     }
 
     const aging = parseWipAgingValue(row.output["WIP aging"]);
-    if (aging !== null && aging >= agingThreshold) {
-      agedCount += 1;
-      agedValues.add(String(row.output["WIP aging"] ?? "").trim());
+    if (aging !== null) {
+      const agingStr = String(row.output["WIP aging"] ?? "").trim();
+      if (aging >= agingThreshold) {
+        agedCount += 1;
+        agedValues.add(agingStr);
+      }
+      if (aging >= 5) {
+        aged5PlusCount += 1;
+        aged5PlusValues.add(agingStr);
+      }
+      if (aging >= 7) {
+        aged7PlusCount += 1;
+        aged7PlusValues.add(agingStr);
+      }
+      if (aging >= 10) {
+        aged10PlusCount += 1;
+        aged10PlusValues.add(agingStr);
+      }
     }
 
     // "Unassigned" = no real engineer yet. The backend writes the placeholder
@@ -107,8 +149,25 @@ export function computeOperationalHealth(
   return {
     openCount,
     actionable: { count: actionableCount, values: Array.from(actionableValues) },
-    awaitingCustomer: { count: awaitingCount, values: Array.from(awaitingValues) },
-    aged: { count: agedCount, values: Array.from(agedValues), threshold: agingThreshold },
+    partPending: {
+      count: partPendingCount + partOrderPendingCount,
+      values: Array.from(partPendingValues),
+      partPendingCount,
+      partPendingValues: Array.from(partPendingOnlyValues),
+      partOrderPendingCount,
+      partOrderPendingValues: Array.from(partOrderPendingValues),
+    },
+    aged: {
+      count: agedCount,
+      values: Array.from(agedValues),
+      threshold: agingThreshold,
+      aged5PlusCount,
+      aged5PlusValues: Array.from(aged5PlusValues),
+      aged7PlusCount,
+      aged7PlusValues: Array.from(aged7PlusValues),
+      aged10PlusCount,
+      aged10PlusValues: Array.from(aged10PlusValues),
+    },
     unassigned: { count: unassignedCount, values: Array.from(unassignedValues) },
   };
 }

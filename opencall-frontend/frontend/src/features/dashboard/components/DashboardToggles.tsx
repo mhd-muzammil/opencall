@@ -15,6 +15,8 @@ export function DashboardToggles({
   setShowCustomerSegmentSplit,
   showClosedCallLedger,
   setShowClosedCallLedger,
+  showUploadBatches,
+  setShowUploadBatches,
 }: Readonly<{
   showDayOverDayComparison: boolean;
   setShowDayOverDayComparison: Dispatch<SetStateAction<boolean>>;
@@ -28,6 +30,8 @@ export function DashboardToggles({
   setShowCustomerSegmentSplit: Dispatch<SetStateAction<boolean>>;
   showClosedCallLedger: boolean;
   setShowClosedCallLedger: Dispatch<SetStateAction<boolean>>;
+  showUploadBatches: boolean;
+  setShowUploadBatches: Dispatch<SetStateAction<boolean>>;
 }>) {
   return (
     <div className="viewControlsPanel" style={{
@@ -101,6 +105,15 @@ export function DashboardToggles({
           style={{ width: "15px", height: "15px", cursor: "pointer", accentColor: "var(--accent)", margin: 0 }}
         />
         Show Closed Call Ledger
+      </label>
+      <label style={{ display: "flex", alignItems: "center", gap: "8px", cursor: "pointer", fontSize: "12px", fontWeight: 600, color: "var(--text)", userSelect: "none" }}>
+        <input
+          type="checkbox"
+          checked={showUploadBatches}
+          onChange={(e) => setShowUploadBatches(e.target.checked)}
+          style={{ width: "15px", height: "15px", cursor: "pointer", accentColor: "var(--accent)", margin: 0 }}
+        />
+        Show Upload Batches
       </label>
     </div>
   );

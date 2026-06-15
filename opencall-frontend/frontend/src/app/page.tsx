@@ -334,6 +334,8 @@ export default function DashboardPage() {
   const [showCaseTypeOverview, setShowCaseTypeOverview] = useState(false);
   const [showCustomerSegmentSplit, setShowCustomerSegmentSplit] = useState(false);
   const [showClosedCallLedger, setShowClosedCallLedger] = useState(false);
+  const [showUploadBatches, setShowUploadBatches] = useState(false);
+
 
   useEffect(() => {
     setIsRecordsSummaryHidden(false);
@@ -2620,7 +2622,7 @@ export default function DashboardPage() {
             </section>
           ) : null}
 
-          {upload ? (
+          {upload && showUploadBatches ? (
             <section className="panel">
               <div className="sectionHeader">
                 <h2>Upload Batches</h2>
@@ -2677,6 +2679,8 @@ export default function DashboardPage() {
               setShowCustomerSegmentSplit={setShowCustomerSegmentSplit}
               showClosedCallLedger={showClosedCallLedger}
               setShowClosedCallLedger={setShowClosedCallLedger}
+              showUploadBatches={showUploadBatches}
+              setShowUploadBatches={setShowUploadBatches}
             />
           )}
         </section>

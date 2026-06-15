@@ -3660,6 +3660,12 @@ td.missingCell.carriedForwardCell {
   background: #ffffff;
 }
 
+@media (min-width: 1024px) {
+  .pivotSection {
+    width: 50%;
+  }
+}
+
 .pivotHeader {
   margin-bottom: 0;
 }
@@ -3956,7 +3962,7 @@ td.missingCell.carriedForwardCell {
 }
 
 .pivotTable {
-  width: max-content;
+  width: 100%;
   min-width: 100%;
   border-collapse: separate;
   border-spacing: 0;
@@ -3966,7 +3972,7 @@ td.missingCell.carriedForwardCell {
 
 .pivotTable th,
 .pivotTable td {
-  min-width: 58px;
+  min-width: 45px;
   height: 34px;
   padding: 6px 8px;
   border-right: 1px solid #d7e0ee;
@@ -4000,7 +4006,7 @@ td.missingCell.carriedForwardCell {
   position: sticky;
   left: 0;
   z-index: 2;
-  min-width: 210px;
+  min-width: 120px;
   max-width: 280px;
   text-align: left;
 }
@@ -4067,7 +4073,7 @@ td.missingCell.carriedForwardCell {
   position: sticky;
   right: 0;
   z-index: 2;
-  min-width: 96px;
+  min-width: 75px;
   background: #eef4ff !important;
   color: #0f172a;
   font-weight: 900;

@@ -127,6 +127,8 @@ export interface GeneratedReportResponse {
     // (e.g. Customer Type, which drives the Consumer/Commercial split).
     enriched?: {
       customer_type?: string | null;
+      // Renderways "current status aging" in days — drives the stale-status banner.
+      current_status_aging?: number | null;
     } | null;
     comparison: {
       changeType: "NEW" | "CLOSED" | "CARRIED" | "UPDATED" | null;

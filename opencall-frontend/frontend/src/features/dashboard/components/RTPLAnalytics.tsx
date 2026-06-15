@@ -8,6 +8,7 @@ import { formatNumber, todayIsoDate } from "../utils";
 import type { ReportRow, RtplCaseScope } from "../types";
 import {
   ALL_REGIONS_FILTER,
+  RTPL_CARRY_FORWARD_TIME_CARD_ID,
   type RtplTimeCardId,
   type RtplTimeCard,
   type RtplStatusMetric,
@@ -48,6 +49,78 @@ export function RTPLDashboard({
     tradeOnly?: boolean;
   }>) => void;
 }>) {
+  // Compute BOD/EOD and status breakdown counts for the cards
+  const checkpointCards = rtplTimeCards.map((card) => {
+    const isCarryForward = card.id === RTPL_CARRY_FORWARD_TIME_CARD_ID;
+    let cardBod = 0;
+    let cardEod = 0;
+
+    interface BreakdownItem {
+      status: string;
+      bodCount: number;
+      eodCount: number;
+    }
+
+    let breakdown: BreakdownItem[] = [];
+
+    if (isCarryForward) {
+      const detailsWithRows = card.details.map((detail) => {
+        const row = rtplAnalyticsRows.find((r) => r.id === detail.rowId);
+        let bodStatus = "";
+        let eodStatus = "";
+        if (row) {
+          const prev = String(row.comparison?.previousRtplStatus || "").trim();
+          bodStatus = prev && prev.toLowerCase() !== "manual entry required" ? prev : String(row.output["RTPL status"] || "").trim();
+          eodStatus = String(row.output["RTPL status"] || "").trim();
+        } else if (detail.type === "carry-forward") {
+          bodStatus = detail.status;
+          eodStatus = detail.status;
+        }
+        return { detail, bodStatus, eodStatus };
+      });
+
+      cardBod = detailsWithRows.filter((d) => d.bodStatus).length;
+      cardEod = detailsWithRows.filter((d) => d.eodStatus).length;
+
+      const statusCounts = new Map<string, { bod: number; eod: number }>();
+      detailsWithRows.forEach(({ bodStatus, eodStatus }) => {
+        if (bodStatus) {
+          const counts = statusCounts.get(bodStatus) || { bod: 0, eod: 0 };
+          counts.bod++;
+          statusCounts.set(bodStatus, counts);
+        }
+        if (eodStatus) {
+          const counts = statusCounts.get(eodStatus) || { bod: 0, eod: 0 };
+          counts.eod++;
+          statusCounts.set(eodStatus, counts);
+        }
+      });
+
+      breakdown = Array.from(statusCounts.entries())
+        .map(([status, counts]) => ({
+          status,
+          bodCount: counts.bod,
+          eodCount: counts.eod,
+        }))
+        .sort((a, b) => b.eodCount - a.eodCount || b.bodCount - a.bodCount || a.status.localeCompare(b.status));
+    } else {
+      cardBod = 0;
+      cardEod = card.count;
+      breakdown = card.statusBreakdown.map((item) => ({
+        status: item.status,
+        bodCount: 0,
+        eodCount: item.count,
+      }));
+    }
+
+    return {
+      ...card,
+      cardBod,
+      cardEod,
+      breakdown,
+    };
+  });
+
   return (
     <div className="rtplAnalyticsSection">
       <div className="sectionHeader rtplAnalyticsHeader">
@@ -104,71 +177,93 @@ export function RTPLDashboard({
       </div>
 
       <div className="rtplTimeCardGrid" aria-label="RTPL fixed checkpoint cards">
-        {rtplTimeCards.map((card) => (
-          <div
-            key={card.id}
-            className={`rtplTimeCard ${selectedRtplTimeCard?.id === card.id ? "active" : ""}`}
-          >
-            <button
-              type="button"
-              className="rtplTimeCardMain"
-              onClick={() => openRtplCheckpointModal(card.id)}
+        {checkpointCards.map((card) => {
+          const badgeText = card.id === RTPL_CARRY_FORWARD_TIME_CARD_ID ? "BASELINE" : card.count > 0 ? "CHANGED" : "NO CHANGE";
+          const badgeClass = card.id === RTPL_CARRY_FORWARD_TIME_CARD_ID ? "baseline" : card.count > 0 ? "changed" : "no-change";
+
+          return (
+            <div
+              key={card.id}
+              className={`rtplTimeCard ${selectedRtplTimeCard?.id === card.id ? "active" : ""}`}
             >
-              <span>{card.label}</span>
-              <small>{formatNumber(card.count)} WO</small>
-            </button>
-            {card.statusBreakdown.length > 0 ? (
-              <div className="rtplTimeStatusList">
-                {card.statusBreakdown.map((entry, entryIndex) => (
-                  <div
-                    key={`${card.id}-${entry.status || "blank"}-${entryIndex}`}
-                    role="button"
-                    tabIndex={0}
-                    className="rtplTimeStatusItem"
-                    onPointerDown={(event) => {
-                      event.preventDefault();
-                      event.stopPropagation();
-                    }}
-                    onClick={(event) => {
-                      event.preventDefault();
-                      event.stopPropagation();
-                      openRecordsWithFilter({
-                        region:
-                          selectedRtplRegion === ALL_REGIONS_FILTER
-                            ? null
-                            : selectedRtplRegion,
-                        rtplStatus: entry.status,
-                        warrantyOnly: selectedRtplCaseScope === "warranty",
-                        tradeOnly: selectedRtplCaseScope === "trade",
-                      });
-                    }}
-                    onKeyDown={(event) => {
-                      if (event.key !== "Enter" && event.key !== " ") {
-                        return;
-                      }
-                      event.preventDefault();
-                      event.stopPropagation();
-                      openRecordsWithFilter({
-                        region:
-                          selectedRtplRegion === ALL_REGIONS_FILTER
-                            ? null
-                            : selectedRtplRegion,
-                        rtplStatus: entry.status,
-                        warrantyOnly: selectedRtplCaseScope === "warranty",
-                        tradeOnly: selectedRtplCaseScope === "trade",
-                      });
-                    }}
-                  >
-                    <span>{entry.status}</span>
-                    <strong>{formatNumber(entry.count)}</strong>
-                  </div>
-                ))}
+              <div className="rtplTimeCardHeader" onClick={() => openRtplCheckpointModal(card.id)}>
+                <span className="rtplTimeCardTitle">{card.label}</span>
+                <span className={`rtplTimeCardBadge ${badgeClass}`}>{badgeText}</span>
               </div>
-            ) : (
-              <div className="rtplTimeStatusEmpty">No RTPL movement</div>
-            )}
-          </div>
-        ))}
+
+              <div className="rtplTimeCardBodEodRow" onClick={() => openRtplCheckpointModal(card.id)}>
+                <div className="rtplTimeCardBodEodSpacer" />
+                <div className="rtplTimeCardBodEod">
+                  <div className="bodColumn">
+                    <span className="bodLabel">🌅 BOD</span>
+                    <strong className="bodValue">{card.cardBod}</strong>
+                  </div>
+                  <div className="eodColumn">
+                    <span className="eodLabel">🌆 EOD</span>
+                    <strong className="eodValue">{card.cardEod}</strong>
+                  </div>
+                </div>
+              </div>
+
+              <hr className="rtplTimeCardDivider" />
+
+              {card.breakdown.length > 0 ? (
+                <div className="rtplTimeStatusList">
+                  {card.breakdown.map((entry, entryIndex) => (
+                    <div
+                      key={`${card.id}-${entry.status || "blank"}-${entryIndex}`}
+                      role="button"
+                      tabIndex={0}
+                      className="rtplTimeStatusItem"
+                      onPointerDown={(event) => {
+                        event.preventDefault();
+                        event.stopPropagation();
+                      }}
+                      onClick={(event) => {
+                        event.preventDefault();
+                        event.stopPropagation();
+                        openRecordsWithFilter({
+                          region:
+                            selectedRtplRegion === ALL_REGIONS_FILTER
+                              ? null
+                              : selectedRtplRegion,
+                          rtplStatus: entry.status,
+                          warrantyOnly: selectedRtplCaseScope === "warranty",
+                          tradeOnly: selectedRtplCaseScope === "trade",
+                        });
+                      }}
+                      onKeyDown={(event) => {
+                        if (event.key !== "Enter" && event.key !== " ") {
+                          return;
+                        }
+                        event.preventDefault();
+                        event.stopPropagation();
+                        openRecordsWithFilter({
+                          region:
+                            selectedRtplRegion === ALL_REGIONS_FILTER
+                              ? null
+                              : selectedRtplRegion,
+                          rtplStatus: entry.status,
+                          warrantyOnly: selectedRtplCaseScope === "warranty",
+                          tradeOnly: selectedRtplCaseScope === "trade",
+                        });
+                      }}
+                    >
+                      <span className="statusName">{entry.status}</span>
+                      <span className="statusCounts">
+                        <span className="statusBodCount">{entry.bodCount}</span>
+                        <span className="statusDivider">/</span>
+                        <span className="statusEodCount">{entry.eodCount}</span>
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="rtplTimeStatusEmpty">No RTPL movement</div>
+              )}
+            </div>
+          );
+        })}
       </div>
     </div>
   );

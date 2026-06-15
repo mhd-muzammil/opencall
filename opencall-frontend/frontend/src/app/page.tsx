@@ -76,7 +76,8 @@ import {
   ProductivityModal,
   KPISummaryModal,
   ChennaiKPIModal,
-  RTPLAnalytics,
+  RTPLDashboard,
+  FlexDashboard,
   CaseTypeCards,
   CustomerSegmentCards,
   RTPLPivotTable,
@@ -2084,7 +2085,7 @@ export default function DashboardPage() {
 
 
 
-              <RTPLAnalytics
+              <RTPLDashboard
                 rtplAnalyticsDate={rtplAnalyticsDate}
                 setRtplAnalyticsDate={setRtplAnalyticsDate}
                 rtplAnalyticsRows={rtplAnalyticsRows}
@@ -2096,7 +2097,6 @@ export default function DashboardPage() {
                 setSelectedRtplRegion={setSelectedRtplRegion}
                 rtplTimeCards={rtplTimeCards}
                 selectedRtplTimeCard={selectedRtplTimeCard}
-                flexStatusMetrics={flexStatusMetrics}
                 openRtplCheckpointModal={openRtplCheckpointModal}
                 openRecordsWithFilter={openRecordsWithFilter}
               />
@@ -2131,6 +2131,18 @@ export default function DashboardPage() {
                 toggleDraftPivotLocation={toggleDraftPivotLocation}
                 applyPivotLocationFilter={applyPivotLocationFilter}
                 openPivotRecords={openPivotRecords}
+              />
+
+              <FlexDashboard
+                rtplAnalyticsRows={rtplAnalyticsRows}
+                rtplCaseScopeOptions={rtplCaseScopeOptions}
+                selectedRtplCaseScope={selectedRtplCaseScope}
+                setSelectedRtplCaseScope={setSelectedRtplCaseScope}
+                rtplRegionOptions={rtplRegionOptions}
+                selectedRtplRegion={selectedRtplRegion}
+                setSelectedRtplRegion={setSelectedRtplRegion}
+                flexStatusMetrics={flexStatusMetrics}
+                openRecordsWithFilter={openRecordsWithFilter}
               />
 
               {showDayOverDayComparison && (

@@ -149,9 +149,9 @@ const SOURCE_LABELS: Record<SourceKey, string> = {
   CALL_PLAN: "Call Plan",
 };
 
-// A ticket whose Flex Status has not changed for this many consecutive days (or
-// more) is surfaced in the stale-Flex-Status banner at the top of the records
-// page. Backed by row.comparison.flexStatusUnchangedDays.
+// A ticket whose Renderways "current status aging" is this many days (or more)
+// is surfaced in the stale-status banner at the top of the records page. Backed
+// by row.enriched.current_status_aging.
 const STALE_FLEX_THRESHOLD_DAYS = 2;
 
 // localStorage key for persisting which records-table columns are hidden.
@@ -194,6 +194,7 @@ const FILE_FIELDS: Array<{
 
 const MANUAL_FIELD_BY_COLUMN: Partial<Record<string, ManualCarryForwardField>> = {
   "RTPL status": "rtpl_status",
+  "Current Remarks": "remarks",
   Segment: "segment",
   Engineer: "engineer",
   Location: "location",
@@ -207,6 +208,7 @@ const MANUAL_FIELD_BY_COLUMN: Partial<Record<string, ManualCarryForwardField>> =
 
 const EDITABLE_COLUMN_API_FIELD: Partial<Record<string, string>> = {
   "RTPL status": "rtpl_status",
+  "Current Remarks": "remarks",
   Segment: "segment",
   Engineer: "engineer",
   Location: "location",
@@ -231,9 +233,11 @@ const EDITED_RESPONSE_COLUMN: Partial<
     | "hpOwnerStatus"
     | "customerMail"
     | "rca"
+    | "remarks"
   >>
 > = {
   "RTPL status": "rtplStatus",
+  "Current Remarks": "remarks",
   Segment: "segment",
   Engineer: "engineer",
   Location: "location",
@@ -1358,10 +1362,13 @@ export default function DashboardPage() {
       const displayValue = column === "Case Created Time"
         ? formatDisplayDateTime(value)
         : value;
+      // "Current Remarks" is optional — an empty value stays blank rather than
+      // being flagged as a missing manual entry.
+      const emptyFallback = column === "Current Remarks" ? "" : MANUAL_ENTRY_REQUIRED;
       nextOutput[column] =
         typeof displayValue === "string" && displayValue.trim().length > 0
           ? displayValue
-          : MANUAL_ENTRY_REQUIRED;
+          : emptyFallback;
     }
 
     return nextOutput;
@@ -1878,21 +1885,21 @@ export default function DashboardPage() {
       ]
     : [];
 
-  // Tickets in the visible set whose Flex Status has gone unchanged for at least
-  // STALE_FLEX_THRESHOLD_DAYS, worst offenders first. flexStatusUnchangedDays may
-  // be null/undefined until the backend day-over-day pass ships — guarded here so
-  // the banner simply stays empty (and hidden) in that case.
+  // Tickets in the visible set whose Renderways "current status aging" is at
+  // least STALE_FLEX_THRESHOLD_DAYS, worst offenders first. current_status_aging
+  // may be null/undefined (e.g. unmatched rows or older uploads) — guarded here
+  // so the banner simply stays empty (and hidden) in that case.
   const staleFlexRows = useMemo(
     () =>
       filteredRows
         .filter((row) => {
-          const days = row.comparison?.flexStatusUnchangedDays;
+          const days = row.enriched?.current_status_aging;
           return days != null && days >= STALE_FLEX_THRESHOLD_DAYS;
         })
         .sort(
           (a, b) =>
-            (b.comparison?.flexStatusUnchangedDays ?? 0) -
-            (a.comparison?.flexStatusUnchangedDays ?? 0),
+            (b.enriched?.current_status_aging ?? 0) -
+            (a.enriched?.current_status_aging ?? 0),
         ),
     [filteredRows],
   );
@@ -2292,8 +2299,8 @@ export default function DashboardPage() {
                   <div className="staleFlexBannerHeader">
                     <p className="staleFlexBannerSummary">
                       <span aria-hidden="true">⚠</span>{" "}
-                      {formatNumber(staleFlexRows.length)} record(s) have an unchanged Flex
-                      Status for {STALE_FLEX_THRESHOLD_DAYS}+ days
+                      {formatNumber(staleFlexRows.length)} record(s) have a Status
+                      Aging of {STALE_FLEX_THRESHOLD_DAYS}+ days
                     </p>
                     <button
                       type="button"
@@ -2316,7 +2323,7 @@ export default function DashboardPage() {
                       <tbody>
                         {staleFlexRows.map((row) => {
                           const ticketId = String(row.output["Ticket ID"] ?? "");
-                          const days = row.comparison?.flexStatusUnchangedDays ?? 0;
+                          const days = row.enriched?.current_status_aging ?? 0;
                           return (
                             <tr
                               key={row.serialNo}
@@ -2904,9 +2911,9 @@ export default function DashboardPage() {
           >
             <div className="modalHeader">
               <div className="modalTitleGroup">
-                <span className="modalEyebrow">Unchanged Flex Status</span>
+                <span className="modalEyebrow">Status Aging</span>
                 <h2 className="modalTitle">
-                  {formatNumber(staleFlexRows.length)} record(s) unchanged for{" "}
+                  {formatNumber(staleFlexRows.length)} record(s) with Status Aging{" "}
                   <span className="highlightText">
                     {STALE_FLEX_THRESHOLD_DAYS}+ days
                   </span>
@@ -2937,7 +2944,7 @@ export default function DashboardPage() {
                   <tbody>
                     {staleFlexRows.map((row) => {
                       const ticketId = String(row.output["Ticket ID"] ?? "");
-                      const days = row.comparison?.flexStatusUnchangedDays ?? 0;
+                      const days = row.enriched?.current_status_aging ?? 0;
                       const engineer = String(row.output["Engineer"] ?? "").trim();
                       return (
                         <tr

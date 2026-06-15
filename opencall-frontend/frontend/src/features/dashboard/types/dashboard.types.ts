@@ -19,6 +19,7 @@ export type ManualCarryForwardField =
   | "status_aging"
   | "hp_owner_status"
   | "customer_mail"
-  | "rca";
+  | "rca"
+  | "remarks";
 
 export type ReportRowPatchValues = Parameters<typeof updateReportRow>[0]["values"];

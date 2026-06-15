@@ -180,6 +180,25 @@ export function EditRecordModal({
                 />
               </div>
 
+              {/* Current Remarks — e.g. reason a customer is pending. Carries
+                  forward to the next day. */}
+              <div className="formField fullWidth">
+                <label htmlFor="modal-current-remarks">Current Remarks</label>
+                <textarea
+                  id="modal-current-remarks"
+                  className="modalTextarea"
+                  value={String(draftOutput["Current Remarks"] ?? "")}
+                  onChange={(event) =>
+                    setDraftOutput((current) => ({
+                      ...current,
+                      "Current Remarks": event.target.value,
+                    }))
+                  }
+                  rows={2}
+                  placeholder="e.g. reason for customer pending"
+                />
+              </div>
+
               {/* RCA */}
               <div className="formField fullWidth">
                 <label htmlFor="modal-rca">RCA (Root Cause Analysis)</label>

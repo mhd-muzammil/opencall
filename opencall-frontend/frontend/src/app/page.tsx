@@ -2192,7 +2192,6 @@ export default function DashboardPage() {
                         ))}
                     </select>
                   )}
-                  <p>{report.reportId}</p>
                 </div>
                 <MetricsGrid items={overviewMetrics} />
               </div>

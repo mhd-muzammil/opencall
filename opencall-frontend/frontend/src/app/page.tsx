@@ -328,6 +328,8 @@ export default function DashboardPage() {
   // "S.no" and "Ticket ID" are always visible (Ticket ID may be frozen-left).
   const [hiddenColumns, setHiddenColumns] = useState<Set<string>>(new Set());
   const [isColumnsMenuOpen, setIsColumnsMenuOpen] = useState(false);
+  // Whether the records table is expanded to a full-screen overlay.
+  const [isRecordsTableMaximized, setIsRecordsTableMaximized] = useState(false);
   const columnsMenuRef = useRef<HTMLDivElement | null>(null);
   // Whether the stale-Flex-Status "View all" details modal is open.
   const [isStaleModalOpen, setIsStaleModalOpen] = useState(false);
@@ -410,6 +412,20 @@ export default function DashboardPage() {
       window.removeEventListener("keydown", handleKeyDown);
     };
   }, [isColumnsMenuOpen]);
+
+  // Exit the full-screen records table on Escape.
+  useEffect(() => {
+    if (!isRecordsTableMaximized) {
+      return;
+    }
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape") {
+        setIsRecordsTableMaximized(false);
+      }
+    }
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [isRecordsTableMaximized]);
 
   useEffect(() => {
     setSelectedRegion(null);
@@ -2482,6 +2498,17 @@ export default function DashboardPage() {
                   </div>
                   <button
                     type="button"
+                    className="secondaryButton fullRecordButton"
+                    onClick={() => setIsRecordsTableMaximized(true)}
+                    title="Expand the records table to full screen"
+                  >
+                    <svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+                      <path d="M2 6V2.5h3.5M14 6V2.5h-3.5M2 10v3.5h3.5M14 10v3.5h-3.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+                    </svg>
+                    Full Record
+                  </button>
+                  <button
+                    type="button"
                     className="secondaryButton backToDashboardButton"
                     onClick={() => setWorkspaceView("overview")}
                   >
@@ -2520,6 +2547,34 @@ export default function DashboardPage() {
                 </div>
               )}
 
+              <div className={`recordsTableZone ${isRecordsTableMaximized ? "maximized" : ""}`}>
+              {isRecordsTableMaximized ? (
+                <div className="recordsTableZoneBar">
+                  <span className="recordsTableZoneTitle">
+                    Records — Full Screen
+                    <span className="recordsTableZoneCount">
+                      {filteredRows.length} of {regionFilteredRows.length} rows
+                    </span>
+                  </span>
+                  <div className="recordsSearchBar recordsTableZoneSearch">
+                    <input
+                      type="search"
+                      value={recordsSearchQuery}
+                      aria-label="Search records"
+                      placeholder="Search WO, case ID, trade..."
+                      onChange={(event) => setRecordsSearchQuery(event.target.value)}
+                    />
+                  </div>
+                  <button
+                    type="button"
+                    className="secondaryButton"
+                    onClick={() => setIsRecordsTableMaximized(false)}
+                    title="Exit full screen (Esc)"
+                  >
+                    ✕ Exit Full Screen
+                  </button>
+                </div>
+              ) : null}
               <div
                 className="tableScrollTop"
                 ref={recordsScrollTopRef}
@@ -2758,6 +2813,7 @@ export default function DashboardPage() {
                     })}
                   </tbody>
                 </table>
+              </div>
               </div>
               </div>
             </section>

@@ -164,50 +164,17 @@ export function EditRecordModal({
                 />
               </div>
 
-              {/* HP Owner Status */}
+              {/* Part */}
               <div className="formField">
-                <label htmlFor="modal-hp-owner-status">HP Owner Status</label>
+                <label htmlFor="modal-part">Part</label>
                 <input
-                  id="modal-hp-owner-status"
+                  id="modal-part"
                   className="modalInput"
-                  value={String(draftOutput["HP Owner Status"] ?? "")}
+                  value={String(draftOutput["Part"] ?? "")}
                   onChange={(event) =>
                     setDraftOutput((current) => ({
                       ...current,
-                      "HP Owner Status": event.target.value,
-                    }))
-                  }
-                />
-              </div>
-
-              {/* Case Created Time */}
-              <div className="formField">
-                <label htmlFor="modal-case-created-time">Case Created Time</label>
-                <input
-                  id="modal-case-created-time"
-                  className="modalInput"
-                  value={String(draftOutput["Case Created Time"] ?? "")}
-                  onChange={(event) =>
-                    setDraftOutput((current) => ({
-                      ...current,
-                      "Case Created Time": event.target.value,
-                    }))
-                  }
-                  placeholder="DD-MM-YYYY HH:MM:SS AM/PM"
-                />
-              </div>
-
-              {/* Customer Mail */}
-              <div className="formField">
-                <label htmlFor="modal-customer-mail">Customer Mail</label>
-                <input
-                  id="modal-customer-mail"
-                  className="modalInput"
-                  value={String(draftOutput["Customer Mail"] ?? "")}
-                  onChange={(event) =>
-                    setDraftOutput((current) => ({
-                      ...current,
-                      "Customer Mail": event.target.value,
+                      "Part": event.target.value,
                     }))
                   }
                 />

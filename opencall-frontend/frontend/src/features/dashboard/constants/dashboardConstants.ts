@@ -53,6 +53,7 @@ export const MANUAL_FIELD_LABELS: Record<ManualCarryForwardField, string> = {
   hp_owner_status: "HP Owner Status",
   customer_mail: "Customer Mail",
   rca: "RCA",
+  remarks: "Current Remarks",
 };
 
 export const RTPL_CASE_SCOPE_OPTIONS: Array<{

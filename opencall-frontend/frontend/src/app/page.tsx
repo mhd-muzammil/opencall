@@ -194,6 +194,7 @@ const FILE_FIELDS: Array<{
 
 const MANUAL_FIELD_BY_COLUMN: Partial<Record<string, ManualCarryForwardField>> = {
   "RTPL status": "rtpl_status",
+  "Current Remarks": "remarks",
   Segment: "segment",
   Engineer: "engineer",
   Location: "location",
@@ -207,6 +208,7 @@ const MANUAL_FIELD_BY_COLUMN: Partial<Record<string, ManualCarryForwardField>> =
 
 const EDITABLE_COLUMN_API_FIELD: Partial<Record<string, string>> = {
   "RTPL status": "rtpl_status",
+  "Current Remarks": "remarks",
   Segment: "segment",
   Engineer: "engineer",
   Location: "location",
@@ -231,9 +233,11 @@ const EDITED_RESPONSE_COLUMN: Partial<
     | "hpOwnerStatus"
     | "customerMail"
     | "rca"
+    | "remarks"
   >>
 > = {
   "RTPL status": "rtplStatus",
+  "Current Remarks": "remarks",
   Segment: "segment",
   Engineer: "engineer",
   Location: "location",
@@ -1358,10 +1362,13 @@ export default function DashboardPage() {
       const displayValue = column === "Case Created Time"
         ? formatDisplayDateTime(value)
         : value;
+      // "Current Remarks" is optional — an empty value stays blank rather than
+      // being flagged as a missing manual entry.
+      const emptyFallback = column === "Current Remarks" ? "" : MANUAL_ENTRY_REQUIRED;
       nextOutput[column] =
         typeof displayValue === "string" && displayValue.trim().length > 0
           ? displayValue
-          : MANUAL_ENTRY_REQUIRED;
+          : emptyFallback;
     }
 
     return nextOutput;

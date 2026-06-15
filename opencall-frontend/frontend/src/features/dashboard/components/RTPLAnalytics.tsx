@@ -13,6 +13,7 @@ import {
   type RtplTimeCard,
   type RtplStatusMetric,
 } from "../../../lib/reportDashboardAnalytics";
+import { RTPL_STATUS_OPTIONS } from "@opencall/shared";
 
 export function RTPLDashboard({
   rtplAnalyticsDate,
@@ -49,68 +50,161 @@ export function RTPLDashboard({
     tradeOnly?: boolean;
   }>) => void;
 }>) {
-  // Compute BOD/EOD and status breakdown counts for the cards
-  const checkpointCards = rtplTimeCards.map((card) => {
-    const isCarryForward = card.id === RTPL_CARRY_FORWARD_TIME_CARD_ID;
-    let cardBod = 0;
-    let cardEod = 0;
+  // Set up the status order mapping helper based on RTPL_STATUS_OPTIONS
+  const statusOrderMap = new Map<string, number>();
+  RTPL_STATUS_OPTIONS.forEach((status, index) => {
+    statusOrderMap.set(status.toLowerCase(), index);
+  });
 
-    interface BreakdownItem {
-      status: string;
-      bodCount: number;
-      eodCount: number;
+  const compareStatuses = (a: string, b: string): number => {
+    const idxA = statusOrderMap.has(a.toLowerCase()) ? statusOrderMap.get(a.toLowerCase())! : 9999;
+    const idxB = statusOrderMap.has(b.toLowerCase()) ? statusOrderMap.get(b.toLowerCase())! : 9999;
+    if (idxA !== idxB) {
+      return idxA - idxB;
+    }
+    return a.localeCompare(b);
+  };
+
+  interface BreakdownItem {
+    status: string;
+    bodCount: number;
+    eodCount: number;
+  }
+
+  // 1. Compute starting (BOD) status for all active rows
+  const rowStatusesList = rtplAnalyticsRows.map((row) => {
+    const ticketId = String(row.output["Ticket ID"] || "").trim();
+
+    // Find all changes today for this ticket
+    const ticketChanges: any[] = [];
+    rtplTimeCards.forEach((c) => {
+      c.details.forEach((detail) => {
+        if (detail.type === "change" && detail.ticketId === ticketId) {
+          ticketChanges.push(detail);
+        }
+      });
+    });
+
+    // Determine BOD status
+    let bodStatus = "";
+    if (ticketChanges.length > 0) {
+      // Sort changes by changedAt ascending
+      const sortedChanges = [...ticketChanges].sort((a, b) =>
+        String(a.changedAt || "").localeCompare(String(b.changedAt || ""))
+      );
+      bodStatus = String(sortedChanges[0].fromStatus || "").trim();
     }
 
+    if (!bodStatus || bodStatus.toLowerCase() === "manual entry required") {
+      const prev = String(row.comparison?.previousRtplStatus || "").trim();
+      bodStatus =
+        prev && prev.toLowerCase() !== "manual entry required"
+          ? prev
+          : String(row.output["RTPL status"] || "").trim();
+    }
+
+    // Determine baseline EOD status (EOD of Upload Time card)
+    let uploadTimeEodStatus = String(row.output["RTPL status"] || "").trim();
+    if (ticketChanges.length > 0) {
+      const sortedChanges = [...ticketChanges].sort((a, b) =>
+        String(a.changedAt || "").localeCompare(String(b.changedAt || ""))
+      );
+      const earliestFrom = String(sortedChanges[0].fromStatus || "").trim();
+      if (earliestFrom && earliestFrom.toLowerCase() !== "manual entry required") {
+        uploadTimeEodStatus = earliestFrom;
+      }
+    }
+
+    return {
+      ticketId,
+      bodStatus,
+      uploadTimeEodStatus,
+    };
+  });
+
+  // 2. Gather status counts and active statuses for each card
+  const allActiveStatuses = new Set<string>();
+  const cardStatusCountsList = rtplTimeCards.map((card, cardIndex) => {
+    const isCarryForward = card.id === RTPL_CARRY_FORWARD_TIME_CARD_ID;
+
+    const rowsWithStatuses = rowStatusesList.map(({ ticketId, bodStatus, uploadTimeEodStatus }) => {
+      let eodStatus = uploadTimeEodStatus;
+
+      if (!isCarryForward) {
+        // Collect changes up to cardIndex
+        const changesUpToCard: any[] = [];
+        for (let j = 1; j <= cardIndex; j++) {
+          const prevCard = rtplTimeCards[j];
+          if (prevCard) {
+            prevCard.details.forEach((detail) => {
+              if (detail.type === "change" && detail.ticketId === ticketId) {
+                changesUpToCard.push(detail);
+              }
+            });
+          }
+        }
+
+        if (changesUpToCard.length > 0) {
+          const sortedChanges = [...changesUpToCard].sort((a, b) =>
+            String(a.changedAt || "").localeCompare(String(b.changedAt || ""))
+          );
+          const latestTo = String(sortedChanges[sortedChanges.length - 1].toStatus || "").trim();
+          if (latestTo) {
+            eodStatus = latestTo;
+          }
+        }
+      }
+
+      return {
+        bodStatus,
+        eodStatus,
+      };
+    });
+
+    const cardBod = rowsWithStatuses.filter((r) => r.bodStatus).length;
+    const cardEod = rowsWithStatuses.filter((r) => r.eodStatus).length;
+
+    const statusCounts = new Map<string, { bod: number; eod: number }>();
+    rowsWithStatuses.forEach(({ bodStatus, eodStatus }) => {
+      if (bodStatus) {
+        const counts = statusCounts.get(bodStatus) || { bod: 0, eod: 0 };
+        counts.bod++;
+        statusCounts.set(bodStatus, counts);
+        allActiveStatuses.add(bodStatus);
+      }
+      if (eodStatus) {
+        const counts = statusCounts.get(eodStatus) || { bod: 0, eod: 0 };
+        counts.eod++;
+        statusCounts.set(eodStatus, counts);
+        allActiveStatuses.add(eodStatus);
+      }
+    });
+
+    return {
+      card,
+      cardBod,
+      cardEod,
+      statusCounts,
+    };
+  });
+
+  // 3. Sort all active statuses using the order from RTPL_STATUS_OPTIONS
+  const sortedActiveStatuses = Array.from(allActiveStatuses).sort(compareStatuses);
+
+  // 4. Build the final checkpointCards with identical status list ordered consistently
+  const checkpointCards = cardStatusCountsList.map(({ card, cardBod, cardEod, statusCounts }) => {
     let breakdown: BreakdownItem[] = [];
 
-    if (isCarryForward) {
-      const detailsWithRows = card.details.map((detail) => {
-        const row = rtplAnalyticsRows.find((r) => r.id === detail.rowId);
-        let bodStatus = "";
-        let eodStatus = "";
-        if (row) {
-          const prev = String(row.comparison?.previousRtplStatus || "").trim();
-          bodStatus = prev && prev.toLowerCase() !== "manual entry required" ? prev : String(row.output["RTPL status"] || "").trim();
-          eodStatus = String(row.output["RTPL status"] || "").trim();
-        } else if (detail.type === "carry-forward") {
-          bodStatus = detail.status;
-          eodStatus = detail.status;
-        }
-        return { detail, bodStatus, eodStatus };
-      });
-
-      cardBod = detailsWithRows.filter((d) => d.bodStatus).length;
-      cardEod = detailsWithRows.filter((d) => d.eodStatus).length;
-
-      const statusCounts = new Map<string, { bod: number; eod: number }>();
-      detailsWithRows.forEach(({ bodStatus, eodStatus }) => {
-        if (bodStatus) {
-          const counts = statusCounts.get(bodStatus) || { bod: 0, eod: 0 };
-          counts.bod++;
-          statusCounts.set(bodStatus, counts);
-        }
-        if (eodStatus) {
-          const counts = statusCounts.get(eodStatus) || { bod: 0, eod: 0 };
-          counts.eod++;
-          statusCounts.set(eodStatus, counts);
-        }
-      });
-
-      breakdown = Array.from(statusCounts.entries())
-        .map(([status, counts]) => ({
+    // Only display status items if the card actually has data (bod or eod > 0)
+    if (cardBod > 0 || cardEod > 0) {
+      breakdown = sortedActiveStatuses.map((status) => {
+        const counts = statusCounts.get(status) || { bod: 0, eod: 0 };
+        return {
           status,
           bodCount: counts.bod,
           eodCount: counts.eod,
-        }))
-        .sort((a, b) => b.eodCount - a.eodCount || b.bodCount - a.bodCount || a.status.localeCompare(b.status));
-    } else {
-      cardBod = 0;
-      cardEod = card.count;
-      breakdown = card.statusBreakdown.map((item) => ({
-        status: item.status,
-        bodCount: 0,
-        eodCount: item.count,
-      }));
+        };
+      });
     }
 
     return {

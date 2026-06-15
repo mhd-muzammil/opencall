@@ -1957,6 +1957,55 @@ export default function DashboardPage() {
     );
   }
 
+  // Records scope breakdown for the header card: the active dashboard category
+  // (PC / Print / Trade / ...) total within the current region scope, split into
+  // Consumer vs Commercial. regionFilteredRows already has the category + region
+  // filters applied (independent of ad-hoc column filters), so the total matches
+  // the dashboard card that was clicked to open Records.
+  const recordsScopeLabel = (() => {
+    if (showClosedOnly) return "Closed Total";
+    if (showPcOnly) return "PC Total";
+    if (printCaseFilter === "installation") return "Print Install Total";
+    if (printCaseFilter === "fix") return "Print Fix Total";
+    if (printCaseFilter === "all") return "Print Total";
+    if (showCissOnly) return "CISS Total";
+    if (showTradeOnly) return "Trade Total";
+    if (showNonWarrantyOnly) return "Non-Warranty Total";
+    if (showWarrantyOnly) return "Warranty Total";
+    if (showRcaOnly) return "RCA Total";
+    if (showConsumerOnly) return "Consumer Total";
+    if (showCommercialOnly) return "Commercial Total";
+    return "Total";
+  })();
+  const recordsScopeTotal = regionFilteredRows.length;
+  const recordsScopeConsumer = regionFilteredRows.filter(isConsumerCase).length;
+  const recordsScopeCommercial = recordsScopeTotal - recordsScopeConsumer;
+  const recordsScopeWarranty = regionFilteredRows.filter(isWarrantyCase).length;
+  const recordsScopeTrade = recordsScopeTotal - recordsScopeWarranty;
+  const recordsScopeManualPending = countManualRequiredCells(regionFilteredRows);
+  // Segment mix only makes sense in the unfiltered "Total" scope; when a single
+  // category is selected the rows are already just that category.
+  const recordsScopeHasCategory =
+    showPcOnly ||
+    printCaseFilter !== null ||
+    showCissOnly ||
+    showTradeOnly ||
+    showWarrantyOnly ||
+    showNonWarrantyOnly ||
+    showConsumerOnly ||
+    showCommercialOnly ||
+    showRcaOnly ||
+    showClosedOnly;
+  const recordsScopeSegmentMix = recordsScopeHasCategory
+    ? null
+    : [
+        { key: "pc", label: "PC", count: regionFilteredRows.filter(isPcCase).length, onSelect: () => openRecordsWithFilter({ region: selectedRegion, pcOnly: true }) },
+        { key: "printFix", label: "Print Fix", count: regionFilteredRows.filter(isPrintFixCase).length, onSelect: () => openRecordsWithFilter({ region: selectedRegion, printCase: "fix" }) },
+        { key: "printInstall", label: "Print Install", count: regionFilteredRows.filter(isPrintInstallationCase).length, onSelect: () => openRecordsWithFilter({ region: selectedRegion, printCase: "installation" }) },
+        { key: "ciss", label: "CISS", count: regionFilteredRows.filter(isCissCase).length, onSelect: () => openRecordsWithFilter({ region: selectedRegion, cissOnly: true }) },
+        { key: "trade", label: "Trade", count: regionFilteredRows.filter(isTradeCase).length, onSelect: () => openRecordsWithFilter({ region: selectedRegion, tradeOnly: true }) },
+      ];
+
   return (
     <main className="appShell">
       <AppHeader
@@ -2166,7 +2215,79 @@ export default function DashboardPage() {
               </div>
 
               <div className={`recordsArea ${isRecordsSummaryHidden ? "summaryHidden" : ""}`}>
-              {staleFlexRows.length > 0 ? (
+              <div className={`recordsScopeRow ${staleFlexRows.length > 0 ? "hasFlex" : ""}`}>
+                {/* Left: active-category total split by Consumer / Commercial. */}
+                <div className="recordsScopeCard">
+                  {activeRegionName ? (
+                    <span className="recordsScopeRegion">{activeRegionName}</span>
+                  ) : null}
+                  <span className="recordsScopeLabel">{recordsScopeLabel}</span>
+                  <strong className="recordsScopeTotal">{formatNumber(recordsScopeTotal)}</strong>
+                  <div className="recordsScopeSplit">
+                    <button
+                      type="button"
+                      className="recordsScopeSplitItem"
+                      title="Show Consumer records only"
+                      onClick={() => openRecordsWithFilter({ region: selectedRegion, consumerOnly: true })}
+                    >
+                      <span>Consumer</span>
+                      <strong>{formatNumber(recordsScopeConsumer)}</strong>
+                    </button>
+                    <button
+                      type="button"
+                      className="recordsScopeSplitItem"
+                      title="Show Commercial records only"
+                      onClick={() => openRecordsWithFilter({ region: selectedRegion, commercialOnly: true })}
+                    >
+                      <span>Commercial</span>
+                      <strong>{formatNumber(recordsScopeCommercial)}</strong>
+                    </button>
+                  </div>
+                  <div className="recordsScopeSplit">
+                    <button
+                      type="button"
+                      className="recordsScopeSplitItem"
+                      title="Show Warranty records only"
+                      onClick={() => openRecordsWithFilter({ region: selectedRegion, warrantyOnly: true })}
+                    >
+                      <span>Warranty</span>
+                      <strong>{formatNumber(recordsScopeWarranty)}</strong>
+                    </button>
+                    <button
+                      type="button"
+                      className="recordsScopeSplitItem"
+                      title="Show Trade records only"
+                      onClick={() => openRecordsWithFilter({ region: selectedRegion, tradeOnly: true })}
+                    >
+                      <span>Trade</span>
+                      <strong>{formatNumber(recordsScopeTrade)}</strong>
+                    </button>
+                  </div>
+                  {recordsScopeSegmentMix ? (
+                    <div className="recordsScopeChips">
+                      {recordsScopeSegmentMix.map((item) => (
+                        <button
+                          key={item.key}
+                          type="button"
+                          className="recordsScopeChip"
+                          title={`Show ${item.label} records only`}
+                          onClick={item.onSelect}
+                        >
+                          <strong>{formatNumber(item.count)}</strong> {item.label}
+                        </button>
+                      ))}
+                    </div>
+                  ) : null}
+                  <div className="recordsScopeManual">
+                    <span>Manual entries pending</span>
+                    <strong className={recordsScopeManualPending > 0 ? "pending" : ""}>
+                      {formatNumber(recordsScopeManualPending)}
+                    </strong>
+                  </div>
+                </div>
+
+                {/* Right: compressed unchanged-Flex-Status banner. */}
+                {staleFlexRows.length > 0 ? (
                 <div className="staleFlexBanner" role="status">
                   <div className="staleFlexBannerHeader">
                     <p className="staleFlexBannerSummary">
@@ -2222,7 +2343,8 @@ export default function DashboardPage() {
                     </table>
                   </div>
                 </div>
-              ) : null}
+                ) : null}
+              </div>
               <div className="downloadActions recordsToolbar">
                 <div className="downloadActionGroup">
                   <button

@@ -1,14 +1,17 @@
+import type { ReactNode } from "react";
+
 function formatNumber(value: number): string {
   return new Intl.NumberFormat("en-IN").format(value);
 }
 
 export interface MetricsGridItem {
   label: string;
-  value: number;
-  detail: string;
+  value: number | string;
+  detail: string | ReactNode;
   tone?: "accent" | "blue" | "warn" | "danger";
   onClick?: () => void;
   isActive?: boolean;
+  customRender?: () => ReactNode;
 }
 
 export function MetricsGrid({ items }: Readonly<{ items: readonly MetricsGridItem[] }>) {
@@ -21,9 +24,19 @@ export function MetricsGrid({ items }: Readonly<{ items: readonly MetricsGridIte
           onClick={item.onClick}
           role={item.onClick ? "button" : undefined}
         >
-          <span>{item.label}</span>
-          <strong>{formatNumber(item.value)}</strong>
-          <small>{item.detail}</small>
+          {item.customRender ? (
+            item.customRender()
+          ) : (
+            <>
+              <span>{item.label}</span>
+              <strong>{typeof item.value === "number" ? formatNumber(item.value) : item.value}</strong>
+              {typeof item.detail === "string" ? (
+                <small>{item.detail}</small>
+              ) : (
+                item.detail
+              )}
+            </>
+          )}
         </div>
       ))}
     </div>

@@ -1863,31 +1863,122 @@ export default function DashboardPage() {
   const overviewMetrics: MetricsGridItem[] = report
     ? [
         {
-          label: "Actionable Now",
-          value: operationalHealth.actionable.count,
-          detail: "Ready to dispatch",
+          label: "Actionable & Planned",
+          value: "",
+          detail: "",
+          customRender: () => (
+            <div className="activityCustomCard">
+              <div
+                className="activityCol clickableCol"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  if (operationalHealth.actionable.count > 0) {
+                    openRecordsWithFilter({ region: selectedRegion, rtplStatuses: operationalHealth.actionable.values });
+                  }
+                }}
+              >
+                <span className="activityLabel">Actionable</span>
+                <strong className="activityVal">{operationalHealth.actionable.count}</strong>
+              </div>
+              <div className="activityDivider" />
+              <div
+                className="activityCol clickableCol"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  if (operationalHealth.planned.count > 0) {
+                    openRecordsWithFilter({ region: selectedRegion, rtplStatuses: operationalHealth.planned.values });
+                  }
+                }}
+              >
+                <span className="activityLabel">Planned</span>
+                <strong className="activityVal">{operationalHealth.planned.count}</strong>
+              </div>
+            </div>
+          ),
           tone: "blue",
-          ...(operationalHealth.actionable.count > 0
-            ? { onClick: () => openRecordsWithFilter({ region: selectedRegion, rtplStatuses: operationalHealth.actionable.values }) }
-            : {}),
         },
         {
-          label: `Aged ≥${operationalHealth.aged.threshold}d`,
-          value: operationalHealth.aged.count,
-          detail: operationalHealth.aged.count > 0 ? "At-risk backlog" : "Nothing breaching",
-          tone: operationalHealth.aged.count > 0 ? "danger" : "accent",
-          ...(operationalHealth.aged.count > 0
-            ? { onClick: () => openRecordsWithFilter({ region: selectedRegion, wipAgings: operationalHealth.aged.values }) }
-            : {}),
+          label: "At-Risk Backlog",
+          value: "",
+          detail: "",
+          customRender: () => (
+            <div className="agedCustomCard">
+              <div
+                className="agedCol clickableCol"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  if (operationalHealth.aged.aged5PlusCount > 0) {
+                    openRecordsWithFilter({ region: selectedRegion, wipAgings: operationalHealth.aged.aged5PlusValues });
+                  }
+                }}
+              >
+                <span className="agedLabel">5+ Days</span>
+                <strong className="agedVal">{operationalHealth.aged.aged5PlusCount}</strong>
+              </div>
+              <div className="agedDivider" />
+              <div
+                className="agedCol clickableCol"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  if (operationalHealth.aged.aged7PlusCount > 0) {
+                    openRecordsWithFilter({ region: selectedRegion, wipAgings: operationalHealth.aged.aged7PlusValues });
+                  }
+                }}
+              >
+                <span className="agedLabel">7+ Days</span>
+                <strong className="agedVal">{operationalHealth.aged.aged7PlusCount}</strong>
+              </div>
+              <div className="agedDivider" />
+              <div
+                className="agedCol clickableCol"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  if (operationalHealth.aged.aged10PlusCount > 0) {
+                    openRecordsWithFilter({ region: selectedRegion, wipAgings: operationalHealth.aged.aged10PlusValues });
+                  }
+                }}
+              >
+                <span className="agedLabel">10+ Days</span>
+                <strong className="agedVal">{operationalHealth.aged.aged10PlusCount}</strong>
+              </div>
+            </div>
+          ),
+          tone: "danger",
         },
         {
-          label: "Awaiting Customer",
-          value: operationalHealth.awaitingCustomer.count,
-          detail: "Blocked on customer",
+          label: "Parts Pending",
+          value: "",
+          detail: "",
+          customRender: () => (
+            <div className="partsPendingCustomCard">
+              <div
+                className="partsPendingCol clickableCol"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  if (operationalHealth.partPending.partPendingCount > 0) {
+                    openRecordsWithFilter({ region: selectedRegion, rtplStatuses: operationalHealth.partPending.partPendingValues });
+                  }
+                }}
+              >
+                <span className="partsPendingLabel">Part Pending</span>
+                <strong className="partsPendingVal">{operationalHealth.partPending.partPendingCount}</strong>
+              </div>
+              <div className="partsPendingDivider" />
+              <div
+                className="partsPendingCol clickableCol"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  if (operationalHealth.partPending.partOrderPendingCount > 0) {
+                    openRecordsWithFilter({ region: selectedRegion, rtplStatuses: operationalHealth.partPending.partOrderPendingValues });
+                  }
+                }}
+              >
+                <span className="partsPendingLabel">Part Order Pending</span>
+                <strong className="partsPendingVal">{operationalHealth.partPending.partOrderPendingCount}</strong>
+              </div>
+            </div>
+          ),
           tone: "warn",
-          ...(operationalHealth.awaitingCustomer.count > 0
-            ? { onClick: () => openRecordsWithFilter({ region: selectedRegion, rtplStatuses: operationalHealth.awaitingCustomer.values }) }
-            : {}),
         },
         {
           label: "Unassigned",
@@ -2101,7 +2192,6 @@ export default function DashboardPage() {
                         ))}
                     </select>
                   )}
-                  <p>{report.reportId}</p>
                 </div>
                 <MetricsGrid items={overviewMetrics} />
               </div>

@@ -65,6 +65,16 @@ describe("buildSheetXml", () => {
     expect(xml).toContain('<c r="B3"><v>0</v></c>');
     // Empty string cell A3 is omitted entirely.
     expect(xml).not.toContain('r="A3"');
+    // Suppress the "Number Stored as Text" flag over the used range, after
+    // </sheetData> (schema-valid position) so text IDs/phones show no triangle.
+    expect(xml).toContain(
+      '</sheetData><ignoredErrors><ignoredError sqref="A1:B3" numberStoredAsText="1"/></ignoredErrors></worksheet>',
+    );
+  });
+
+  it("omits ignoredErrors for an empty matrix", () => {
+    const xml = buildSheetXml([]);
+    expect(xml).not.toContain("ignoredErrors");
   });
 });
 

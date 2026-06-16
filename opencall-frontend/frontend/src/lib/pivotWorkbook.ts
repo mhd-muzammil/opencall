@@ -100,13 +100,27 @@ export function buildSheetXml(aoa: PivotAoa): string {
     body += `<row r="${r + 1}">${cells}</row>`;
   }
 
+  const usedRange = rangeRef(rowCount, colCount);
+
+  // Suppress Excel's "Number Stored as Text" green-triangle on the whole used
+  // range. Identifier/code columns (Ticket ID, Case ID, Contact, WO OTC CODE,
+  // ...) are intentionally written as text — storing them as numbers would drop
+  // leading "+"/zeros and round IDs past Excel's 15-digit precision. Numeric
+  // measure columns are written as real <v> numbers, so they aren't text and
+  // this ignore never touches them. `ignoredErrors` is display-only metadata.
+  const ignoredErrors =
+    rowCount >= 1 && colCount >= 1
+      ? `<ignoredErrors><ignoredError sqref="${usedRange}" numberStoredAsText="1"/></ignoredErrors>`
+      : "";
+
   return (
     `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>` +
     `<worksheet xmlns="${SHEET_NS}" xmlns:r="${REL_NS}">` +
-    `<dimension ref="${rangeRef(rowCount, colCount)}"/>` +
+    `<dimension ref="${usedRange}"/>` +
     `<sheetViews><sheetView workbookViewId="0"/></sheetViews>` +
     `<sheetFormatPr defaultRowHeight="15"/>` +
     `<sheetData>${body}</sheetData>` +
+    ignoredErrors +
     `</worksheet>`
   );
 }

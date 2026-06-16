@@ -54,12 +54,18 @@ export function formatComparisonValue(value: string | null): string {
   return value === null || value.trim() === "" ? "blank" : value;
 }
 
+// Only these three client-facing columns count toward "Manual entries pending".
+// They're the fields the client needs filled before a record is usable; other
+// placeholder cells (Engineer, Remarks, etc.) are not surfaced in this metric.
+const MANUAL_PENDING_COLUMNS = ["Segment", "RTPL status", "Location"] as const;
+
 export function countManualRequiredCells(rows: readonly ReportRow[]): number {
   return rows.reduce((count, row) => {
-    const outputMissingCount = Object.values(row.output).filter(
-      (value) => value === MANUAL_ENTRY_REQUIRED,
-    ).length;
-    return count + Math.max(outputMissingCount, row.carryForward.manualFieldsMissing.length);
+    const missingCount = MANUAL_PENDING_COLUMNS.filter((column) => {
+      const value = String(row.output[column] ?? "").trim();
+      return value === "" || value === MANUAL_ENTRY_REQUIRED;
+    }).length;
+    return count + missingCount;
   }, 0);
 }
 

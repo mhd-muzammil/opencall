@@ -38,6 +38,11 @@ function isClosedCallByStatus(
 
 const MANUAL_ENTRY_REQUIRED = "Manual Entry Required";
 
+// In exported sheets the "Manual Entry Required" placeholder is shown as just
+// "Entry" — a compact label the client reads as "needs a manual entry here".
+// Display-only: the stored row values and the in-app UI are unchanged.
+const MANUAL_ENTRY_EXPORT_LABEL = "Entry";
+
 const MANUAL_FIELD_LABELS: Record<string, string> = {
   rtpl_status: "RTPL status",
   segment: "Segment",
@@ -140,6 +145,9 @@ export function mapRowToStandardExport(
     const value = row.output[col];
 
     if (value !== null && value !== undefined && value !== "") {
+      if (value === MANUAL_ENTRY_REQUIRED) {
+        return MANUAL_ENTRY_EXPORT_LABEL;
+      }
       return coerceNumericCell(col, value);
     }
 

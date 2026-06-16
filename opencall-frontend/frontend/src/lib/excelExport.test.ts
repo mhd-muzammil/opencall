@@ -151,7 +151,8 @@ describe("buildReportExportMatrix", () => {
     expect(carriedRow?.[0]).toBe(1);
     expect(carriedRow?.[1]).toBe("WO-123");
     expect(carriedRow?.[standardColumnIndex("Engineer")]).toBe("Priya");
-    expect(carriedRow?.[standardColumnIndex("Customer Mail")]).toBe("Manual Entry Required");
+    // The "Manual Entry Required" placeholder is exported as the compact "Entry" label.
+    expect(carriedRow?.[standardColumnIndex("Customer Mail")]).toBe("Entry");
     expect(closedRow?.[1]).toBe("WO-999");
     expect(closedRow?.[standardColumnIndex("Engineer")]).toBe("Alex");
   });

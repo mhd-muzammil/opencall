@@ -1,1 +1,6 @@
 *.sh text eol=lf
+# Excel workbooks (e.g. the PivotTable export template) are binary zips — never
+# apply text/EOL normalization, which would corrupt them.
+*.xlsx binary
+*.xlsm binary
+*.xlsb binary

@@ -2,11 +2,14 @@ import { DAILY_CALL_PLAN_COLUMNS } from "@opencall/shared";
 import { describe, expect, it } from "vitest";
 import type { GeneratedReportResponse } from "./apiClient";
 import {
+  buildPivotMatrix,
   buildReportExportMatrix,
   buildWorkbookExportMatrices,
   EXPORT_METADATA_COLUMNS,
+  pivotFilterLabel,
   STANDARD_EXPORT_COLUMNS,
 } from "./excelExport";
+import { buildRtplWipAgingPivot } from "../features/dashboard/utils";
 
 function outputRow(
   overrides: Partial<Record<string, string | number>> = {},
@@ -172,21 +175,69 @@ describe("buildReportExportMatrix", () => {
     const matrix = buildReportExportMatrix(report);
     const closedRow = matrix[1];
 
-    expect(closedRow?.[0]).toBe(78);
-    expect(closedRow?.[standardColumnIndex("WIP aging")]).toBe("5");
+    // S.no is renumbered sequentially per export (was the row's serialNo 78).
+    expect(closedRow?.[0]).toBe(1);
+    // WIP aging is exported as a real number (was previousWipAging "5").
+    expect(closedRow?.[standardColumnIndex("WIP aging")]).toBe(5);
     expect(closedRow?.[standardColumnIndex("RTPL status")]).toBe("Pending");
     expect(closedRow?.[standardColumnIndex("Flex Status")]).toBe("Open");
   });
 
-  it("splits xlsx workbook data into today call plan and closure sheets", () => {
-    const { todayCallPlan, closure } = buildWorkbookExportMatrices(reportFixture());
+  it("exports numeric measure columns as numbers but keeps id/code columns as text", () => {
+    const report = reportFixture();
+    const base = report.rows[0]!;
+    report.rows = [
+      {
+        ...base,
+        output: outputRow({
+          "Ticket ID": "0012345",
+          "WO OTC CODE": "01-Trade",
+          "WIP aging": "12",
+          "Status Aging": "3",
+          TAT: "5 days",
+        }),
+      },
+    ];
 
-    expect(todayCallPlan[0]).toEqual([...STANDARD_EXPORT_COLUMNS]);
-    expect(closure[0]).toEqual([...STANDARD_EXPORT_COLUMNS]);
-    expect(todayCallPlan).toHaveLength(2);
-    expect(closure).toHaveLength(2);
-    expect(todayCallPlan[1]?.[1]).toBe("WO-123");
-    expect(closure[1]?.[1]).toBe("WO-999");
+    const row = buildReportExportMatrix(report)[1];
+
+    // Numeric measures become real numbers -> Excel sorts/aggregates correctly.
+    expect(row?.[standardColumnIndex("WIP aging")]).toBe(12);
+    expect(row?.[standardColumnIndex("Status Aging")]).toBe(3);
+    // Identifiers/codes stay text (leading zeros and labels preserved).
+    expect(row?.[standardColumnIndex("Ticket ID")]).toBe("0012345");
+    expect(row?.[standardColumnIndex("WO OTC CODE")]).toBe("01-Trade");
+    // Non-pure-numeric measure values pass through untouched.
+    expect(row?.[standardColumnIndex("TAT")]).toBe("5 days");
+  });
+
+  it("splits xlsx workbook into Open Call and Closed Calls (by status) sheets", () => {
+    const report = reportFixture();
+    // A call explicitly closed by status today.
+    report.rows.push({
+      ...report.rows[0]!,
+      id: "row-closed",
+      serialNo: 3,
+      output: outputRow({
+        "S.no": 3,
+        "Ticket ID": "WO-CLOSED1",
+        "RTPL status": "WO Closed",
+      }),
+      carryForward: { ...report.rows[0]!.carryForward, closedSyntheticRow: false },
+    });
+
+    const { todayOpenCall, todayClosedCalls } =
+      buildWorkbookExportMatrices(report);
+
+    expect(todayOpenCall[0]).toEqual([...STANDARD_EXPORT_COLUMNS]);
+    expect(todayClosedCalls[0]).toEqual([...STANDARD_EXPORT_COLUMNS]);
+    // WO-123 stays open; WO-CLOSED1 moves to the closed sheet.
+    expect(todayOpenCall.flat()).toContain("WO-123");
+    expect(todayOpenCall.flat()).not.toContain("WO-CLOSED1");
+    expect(todayClosedCalls.flat()).toContain("WO-CLOSED1");
+    // S.no is renumbered from 1 in each sheet.
+    expect(todayOpenCall[1]?.[0]).toBe(1);
+    expect(todayClosedCalls[1]?.[0]).toBe(1);
   });
 
   it("excludes Request to Cancel flex rows from exports", () => {
@@ -203,10 +254,64 @@ describe("buildReportExportMatrix", () => {
     });
 
     const matrix = buildReportExportMatrix(report);
-    const { todayCallPlan, closure } = buildWorkbookExportMatrices(report);
+    const { todayOpenCall, todayClosedCalls } = buildWorkbookExportMatrices(report);
 
     expect(matrix.flat()).not.toContain("WO-CANCEL");
-    expect(todayCallPlan.flat()).not.toContain("WO-CANCEL");
-    expect(closure.flat()).not.toContain("WO-CANCEL");
+    expect(todayOpenCall.flat()).not.toContain("WO-CANCEL");
+    expect(todayClosedCalls.flat()).not.toContain("WO-CANCEL");
+  });
+});
+
+describe("buildPivotMatrix", () => {
+  it("renders the RTPL x WIP pivot in Excel PivotTable layout with blank empty cells", () => {
+    const base = reportFixture().rows[0]!;
+    const rows = [
+      { ...base, id: "p1", output: outputRow({ "Ticket ID": "T1", "RTPL status": "Actionable", "WIP aging": "1" }) },
+      { ...base, id: "p2", output: outputRow({ "Ticket ID": "T2", "RTPL status": "Actionable", "WIP aging": "2" }) },
+      { ...base, id: "p3", output: outputRow({ "Ticket ID": "T3", "RTPL status": "cx pending", "WIP aging": "1" }) },
+    ];
+
+    const matrix = buildPivotMatrix(buildRtplWipAgingPivot(rows, null));
+
+    // Top-of-sheet layout mirrors the native Excel PivotTable.
+    expect(matrix[0]).toEqual(["Segment", "(All)"]);
+    expect(matrix[1]).toEqual(["WO OTC CODE", "(All)"]);
+    expect(matrix[2]).toEqual([""]);
+    expect(matrix[3]).toEqual(["Count of Ticket ID", "Column Labels"]);
+    expect(matrix[4]).toEqual(["Row Labels", "1", "2", "Grand Total"]);
+    // Rows are total-descending: Actionable (2) before cx pending (1).
+    expect(matrix[5]).toEqual(["Actionable", 1, 1, 2]);
+    // cx pending has no WIP aging 2 -> the empty cell is blank, not 0.
+    expect(matrix[6]).toEqual(["cx pending", 1, "", 1]);
+    expect(matrix[matrix.length - 1]).toEqual(["Grand Total", 2, 1, 3]);
+  });
+
+  it("shows the supplied page-filter labels in the pivot header", () => {
+    const base = reportFixture().rows[0]!;
+    const rows = [
+      { ...base, id: "f1", output: outputRow({ "Ticket ID": "T1", "RTPL status": "Actionable", "WIP aging": "1" }) },
+    ];
+
+    const matrix = buildPivotMatrix(buildRtplWipAgingPivot(rows, null), {
+      segment: "(All)",
+      woOtcCode: "(Multiple Items)",
+    });
+
+    expect(matrix[0]).toEqual(["Segment", "(All)"]);
+    expect(matrix[1]).toEqual(["WO OTC CODE", "(Multiple Items)"]);
+  });
+});
+
+describe("pivotFilterLabel", () => {
+  function rowWith(woOtcCode: string) {
+    const base = reportFixture().rows[0]!;
+    return { ...base, output: outputRow({ "WO OTC CODE": woOtcCode }) };
+  }
+
+  it("reads like an Excel page filter: single value, (Multiple Items), or (All)", () => {
+    expect(pivotFilterLabel([], "WO OTC CODE")).toBe("(All)");
+    expect(pivotFilterLabel([rowWith("")], "WO OTC CODE")).toBe("(All)");
+    expect(pivotFilterLabel([rowWith("01-Trade"), rowWith("01-Trade")], "WO OTC CODE")).toBe("01-Trade");
+    expect(pivotFilterLabel([rowWith("01-Trade"), rowWith("05F-Print")], "WO OTC CODE")).toBe("(Multiple Items)");
   });
 });

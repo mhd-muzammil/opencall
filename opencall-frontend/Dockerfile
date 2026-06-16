@@ -41,6 +41,9 @@ RUN addgroup --system --gid 1001 nodejs \
     && adduser --system --uid 1001 nextjs
 COPY --from=builder --chown=nextjs:nodejs /app/frontend/.next/standalone ./
 COPY --from=builder --chown=nextjs:nodejs /app/frontend/.next/static ./frontend/.next/static
+# Next standalone output omits the public/ folder; copy it so static assets
+# (e.g. the PivotTable export template /pivot-template.xlsx) are served in prod.
+COPY --from=builder --chown=nextjs:nodejs /app/frontend/public ./frontend/public
 USER nextjs
 EXPOSE 3000
 HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 \

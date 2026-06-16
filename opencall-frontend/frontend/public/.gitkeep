@@ -1,0 +1,2 @@
+# The native PivotTable export expects `pivot-template.xlsx` in this folder.
+# See ../docs/pivot-template.md for how to author it.

@@ -1,10 +1,40 @@
 import { DAILY_CALL_PLAN_COLUMNS } from "@opencall/shared";
 import type { GeneratedReportResponse } from "./apiClient";
+import type { RtplWipPivot } from "../features/dashboard/types";
 import {
   hasRequestToCancelFlexStatus,
   isTodayCallPlanVisibleRow,
 } from "./reportDashboardAnalytics";
+import {
+  buildPivotWorkbookBytes,
+  CLOSED_CALLS_SHEET,
+  OPEN_CALL_SHEET,
+  PIVOT_TEMPLATE_URL,
+} from "./pivotWorkbook";
 import * as XLSX from "xlsx";
+
+// A call is treated as "closed" when its (current or previous) RTPL status reads
+// as closed — WO Closed, Physically Closed, Partner Complete, etc.
+const CLOSED_STATUS_KEYS = [
+  "woclosed",
+  "physicallyclosed",
+  "physicalclosed",
+  "partnercomplete",
+  "partnercompleted",
+] as const;
+
+function isClosedCallByStatus(
+  row: GeneratedReportResponse["rows"][number],
+): boolean {
+  const raw = String(
+    row.output["RTPL status"] ?? row.comparison?.previousRtplStatus ?? "",
+  );
+  const normalized = raw.toLowerCase().replace(/[^a-z]/g, "");
+  if (!normalized) {
+    return false;
+  }
+  return CLOSED_STATUS_KEYS.some((key) => normalized.includes(key));
+}
 
 const MANUAL_ENTRY_REQUIRED = "Manual Entry Required";
 
@@ -76,6 +106,33 @@ function manualEntryRequiredColumns(
   return columns.join("; ");
 }
 
+// Columns that hold numeric measures (day counts / turnaround), as opposed to
+// identifiers or codes. These are written as real numbers so Excel sorts and
+// aggregates them correctly in a manual PivotTable — text-stored numbers sort
+// lexicographically (0, 1, 11, 12, ... 19, 2, 20) and won't sum.
+const NUMERIC_EXPORT_COLUMNS = new Set<string>([
+  "WIP aging",
+  "Status Aging",
+  "TAT",
+]);
+
+// Coerce a pure-numeric string in a numeric column to a real number. Anything
+// else — ids, codes, values like "5 days", or blanks — passes through unchanged,
+// so identifiers (Ticket ID, WO OTC CODE, Contact, ...) keep their text form.
+function coerceNumericCell(
+  column: string,
+  value: ExportCellValue,
+): ExportCellValue {
+  if (typeof value === "number" || !NUMERIC_EXPORT_COLUMNS.has(column)) {
+    return value;
+  }
+  const trimmed = String(value).trim();
+  if (trimmed !== "" && /^-?\d+(?:\.\d+)?$/.test(trimmed)) {
+    return Number(trimmed);
+  }
+  return value;
+}
+
 export function mapRowToStandardExport(
   row: GeneratedReportResponse["rows"][number],
 ): ExportCellValue[] {
@@ -83,7 +140,7 @@ export function mapRowToStandardExport(
     const value = row.output[col];
 
     if (value !== null && value !== undefined && value !== "") {
-      return value;
+      return coerceNumericCell(col, value);
     }
 
     if (!row.carryForward.closedSyntheticRow) {
@@ -103,11 +160,26 @@ export function mapRowToStandardExport(
     }
 
     if (col === "WIP aging") {
-      return row.comparison?.previousWipAging ?? "";
+      return coerceNumericCell(col, row.comparison?.previousWipAging ?? "");
     }
 
     return "";
   });
+}
+
+// Index of the "S.no" column in the standard export (always first).
+const SNO_COLUMN_INDEX = STANDARD_EXPORT_COLUMNS.indexOf("S.no");
+
+// Override the S.no cell so each exported sheet is numbered 1..N sequentially,
+// rather than carrying the original (gappy, post-filter) serial numbers.
+function withSequentialSerial(
+  cells: ExportCellValue[],
+  index: number,
+): ExportCellValue[] {
+  if (SNO_COLUMN_INDEX >= 0) {
+    cells[SNO_COLUMN_INDEX] = index + 1;
+  }
+  return cells;
 }
 
 export function buildReportExportMatrix(
@@ -116,9 +188,11 @@ export function buildReportExportMatrix(
   const headers = [...STANDARD_EXPORT_COLUMNS];
   const data: ExportCellValue[][] = [headers];
 
-  for (const row of report.rows.filter((item) => !hasRequestToCancelFlexStatus(item))) {
-    data.push(mapRowToStandardExport(row));
-  }
+  report.rows
+    .filter((item) => !hasRequestToCancelFlexStatus(item))
+    .forEach((row, index) => {
+      data.push(withSequentialSerial(mapRowToStandardExport(row), index));
+    });
 
   return data;
 }
@@ -128,25 +202,102 @@ function buildReportExportMatrixForRows(
 ): ExportCellValue[][] {
   return [
     [...STANDARD_EXPORT_COLUMNS],
-    ...rows.map(mapRowToStandardExport),
+    ...rows.map((row, index) =>
+      withSequentialSerial(mapRowToStandardExport(row), index),
+    ),
   ];
 }
 
-export function buildWorkbookExportMatrices(report: GeneratedReportResponse): {
-  todayCallPlan: ExportCellValue[][];
-  closure: ExportCellValue[][];
+// Split the (already region-filtered) report into today's open calls vs. calls
+// closed by status. Open = visible and not closed-by-status; Closed = status
+// reads as closed (WO Closed, Physically Closed, Partner Complete, ...).
+function splitWorkbookRows(report: GeneratedReportResponse): {
+  openRows: GeneratedReportResponse["rows"][number][];
+  closedRows: GeneratedReportResponse["rows"][number][];
 } {
-  const activeRows = report.rows.filter(isTodayCallPlanVisibleRow);
-  const closedRows = report.rows.filter(
-    (row) =>
-      row.carryForward.closedSyntheticRow &&
-      !hasRequestToCancelFlexStatus(row),
+  const openRows = report.rows.filter(
+    (row) => isTodayCallPlanVisibleRow(row) && !isClosedCallByStatus(row),
   );
+  const closedRows = report.rows.filter(
+    (row) => !hasRequestToCancelFlexStatus(row) && isClosedCallByStatus(row),
+  );
+  return { openRows, closedRows };
+}
 
+export function buildWorkbookExportMatrices(report: GeneratedReportResponse): {
+  todayOpenCall: ExportCellValue[][];
+  todayClosedCalls: ExportCellValue[][];
+} {
+  const { openRows, closedRows } = splitWorkbookRows(report);
   return {
-    todayCallPlan: buildReportExportMatrixForRows(activeRows),
-    closure: buildReportExportMatrixForRows(closedRows),
+    todayOpenCall: buildReportExportMatrixForRows(openRows),
+    todayClosedCalls: buildReportExportMatrixForRows(closedRows),
   };
+}
+
+// Excel-style filter label for a column over the (already region/case-scoped)
+// pivot rows: the single value when only one is present, "(Multiple Items)"
+// when several are, and "(All)" when none — exactly how an Excel PivotTable
+// page filter reads.
+export function pivotFilterLabel(
+  rows: readonly GeneratedReportResponse["rows"][number][],
+  column: string,
+): string {
+  const distinct = new Set<string>();
+  for (const row of rows) {
+    const value = String(row.output[column] ?? "").trim();
+    if (value) {
+      distinct.add(value);
+    }
+    if (distinct.size > 1) {
+      return "(Multiple Items)";
+    }
+  }
+  const [only] = distinct;
+  return distinct.size === 1 && only ? only : "(All)";
+}
+
+// Render the dashboard RTPL-status x WIP-aging pivot as a sheet matrix that
+// mirrors a native Excel PivotTable: "Segment" / "WO OTC CODE" filter rows, the
+// "Count of Ticket ID" / "Column Labels" banner, "Row Labels" carrying the WIP
+// aging columns, blank (not 0) empty cells, and a "Grand Total" row & column.
+export function buildPivotMatrix(
+  pivot: RtplWipPivot,
+  filters: { segment?: string; woOtcCode?: string } = {},
+): ExportCellValue[][] {
+  // Page-filter context (mirrors the reference pivot's Segment + WO OTC CODE
+  // filters), then a blank spacer row.
+  const filterRows: ExportCellValue[][] = [
+    ["Segment", filters.segment ?? "(All)"],
+    ["WO OTC CODE", filters.woOtcCode ?? "(All)"],
+  ];
+  const spacerRow: ExportCellValue[] = [""];
+
+  const valueBanner: ExportCellValue[] = [
+    "Count of Ticket ID",
+    "Column Labels",
+  ];
+  const columnHeader: ExportCellValue[] = [
+    "Row Labels",
+    ...pivot.columns.map((column) => column.label),
+    "Grand Total",
+  ];
+
+  // Empty cells are left blank (""), matching the Excel pivot — counts are only
+  // ever >= 1 in the pivot, so a missing cell means zero tickets.
+  const body: ExportCellValue[][] = pivot.rows.map((row) => [
+    row.status,
+    ...pivot.columns.map((column) => row.cells[column.key] ?? ""),
+    row.total,
+  ]);
+
+  const grandTotalRow: ExportCellValue[] = [
+    "Grand Total",
+    ...pivot.columns.map((column) => column.total),
+    pivot.grandTotal,
+  ];
+
+  return [...filterRows, spacerRow, valueBanner, columnHeader, ...body, grandTotalRow];
 }
 
 export function downloadReportAsExcel(report: GeneratedReportResponse): void {
@@ -180,23 +331,85 @@ export function downloadReportAsExcel(report: GeneratedReportResponse): void {
   URL.revokeObjectURL(url);
 }
 
-export function downloadReportAsXlsx(report: GeneratedReportResponse): void {
-  const { todayCallPlan, closure } = buildWorkbookExportMatrices(report);
-  const headers = todayCallPlan[0] ?? [];
+const XLSX_MIME =
+  "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
 
+async function fetchPivotTemplate(
+  url: string = PIVOT_TEMPLATE_URL,
+): Promise<Uint8Array> {
+  const response = await fetch(url, { cache: "no-store" });
+  if (!response.ok) {
+    throw new Error(`Pivot template ${url} returned HTTP ${response.status}`);
+  }
+  return new Uint8Array(await response.arrayBuffer());
+}
+
+function triggerDownload(bytes: Uint8Array, filename: string, mime: string): void {
+  // Copy into a fresh ArrayBuffer-backed view so the bytes satisfy BlobPart
+  // (fflate's Uint8Array is typed over the broader ArrayBufferLike).
+  const blob = new Blob([new Uint8Array(bytes)], { type: mime });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  URL.revokeObjectURL(url);
+}
+
+// Fallback when the PivotTable template can't be fetched: a plain two-sheet
+// workbook (Open + Closed) with no pivot, so the export still works before the
+// template asset is in place.
+function downloadDataSheetsWorkbook(
+  openAoa: ExportCellValue[][],
+  closedAoa: ExportCellValue[][],
+  filename: string,
+): void {
+  const headers = openAoa[0] ?? [];
   const wb = XLSX.utils.book_new();
-  const todayCallPlanSheet = XLSX.utils.aoa_to_sheet(todayCallPlan);
-  const closureSheet = XLSX.utils.aoa_to_sheet(closure);
 
-  // Auto-size columns slightly
-  todayCallPlanSheet["!cols"] = headers.map(() => ({ wch: 20 }));
-  closureSheet["!cols"] = headers.map(() => ({ wch: 20 }));
+  const openSheet = XLSX.utils.aoa_to_sheet(openAoa);
+  openSheet["!cols"] = headers.map(() => ({ wch: 20 }));
+  XLSX.utils.book_append_sheet(wb, openSheet, OPEN_CALL_SHEET);
 
-  XLSX.utils.book_append_sheet(wb, todayCallPlanSheet, "Today Call Plan");
-  XLSX.utils.book_append_sheet(wb, closureSheet, "closure");
+  const closedSheet = XLSX.utils.aoa_to_sheet(closedAoa);
+  closedSheet["!cols"] = headers.map(() => ({ wch: 20 }));
+  XLSX.utils.book_append_sheet(wb, closedSheet, CLOSED_CALLS_SHEET);
+
+  XLSX.writeFile(wb, filename);
+}
+
+// Export the report as an .xlsx whose "Pivot" sheet is a *native* Excel
+// PivotTable (RTPL status x WIP aging, Count of Ticket ID, filtered by Segment
+// + WO OTC CODE). The PivotTable lives in a prebuilt template; here we inject
+// today's open calls as its data source (and as the verbatim "Today Open Call"
+// / "Today Closed Calls" sheets) and let Excel rebuild the cache on open.
+export async function downloadReportAsXlsx(
+  report: GeneratedReportResponse,
+): Promise<void> {
+  const { openRows, closedRows } = splitWorkbookRows(report);
+  const openCallAoa = buildReportExportMatrixForRows(openRows);
+  const closedCallsAoa = buildReportExportMatrixForRows(closedRows);
 
   const date = report.reportDate || new Date().toISOString().split("T")[0];
-  XLSX.writeFile(wb, `Daily_Call_Plan_${date}.xlsx`);
+  const filename = `Daily_Call_Plan_${date}.xlsx`;
+
+  try {
+    const templateBytes = await fetchPivotTemplate();
+    const workbookBytes = buildPivotWorkbookBytes(templateBytes, {
+      sourceAoa: openCallAoa,
+      openAoa: openCallAoa,
+      closedAoa: closedCallsAoa,
+    });
+    triggerDownload(workbookBytes, filename, XLSX_MIME);
+  } catch (error) {
+    console.warn(
+      `Native PivotTable template (${PIVOT_TEMPLATE_URL}) unavailable; exporting data sheets only.`,
+      error,
+    );
+    downloadDataSheetsWorkbook(openCallAoa, closedCallsAoa, filename);
+  }
 }
 
 export function downloadRegionSummaryExcel(

@@ -3990,7 +3990,9 @@ td.missingCell.carriedForwardCell {
 
 @media (min-width: 1024px) {
   .pivotSection {
-    width: 50%;
+    width: fit-content;
+    min-width: min(560px, 100%);
+    max-width: 100%;
   }
 }
 
@@ -4295,14 +4297,14 @@ td.missingCell.carriedForwardCell {
   border-collapse: separate;
   border-spacing: 0;
   color: var(--text);
-  font-size: 12px;
+  font-size: 11px;
 }
 
 .pivotTable th,
 .pivotTable td {
-  min-width: 45px;
-  height: 34px;
-  padding: 6px 8px;
+  min-width: 20px;
+  height: 22px;
+  padding: 1px 3px;
   border-right: 1px solid #d7e0ee;
   border-bottom: 1px solid #d7e0ee;
   background: #ffffff;
@@ -4322,10 +4324,11 @@ td.missingCell.carriedForwardCell {
 }
 
 .pivotContextRow th {
-  height: 30px;
+  height: 24px;
   background: #eef4ff;
   color: #17324d;
   text-align: left;
+  white-space: normal;
 }
 
 .pivotRowHeader,
@@ -4334,8 +4337,8 @@ td.missingCell.carriedForwardCell {
   position: sticky;
   left: 0;
   z-index: 2;
-  min-width: 120px;
-  max-width: 280px;
+  min-width: 104px;
+  max-width: 190px;
   text-align: left;
 }
 
@@ -4365,7 +4368,7 @@ td.missingCell.carriedForwardCell {
 }
 
 .pivotRowLabel button {
-  max-width: 250px;
+  max-width: 178px;
   overflow: hidden;
   text-align: left;
   text-overflow: ellipsis;
@@ -4401,7 +4404,7 @@ td.missingCell.carriedForwardCell {
   position: sticky;
   right: 0;
   z-index: 2;
-  min-width: 75px;
+  min-width: 52px;
   background: #eef4ff !important;
   color: #0f172a;
   font-weight: 900;

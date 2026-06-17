@@ -1,0 +1,3 @@
+# Word documents (and temp lock files)
+*.docx
+~$*.docx

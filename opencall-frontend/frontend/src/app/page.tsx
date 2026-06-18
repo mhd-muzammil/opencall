@@ -169,7 +169,7 @@ const FILE_FIELDS: Array<{
   multiple?: boolean;
 }> = [
   { field: "flexWipReport", source: "FLEX_WIP", label: "FieldEZ Report", required: true },
-  { field: "renderwaysReport", source: "RENDERWAYS", label: "Flex Mail Report", required: false },
+  { field: "renderwaysReport", source: "RENDERWAYS", label: "Flex Mail Report", required: false, multiple: true },
   { field: "callPlan", source: "CALL_PLAN", label: "Call Plan Reports", required: false, multiple: true },
 ];
 
@@ -1104,7 +1104,7 @@ export default function DashboardPage() {
     }
 
     const flexWipReport = files.flexWipReport?.[0];
-    const renderwaysReport = files.renderwaysReport?.[0];
+    const renderwaysReport = files.renderwaysReport ?? [];
     const callPlan = files.callPlan ?? [];
 
     if (!flexWipReport) {
@@ -1117,7 +1117,7 @@ export default function DashboardPage() {
         token: session.token,
         regionId,
         flexWipReport,
-        ...(renderwaysReport ? { renderwaysReport } : {}),
+        ...(renderwaysReport.length > 0 ? { renderwaysReport } : {}),
         ...(callPlan.length > 0 ? { callPlan } : {}),
       });
       setUpload(result);

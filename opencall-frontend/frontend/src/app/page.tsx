@@ -508,6 +508,7 @@ export default function DashboardPage() {
     pivotAllSegmentCount,
     pivotLocationOptions,
     pivotAllLocationCount,
+    availableLocationValues,
   } = useRtplPivot({
     activeRows,
     selectedPivotCaseScope,
@@ -530,7 +531,9 @@ export default function DashboardPage() {
 
   const appliedPivotLocationLabel =
     selectedPivotLocations === null
-      ? "All Locations"
+      ? availableLocationValues.length === 1
+        ? PIVOT_LOCATION_OPTIONS.find((option) => option.value === availableLocationValues[0])?.label ?? "All Locations"
+        : "All Locations"
       : selectedPivotLocations.length === 0
         ? "No Locations"
         : selectedPivotLocations.length === 1
@@ -1776,7 +1779,7 @@ export default function DashboardPage() {
 
   function toggleDraftPivotLocation(location: string): void {
     setDraftPivotLocations((current) => {
-      const currentValues = current ?? PIVOT_LOCATION_OPTIONS.map((option) => option.value);
+      const currentValues = current ?? [...availableLocationValues];
 
       return currentValues.includes(location)
         ? currentValues.filter((value) => value !== location)
@@ -1785,7 +1788,7 @@ export default function DashboardPage() {
   }
 
   function applyPivotLocationFilter(): void {
-    const allLocations = PIVOT_LOCATION_OPTIONS.map((option) => option.value);
+    const allLocations = availableLocationValues;
     const nextSelection =
       draftPivotLocations !== null && draftPivotLocations.length === allLocations.length
         ? null

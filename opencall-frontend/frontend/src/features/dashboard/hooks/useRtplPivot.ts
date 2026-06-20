@@ -69,15 +69,31 @@ export function useRtplPivot(params: {
     [rtplWipPivot.segmentOptions],
   );
 
+  // Locations the current report actually covers. For a region admin the report is
+  // already scoped server-side to their region, so only that region appears here —
+  // this keeps the dropdown from listing other regions with a hard-coded 0 count.
+  const availableLocationValues = useMemo(() => {
+    const present = new Set(
+      activeRows.map((row) =>
+        String(row.output["Work Location"] ?? "").trim().toUpperCase(),
+      ),
+    );
+    return PIVOT_LOCATION_OPTIONS.filter((option) => present.has(option.value)).map(
+      (option) => option.value,
+    );
+  }, [activeRows]);
+
   const pivotLocationOptions = useMemo(
     () =>
-      PIVOT_LOCATION_OPTIONS.map((option) => ({
+      PIVOT_LOCATION_OPTIONS.filter((option) =>
+        availableLocationValues.includes(option.value),
+      ).map((option) => ({
         ...option,
         count: pivotCaseRows.filter(
           (row) => String(row.output["Work Location"] ?? "").trim().toUpperCase() === option.value,
         ).length,
       })),
-    [pivotCaseRows],
+    [pivotCaseRows, availableLocationValues],
   );
 
   const pivotAllLocationCount = useMemo(
@@ -94,5 +110,6 @@ export function useRtplPivot(params: {
     pivotAllSegmentCount,
     pivotLocationOptions,
     pivotAllLocationCount,
+    availableLocationValues,
   };
 }

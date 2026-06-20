@@ -203,15 +203,17 @@ export function RTPLPivotTable({
             {isPivotLocationFilterOpen ? (
               <div className="pivotSegmentDropdown pivotLocationDropdown">
                 <div className="pivotSegmentList pivotLocationList">
-                  <label className="pivotSegmentDropdownItem pivotSegmentDropdownItemAll pivotLocationDropdownItem">
-                    <input
-                      type="checkbox"
-                      checked={draftPivotLocations === null}
-                      onChange={() => setDraftPivotLocations(null)}
-                    />
-                    <span>All locations</span>
-                    <strong>{formatNumber(pivotAllLocationCount)}</strong>
-                  </label>
+                  {pivotLocationOptions.length > 1 ? (
+                    <label className="pivotSegmentDropdownItem pivotSegmentDropdownItemAll pivotLocationDropdownItem">
+                      <input
+                        type="checkbox"
+                        checked={draftPivotLocations === null}
+                        onChange={() => setDraftPivotLocations(null)}
+                      />
+                      <span>All locations</span>
+                      <strong>{formatNumber(pivotAllLocationCount)}</strong>
+                    </label>
+                  ) : null}
 
                   {pivotLocationOptions.map((option) => (
                     <label className="pivotSegmentDropdownItem pivotLocationDropdownItem" key={option.value}>
@@ -281,7 +283,9 @@ export function RTPLPivotTable({
                   {" | "}
                   Location:{" "}
                   {selectedPivotLocations === null
-                    ? "All Locations"
+                    ? pivotLocationOptions.length === 1
+                      ? pivotLocationOptions[0]?.label ?? "All Locations"
+                      : "All Locations"
                     : selectedPivotLocations.length > 0
                       ? selectedPivotLocations
                           .map((location) => PIVOT_LOCATION_OPTIONS.find((option) => option.value === location)?.label ?? location)

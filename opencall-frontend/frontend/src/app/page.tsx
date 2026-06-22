@@ -180,10 +180,10 @@ const FILE_FIELDS: Array<{
   required: boolean;
   multiple?: boolean;
 }> = [
-    { field: "flexWipReport", source: "FLEX_WIP", label: "FieldEZ Report", required: true },
-    { field: "renderwaysReport", source: "RENDERWAYS", label: "Flex Mail Report", required: false },
-    { field: "callPlan", source: "CALL_PLAN", label: "Call Plan Reports", required: false, multiple: true },
-  ];
+  { field: "flexWipReport", source: "FLEX_WIP", label: "FieldEZ Report", required: true },
+  { field: "renderwaysReport", source: "RENDERWAYS", label: "Flex Mail Report", required: false, multiple: true },
+  { field: "callPlan", source: "CALL_PLAN", label: "Call Plan Reports", required: false, multiple: true },
+];
 
 // Phase 1: scalar constants moved to features/dashboard/constants.
 
@@ -608,6 +608,7 @@ export default function DashboardPage() {
     pivotAllSegmentCount,
     pivotLocationOptions,
     pivotAllLocationCount,
+    availableLocationValues,
   } = useRtplPivot({
     activeRows,
     selectedPivotCaseScope,
@@ -630,7 +631,9 @@ export default function DashboardPage() {
 
   const appliedPivotLocationLabel =
     selectedPivotLocations === null
-      ? "All Locations"
+      ? availableLocationValues.length === 1
+        ? PIVOT_LOCATION_OPTIONS.find((option) => option.value === availableLocationValues[0])?.label ?? "All Locations"
+        : "All Locations"
       : selectedPivotLocations.length === 0
         ? "No Locations"
         : selectedPivotLocations.length === 1
@@ -1337,7 +1340,7 @@ export default function DashboardPage() {
     }
 
     const flexWipReport = files.flexWipReport?.[0];
-    const renderwaysReport = files.renderwaysReport?.[0];
+    const renderwaysReport = files.renderwaysReport ?? [];
     const callPlan = files.callPlan ?? [];
 
     if (!flexWipReport) {
@@ -1350,7 +1353,7 @@ export default function DashboardPage() {
         token: session.token,
         regionId,
         flexWipReport,
-        ...(renderwaysReport ? { renderwaysReport } : {}),
+        ...(renderwaysReport.length > 0 ? { renderwaysReport } : {}),
         ...(callPlan.length > 0 ? { callPlan } : {}),
       });
       setUpload(result);
@@ -2014,7 +2017,7 @@ export default function DashboardPage() {
 
   function toggleDraftPivotLocation(location: string): void {
     setDraftPivotLocations((current) => {
-      const currentValues = current ?? PIVOT_LOCATION_OPTIONS.map((option) => option.value);
+      const currentValues = current ?? [...availableLocationValues];
 
       return currentValues.includes(location)
         ? currentValues.filter((value) => value !== location)
@@ -2023,7 +2026,7 @@ export default function DashboardPage() {
   }
 
   function applyPivotLocationFilter(): void {
-    const allLocations = PIVOT_LOCATION_OPTIONS.map((option) => option.value);
+    const allLocations = availableLocationValues;
     const nextSelection =
       draftPivotLocations !== null && draftPivotLocations.length === allLocations.length
         ? null

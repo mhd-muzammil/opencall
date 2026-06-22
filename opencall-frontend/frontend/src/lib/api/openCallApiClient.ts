@@ -37,7 +37,7 @@ export interface OpenCallApiClient {
     token: string;
     regionId: string;
     flexWipReport: UploadFileInput;
-    renderwaysReport?: UploadFileInput;
+    renderwaysReport?: UploadFileInput[];
     callPlan?: UploadFileInput[];
   }): Promise<UploadResponse>;
   previewMatches(input: {
@@ -150,8 +150,8 @@ export function createOpenCallApiClient({
       const formData = new FormData();
       appendUploadFile(formData, "flexWipReport", input.flexWipReport);
 
-      if (input.renderwaysReport) {
-        appendUploadFile(formData, "renderwaysReport", input.renderwaysReport);
+      for (const file of input.renderwaysReport ?? []) {
+        appendUploadFile(formData, "renderwaysReport", file);
       }
 
       for (const file of input.callPlan ?? []) {

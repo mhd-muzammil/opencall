@@ -74,7 +74,7 @@ export function RTPLPivotTable({
     <div className="pivotSection">
       <div className="sectionHeader pivotHeader">
         <div>
-          <h3>RTPL Status by WIP Aging Pivot</h3>
+          <h3>RTPL Pivot Table Data </h3>
           <p>
             Segment filter, WIP Aging columns, RTPL status rows, and Ticket ID count values.
           </p>

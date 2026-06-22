@@ -1,73 +1,19 @@
-import React, { useEffect, useState } from "react";
+import React from "react";
 import iconImg from "../app/icon.png";
 import type {
   DatabaseHealthResponse,
   LoginResponse,
   RuntimeHealthResponse,
 } from "../lib/apiClient";
-export type WorkspaceView = "overview" | "records";
+
+export type WorkspaceView = "overview" | "records" | "rtpl" | "rtpl-dashboard" | "pivot" | "flex" | "productivity" | "tn-view-status" | "sla-tat" | "flex-eod-bod" | "admin-engineers";
 
 export const HEADER_COMPACT_STORAGE_KEY = "opencall.headerCompact";
-
-function formatRoleLabel(role: LoginResponse["user"]["role"]): string {
-  return role
-    .split("_")
-    .map((part) => part.charAt(0) + part.slice(1).toLowerCase())
-    .join(" ");
-}
-
-function displayNameFromEmail(email: string): string {
-  const [localPart] = email.split("@");
-  return localPart || email;
-}
 
 export function parseHeaderCompactPreference(value: string | null): boolean | null {
   if (value === "true") return true;
   if (value === "false") return false;
   return null;
-}
-
-function readHeaderCompactPreference(): boolean | null {
-  if (typeof window === "undefined") {
-    return null;
-  }
-
-  return parseHeaderCompactPreference(
-    window.localStorage.getItem(HEADER_COMPACT_STORAGE_KEY),
-  );
-}
-
-function writeHeaderCompactPreference(value: boolean): void {
-  if (typeof window === "undefined") {
-    return;
-  }
-
-  window.localStorage.setItem(HEADER_COMPACT_STORAGE_KEY, String(value));
-}
-
-function HeaderVisibilityIcon({ hidden }: Readonly<{ hidden: boolean }>) {
-  return (
-    <svg
-      className="headerCompactIcon"
-      aria-hidden="true"
-      viewBox="0 0 24 24"
-      focusable="false"
-    >
-      {hidden ? (
-        <>
-          <path d="M2.5 12s3.4-6 9.5-6 9.5 6 9.5 6-3.4 6-9.5 6-9.5-6-9.5-6Z" />
-          <circle cx="12" cy="12" r="3.2" />
-        </>
-      ) : (
-        <>
-          <path d="M3 3l18 18" />
-          <path d="M9.2 5.5A10.6 10.6 0 0 1 12 5c6.1 0 9.5 7 9.5 7a16.7 16.7 0 0 1-3.1 3.8" />
-          <path d="M14.6 14.6A3.5 3.5 0 0 1 9.4 9.4" />
-          <path d="M6 6.8A16.5 16.5 0 0 0 2.5 12s3.4 7 9.5 7a10.8 10.8 0 0 0 4.1-.8" />
-        </>
-      )}
-    </svg>
-  );
 }
 
 export function AppHeader({
@@ -105,181 +51,149 @@ export function AppHeader({
   onLogout: () => void;
   initialCompact?: boolean;
 }>) {
-  const userDisplayName = displayNameFromEmail(session.user.email);
-  const userInitial = userDisplayName.charAt(0).toUpperCase();
-  const [isHeaderCompact, setIsHeaderCompact] = useState(initialCompact ?? false);
+  const userDisplayName = session.user.email.split("@")[0] || session.user.email;
+  const roleLabel = session.user.role
+    .split("_")
+    .map((part) => part.charAt(0) + part.slice(1).toLowerCase())
+    .join(" ");
 
-  useEffect(() => {
-    if (initialCompact !== undefined) {
-      return;
+  const getViewTitle = () => {
+    switch (workspaceView) {
+      case "records":
+        return "Records Workspace";
+      case "rtpl":
+        return "RTPL Analytics";
+      case "rtpl-dashboard":
+        return "RTPL Dashboard";
+      case "pivot":
+        return "WIP Aging Pivot Table";
+      case "flex":
+        return "Flex Dashboard";
+      case "productivity":
+        return "Engineer Productivity";
+      case "tn-view-status":
+        return "TN VIEW Status";
+      case "sla-tat":
+        return "SLA TaT Summary";
+      case "flex-eod-bod":
+        return "Flex EOD & BOD Dashboard";
+      case "admin-engineers":
+        return "Add Engineers";
+      default:
+        return "Operational Overview";
     }
+  };
 
-    const savedPreference = readHeaderCompactPreference();
-
-    if (savedPreference !== null) {
-      setIsHeaderCompact(savedPreference);
-      return;
+  const getViewBreadcrumb = () => {
+    switch (workspaceView) {
+      case "records":
+        return "Data & Operations / Records";
+      case "rtpl":
+        return "Dashboards / RTPL";
+      case "rtpl-dashboard":
+        return "Dashboards / RTPL Dashboard";
+      case "pivot":
+        return "Dashboards / WIP Aging";
+      case "flex":
+        return "Dashboards / Flex";
+      case "productivity":
+        return "Dashboards / Engineer Productivity";
+      case "tn-view-status":
+        return "Dashboards / TN VIEW Status";
+      case "sla-tat":
+        return "Dashboards / SLA TaT";
+      case "flex-eod-bod":
+        return "Dashboards / Flex EOD & BOD";
+      case "admin-engineers":
+        return "Administration / Engineers";
+      default:
+        return "Dashboards / Overview";
     }
-
-    if (window.matchMedia?.("(max-width: 640px)").matches) {
-      setIsHeaderCompact(true);
-    }
-  }, [initialCompact]);
-
-  function handleCompactToggle() {
-    setIsHeaderCompact((current) => {
-      const next = !current;
-      writeHeaderCompactPreference(next);
-      return next;
-    });
-  }
-
-  if (isHeaderCompact) {
-    return (
-      <div className="topBar compact" aria-label="Header hidden">
-        <button
-          className="iconButton topIconButton headerCompactToggle"
-          type="button"
-          aria-label="Show header actions"
-          title="Show header actions"
-          onClick={handleCompactToggle}
-        >
-          <HeaderVisibilityIcon hidden />
-        </button>
-      </div>
-    );
-  }
+  };
 
   return (
-    <header className="topBar">
-      <div className="brandBlock">
-        <div className="brandMark" aria-hidden="true">
-          <img
-            src={iconImg.src}
-            alt=""
-            style={{ width: "100%", height: "100%", objectFit: "contain", borderRadius: "inherit" }}
-          />
-        </div>
-        <div>
-          <p className="eyebrow">RENDERWAYS TECHNOLOGY</p>
-          <h1>{workspaceView === "records" ? "Records Workspace" : "Operational Overview"}</h1>
-        </div>
+    <header className="mainHeader">
+      <div className="headerBreadcrumbs">
+        <span className="breadcrumbParent">Home / {getViewBreadcrumb()}</span>
+        <h1 className="breadcrumbTitle">{getViewTitle()}</h1>
       </div>
-      <div className="topActions">
-        <div className="headerPrimaryActions">
-          <div className="workspaceTabs" aria-label="Workspace view">
+
+      <div className="headerRight">
+
+        {/* Primary Operational Actions */}
+        <div className="headerActionsGroup">
+          {session.user.role === "SUPER_ADMIN" && (
             <button
-              className={workspaceView === "overview" ? "active" : ""}
-              type="button"
-              onClick={() => onWorkspaceViewChange("overview")}
-            >
-              Dashboard
-            </button>
-            <button
-              className={workspaceView === "records" ? "active" : ""}
-              type="button"
-              disabled={!hasReport}
-              onClick={() => onWorkspaceViewChange("records")}
-            >
-              Records
-            </button>
-          </div>
-          {session.user.regionId ? (
-            <span className="regionScopePill">Region {session.user.regionId.slice(0, 8)}</span>
-          ) : null}
-          {session.user.role === "SUPER_ADMIN" ? (
-            <button
-              className="iconButton topIconButton uploadAction"
-              type="button"
-              onClick={onOpenUpload}
-              title="Upload source files"
-            >
-              <span aria-hidden="true" />
-              Upload Files
-            </button>
-          ) : null}
-          <button
-            className="iconButton topIconButton historyAction"
-            type="button"
-            onClick={onOpenHistory}
-            title="Report history"
-          >
-            <span aria-hidden="true" />
-            History
-          </button>
-          {session.user.role === "SUPER_ADMIN" ? (
-            <button
-              className="topIconButton generateAction"
+              className="premiumActionBtn primary"
               type="button"
               disabled={isBusy || !hasBatches}
               onClick={onGenerateReport}
               title="Generate report from current batches"
             >
-              <span aria-hidden="true" />
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ marginRight: "4px" }}>
+                <polygon points="5 3 19 12 5 21 5 3" />
+              </svg>
               Generate Report
             </button>
-          ) : null}
-          <details className="exportMenu">
-            <summary aria-label="Open export actions">Export</summary>
-            <div className="exportDropdown">
-              <button type="button" disabled={!hasReport} onClick={onExportXlsx}>
-                Excel (.xlsx)
-              </button>
-              <button type="button" disabled={!hasReport} onClick={onExportCsv}>
-                CSV
-              </button>
-            </div>
-          </details>
-        </div>
-        <div className="headerUtilityActions">
-          <button
-            className="iconButton topIconButton refreshAction"
-            type="button"
-            onClick={onRefreshHealth}
-            title="Refresh workspace"
-          >
-            <span aria-hidden="true" />
-            Refresh
-          </button>
-          <details className="profileMenu">
-            <summary aria-label="Open profile menu">
-              <span className="profileAvatar" aria-hidden="true" style={{ overflow: "hidden" }}>
-                <img
-                  src={iconImg.src}
-                  alt={userInitial}
-                  style={{ width: "100%", height: "100%", objectFit: "cover", borderRadius: "50%" }}
-                />
-              </span>
-            </summary>
-            <div className="profileDropdown">
-              <div className="profileIdentity">
-                <strong>{userDisplayName}</strong>
-                <span>{session.user.email}</span>
-                <em>{formatRoleLabel(session.user.role)}</em>
+          )}
+
+          {hasReport && (
+            <details className="exportMenuDetails">
+              <summary className="premiumActionBtn secondary">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ marginRight: "4px" }}>
+                  <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                  <polyline points="7 10 12 15 17 10" />
+                  <line x1="12" y1="15" x2="12" y2="3" />
+                </svg>
+                Export
+              </summary>
+              <div className="exportDropdownPopover">
+                <button type="button" onClick={onExportXlsx}>
+                  Microsoft Excel (.xlsx)
+                </button>
+                <button type="button" onClick={onExportCsv}>
+                  Comma Separated (.csv)
+                </button>
               </div>
-              {session.user.role === "SUPER_ADMIN" || session.user.role === "REGION_ADMIN" ? (
-                <a className="profileMenuItem" href={session.user.role === "SUPER_ADMIN" ? "/admin/users" : "/admin/engineers"}>
-                  Admin Console
-                </a>
-              ) : null}
-              <a className="profileMenuItem" href="/me/password">
-                Change password
-              </a>
-              <button className="profileMenuItem danger" type="button" onClick={onLogout}>
-                Log out
-              </button>
-            </div>
-          </details>
-          <button
-            className="iconButton topIconButton headerCompactToggle"
-            type="button"
-            aria-label="Hide header actions"
-            title="Hide header actions"
-            onClick={handleCompactToggle}
-          >
-            <HeaderVisibilityIcon hidden={false} />
-          </button>
+            </details>
+          )}
+
+          {session.user.regionId && (
+            <span className="regionPill">
+              Region: {session.user.regionId.toUpperCase()}
+            </span>
+          )}
         </div>
+
+        {/* User Profile */}
+        <details className="headerProfileDetails">
+          <summary className="headerProfileTrigger">
+            <div className="profileAvatarWrap">
+              <img
+                src={iconImg.src}
+                alt={userDisplayName.charAt(0).toUpperCase()}
+              />
+            </div>
+          </summary>
+          <div className="profileDropdownPopover">
+            <div className="profileIdentityBlock">
+              <strong>{userDisplayName}</strong>
+              <span className="profileEmail">{session.user.email}</span>
+              <span className="profileRoleBadge">{roleLabel}</span>
+            </div>
+            {session.user.role === "SUPER_ADMIN" || session.user.role === "REGION_ADMIN" ? (
+              <a className="profilePopoverItem" href={session.user.role === "SUPER_ADMIN" ? "/admin/users" : "/admin/engineers"}>
+                Admin Console
+              </a>
+            ) : null}
+            <a className="profilePopoverItem" href="/me/password">
+              Change Password
+            </a>
+            <button className="profilePopoverItem logoutBtn" type="button" onClick={onLogout}>
+              Log out
+            </button>
+          </div>
+        </details>
       </div>
     </header>
   );

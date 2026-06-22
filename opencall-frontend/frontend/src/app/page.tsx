@@ -73,7 +73,7 @@ import {
   ClosedCallLedger,
   MatchPreviewSection,
   RTPLTimeModal,
-  ProductivityModal,
+  ProductivityPage,
   KPISummaryModal,
   ChennaiKPIModal,
   RTPLDashboard,
@@ -83,6 +83,10 @@ import {
   RTPLPivotTable,
   RegionBreakdown,
   EditRecordModal,
+  OverviewCharts,
+  TNViewStatusPage,
+  SLATatPage,
+  FlexEodBodPage,
 } from "../features/dashboard/components";
 import {
   useRecordRowSets,
@@ -97,6 +101,7 @@ import {
   FILTERABLE_COLUMNS,
   type WipAgingSortDirection,
 } from "../lib/columnFilter";
+import logoIcon from "./icon.png";
 import {
   generateReport,
   getDatabaseHealth,
@@ -126,7 +131,14 @@ import {
 } from "../lib/apiClient";
 import type { DropdownEngineer } from "../lib/api/types";
 import { LoginScreen, SessionLoadingScreen } from "../features/auth/LoginScreen";
-import { downloadReportAsXlsx, downloadReportAsExcel } from "../lib/excelExport";
+import AdminEngineersPage from "./admin/engineers/page";
+import {
+  downloadReportAsXlsx,
+  downloadReportAsExcel,
+  downloadRegionSummaryExcel,
+  downloadEngineerProductivityExcel,
+} from "../lib/excelExport";
+import * as XLSX from "xlsx";
 import {
   ALL_REGIONS_FILTER,
   buildFlexOperationalAnalytics,
@@ -168,10 +180,10 @@ const FILE_FIELDS: Array<{
   required: boolean;
   multiple?: boolean;
 }> = [
-  { field: "flexWipReport", source: "FLEX_WIP", label: "FieldEZ Report", required: true },
-  { field: "renderwaysReport", source: "RENDERWAYS", label: "Flex Mail Report", required: false },
-  { field: "callPlan", source: "CALL_PLAN", label: "Call Plan Reports", required: false, multiple: true },
-];
+    { field: "flexWipReport", source: "FLEX_WIP", label: "FieldEZ Report", required: true },
+    { field: "renderwaysReport", source: "RENDERWAYS", label: "Flex Mail Report", required: false },
+    { field: "callPlan", source: "CALL_PLAN", label: "Call Plan Reports", required: false, multiple: true },
+  ];
 
 // Phase 1: scalar constants moved to features/dashboard/constants.
 
@@ -262,15 +274,74 @@ export default function DashboardPage() {
   const [rtplStatusChanges, setRtplStatusChanges] = useState<RtplStatusChange[]>([]);
   const [editingSerialNo, setEditingSerialNo] = useState<number | null>(null);
   const [savingSerialNo, setSavingSerialNo] = useState<number | null>(null);
-   const [draftOutput, setDraftOutput] = useState<Record<string, string | number>>({});
-   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
-   const draftOutputRef = useRef(draftOutput);
-   const hasAutoRestoredHistoryRef = useRef(false);
-   const recordsTableWrapRef = useRef<HTMLDivElement | null>(null);
-   const recordsScrollTopRef = useRef<HTMLDivElement | null>(null);
-   const recordsScrollTopSpacerRef = useRef<HTMLDivElement | null>(null);
-   const [engineersList, setEngineersList] = useState<DropdownEngineer[]>([]);
-   draftOutputRef.current = draftOutput;
+  const [draftOutput, setDraftOutput] = useState<Record<string, string | number>>({});
+  const [isEditModalOpen, setIsEditModalOpen] = useState(false);
+  const draftOutputRef = useRef(draftOutput);
+  const hasAutoRestoredHistoryRef = useRef(false);
+  const recordsTableWrapRef = useRef<HTMLDivElement | null>(null);
+  const recordsScrollTopRef = useRef<HTMLDivElement | null>(null);
+  const recordsScrollTopSpacerRef = useRef<HTMLDivElement | null>(null);
+  const [engineersList, setEngineersList] = useState<DropdownEngineer[]>([]);
+  draftOutputRef.current = draftOutput;
+
+  const [sidebarWidth, setSidebarWidth] = useState<number>(260);
+  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState<boolean>(false);
+  const [isResizing, setIsResizing] = useState<boolean>(false);
+
+  // Load sidebar settings on mount
+  useEffect(() => {
+    try {
+      const storedWidth = window.localStorage.getItem("opencall.sidebarWidth");
+      if (storedWidth) {
+        setSidebarWidth(parseInt(storedWidth, 10));
+      }
+      const storedCollapsed = window.localStorage.getItem("opencall.sidebarCollapsed");
+      if (storedCollapsed) {
+        setIsSidebarCollapsed(storedCollapsed === "true");
+      }
+    } catch (e) {
+      console.error("Failed to load sidebar settings", e);
+    }
+  }, []);
+
+  // Handle resizing mouse events
+  useEffect(() => {
+    if (!isResizing) return;
+
+    const handleMouseMove = (e: MouseEvent) => {
+      e.preventDefault();
+      let newWidth = e.clientX;
+      if (newWidth < 120) {
+        setIsSidebarCollapsed(true);
+        try {
+          window.localStorage.setItem("opencall.sidebarCollapsed", "true");
+        } catch {}
+      } else {
+        setIsSidebarCollapsed(false);
+        try {
+          window.localStorage.setItem("opencall.sidebarCollapsed", "false");
+        } catch {}
+        if (newWidth > 480) newWidth = 480;
+        setSidebarWidth(newWidth);
+        try {
+          window.localStorage.setItem("opencall.sidebarWidth", String(newWidth));
+        } catch {}
+      }
+    };
+
+    const handleMouseUp = () => {
+      setIsResizing(false);
+    };
+
+    document.addEventListener("mousemove", handleMouseMove);
+    document.addEventListener("mouseup", handleMouseUp);
+
+    return () => {
+      document.removeEventListener("mousemove", handleMouseMove);
+      document.removeEventListener("mouseup", handleMouseUp);
+    };
+  }, [isResizing]);
+
   const [reportDate, setReportDate] = useState(todayIsoDate());
   const [rtplAnalyticsDate, setRtplAnalyticsDate] = useState(todayIsoDate());
   const [dbHealth, setDbHealth] = useState<DatabaseHealthResponse | null>(null);
@@ -311,7 +382,6 @@ export default function DashboardPage() {
   const [showPcOnly, setShowPcOnly] = useState(false);
   const [isKpiModalOpen, setIsKpiModalOpen] = useState(false);
   const [isChennaiKpiModalOpen, setIsChennaiKpiModalOpen] = useState(false);
-  const [isProductivityModalOpen, setIsProductivityModalOpen] = useState(false);
   const [productivityFilterType, setProductivityFilterType] = useState("Today");
   const [selectedProductivityValue, setSelectedProductivityValue] = useState("");
   const [tnFilterType, setTnFilterType] = useState("Today");
@@ -333,8 +403,15 @@ export default function DashboardPage() {
   const columnsMenuRef = useRef<HTMLDivElement | null>(null);
   // Whether the stale-Flex-Status "View all" details modal is open.
   const [isStaleModalOpen, setIsStaleModalOpen] = useState(false);
-  const [workspaceView, setWorkspaceView] = useState<"overview" | "records">("overview");
+  const [workspaceView, setWorkspaceView] = useState<"overview" | "records" | "rtpl" | "rtpl-dashboard" | "pivot" | "flex" | "productivity" | "tn-view-status" | "sla-tat" | "flex-eod-bod" | "admin-engineers">("overview");
   const [isRecordsSummaryHidden, setIsRecordsSummaryHidden] = useState(false);
+  const [pivotActiveStatus, setPivotActiveStatus] = useState<string | null>(null);
+  const [pivotActiveWipAging, setPivotActiveWipAging] = useState<string | null>(null);
+
+  useEffect(() => {
+    setPivotActiveStatus(null);
+    setPivotActiveWipAging(null);
+  }, [workspaceView, report?.reportId, selectedPivotSegments, selectedPivotLocations, selectedPivotCaseScope]);
   const [showDayOverDayComparison, setShowDayOverDayComparison] = useState(false);
   const [showMatchPreviewSection, setShowMatchPreviewSection] = useState(false);
   const [showManualCarryForward, setShowManualCarryForward] = useState(false);
@@ -342,6 +419,25 @@ export default function DashboardPage() {
   const [showCustomerSegmentSplit, setShowCustomerSegmentSplit] = useState(false);
   const [showClosedCallLedger, setShowClosedCallLedger] = useState(false);
   const [showUploadBatches, setShowUploadBatches] = useState(false);
+
+  // BOD fixed time: ISO string when user clicked "Fix BOD"; null = not yet fixed.
+  // Stored in sessionStorage so it persists across re-renders but resets on new tab.
+  const [bodFixedTime, setBodFixedTime] = useState<string | null>(() => {
+    try { return window.sessionStorage.getItem("opencall.bodFixedTime") ?? null; } catch { return null; }
+  });
+
+  // BOD snapshot: frozen ticketId → rtplStatus map captured at the moment Fix BOD is clicked.
+  // Once set, BOD counts are derived from this frozen snapshot — never recalculated.
+  // Stored in sessionStorage so it survives re-renders but resets on new tab/day.
+  const [bodSnapshot, setBodSnapshot] = useState<Record<string, string> | null>(() => {
+    try {
+      const stored = window.sessionStorage.getItem("opencall.bodSnapshot");
+      return stored ? (JSON.parse(stored) as Record<string, string>) : null;
+    } catch { return null; }
+  });
+
+  // Whether the 6PM auto-download has already fired for this session.
+  const autoDownloadFiredRef = useRef(false);
 
 
   useEffect(() => {
@@ -428,9 +524,14 @@ export default function DashboardPage() {
   }, [isRecordsTableMaximized]);
 
   useEffect(() => {
-    setSelectedRegion(null);
+    const isRegionAdmin = session?.user?.role === "REGION_ADMIN";
+    const initialRegion = isRegionAdmin && report?.regionBreakdown?.[0]?.aspCode
+      ? report.regionBreakdown[0].aspCode
+      : null;
+
+    setSelectedRegion(initialRegion);
     setSelectedWoOtcCode(null);
-    setSelectedRtplRegion(ALL_REGIONS_FILTER);
+    setSelectedRtplRegion(initialRegion && initialRegion !== "ALL" ? initialRegion : ALL_REGIONS_FILTER);
     setSelectedRtplCaseScope("overall");
     setSelectedPivotCaseScope("overall");
     setSelectedPivotSegments(null);
@@ -454,7 +555,6 @@ export default function DashboardPage() {
     setPrintCaseFilter(null);
     setIsKpiModalOpen(false);
     setIsChennaiKpiModalOpen(false);
-    setIsProductivityModalOpen(false);
     setProductivityFilterType("Today");
     setSelectedProductivityValue("");
     setTnFilterType("Today");
@@ -463,7 +563,7 @@ export default function DashboardPage() {
     setSelectedEodBodValue("");
     setTnViewMode("EOD");
     setEodBodViewMode("EOD");
-  }, [report?.reportId]);
+  }, [report?.reportId, session, report]);
 
   // Phase 5: record row-set memos moved to features/dashboard/hooks/useRecordRowSets.
   const {
@@ -634,7 +734,7 @@ export default function DashboardPage() {
   const reportId = report?.reportId;
   useEffect(() => {
     colFilters.resetAll();
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [reportId]);
 
   // Phase 5: export/visible-row memos moved to features/dashboard/hooks/useExportRows
@@ -656,6 +756,40 @@ export default function DashboardPage() {
     selectedPreviewCategory,
     upload,
   });
+
+  const pivotFilteredRows = useMemo(() => {
+    let rows = pivotBaseRows;
+    if (selectedPivotSegments !== null) {
+      const segmentSet = new Set(selectedPivotSegments);
+      rows = rows.filter((row) => segmentSet.has(String(row.output["Segment"] ?? "").trim()));
+    }
+    if (pivotActiveStatus !== null) {
+      rows = rows.filter((row) => String(row.output["RTPL status"] ?? "").trim() === pivotActiveStatus);
+    }
+    if (pivotActiveWipAging !== null) {
+      rows = rows.filter((row) => String(row.output["WIP aging"] ?? "").trim() === pivotActiveWipAging);
+    }
+    if (recordsSearchQuery) {
+      const query = recordsSearchQuery.toLowerCase().trim();
+      rows = rows.filter((row) =>
+        Object.values(row.output).some((val) =>
+          String(val ?? "").toLowerCase().includes(query)
+        )
+      );
+    }
+    return rows;
+  }, [
+    pivotBaseRows,
+    selectedPivotSegments,
+    pivotActiveStatus,
+    pivotActiveWipAging,
+    recordsSearchQuery,
+  ]);
+
+  const pivotFilteredRowsWithColFilters = useMemo(() => {
+    const rows = colFilters.filteredRows(pivotFilteredRows);
+    return sortRowsByWipAging(rows, wipAgingSort);
+  }, [pivotFilteredRows, colFilters, wipAgingSort]);
 
   // View-only set of columns currently rendered in the records table. Driven by
   // hiddenColumns; the underlying data/exports are untouched.
@@ -779,10 +913,10 @@ export default function DashboardPage() {
   const selectedRtplModalDetails = selectedRtplTimeCard
     ? selectedRtplModalStatus
       ? selectedRtplTimeCard.details.filter((detail) => {
-          const detailStatus =
-            detail.type === "carry-forward" ? detail.status : formatRtplStatusValue(detail.toStatus);
-          return detailStatus.trim().toLowerCase() === selectedRtplModalStatus.trim().toLowerCase();
-        })
+        const detailStatus =
+          detail.type === "carry-forward" ? detail.status : formatRtplStatusValue(detail.toStatus);
+        return detailStatus.trim().toLowerCase() === selectedRtplModalStatus.trim().toLowerCase();
+      })
       : selectedRtplTimeCard.details
     : [];
   const visibleRtplTimeDetails = selectedRtplModalDetails.slice(0, RTPL_MODAL_DETAIL_LIMIT);
@@ -798,6 +932,105 @@ export default function DashboardPage() {
     setSelectedRtplModalStatus(status);
     setIsRtplTimeModalOpen(true);
   }
+
+  // Fix BOD to current IST time and freeze a snapshot of every visible ticket's RTPL status.
+  // After this, BOD counts are permanently locked to this snapshot for the session.
+  // EOD continues to reflect the live current status as edits happen throughout the day.
+  function handleFixBod(): void {
+    const now = new Date().toISOString();
+    setBodFixedTime(now);
+    try { window.sessionStorage.setItem("opencall.bodFixedTime", now); } catch { /* non-fatal */ }
+
+    // Capture the current RTPL status of every analytics row as the frozen BOD baseline.
+    const snapshot: Record<string, string> = {};
+    for (const row of rtplAnalyticsRows) {
+      const ticketId = String(row.output["Ticket ID"] ?? "").trim();
+      const status = String(row.output["RTPL status"] ?? "").trim();
+      if (ticketId) {
+        snapshot[ticketId] = status;
+      }
+    }
+    setBodSnapshot(snapshot);
+    try { window.sessionStorage.setItem("opencall.bodSnapshot", JSON.stringify(snapshot)); } catch { /* non-fatal */ }
+  }
+
+  // Download BOD + EOD status breakdown as a two-sheet Excel file.
+  function handleDownloadBodEod(
+    card: { label: string; cardBod: number; cardEod: number; breakdown: Array<{ status: string; bodCount: number; eodCount: number }> },
+  ): void {
+    const dateStr = rtplAnalyticsDate || todayIsoDate();
+    const cardLabel = card.label.replace(/[^a-zA-Z0-9 _-]/g, "").trim();
+
+    // BOD sheet data
+    const bodAoa: (string | number)[][] = [
+      [`BOD Status Summary — ${cardLabel} — ${dateStr}`],
+      ["S.No", "Status", "BOD Count"],
+      ...card.breakdown.map((entry, idx) => [idx + 1, entry.status, entry.bodCount]),
+      ["Total", "", card.cardBod],
+    ];
+
+    // EOD sheet data
+    const eodAoa: (string | number)[][] = [
+      [`EOD Status Summary — ${cardLabel} — ${dateStr}`],
+      ["S.No", "Status", "EOD Count"],
+      ...card.breakdown.map((entry, idx) => [idx + 1, entry.status, entry.eodCount]),
+      ["Total", "", card.cardEod],
+    ];
+
+    const wb = XLSX.utils.book_new();
+    const bodSheet = XLSX.utils.aoa_to_sheet(bodAoa);
+    bodSheet["!cols"] = [{ wch: 8 }, { wch: 35 }, { wch: 12 }];
+    XLSX.utils.book_append_sheet(wb, bodSheet, "BOD");
+
+    const eodSheet = XLSX.utils.aoa_to_sheet(eodAoa);
+    eodSheet["!cols"] = [{ wch: 8 }, { wch: 35 }, { wch: 12 }];
+    XLSX.utils.book_append_sheet(wb, eodSheet, "EOD");
+
+    XLSX.writeFile(wb, `RTPL_BOD_EOD_${cardLabel.replace(/\s+/g, "_")}_${dateStr}.xlsx`);
+  }
+  // 6:00 PM IST auto-download: fires once per session when the clock crosses 18:00.
+  useEffect(() => {
+    if (!rtplTimeCards || rtplTimeCards.length === 0) return;
+
+    const CHECK_INTERVAL_MS = 30_000; // check every 30 seconds
+    const AUTO_DOWNLOAD_HOUR_IST = 18; // 6:00 PM IST
+
+    const timerId = setInterval(() => {
+      if (autoDownloadFiredRef.current) return;
+
+      const nowIst = new Date().toLocaleTimeString("en-IN", {
+        timeZone: "Asia/Kolkata",
+        hour: "2-digit",
+        minute: "2-digit",
+        hour12: false,
+      });
+      const [hStr] = nowIst.split(":");
+      const currentHour = Number(hStr);
+
+      if (currentHour >= AUTO_DOWNLOAD_HOUR_IST) {
+        autoDownloadFiredRef.current = true;
+        // Find the 6PM card (id "1800"); fall back to the last card with data
+        const eodCard = rtplTimeCards.find((c) => c.id === "1800") ?? rtplTimeCards[rtplTimeCards.length - 1];
+        if (eodCard && (eodCard.count > 0 || eodCard.details.length > 0)) {
+          // Build a minimal card shape matching the download handler expectation
+          // We call the same handler that individual cards use, so logic is shared.
+          handleDownloadBodEod({
+            label: eodCard.label,
+            cardBod: 0, // BOD total will show from breakdown
+            cardEod: eodCard.count,
+            breakdown: eodCard.statusBreakdown.map((b) => ({
+              status: b.status,
+              bodCount: 0,
+              eodCount: b.count,
+            })),
+          });
+        }
+      }
+    }, CHECK_INTERVAL_MS);
+
+    return () => clearInterval(timerId);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [rtplTimeCards]);
 
 
 
@@ -1130,7 +1363,7 @@ export default function DashboardPage() {
       setRtplAnalyticsDate(todayIsoDate());
       setWorkspaceView("overview");
       setIsUploadDrawerOpen(false);
-      
+
       // Refresh history to get the draft
       await refreshHistory();
     });
@@ -1173,7 +1406,7 @@ export default function DashboardPage() {
       setEditingSerialNo(null);
       setSavingSerialNo(null);
       setDraftOutput({});
-      
+
       // Refresh history to see completed status
       await refreshHistory();
     });
@@ -1436,30 +1669,30 @@ export default function DashboardPage() {
           rows: latestReport.rows.map((latestRow) =>
             latestRow.id === row.id
               ? {
-                  ...latestRow,
-                  output: outputFromPersistedRow(
-                    { ...latestRow.output },
-                    persisted,
-                  ),
-                  carryForward: {
-                    ...latestRow.carryForward,
-                    carriedForwardFields:
-                      persisted.carriedForwardFields ??
-                      latestRow.carryForward.carriedForwardFields.filter((field) => {
-                        const column = Object.entries(MANUAL_FIELD_BY_COLUMN).find(
-                          ([, manualField]) => manualField === field,
-                        )?.[0];
-                        const apiField = column ? EDITABLE_COLUMN_API_FIELD[column] : null;
-                        return apiField ? !editedApiFields.has(apiField) : true;
-                      }),
-                    manualFieldsCompleted: persisted.manualFieldsCompleted,
-                    manualFieldsMissing: persisted.manualFieldsMissing,
-                  },
-                  updatedAt: persisted.updatedAt,
-                  updatedBy: persisted.updatedBy,
-                  rowEditable: persisted.rowEditable,
-                  carryForwardSource: persisted.carryForwardSource,
-                }
+                ...latestRow,
+                output: outputFromPersistedRow(
+                  { ...latestRow.output },
+                  persisted,
+                ),
+                carryForward: {
+                  ...latestRow.carryForward,
+                  carriedForwardFields:
+                    persisted.carriedForwardFields ??
+                    latestRow.carryForward.carriedForwardFields.filter((field) => {
+                      const column = Object.entries(MANUAL_FIELD_BY_COLUMN).find(
+                        ([, manualField]) => manualField === field,
+                      )?.[0];
+                      const apiField = column ? EDITABLE_COLUMN_API_FIELD[column] : null;
+                      return apiField ? !editedApiFields.has(apiField) : true;
+                    }),
+                  manualFieldsCompleted: persisted.manualFieldsCompleted,
+                  manualFieldsMissing: persisted.manualFieldsMissing,
+                },
+                updatedAt: persisted.updatedAt,
+                updatedBy: persisted.updatedBy,
+                rowEditable: persisted.rowEditable,
+                carryForwardSource: persisted.carryForwardSource,
+              }
               : latestRow,
           ),
         };
@@ -1553,7 +1786,7 @@ export default function DashboardPage() {
           selectedRegion === "ALL" ||
           !selectedRegion ||
           rowRegion === targetRegion;
-        
+
         const rowCode = String(row.output["WO OTC CODE"] ?? "").trim().toUpperCase();
         const targetCode = String(selectedWoOtcCode ?? "").trim().toUpperCase();
         const matchCode = !selectedWoOtcCode || rowCode === targetCode;
@@ -1676,6 +1909,7 @@ export default function DashboardPage() {
     commercialOnly = false,
     warrantyOnly = false,
     nonWarrantyOnly = false,
+    ticketIds = null,
   }: Readonly<{
     region?: string | null;
     woOtcCode?: string | null;
@@ -1698,6 +1932,7 @@ export default function DashboardPage() {
     commercialOnly?: boolean;
     warrantyOnly?: boolean;
     nonWarrantyOnly?: boolean;
+    ticketIds?: readonly string[] | null;
   }>) {
     setSelectedRegion(region ?? null);
     setSelectedWoOtcCode(woOtcCode ?? null);
@@ -1713,6 +1948,9 @@ export default function DashboardPage() {
     setPrintCaseFilter(printCase);
     setSelectedRtplRegion(region && region !== "ALL" ? region : ALL_REGIONS_FILTER);
     colFilters.resetAll();
+    if (ticketIds && ticketIds.length > 0) {
+      colFilters.setColumnFilter("Ticket ID", new Set(ticketIds));
+    }
     if (rtplStatus) {
       colFilters.setColumnFilter("RTPL status", new Set([rtplStatus]));
     }
@@ -1802,14 +2040,16 @@ export default function DashboardPage() {
     rtplStatus?: string;
     wipAging?: string;
   }>): void {
-    openRecordsWithFilter({
-      segments: selectedPivotSegments,
-      workLocations: selectedPivotLocations,
-      rtplStatus: rtplStatus ?? null,
-      wipAging: wipAging ?? null,
-      warrantyOnly: selectedPivotCaseScope === "warranty",
-      tradeOnly: selectedPivotCaseScope === "trade",
-    });
+    const targetStatus = rtplStatus ?? null;
+    const targetWip = wipAging ?? null;
+
+    if (pivotActiveStatus === targetStatus && pivotActiveWipAging === targetWip) {
+      setPivotActiveStatus(null);
+      setPivotActiveWipAging(null);
+    } else {
+      setPivotActiveStatus(targetStatus);
+      setPivotActiveWipAging(targetWip);
+    }
   }
 
   const onShowAllRegions = () => {
@@ -1862,134 +2102,134 @@ export default function DashboardPage() {
 
   const overviewMetrics: MetricsGridItem[] = report
     ? [
-        {
-          label: "Actionable & Planned",
-          value: "",
-          detail: "",
-          customRender: () => (
-            <div className="activityCustomCard">
-              <div
-                className="activityCol clickableCol"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  if (operationalHealth.actionable.count > 0) {
-                    openRecordsWithFilter({ region: selectedRegion, rtplStatuses: operationalHealth.actionable.values });
-                  }
-                }}
-              >
-                <span className="activityLabel">Actionable</span>
-                <strong className="activityVal">{operationalHealth.actionable.count}</strong>
-              </div>
-              <div className="activityDivider" />
-              <div
-                className="activityCol clickableCol"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  if (operationalHealth.planned.count > 0) {
-                    openRecordsWithFilter({ region: selectedRegion, rtplStatuses: operationalHealth.planned.values });
-                  }
-                }}
-              >
-                <span className="activityLabel">Planned</span>
-                <strong className="activityVal">{operationalHealth.planned.count}</strong>
-              </div>
+      {
+        label: "Actionable & Planned",
+        value: "",
+        detail: "",
+        customRender: () => (
+          <div className="activityCustomCard">
+            <div
+              className="activityCol clickableCol"
+              onClick={(e) => {
+                e.stopPropagation();
+                if (operationalHealth.actionable.count > 0) {
+                  openRecordsWithFilter({ region: selectedRegion, rtplStatuses: operationalHealth.actionable.values });
+                }
+              }}
+            >
+              <span className="activityLabel">Actionable</span>
+              <strong className="activityVal">{operationalHealth.actionable.count}</strong>
             </div>
-          ),
-          tone: "blue",
-        },
-        {
-          label: "At-Risk Backlog",
-          value: "",
-          detail: "",
-          customRender: () => (
-            <div className="agedCustomCard">
-              <div
-                className="agedCol clickableCol"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  if (operationalHealth.aged.aged5PlusCount > 0) {
-                    openRecordsWithFilter({ region: selectedRegion, wipAgings: operationalHealth.aged.aged5PlusValues });
-                  }
-                }}
-              >
-                <span className="agedLabel">5+ Days</span>
-                <strong className="agedVal">{operationalHealth.aged.aged5PlusCount}</strong>
-              </div>
-              <div className="agedDivider" />
-              <div
-                className="agedCol clickableCol"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  if (operationalHealth.aged.aged7PlusCount > 0) {
-                    openRecordsWithFilter({ region: selectedRegion, wipAgings: operationalHealth.aged.aged7PlusValues });
-                  }
-                }}
-              >
-                <span className="agedLabel">7+ Days</span>
-                <strong className="agedVal">{operationalHealth.aged.aged7PlusCount}</strong>
-              </div>
-              <div className="agedDivider" />
-              <div
-                className="agedCol clickableCol"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  if (operationalHealth.aged.aged10PlusCount > 0) {
-                    openRecordsWithFilter({ region: selectedRegion, wipAgings: operationalHealth.aged.aged10PlusValues });
-                  }
-                }}
-              >
-                <span className="agedLabel">10+ Days</span>
-                <strong className="agedVal">{operationalHealth.aged.aged10PlusCount}</strong>
-              </div>
+            <div className="activityDivider" />
+            <div
+              className="activityCol clickableCol"
+              onClick={(e) => {
+                e.stopPropagation();
+                if (operationalHealth.planned.count > 0) {
+                  openRecordsWithFilter({ region: selectedRegion, rtplStatuses: operationalHealth.planned.values });
+                }
+              }}
+            >
+              <span className="activityLabel">Planned</span>
+              <strong className="activityVal">{operationalHealth.planned.count}</strong>
             </div>
-          ),
-          tone: "danger",
-        },
-        {
-          label: "Parts Pending",
-          value: "",
-          detail: "",
-          customRender: () => (
-            <div className="partsPendingCustomCard">
-              <div
-                className="partsPendingCol clickableCol"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  if (operationalHealth.partPending.partPendingCount > 0) {
-                    openRecordsWithFilter({ region: selectedRegion, rtplStatuses: operationalHealth.partPending.partPendingValues });
-                  }
-                }}
-              >
-                <span className="partsPendingLabel">Part Pending</span>
-                <strong className="partsPendingVal">{operationalHealth.partPending.partPendingCount}</strong>
-              </div>
-              <div className="partsPendingDivider" />
-              <div
-                className="partsPendingCol clickableCol"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  if (operationalHealth.partPending.partOrderPendingCount > 0) {
-                    openRecordsWithFilter({ region: selectedRegion, rtplStatuses: operationalHealth.partPending.partOrderPendingValues });
-                  }
-                }}
-              >
-                <span className="partsPendingLabel">Part Order Pending</span>
-                <strong className="partsPendingVal">{operationalHealth.partPending.partOrderPendingCount}</strong>
-              </div>
+          </div>
+        ),
+        tone: "blue",
+      },
+      {
+        label: "At-Risk Backlog",
+        value: "",
+        detail: "",
+        customRender: () => (
+          <div className="agedCustomCard">
+            <div
+              className="agedCol clickableCol"
+              onClick={(e) => {
+                e.stopPropagation();
+                if (operationalHealth.aged.aged5PlusCount > 0) {
+                  openRecordsWithFilter({ region: selectedRegion, wipAgings: operationalHealth.aged.aged5PlusValues });
+                }
+              }}
+            >
+              <span className="agedLabel">5+ Days</span>
+              <strong className="agedVal">{operationalHealth.aged.aged5PlusCount}</strong>
             </div>
-          ),
-          tone: "warn",
-        },
-        {
-          label: "Unassigned",
-          value: operationalHealth.unassigned.count,
-          detail: `of ${operationalHealth.openCount} open`,
-          tone: "warn",
-          ...(operationalHealth.unassigned.count > 0
-            ? { onClick: () => openRecordsWithFilter({ region: selectedRegion, engineers: operationalHealth.unassigned.values }) }
-            : {}),
-        },
-      ]
+            <div className="agedDivider" />
+            <div
+              className="agedCol clickableCol"
+              onClick={(e) => {
+                e.stopPropagation();
+                if (operationalHealth.aged.aged7PlusCount > 0) {
+                  openRecordsWithFilter({ region: selectedRegion, wipAgings: operationalHealth.aged.aged7PlusValues });
+                }
+              }}
+            >
+              <span className="agedLabel">7+ Days</span>
+              <strong className="agedVal">{operationalHealth.aged.aged7PlusCount}</strong>
+            </div>
+            <div className="agedDivider" />
+            <div
+              className="agedCol clickableCol"
+              onClick={(e) => {
+                e.stopPropagation();
+                if (operationalHealth.aged.aged10PlusCount > 0) {
+                  openRecordsWithFilter({ region: selectedRegion, wipAgings: operationalHealth.aged.aged10PlusValues });
+                }
+              }}
+            >
+              <span className="agedLabel">10+ Days</span>
+              <strong className="agedVal">{operationalHealth.aged.aged10PlusCount}</strong>
+            </div>
+          </div>
+        ),
+        tone: "danger",
+      },
+      {
+        label: "Parts Pending",
+        value: "",
+        detail: "",
+        customRender: () => (
+          <div className="partsPendingCustomCard">
+            <div
+              className="partsPendingCol clickableCol"
+              onClick={(e) => {
+                e.stopPropagation();
+                if (operationalHealth.partPending.partPendingCount > 0) {
+                  openRecordsWithFilter({ region: selectedRegion, rtplStatuses: operationalHealth.partPending.partPendingValues });
+                }
+              }}
+            >
+              <span className="partsPendingLabel">Part Pending</span>
+              <strong className="partsPendingVal">{operationalHealth.partPending.partPendingCount}</strong>
+            </div>
+            <div className="partsPendingDivider" />
+            <div
+              className="partsPendingCol clickableCol"
+              onClick={(e) => {
+                e.stopPropagation();
+                if (operationalHealth.partPending.partOrderPendingCount > 0) {
+                  openRecordsWithFilter({ region: selectedRegion, rtplStatuses: operationalHealth.partPending.partOrderPendingValues });
+                }
+              }}
+            >
+              <span className="partsPendingLabel">Part Order Pending</span>
+              <strong className="partsPendingVal">{operationalHealth.partPending.partOrderPendingCount}</strong>
+            </div>
+          </div>
+        ),
+        tone: "warn",
+      },
+      {
+        label: "Unassigned",
+        value: operationalHealth.unassigned.count,
+        detail: `of ${operationalHealth.openCount} open`,
+        tone: "warn",
+        ...(operationalHealth.unassigned.count > 0
+          ? { onClick: () => openRecordsWithFilter({ region: selectedRegion, engineers: operationalHealth.unassigned.values }) }
+          : {}),
+      },
+    ]
     : [];
 
   // Tickets in the visible set whose Renderways "current status aging" is at
@@ -2113,871 +2353,1207 @@ export default function DashboardPage() {
   const recordsScopeSegmentMix = recordsScopeHasCategory
     ? null
     : [
-        { key: "pc", label: "PC", count: regionFilteredRows.filter(isPcCase).length, onSelect: () => openRecordsWithFilter({ region: selectedRegion, pcOnly: true }) },
-        { key: "printFix", label: "Print Fix", count: regionFilteredRows.filter(isPrintFixCase).length, onSelect: () => openRecordsWithFilter({ region: selectedRegion, printCase: "fix" }) },
-        { key: "printInstall", label: "Print Install", count: regionFilteredRows.filter(isPrintInstallationCase).length, onSelect: () => openRecordsWithFilter({ region: selectedRegion, printCase: "installation" }) },
-        { key: "ciss", label: "CISS", count: regionFilteredRows.filter(isCissCase).length, onSelect: () => openRecordsWithFilter({ region: selectedRegion, cissOnly: true }) },
-        { key: "trade", label: "Trade", count: regionFilteredRows.filter(isTradeCase).length, onSelect: () => openRecordsWithFilter({ region: selectedRegion, tradeOnly: true }) },
-      ];
+      { key: "pc", label: "PC", count: regionFilteredRows.filter(isPcCase).length, onSelect: () => openRecordsWithFilter({ region: selectedRegion, pcOnly: true }) },
+      { key: "printFix", label: "Print Fix", count: regionFilteredRows.filter(isPrintFixCase).length, onSelect: () => openRecordsWithFilter({ region: selectedRegion, printCase: "fix" }) },
+      { key: "printInstall", label: "Print Install", count: regionFilteredRows.filter(isPrintInstallationCase).length, onSelect: () => openRecordsWithFilter({ region: selectedRegion, printCase: "installation" }) },
+      { key: "ciss", label: "CISS", count: regionFilteredRows.filter(isCissCase).length, onSelect: () => openRecordsWithFilter({ region: selectedRegion, cissOnly: true }) },
+      { key: "trade", label: "Trade", count: regionFilteredRows.filter(isTradeCase).length, onSelect: () => openRecordsWithFilter({ region: selectedRegion, tradeOnly: true }) },
+    ];
 
-  return (
-    <main className="appShell">
-      <AppHeader
-        workspaceView={workspaceView}
-        hasReport={Boolean(report)}
-        hasBatches={canUseBatches}
-        isBusy={isBusy}
-        dbHealth={dbHealth}
-        runtimeHealth={runtimeHealth}
-        session={session}
-        onWorkspaceViewChange={setWorkspaceView}
-        onRefreshHealth={() => void handleRefreshWorkspace()}
-        onOpenUpload={() => setIsUploadDrawerOpen(true)}
-        onOpenHistory={() => setIsHistoryPanelOpen(true)}
-        onGenerateReport={() => void handleGenerate()}
-        onExportXlsx={() => exportReport(downloadReportAsXlsx)}
-        onExportCsv={() => exportReport(downloadReportAsExcel)}
-        onLogout={handleLogout}
-      />
-
-      <UploadDrawer
-        isOpen={isUploadDrawerOpen}
-        isBusy={isBusy}
-        files={files}
-        fileFields={FILE_FIELDS}
-        onClose={() => setIsUploadDrawerOpen(false)}
-        onSubmit={(event) => void handleUpload(event)}
-        onFileChange={(field, selectedFiles) => {
-          setFiles((current) => ({
-            ...current,
-            [field]: selectedFiles,
-          }));
-        }}
-      />
-
-      <HistoryDrawer
-        isOpen={isHistoryPanelOpen}
-        sessions={historySessions}
-        onClose={() => setIsHistoryPanelOpen(false)}
-        onOpen={handleHistoryOpen}
-        onRename={handleHistoryRename}
-        onDelete={handleHistoryDelete}
-      />
-
-      {message ? <div className="alert">{message}</div> : null}
-
-      <section className={`workspace ${workspaceView === "records" ? "recordsMode" : "overviewMode"}`}>
-        <section className="mainGrid">
-          {report ? (
-            <section className="panel reportPanel">
-              <div className="overviewReportContent">
-              <div className="sectionHeader">
-                <div className="overviewRegionPicker">
-                  {session?.user?.role === "REGION_ADMIN" ? (
-                    <h2>{report.regionBreakdown[0]?.regionName ?? "My Region"}</h2>
-                  ) : (
-                    <select
-                      className="overviewRegionSelect"
-                      aria-label="Select region"
-                      value={selectedRegion ?? "ALL"}
-                      onChange={(event) => selectOverviewRegion(event.target.value)}
-                    >
-                      <option value="ALL">All Regions</option>
-                      {activeRegionBreakdown
-                        .filter((entry) => entry.count > 0)
-                        .map((entry) => (
-                          <option key={entry.aspCode || entry.regionName} value={entry.aspCode}>
-                            {entry.regionName}
-                          </option>
-                        ))}
-                    </select>
-                  )}
-                </div>
-                <MetricsGrid items={overviewMetrics} />
-              </div>
-              <RegionBreakdown
-                canShowAllRegions={session?.user?.role !== "REGION_ADMIN"}
-                overallStats={overallStats}
-                activeRegionBreakdown={activeRegionBreakdown}
-                selectedRegion={selectedRegion}
-                selectedWoOtcCode={selectedWoOtcCode}
-                showConsumerOnly={showConsumerOnly}
-                showCommercialOnly={showCommercialOnly}
-                showWarrantyOnly={showWarrantyOnly}
-                showNonWarrantyOnly={showNonWarrantyOnly}
-                showPcOnly={showPcOnly}
-                showCissOnly={showCissOnly}
-                showRcaOnly={showRcaOnly}
-                printCaseFilter={printCaseFilter}
-                openRecordsWithFilter={openRecordsWithFilter}
-                onShowAllRegions={onShowAllRegions}
+  const renderDetailedRecordsTable = (tableRows: ReportRow[]) => {
+    return (
+      <div className={`recordsTableZone ${isRecordsTableMaximized ? "maximized" : ""}`}>
+        {isRecordsTableMaximized ? (
+          <div className="recordsTableZoneBar">
+            <span className="recordsTableZoneTitle">
+              Records — Full Screen
+              <span className="recordsTableZoneCount">
+                {tableRows.length} rows
+              </span>
+            </span>
+            <div className="recordsSearchBar recordsTableZoneSearch">
+              <input
+                type="search"
+                value={recordsSearchQuery}
+                aria-label="Search records"
+                placeholder="Search WO, case ID, trade..."
+                onChange={(event) => setRecordsSearchQuery(event.target.value)}
               />
-              {showCaseTypeOverview && (
-                <CaseTypeCards
-                  printInstallationRows={printInstallationRows}
-                  cissRows={cissRows}
-                  printFixRows={printFixRows}
-                  pcRows={pcRows}
-                  tradeRows={tradeRows}
-                  rcaRows={rcaRows}
-                  printCaseFilter={printCaseFilter}
-                  showCissOnly={showCissOnly}
-                  showTradeOnly={showTradeOnly}
-                  showRcaOnly={showRcaOnly}
-                  caseTypeRegionBreakdown={caseTypeRegionBreakdown}
-                  openRecordsWithFilter={openRecordsWithFilter}
-                />
-              )}
+            </div>
+            <button
+              type="button"
+              className="secondaryButton"
+              onClick={() => setIsRecordsTableMaximized(false)}
+              title="Exit full screen (Esc)"
+            >
+              ✕ Exit Full Screen
+            </button>
+          </div>
+        ) : null}
+        <div
+          className="tableScrollTop"
+          ref={recordsScrollTopRef}
+          onScroll={handleTopScroll}
+          aria-hidden="true"
+        >
+          <div className="tableScrollTopSpacer" ref={recordsScrollTopSpacerRef} />
+        </div>
+        <div
+          className="tableWrap"
+          ref={recordsTableWrapRef}
+          onScroll={handleTableWrapScroll}
+        >
+          <table>
+            <thead>
+              <tr>
+                {visibleColumns.map((column) => {
+                  const isFilterable = colFilters.isFilterable(column);
+                  const isFiltered = colFilters.isColumnFiltered(column);
+                  const uniqueVals = colFilters.uniqueValuesMap.get(column) ?? [];
 
-              {showCustomerSegmentSplit && (
-                <CustomerSegmentCards
-                  showConsumerOnly={showConsumerOnly}
-                  consumerRows={consumerRows}
-                  showCommercialOnly={showCommercialOnly}
-                  commercialRows={commercialRows}
-                  showWarrantyOnly={showWarrantyOnly}
-                  warrantyRows={warrantyRows}
-                  showNonWarrantyOnly={showNonWarrantyOnly}
-                  nonWarrantyRows={nonWarrantyRows}
-                  caseTypeRegionBreakdown={caseTypeRegionBreakdown}
-                  incompleteCellCount={incompleteCellCount}
-                  openRecordsWithFilter={openRecordsWithFilter}
-                />
-              )}
+                  return (
+                    <th key={column} className={tableColumnClassName(column)}>
+                      {column}
+                      {isFilterable && (
+                        <ColumnFilterDropdown
+                          column={column}
+                          isOpen={colFilters.openColumn === column}
+                          uniqueValues={uniqueVals}
+                          selectedValues={colFilters.filters[column]}
+                          isFiltered={isFiltered}
+                          wipAgingSort={wipAgingSort}
+                          onToggleValue={colFilters.toggleValue}
+                          onSelectAll={colFilters.selectAll}
+                          onClearAll={colFilters.clearAll}
+                          onApply={colFilters.setColumnFilter}
+                          onWipAgingSortChange={setWipAgingSort}
+                          onOpen={colFilters.openFilterDropdown}
+                          onClose={colFilters.closeFilterDropdown}
+                        />
+                      )}
+                    </th>
+                  );
+                })}
+                <th>Change</th>
+                <th>Ops</th>
+                <th className="stickyActionColumn">Action</th>
+              </tr>
+            </thead>
+            <tbody>
+              {tableRows.map((row, visibleIndex) => {
+                const isEditing = editingSerialNo === row.serialNo;
+                const visibleSerialNo = visibleIndex + 1;
 
-
-
-              <RTPLDashboard
-                rtplAnalyticsDate={rtplAnalyticsDate}
-                setRtplAnalyticsDate={setRtplAnalyticsDate}
-                rtplAnalyticsRows={rtplAnalyticsRows}
-                rtplCaseScopeOptions={rtplCaseScopeOptions}
-                selectedRtplCaseScope={selectedRtplCaseScope}
-                setSelectedRtplCaseScope={setSelectedRtplCaseScope}
-                rtplRegionOptions={rtplRegionOptions}
-                selectedRtplRegion={selectedRtplRegion}
-                setSelectedRtplRegion={setSelectedRtplRegion}
-                rtplTimeCards={rtplTimeCards}
-                selectedRtplTimeCard={selectedRtplTimeCard}
-                openRtplCheckpointModal={openRtplCheckpointModal}
-                openRecordsWithFilter={openRecordsWithFilter}
-              />
-
-              <RTPLPivotTable
-                rtplWipPivot={rtplWipPivot}
-                draftPivotSegmentSet={draftPivotSegmentSet}
-                draftPivotLocationSet={draftPivotLocationSet}
-                pivotAllSegmentCount={pivotAllSegmentCount}
-                pivotLocationOptions={pivotLocationOptions}
-                pivotAllLocationCount={pivotAllLocationCount}
-                pivotSegmentFilterActive={pivotSegmentFilterActive}
-                appliedPivotSegmentLabel={appliedPivotSegmentLabel}
-                isPivotSegmentFilterOpen={isPivotSegmentFilterOpen}
-                setIsPivotSegmentFilterOpen={setIsPivotSegmentFilterOpen}
-                draftPivotSegments={draftPivotSegments}
-                setDraftPivotSegments={setDraftPivotSegments}
-                selectedPivotSegments={selectedPivotSegments}
-                selectedPivotCaseScope={selectedPivotCaseScope}
-                setSelectedPivotCaseScope={setSelectedPivotCaseScope}
-                pivotLocationFilterActive={pivotLocationFilterActive}
-                appliedPivotLocationLabel={appliedPivotLocationLabel}
-                isPivotLocationFilterOpen={isPivotLocationFilterOpen}
-                setIsPivotLocationFilterOpen={setIsPivotLocationFilterOpen}
-                draftPivotLocations={draftPivotLocations}
-                setDraftPivotLocations={setDraftPivotLocations}
-                selectedPivotLocations={selectedPivotLocations}
-                openPivotSegmentFilter={openPivotSegmentFilter}
-                toggleDraftPivotSegment={toggleDraftPivotSegment}
-                applyPivotSegmentFilter={applyPivotSegmentFilter}
-                openPivotLocationFilter={openPivotLocationFilter}
-                toggleDraftPivotLocation={toggleDraftPivotLocation}
-                applyPivotLocationFilter={applyPivotLocationFilter}
-                openPivotRecords={openPivotRecords}
-              />
-
-              <FlexDashboard
-                rtplAnalyticsRows={rtplAnalyticsRows}
-                rtplCaseScopeOptions={rtplCaseScopeOptions}
-                selectedRtplCaseScope={selectedRtplCaseScope}
-                setSelectedRtplCaseScope={setSelectedRtplCaseScope}
-                rtplRegionOptions={rtplRegionOptions}
-                selectedRtplRegion={selectedRtplRegion}
-                setSelectedRtplRegion={setSelectedRtplRegion}
-                flexStatusMetrics={flexStatusMetrics}
-                openRecordsWithFilter={openRecordsWithFilter}
-              />
-
-              {showDayOverDayComparison && (
-                <ComparisonSummaryPanel report={report} />
-              )}
-              {showManualCarryForward && (
-                <CarryForwardSummaryPanel report={report} />
-              )}
-
-              {showClosedCallLedger && overallClosedCount > 0 ? (
-                <ClosedCallLedger
-                  overallClosedCount={overallClosedCount}
-                  closedRegionBreakdown={closedRegionBreakdown}
-                  showClosedOnly={showClosedOnly}
-                  selectedRegion={selectedRegion}
-                  openRecordsWithFilter={openRecordsWithFilter}
-                />
-              ) : null}
-
-
-              </div>
-
-              <div className={`recordsArea ${isRecordsSummaryHidden ? "summaryHidden" : ""}`}>
-              <div className={`recordsScopeRow ${staleFlexRows.length > 0 ? "hasFlex" : ""}`}>
-                {/* Left: active-category total split by Consumer / Commercial. */}
-                <div className="recordsScopeCard">
-                  {activeRegionName ? (
-                    <span className="recordsScopeRegion">{activeRegionName}</span>
-                  ) : null}
-                  <span className="recordsScopeLabel">{recordsScopeLabel}</span>
-                  <strong className="recordsScopeTotal">{formatNumber(recordsScopeTotal)}</strong>
-                  <div className="recordsScopeSplit">
-                    <button
-                      type="button"
-                      className="recordsScopeSplitItem"
-                      title="Show Consumer records only"
-                      onClick={() => openRecordsWithFilter({ region: selectedRegion, consumerOnly: true })}
-                    >
-                      <span>Consumer</span>
-                      <strong>{formatNumber(recordsScopeConsumer)}</strong>
-                    </button>
-                    <button
-                      type="button"
-                      className="recordsScopeSplitItem"
-                      title="Show Commercial records only"
-                      onClick={() => openRecordsWithFilter({ region: selectedRegion, commercialOnly: true })}
-                    >
-                      <span>Commercial</span>
-                      <strong>{formatNumber(recordsScopeCommercial)}</strong>
-                    </button>
-                  </div>
-                  <div className="recordsScopeSplit">
-                    <button
-                      type="button"
-                      className="recordsScopeSplitItem"
-                      title="Show Warranty records only"
-                      onClick={() => openRecordsWithFilter({ region: selectedRegion, warrantyOnly: true })}
-                    >
-                      <span>Warranty</span>
-                      <strong>{formatNumber(recordsScopeWarranty)}</strong>
-                    </button>
-                    <button
-                      type="button"
-                      className="recordsScopeSplitItem"
-                      title="Show Trade records only"
-                      onClick={() => openRecordsWithFilter({ region: selectedRegion, tradeOnly: true })}
-                    >
-                      <span>Trade</span>
-                      <strong>{formatNumber(recordsScopeTrade)}</strong>
-                    </button>
-                  </div>
-                  {recordsScopeSegmentMix ? (
-                    <div className="recordsScopeChips">
-                      {recordsScopeSegmentMix.map((item) => (
-                        <button
-                          key={item.key}
-                          type="button"
-                          className="recordsScopeChip"
-                          title={`Show ${item.label} records only`}
-                          onClick={item.onSelect}
-                        >
-                          <strong>{formatNumber(item.count)}</strong> {item.label}
-                        </button>
-                      ))}
-                    </div>
-                  ) : null}
-                  <div className="recordsScopeManual">
-                    <span>Manual entries pending</span>
-                    <strong className={recordsScopeManualPending > 0 ? "pending" : ""}>
-                      {formatNumber(recordsScopeManualPending)}
-                    </strong>
-                  </div>
-                </div>
-
-                {/* Right: compressed unchanged-Flex-Status banner. */}
-                {staleFlexRows.length > 0 ? (
-                <div className="staleFlexBanner" role="status">
-                  <div className="staleFlexBannerHeader">
-                    <p className="staleFlexBannerSummary">
-                      <span aria-hidden="true">⚠</span>{" "}
-                      {formatNumber(staleFlexRows.length)} record(s) have a Status
-                      Aging of {STALE_FLEX_THRESHOLD_DAYS}+ days
-                    </p>
-                    <button
-                      type="button"
-                      className="staleFlexToggle"
-                      onClick={() => setIsStaleModalOpen(true)}
-                    >
-                      View all ({formatNumber(staleFlexRows.length)})
-                    </button>
-                  </div>
-                  {/* Compact inline list: Ticket ID + Days only. Full details
-                      (Flex Status / Location / Engineer) open in the modal. */}
-                  <div className="staleFlexPanel">
-                    <table className="staleFlexTable">
-                      <thead>
-                        <tr>
-                          <th>Ticket ID</th>
-                          <th className="staleFlexDaysCol">Days</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {staleFlexRows.map((row) => {
-                          const ticketId = String(row.output["Ticket ID"] ?? "");
-                          const days = row.enriched?.current_status_aging ?? 0;
-                          return (
-                            <tr
-                              key={row.serialNo}
-                              className={`staleFlexRow ${staleSeverityClass(days)}`}
-                              role="button"
-                              tabIndex={0}
-                              title={`Filter records to ticket ${ticketId || "—"}`}
-                              onClick={() => jumpToStaleTicket(ticketId)}
-                              onKeyDown={(event) => {
-                                if (event.key === "Enter" || event.key === " ") {
-                                  event.preventDefault();
-                                  jumpToStaleTicket(ticketId);
-                                }
-                              }}
-                            >
-                              <td className="staleFlexTicket">{ticketId || "—"}</td>
-                              <td className="staleFlexDaysCol">
-                                <span className="staleFlexDaysBadge">{days}</span>
-                              </td>
-                            </tr>
-                          );
-                        })}
-                      </tbody>
-                    </table>
-                  </div>
-                </div>
-                ) : null}
-              </div>
-              <div className="downloadActions recordsToolbar">
-                <div className="downloadActionGroup">
-                  <button
-                    className="downloadBtn excelBtn"
-                    onClick={() => exportReport(downloadReportAsXlsx)}
+                return (
+                  <tr
+                    key={row.serialNo}
+                    className={
+                      Object.values(row.output).includes(MANUAL_ENTRY_REQUIRED) ||
+                        row.carryForward.manualFieldsMissing.length > 0
+                        ? "incompleteRow"
+                        : undefined
+                    }
                   >
-                    Download Excel (.xlsx)
-                  </button>
-                  <button
-                    className="downloadBtn csvBtn"
-                    onClick={() => exportReport(downloadReportAsExcel)}
-                  >
-                    Download CSV
-                  </button>
-                  {selectedRegion && selectedRegion !== "ALL" && regionKpiMetrics && (
-                    <>
-                      <button
-                        type="button"
-                        className="downloadBtn excelBtn"
-                        style={{ background: "linear-gradient(135deg, #0284c7, #0369a1)", borderColor: "#0284c7", color: "#ffffff" }}
-                        onClick={() => setIsKpiModalOpen(true)}
-                      >
-                        📊 VIEW TN REPORT
-                      </button>
-                      <button
-                        type="button"
-                        className="downloadBtn excelBtn"
-                        style={{ background: "linear-gradient(135deg, #0ea5e9, #0284c7)", borderColor: "#0ea5e9", color: "#ffffff" }}
-                        onClick={() => setIsChennaiKpiModalOpen(true)}
-                      >
-                        📊 VIEW EOD&BOD REPORT DASHBOARD
-                      </button>
-                    </>
-                  )}
-                  {(session?.user?.role === "SUPER_ADMIN" || (selectedRegion && selectedRegion !== "ALL" && regionKpiMetrics)) && (
-                    <button
-                      type="button"
-                      className="downloadBtn excelBtn"
-                      style={{ background: "linear-gradient(135deg, #f97316, #ea580c)", borderColor: "#f97316", color: "#ffffff" }}
-                      onClick={() => setIsProductivityModalOpen(true)}
-                    >
-                      📊 VIEW ENGINEER PRODUCTIVITY
-                    </button>
-                  )}
-                </div>
-                <div className="recordsToolbarRight">
-                  <div className="recordsSearchBar">
-                    <input
-                      id="records-search"
-                      type="search"
-                      value={recordsSearchQuery}
-                      aria-label="Search records"
-                      placeholder="Search WO, case ID, trade..."
-                      onChange={(event) => setRecordsSearchQuery(event.target.value)}
-                    />
-                  </div>
-                  <div className="columnsMenu" ref={columnsMenuRef}>
-                    <button
-                      type="button"
-                      className={`secondaryButton columnsMenuTrigger ${hiddenColumns.size > 0 ? "active" : ""}`}
-                      aria-haspopup="menu"
-                      aria-expanded={isColumnsMenuOpen}
-                      onClick={() => setIsColumnsMenuOpen((open) => !open)}
-                      title="Show or hide table columns"
-                    >
-                      <svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true">
-                        <rect x="1.5" y="2.5" width="13" height="11" rx="1.5" stroke="currentColor" />
-                        <path d="M6 2.5v11M10 2.5v11" stroke="currentColor" />
-                      </svg>
-                      Columns
-                      {hiddenColumns.size > 0 ? (
-                        <span className="columnsMenuCount">{hiddenColumns.size}</span>
-                      ) : null}
-                    </button>
-                    {isColumnsMenuOpen ? (
-                      <div className="columnsMenuPopover" role="menu">
-                        <div className="columnsMenuHeader">
-                          <span>Show columns</span>
-                          <button
-                            type="button"
-                            className="columnsMenuReset"
-                            disabled={hiddenColumns.size === 0}
-                            onClick={() => setHiddenColumns(new Set())}
-                          >
-                            Show all
-                          </button>
-                        </div>
-                        <div className="columnsMenuList">
-                          {DAILY_CALL_PLAN_COLUMNS.map((column) => {
-                            const locked = ALWAYS_VISIBLE_COLUMNS.has(column);
-                            const isVisible = !hiddenColumns.has(column);
-                            return (
-                              <label
-                                key={column}
-                                className={`columnsMenuItem ${locked ? "locked" : ""}`}
-                              >
-                                <input
-                                  type="checkbox"
-                                  checked={isVisible}
-                                  disabled={locked}
-                                  onChange={() => {
-                                    if (locked) {
-                                      return;
-                                    }
-                                    setHiddenColumns((current) => {
-                                      const next = new Set(current);
-                                      if (next.has(column)) {
-                                        next.delete(column);
-                                      } else {
-                                        next.add(column);
-                                      }
-                                      return next;
-                                    });
-                                  }}
-                                />
-                                <span className="columnsMenuLabel">{column}</span>
-                                {locked ? (
-                                  <span className="columnsMenuLock" title="Always visible">
-                                    Locked
-                                  </span>
-                                ) : null}
-                              </label>
-                            );
-                          })}
-                        </div>
-                      </div>
-                    ) : null}
-                  </div>
-                  <button
-                    type="button"
-                    className="secondaryButton fullRecordButton"
-                    onClick={() => setIsRecordsTableMaximized(true)}
-                    title="Expand the records table to full screen"
-                  >
-                    <svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true">
-                      <path d="M2 6V2.5h3.5M14 6V2.5h-3.5M2 10v3.5h3.5M14 10v3.5h-3.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
-                    </svg>
-                    Full Record
-                  </button>
-                  <button
-                    type="button"
-                    className="secondaryButton backToDashboardButton"
-                    onClick={() => setWorkspaceView("overview")}
-                  >
-                    Back to Dashboard
-                  </button>
-                </div>
-              </div>
-
-
-              {colFilters.activeFilterCount > 0 && (
-                <div className="colFilterSummary">
-                  <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
-                    <path d="M1 2h14l-5.5 6.5V14l-3-1.5V8.5L1 2z" fill="currentColor" />
-                  </svg>
-                  <span>
-                    {colFilters.activeFilterCount} column filter{colFilters.activeFilterCount > 1 ? "s" : ""} active
-                    {" · "}
-                    {filteredRows.length} of {regionFilteredRows.length} rows shown
-                  </span>
-                  <button type="button" onClick={colFilters.resetAll}>Clear All Filters</button>
-                </div>
-              )}
-              {recordsSearchQuery && (
-                <div className="colFilterSummary">
-                  <span>
-                    Search "{recordsSearchQuery}" active
-                    {" - "}
-                    {filteredRows.length} of {columnFilteredRows.length} rows shown
-                  </span>
-                  <button
-                    type="button"
-                    onClick={() => setRecordsSearchQuery("")}
-                  >
-                    Clear Search
-                  </button>
-                </div>
-              )}
-
-              <div className={`recordsTableZone ${isRecordsTableMaximized ? "maximized" : ""}`}>
-              {isRecordsTableMaximized ? (
-                <div className="recordsTableZoneBar">
-                  <span className="recordsTableZoneTitle">
-                    Records — Full Screen
-                    <span className="recordsTableZoneCount">
-                      {filteredRows.length} of {regionFilteredRows.length} rows
-                    </span>
-                  </span>
-                  <div className="recordsSearchBar recordsTableZoneSearch">
-                    <input
-                      type="search"
-                      value={recordsSearchQuery}
-                      aria-label="Search records"
-                      placeholder="Search WO, case ID, trade..."
-                      onChange={(event) => setRecordsSearchQuery(event.target.value)}
-                    />
-                  </div>
-                  <button
-                    type="button"
-                    className="secondaryButton"
-                    onClick={() => setIsRecordsTableMaximized(false)}
-                    title="Exit full screen (Esc)"
-                  >
-                    ✕ Exit Full Screen
-                  </button>
-                </div>
-              ) : null}
-              <div
-                className="tableScrollTop"
-                ref={recordsScrollTopRef}
-                onScroll={handleTopScroll}
-                aria-hidden="true"
-              >
-                <div className="tableScrollTopSpacer" ref={recordsScrollTopSpacerRef} />
-              </div>
-              <div
-                className="tableWrap"
-                ref={recordsTableWrapRef}
-                onScroll={handleTableWrapScroll}
-              >
-                <table>
-                  <thead>
-                    <tr>
-                      {visibleColumns.map((column) => {
-                        const isFilterable = colFilters.isFilterable(column);
-                        const isFiltered = colFilters.isColumnFiltered(column);
-                        const uniqueVals = colFilters.uniqueValuesMap.get(column) ?? [];
-
-                        return (
-                          <th key={column} className={tableColumnClassName(column)}>
-                            {column}
-                            {isFilterable && (
-                              <ColumnFilterDropdown
-                                column={column}
-                                isOpen={colFilters.openColumn === column}
-                                uniqueValues={uniqueVals}
-                                selectedValues={colFilters.filters[column]}
-                                isFiltered={isFiltered}
-                                wipAgingSort={wipAgingSort}
-                                onToggleValue={colFilters.toggleValue}
-                                onSelectAll={colFilters.selectAll}
-                                onClearAll={colFilters.clearAll}
-                                onApply={colFilters.setColumnFilter}
-                                onWipAgingSortChange={setWipAgingSort}
-                                onOpen={colFilters.openFilterDropdown}
-                                onClose={colFilters.closeFilterDropdown}
-                              />
-                            )}
-                          </th>
-                        );
-                      })}
-                      <th>Change</th>
-                      <th>Ops</th>
-                      <th className="stickyActionColumn">Action</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {filteredRows.map((row, visibleIndex) => {
-                      const isEditing = editingSerialNo === row.serialNo;
-                      const visibleSerialNo = visibleIndex + 1;
+                    {visibleColumns.map((column) => {
+                      const value =
+                        column === "S.no"
+                          ? visibleSerialNo
+                          : isEditing
+                            ? draftOutput[column]
+                            : row.output[column];
+                      const isManualRequired = value === MANUAL_ENTRY_REQUIRED;
+                      const isReadOnly = column === "S.no" || column === "Ticket ID";
+                      const manualField = MANUAL_FIELD_BY_COLUMN[column];
+                      const isCarriedForward =
+                        manualField
+                          ? row.carryForward.carriedForwardFields.includes(manualField)
+                          : false;
+                      const needsManualEntry =
+                        manualField
+                          ? row.carryForward.manualFieldsMissing.includes(manualField)
+                          : false;
 
                       return (
-                        <tr
-                          key={row.serialNo}
-                          className={
-                            Object.values(row.output).includes(MANUAL_ENTRY_REQUIRED) ||
-                            row.carryForward.manualFieldsMissing.length > 0
-                              ? "incompleteRow"
+                        <td
+                          key={column}
+                          className={[
+                            tableColumnClassName(column),
+                            isManualRequired || needsManualEntry ? "missingCell" : "",
+                            isCarriedForward ? "carriedForwardCell" : "",
+                          ].filter(Boolean).join(" ") || undefined}
+                          title={
+                            isCarriedForward
+                              ? "Value carried from previous day"
                               : undefined
                           }
                         >
-                          {visibleColumns.map((column) => {
-                            const value =
-                              column === "S.no"
-                                ? visibleSerialNo
-                                : isEditing
-                                  ? draftOutput[column]
-                                  : row.output[column];
-                            const isManualRequired = value === MANUAL_ENTRY_REQUIRED;
-                            const isReadOnly = column === "S.no" || column === "Ticket ID";
-                            const manualField = MANUAL_FIELD_BY_COLUMN[column];
-                            const isCarriedForward =
-                              manualField
-                                ? row.carryForward.carriedForwardFields.includes(manualField)
-                                : false;
-                            const needsManualEntry =
-                              manualField
-                                ? row.carryForward.manualFieldsMissing.includes(manualField)
-                                : false;
-
-                            return (
-                              <td
-                                key={column}
-                                className={[
-                                  tableColumnClassName(column),
-                                  isManualRequired || needsManualEntry ? "missingCell" : "",
-                                  isCarriedForward ? "carriedForwardCell" : "",
-                                ].filter(Boolean).join(" ") || undefined}
-                                title={
-                                  isCarriedForward
-                                    ? "Value carried from previous day"
-                                    : undefined
+                          {isEditing && !isReadOnly ? (
+                            column === "RTPL status" ? (
+                              <div style={{ display: "flex", gap: "4px", alignItems: "center" }}>
+                                <RTPLStatusDropdown
+                                  value={String(draftOutput[column] ?? "")}
+                                  manualEntryRequiredLabel="Entry"
+                                  onChange={(selected) => {
+                                    if (selected === "Custom") {
+                                      setDraftOutput((current) => ({
+                                        ...current,
+                                        [column]: "",
+                                      }));
+                                    } else {
+                                      setDraftOutput((current) => ({
+                                        ...current,
+                                        [column]: selected,
+                                      }));
+                                    }
+                                  }}
+                                />
+                                {(draftOutput[column] === "" || !RTPL_STATUS_OPTIONS.some((opt) => opt === String(draftOutput[column]))) && (
+                                  <input
+                                    className="cellInput"
+                                    style={{ flex: 1 }}
+                                    value={String(draftOutput[column] ?? "")}
+                                    onChange={(event) =>
+                                      setDraftOutput((current) => ({
+                                        ...current,
+                                        [column]: event.target.value,
+                                      }))
+                                    }
+                                    placeholder="Enter custom status"
+                                  />
+                                )}
+                              </div>
+                            ) : column === "Engineer" ? (
+                              <select
+                                className="cellInput"
+                                value={String(draftOutput[column] ?? "")}
+                                onChange={(event) =>
+                                  setDraftOutput((current) => ({
+                                    ...current,
+                                    [column]: event.target.value,
+                                  }))
                                 }
                               >
-                                {isEditing && !isReadOnly ? (
-                                  column === "RTPL status" ? (
-                                    <div style={{ display: "flex", gap: "4px", alignItems: "center" }}>
-                                        <RTPLStatusDropdown
-                                          value={String(draftOutput[column] ?? "")}
-                                          manualEntryRequiredLabel="Entry"
-                                          onChange={(selected) => {
-                                            if (selected === "Custom") {
-                                              setDraftOutput((current) => ({
-                                                ...current,
-                                                [column]: "",
-                                              }));
-                                            } else {
-                                              setDraftOutput((current) => ({
-                                                ...current,
-                                                [column]: selected,
-                                              }));
-                                            }
-                                          }}
-                                        />
-                                       {(draftOutput[column] === "" || !RTPL_STATUS_OPTIONS.some((opt) => opt === String(draftOutput[column]))) && (
-                                        <input
-                                          className="cellInput"
-                                          style={{ flex: 1 }}
-                                          value={String(draftOutput[column] ?? "")}
-                                          onChange={(event) =>
-                                            setDraftOutput((current) => ({
-                                              ...current,
-                                              [column]: event.target.value,
-                                            }))
-                                          }
-                                          placeholder="Enter custom status"
-                                        />
-                                      )}
-                                    </div>
-                                  ) : column === "Engineer" ? (
-                                    <select
-                                      className="cellInput"
-                                      value={String(draftOutput[column] ?? "")}
-                                      onChange={(event) =>
-                                        setDraftOutput((current) => ({
-                                          ...current,
-                                          [column]: event.target.value,
-                                        }))
-                                      }
-                                    >
-                                      <option value="">Entry</option>
-                                      {engineersList.map(e => (
-                                        <option key={e.id} value={e.engineerName}>{e.engineerName}</option>
-                                      ))}
-                                      {draftOutput[column] && draftOutput[column] !== MANUAL_ENTRY_REQUIRED && !engineersList.some(e => e.engineerName === String(draftOutput[column])) && (
-                                        <option value={String(draftOutput[column])}>{String(draftOutput[column])} (Inactive/Not in list)</option>
-                                      )}
-                                    </select>
-                                  ) : (
-                                    <input
-                                      className="cellInput"
-                                      value={String(value ?? "")}
-                                      onChange={(event) =>
-                                        setDraftOutput((current) => ({
-                                          ...current,
-                                          [column]: event.target.value,
-                                        }))
-                                      }
-                                    />
-                                  )
-                                ) : (
-                                  <span className="cellValueWrap">
-                                    {column === "Ticket ID" ? (
-                                      <button
-                                        type="button"
-                                        className="ticketIdLink"
-                                        onClick={(e) => {
-                                          e.stopPropagation();
-                                          startModalEditing(row);
-                                        }}
-                                        title="Click to view/edit order form"
-                                      >
-                                        {String(value ?? "")}
-                                      </button>
-                                    ) : (
-                                      <span>
-                                        {value === MANUAL_ENTRY_REQUIRED
-                                          ? "Entry"
-                                          : column === "Work Location"
-                                            ? ASP_CODE_REGION_MAP[String(value ?? "").trim()] ?? String(value ?? "")
-                                            : String(value ?? "")}
-                                      </span>
-                                    )}
-                                    {isCarriedForward ? (
-                                      <span className="cellCarryFlag">Carried</span>
-                                    ) : null}
-                                  </span>
+                                <option value="">Entry</option>
+                                {engineersList.map(e => (
+                                  <option key={e.id} value={e.engineerName}>{e.engineerName}</option>
+                                ))}
+                                {draftOutput[column] && draftOutput[column] !== MANUAL_ENTRY_REQUIRED && !engineersList.some(e => e.engineerName === String(draftOutput[column])) && (
+                                  <option value={String(draftOutput[column])}>{String(draftOutput[column])} (Inactive/Not in list)</option>
                                 )}
-                              </td>
-                            );
-                          })}
-                          <td className="changeCell">
-                            <ChangeTypeBadge comparison={row.comparison} />
-                          </td>
-                          <td className="opsCell">
-                            <CarryForwardBadge carryForward={row.carryForward} />
-                            {row.carryForward.manualFieldsMissing.length > 0 ? (
-                              <span
-                                className="manualCount"
-                                title={`Manual entry required: ${formatFieldList(row.carryForward.manualFieldsMissing)}`}
-                              >
-                                {row.carryForward.manualFieldsMissing.length}
-                              </span>
-                            ) : null}
-                          </td>
-                          <td className="stickyActionColumn">
-                            {isEditing ? (
-                              <div className="rowActions">
-                                <button
-                                  type="button"
-                                  disabled={savingSerialNo === row.serialNo}
-                                  onClick={() => void saveEditing(row.serialNo)}
-                                >
-                                  {savingSerialNo === row.serialNo ? "Saving..." : "Save"}
-                                </button>
-                                <button
-                                  type="button"
-                                  className="secondaryButton"
-                                  disabled={savingSerialNo === row.serialNo}
-                                  onClick={cancelEditing}
-                                >
-                                  Cancel
-                                </button>
-                              </div>
+                              </select>
                             ) : (
-                              <div className="rowActions">
+                              <input
+                                className="cellInput"
+                                value={String(value ?? "")}
+                                onChange={(event) =>
+                                  setDraftOutput((current) => ({
+                                    ...current,
+                                    [column]: event.target.value,
+                                  }))
+                                }
+                              />
+                            )
+                          ) : (
+                            <span className="cellValueWrap">
+                              {column === "Ticket ID" ? (
                                 <button
                                   type="button"
-                                  className="secondaryButton"
-                                  onClick={() => startEditing(row)}
+                                  className="ticketIdLink"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    startModalEditing(row);
+                                  }}
+                                  title="Click to view/edit order form"
                                 >
-                                  Edit
+                                  {String(value ?? "")}
                                 </button>
-                              </div>
-                            )}
-                          </td>
-                        </tr>
+                              ) : (
+                                <span>
+                                  {value === MANUAL_ENTRY_REQUIRED
+                                    ? "Entry"
+                                    : column === "Work Location"
+                                      ? ASP_CODE_REGION_MAP[String(value ?? "").trim()] ?? String(value ?? "")
+                                      : String(value ?? "")}
+                                </span>
+                              )}
+                              {isCarriedForward ? (
+                                <span className="cellCarryFlag">Carried</span>
+                              ) : null}
+                            </span>
+                          )}
+                        </td>
                       );
                     })}
-                  </tbody>
-                </table>
-              </div>
-              </div>
-              </div>
-            </section>
-          ) : null}
-
-          {upload && showUploadBatches ? (
-            <section className="panel">
-              <div className="sectionHeader">
-                <h2>Upload Batches</h2>
-                <button type="button" disabled={isBusy || !canUseBatches} onClick={() => void handlePreview()}>
-                  Preview Matches
-                </button>
-              </div>
-              <div className="batchGrid">
-                {upload.batches.map((batch) => {
-                  const validation = upload.validations.find((v) => v.sourceType === batch.sourceType);
-                  const hasMissingColumns = validation && !validation.isValid && validation.missingColumns.length > 0;
-                  return (
-                    <div className="batchCard" key={batch.id}>
-                      <span>{SOURCE_LABELS[batch.sourceType]}</span>
-                      <strong>{batch.rowCount} rows</strong>
-                      <code>{batch.id}</code>
-                      <StatusPill tone={batch.errorCount === 0 && !hasMissingColumns ? "good" : "warn"}>
-                        {batch.status}
-                      </StatusPill>
-                      {hasMissingColumns && (
-                        <div style={{ color: "var(--danger)", fontSize: "11px", fontWeight: "bold", marginTop: "4px" }}>
-                          Missing columns: {validation.missingColumns.join(", ")}
+                    <td className="changeCell">
+                      <ChangeTypeBadge comparison={row.comparison} />
+                    </td>
+                    <td className="opsCell">
+                      <CarryForwardBadge carryForward={row.carryForward} />
+                      {row.carryForward.manualFieldsMissing.length > 0 ? (
+                        <span
+                          className="manualCount"
+                          title={`Manual entry required: ${formatFieldList(row.carryForward.manualFieldsMissing)}`}
+                        >
+                          {row.carryForward.manualFieldsMissing.length}
+                        </span>
+                      ) : null}
+                    </td>
+                    <td className="stickyActionColumn">
+                      {isEditing ? (
+                        <div className="rowActions">
+                          <button
+                            type="button"
+                            disabled={savingSerialNo === row.serialNo}
+                            onClick={() => void saveEditing(row.serialNo)}
+                          >
+                            {savingSerialNo === row.serialNo ? "Saving..." : "Save"}
+                          </button>
+                          <button
+                            type="button"
+                            className="secondaryButton"
+                            disabled={savingSerialNo === row.serialNo}
+                            onClick={cancelEditing}
+                          >
+                            Cancel
+                          </button>
+                        </div>
+                      ) : (
+                        <div className="rowActions">
+                          <button
+                            type="button"
+                            className="secondaryButton"
+                            onClick={() => startEditing(row)}
+                          >
+                            Edit
+                          </button>
                         </div>
                       )}
-                    </div>
-                  );
-                })}
-              </div>
-            </section>
-          ) : null}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    );
+  };
 
-          {preview && showMatchPreviewSection ? (
-            <MatchPreviewSection
-              preview={preview}
-              isBusy={isBusy}
-              canUseBatches={canUseBatches}
-              handleGenerate={handleGenerate}
-              selectedPreviewCategory={selectedPreviewCategory}
-              setSelectedPreviewCategory={setSelectedPreviewCategory}
-              selectedRecords={selectedRecords}
-            />
-          ) : null}
-          {workspaceView === "overview" && (
-            <DashboardToggles
-              showDayOverDayComparison={showDayOverDayComparison}
-              setShowDayOverDayComparison={setShowDayOverDayComparison}
-              showMatchPreviewSection={showMatchPreviewSection}
-              setShowMatchPreviewSection={setShowMatchPreviewSection}
-              showManualCarryForward={showManualCarryForward}
-              setShowManualCarryForward={setShowManualCarryForward}
-              showCaseTypeOverview={showCaseTypeOverview}
-              setShowCaseTypeOverview={setShowCaseTypeOverview}
-              showCustomerSegmentSplit={showCustomerSegmentSplit}
-              setShowCustomerSegmentSplit={setShowCustomerSegmentSplit}
-              showClosedCallLedger={showClosedCallLedger}
-              setShowClosedCallLedger={setShowClosedCallLedger}
-              showUploadBatches={showUploadBatches}
-              setShowUploadBatches={setShowUploadBatches}
-            />
+  return (
+    <div className="dashboardLayout">
+      <aside
+        className={`appSidebar ${isSidebarCollapsed ? "collapsed" : ""} ${isResizing ? "resizing" : ""}`}
+        style={{ width: isSidebarCollapsed ? "72px" : `${sidebarWidth}px` }}
+      >
+        <button
+          type="button"
+          className="sidebarCollapseToggle"
+          onClick={() => {
+            const nextCollapsed = !isSidebarCollapsed;
+            setIsSidebarCollapsed(nextCollapsed);
+            try {
+              window.localStorage.setItem("opencall.sidebarCollapsed", String(nextCollapsed));
+            } catch {}
+          }}
+          aria-label={isSidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
+        >
+          {isSidebarCollapsed ? (
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><path d="M9 18l6-6-6-6"/></svg>
+          ) : (
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><path d="M15 18l-6-6 6-6"/></svg>
           )}
-        </section>
-      </section>
+        </button>
+        <div
+          className="sidebarResizeHandle"
+          onMouseDown={(e) => {
+            e.preventDefault();
+            setIsResizing(true);
+          }}
+        />
+        <div className="sidebarBrand">
+          <div className="sidebarLogo" aria-hidden="true" style={{ background: "none", boxShadow: "none" }}>
+            <img src={logoIcon.src} alt="R" style={{ width: "38px", height: "38px", objectFit: "contain" }} />
+          </div>
+          <span className="sidebarTitle">Renderways</span>
+        </div>
+
+        <div className="sidebarMenu">
+          <div className="sidebarSection">Dashboards</div>
+
+          <button
+            type="button"
+            className={`sidebarItem ${workspaceView === "overview" ? "active" : ""}`}
+            onClick={() => setWorkspaceView("overview")}
+          >
+            <span className="sidebarIcon">
+              <span>📊</span> <span className="sidebarText">Overview</span>
+            </span>
+          </button>
+
+          <button
+            type="button"
+            className={`sidebarItem ${workspaceView === "rtpl-dashboard" ? "active" : ""}`}
+            onClick={() => setWorkspaceView("rtpl-dashboard")}
+          >
+            <span className="sidebarIcon">
+              <span>📈</span> <span className="sidebarText">RTPL Dashboard</span>
+            </span>
+          </button>
+
+          <button
+            type="button"
+            className={`sidebarItem ${workspaceView === "rtpl" ? "active" : ""}`}
+            onClick={() => setWorkspaceView("rtpl")}
+          >
+            <span className="sidebarIcon">
+              <span>📈</span> <span className="sidebarText">RTPL Houres status</span>
+            </span>
+          </button>
+
+          <button
+            type="button"
+            className={`sidebarItem ${workspaceView === "sla-tat" ? "active" : ""}`}
+            onClick={() => setWorkspaceView("sla-tat")}
+          >
+            <span className="sidebarIcon">
+              <span>⏰</span> <span className="sidebarText">SLA TaT</span>
+            </span>
+          </button>
+
+          <button
+            type="button"
+            className={`sidebarItem ${workspaceView === "pivot" ? "active" : ""}`}
+            onClick={() => setWorkspaceView("pivot")}
+          >
+            <span className="sidebarIcon">
+              <span>🧩</span> <span className="sidebarText">RTPL pivot</span>
+            </span>
+          </button>
+
+          <button
+            type="button"
+            className={`sidebarItem ${workspaceView === "tn-view-status" ? "active" : ""}`}
+            onClick={() => setWorkspaceView("tn-view-status")}
+          >
+            <span className="sidebarIcon">
+              <span>📊</span> <span className="sidebarText">TN VIEW Status</span>
+            </span>
+          </button>
+
+          <button
+            type="button"
+            className={`sidebarItem ${workspaceView === "flex" ? "active" : ""}`}
+            onClick={() => setWorkspaceView("flex")}
+          >
+            <span className="sidebarIcon">
+              <span>⚡</span> <span className="sidebarText">Flex Dashboard</span>
+            </span>
+          </button>
+
+          <button
+            type="button"
+            className={`sidebarItem ${workspaceView === "flex-eod-bod" ? "active" : ""}`}
+            onClick={() => setWorkspaceView("flex-eod-bod")}
+          >
+            <span className="sidebarIcon">
+              <span>📈</span> <span className="sidebarText">Flex Eod&Bod</span>
+            </span>
+          </button>
+
+          <div className="sidebarSection">Data & Operations</div>
+
+          <button
+            type="button"
+            className={`sidebarItem ${workspaceView === "records" ? "active" : ""}`}
+            disabled={!report}
+            onClick={() => setWorkspaceView("records")}
+          >
+            <span className="sidebarIcon">
+              <span>📋</span> <span className="sidebarText">Records Table</span>
+            </span>
+            {report && incompleteCellCount > 0 && (
+              <span className="sidebarBadge">{incompleteCellCount}</span>
+            )}
+          </button>
+
+          {/* Quick-action report summaries (modals) */}
+          {selectedRegion && selectedRegion !== "ALL" && regionKpiMetrics && (
+            <>
+              <button
+                type="button"
+                className="sidebarItem"
+                onClick={() => setIsKpiModalOpen(true)}
+              >
+                <span className="sidebarIcon">
+                  <span>📊</span> <span className="sidebarText">Salem TN KPI</span>
+                </span>
+              </button>
+              <button
+                type="button"
+                className="sidebarItem"
+                onClick={() => setIsChennaiKpiModalOpen(true)}
+              >
+                <span className="sidebarIcon">
+                  <span>📈</span> <span className="sidebarText">Chennai EOD/BOD</span>
+                </span>
+              </button>
+            </>
+          )}
+
+          {(session.user.role === "SUPER_ADMIN" || (selectedRegion && selectedRegion !== "ALL" && regionKpiMetrics)) && (
+            <button
+              type="button"
+              className={`sidebarItem ${workspaceView === "productivity" ? "active" : ""}`}
+              onClick={() => setWorkspaceView("productivity")}
+            >
+              <span className="sidebarIcon">
+                <span>👥</span> <span className="sidebarText">Engineer Productivity</span>
+              </span>
+            </button>
+          )}
+
+          {(session.user.role === "SUPER_ADMIN" || session.user.role === "REGION_ADMIN") && (
+            <button
+              type="button"
+              className={`sidebarItem ${workspaceView === "admin-engineers" ? "active" : ""}`}
+              onClick={() => setWorkspaceView("admin-engineers")}
+            >
+              <span className="sidebarIcon">
+                <span>👤</span> <span className="sidebarText">Add Engineers</span>
+              </span>
+            </button>
+          )}
+
+          <div className="sidebarSection">Utilities & System</div>
+
+          {session.user.role === "SUPER_ADMIN" && (
+            <button
+              type="button"
+              className="sidebarItem"
+              onClick={() => setIsUploadDrawerOpen(true)}
+            >
+              <span className="sidebarIcon">
+                <span>📤</span> <span className="sidebarText">Upload Files</span>
+              </span>
+            </button>
+          )}
+
+          <button
+            type="button"
+            className="sidebarItem"
+            onClick={() => setIsHistoryPanelOpen(true)}
+          >
+            <span className="sidebarIcon">
+              <span>📜</span> <span className="sidebarText">History Logs</span>
+            </span>
+          </button>
+
+          <button
+            type="button"
+            className="sidebarItem"
+            onClick={() => void handleRefreshWorkspace()}
+            disabled={isBusy}
+          >
+            <span className="sidebarIcon">
+              <span>🔄</span> <span className="sidebarText">Refresh Workspace</span>
+            </span>
+          </button>
+
+
+
+          <button
+            type="button"
+            className="sidebarItem danger"
+            onClick={handleLogout}
+            style={{ color: "#f87171" }}
+          >
+            <span className="sidebarIcon">
+              <span>🚪</span> <span className="sidebarText">Log Out</span>
+            </span>
+          </button>
+        </div>
+      </aside>
+
+      <main className="mainLayoutContent">
+        <AppHeader
+          workspaceView={workspaceView}
+          hasReport={Boolean(report)}
+          hasBatches={canUseBatches}
+          isBusy={isBusy}
+          dbHealth={dbHealth}
+          runtimeHealth={runtimeHealth}
+          session={session}
+          onWorkspaceViewChange={setWorkspaceView}
+          onRefreshHealth={() => void handleRefreshWorkspace()}
+          onOpenUpload={() => setIsUploadDrawerOpen(true)}
+          onOpenHistory={() => setIsHistoryPanelOpen(true)}
+          onGenerateReport={() => void handleGenerate()}
+          onExportXlsx={() => exportReport(downloadReportAsXlsx)}
+          onExportCsv={() => exportReport(downloadReportAsExcel)}
+          onLogout={handleLogout}
+        />
+
+        <div className="pageContent">
+          <UploadDrawer
+            isOpen={isUploadDrawerOpen}
+            isBusy={isBusy}
+            files={files}
+            fileFields={FILE_FIELDS}
+            onClose={() => setIsUploadDrawerOpen(false)}
+            onSubmit={(event) => void handleUpload(event)}
+            onFileChange={(field, selectedFiles) => {
+              setFiles((current) => ({
+                ...current,
+                [field]: selectedFiles,
+              }));
+            }}
+          />
+
+          <HistoryDrawer
+            isOpen={isHistoryPanelOpen}
+            sessions={historySessions}
+            onClose={() => setIsHistoryPanelOpen(false)}
+            onOpen={handleHistoryOpen}
+            onRename={handleHistoryRename}
+            onDelete={handleHistoryDelete}
+          />
+
+          {message ? <div className="alert">{message}</div> : null}
+
+          <section className={`workspace ${workspaceView === "records" ? "recordsMode" : "overviewMode"}`}>
+            <section className="mainGrid">
+              {report ? (
+                <section className="panel reportPanel">
+                  <div className="overviewReportContent">
+                    {workspaceView === "overview" && (
+                      <>
+                        <div className="sectionHeader">
+                          <div className="overviewRegionPicker">
+                            {session?.user?.role === "REGION_ADMIN" ? (
+                              <h2>{report.regionBreakdown[0]?.regionName ?? "My Region"}</h2>
+                            ) : (
+                              <select
+                                className="overviewRegionSelect"
+                                aria-label="Select region"
+                                value={selectedRegion ?? "ALL"}
+                                onChange={(event) => selectOverviewRegion(event.target.value)}
+                              >
+                                <option value="ALL">All Regions</option>
+                                {activeRegionBreakdown
+                                  .filter((entry) => entry.count > 0)
+                                  .map((entry) => (
+                                    <option key={entry.aspCode || entry.regionName} value={entry.aspCode}>
+                                      {entry.regionName}
+                                    </option>
+                                  ))}
+                              </select>
+                            )}
+                          </div>
+                          <MetricsGrid items={overviewMetrics} />
+                        </div>
+                        <OverviewCharts
+                          report={report}
+                          activeRows={activeRows}
+                          overallStats={overallStats}
+                        />
+                        {showCaseTypeOverview && (
+                          <CaseTypeCards
+                            printInstallationRows={printInstallationRows}
+                            cissRows={cissRows}
+                            printFixRows={printFixRows}
+                            pcRows={pcRows}
+                            tradeRows={tradeRows}
+                            rcaRows={rcaRows}
+                            printCaseFilter={printCaseFilter}
+                            showCissOnly={showCissOnly}
+                            showTradeOnly={showTradeOnly}
+                            showRcaOnly={showRcaOnly}
+                            caseTypeRegionBreakdown={caseTypeRegionBreakdown}
+                            openRecordsWithFilter={openRecordsWithFilter}
+                          />
+                        )}
+
+                        {showCustomerSegmentSplit && (
+                          <CustomerSegmentCards
+                            showConsumerOnly={showConsumerOnly}
+                            consumerRows={consumerRows}
+                            showCommercialOnly={showCommercialOnly}
+                            commercialRows={commercialRows}
+                            showWarrantyOnly={showWarrantyOnly}
+                            warrantyRows={warrantyRows}
+                            showNonWarrantyOnly={showNonWarrantyOnly}
+                            nonWarrantyRows={nonWarrantyRows}
+                            caseTypeRegionBreakdown={caseTypeRegionBreakdown}
+                            incompleteCellCount={incompleteCellCount}
+                            openRecordsWithFilter={openRecordsWithFilter}
+                          />
+                        )}
+                      </>
+                    )}
+
+
+
+                    {workspaceView === "rtpl-dashboard" && (
+                      <RegionBreakdown
+                        canShowAllRegions={session?.user?.role !== "REGION_ADMIN"}
+                        overallStats={overallStats}
+                        activeRegionBreakdown={activeRegionBreakdown}
+                        selectedRegion={selectedRegion}
+                        selectedWoOtcCode={selectedWoOtcCode}
+                        showConsumerOnly={showConsumerOnly}
+                        showCommercialOnly={showCommercialOnly}
+                        showWarrantyOnly={showWarrantyOnly}
+                        showNonWarrantyOnly={showNonWarrantyOnly}
+                        showPcOnly={showPcOnly}
+                        showCissOnly={showCissOnly}
+                        showRcaOnly={showRcaOnly}
+                        printCaseFilter={printCaseFilter}
+                        openRecordsWithFilter={openRecordsWithFilter}
+                        onShowAllRegions={onShowAllRegions}
+                      />
+                    )}
+
+                    {workspaceView === "rtpl" && (
+                      <RTPLDashboard
+                        rtplAnalyticsDate={rtplAnalyticsDate}
+                        setRtplAnalyticsDate={setRtplAnalyticsDate}
+                        rtplAnalyticsRows={rtplAnalyticsRows}
+                        rtplCaseScopeOptions={rtplCaseScopeOptions}
+                        selectedRtplCaseScope={selectedRtplCaseScope}
+                        setSelectedRtplCaseScope={setSelectedRtplCaseScope}
+                        rtplRegionOptions={rtplRegionOptions}
+                        selectedRtplRegion={selectedRtplRegion}
+                        setSelectedRtplRegion={setSelectedRtplRegion}
+                        rtplTimeCards={rtplTimeCards}
+                        selectedRtplTimeCard={selectedRtplTimeCard}
+                        openRtplCheckpointModal={openRtplCheckpointModal}
+                        openRecordsWithFilter={openRecordsWithFilter}
+                        bodFixedTime={bodFixedTime}
+                        bodSnapshot={bodSnapshot}
+                        onFixBod={handleFixBod}
+                        onDownloadBodEod={handleDownloadBodEod}
+                      />
+                    )}
+
+                    {workspaceView === "pivot" && (
+                      <RTPLPivotTable
+                        rtplWipPivot={rtplWipPivot}
+                        draftPivotSegmentSet={draftPivotSegmentSet}
+                        draftPivotLocationSet={draftPivotLocationSet}
+                        pivotAllSegmentCount={pivotAllSegmentCount}
+                        pivotLocationOptions={pivotLocationOptions}
+                        pivotAllLocationCount={pivotAllLocationCount}
+                        pivotSegmentFilterActive={pivotSegmentFilterActive}
+                        appliedPivotSegmentLabel={appliedPivotSegmentLabel}
+                        isPivotSegmentFilterOpen={isPivotSegmentFilterOpen}
+                        setIsPivotSegmentFilterOpen={setIsPivotSegmentFilterOpen}
+                        draftPivotSegments={draftPivotSegments}
+                        setDraftPivotSegments={setDraftPivotSegments}
+                        selectedPivotSegments={selectedPivotSegments}
+                        selectedPivotCaseScope={selectedPivotCaseScope}
+                        setSelectedPivotCaseScope={setSelectedPivotCaseScope}
+                        pivotLocationFilterActive={pivotLocationFilterActive}
+                        appliedPivotLocationLabel={appliedPivotLocationLabel}
+                        isPivotLocationFilterOpen={isPivotLocationFilterOpen}
+                        setIsPivotLocationFilterOpen={setIsPivotLocationFilterOpen}
+                        draftPivotLocations={draftPivotLocations}
+                        setDraftPivotLocations={setDraftPivotLocations}
+                        selectedPivotLocations={selectedPivotLocations}
+                        openPivotSegmentFilter={openPivotSegmentFilter}
+                        toggleDraftPivotSegment={toggleDraftPivotSegment}
+                        applyPivotSegmentFilter={applyPivotSegmentFilter}
+                        openPivotLocationFilter={openPivotLocationFilter}
+                        toggleDraftPivotLocation={toggleDraftPivotLocation}
+                        applyPivotLocationFilter={applyPivotLocationFilter}
+                        openPivotRecords={openPivotRecords}
+                      />
+                    )}
+
+
+                    {workspaceView === "tn-view-status" && (
+                      <TNViewStatusPage
+                        selectedRegion={selectedRegion}
+                        setSelectedRegion={setSelectedRegion}
+                        activeRegionName={activeRegionName}
+                        activeRegionBreakdown={activeRegionBreakdown}
+                        tnViewMode={tnViewMode}
+                        setTnViewMode={setTnViewMode}
+                        tnFilterType={tnFilterType}
+                        setTnFilterType={setTnFilterType}
+                        selectedTnValue={selectedTnValue}
+                        setSelectedTnValue={setSelectedTnValue}
+                        regionDateMetadata={regionDateMetadata}
+                        tnDateLabel={tnDateLabel}
+                        regionKpiMetrics={regionKpiMetrics}
+                        tnFilteredRows={tnFilteredRows}
+                        getParsedDateForExcel={getParsedDateForExcel}
+                        isSuperAdmin={session?.user?.role === "SUPER_ADMIN"}
+                      />
+                    )}
+
+                    {workspaceView === "sla-tat" && (
+                      <SLATatPage
+                        selectedRegion={selectedRegion}
+                        activeRegionName={activeRegionName}
+                        pcRows={pcRows}
+                        printFixRows={printFixRows}
+                        printInstallationRows={printInstallationRows}
+                        openRecordsWithFilter={openRecordsWithFilter}
+                      />
+                    )}
+
+                    {workspaceView === "flex" && (
+                      <FlexDashboard
+                        rtplAnalyticsRows={rtplAnalyticsRows}
+                        rtplCaseScopeOptions={rtplCaseScopeOptions}
+                        selectedRtplCaseScope={selectedRtplCaseScope}
+                        setSelectedRtplCaseScope={setSelectedRtplCaseScope}
+                        rtplRegionOptions={rtplRegionOptions}
+                        selectedRtplRegion={selectedRtplRegion}
+                        setSelectedRtplRegion={setSelectedRtplRegion}
+                        flexStatusMetrics={flexStatusMetrics}
+                        openRecordsWithFilter={openRecordsWithFilter}
+                      />
+                    )}
+
+                    {workspaceView === "flex-eod-bod" && (
+                      <FlexEodBodPage
+                        selectedRegion={selectedRegion}
+                        setSelectedRegion={setSelectedRegion}
+                        activeRegionName={activeRegionName}
+                        activeRegionBreakdown={activeRegionBreakdown}
+                        eodBodViewMode={eodBodViewMode}
+                        setEodBodViewMode={setEodBodViewMode}
+                        eodBodFilterType={eodBodFilterType}
+                        setEodBodFilterType={setEodBodFilterType}
+                        selectedEodBodValue={selectedEodBodValue}
+                        setSelectedEodBodValue={setSelectedEodBodValue}
+                        regionDateMetadata={regionDateMetadata}
+                        chennaiKpiMetrics={chennaiKpiMetrics}
+                        eodBodFilteredRows={eodBodFilteredRows}
+                        getParsedDateForExcel={getParsedDateForExcel}
+                        getDayOfWeek={getDayOfWeek}
+                        isSuperAdmin={session?.user?.role === "SUPER_ADMIN"}
+                      />
+                    )}
+
+                    {workspaceView === "admin-engineers" && (
+                      <AdminEngineersPage />
+                    )}
+
+                    {workspaceView === "productivity" && (
+                      <ProductivityPage
+                        selectedRegion={selectedRegion}
+                        activeRegionName={activeRegionName}
+                        productivityFilterType={productivityFilterType}
+                        setProductivityFilterType={setProductivityFilterType}
+                        selectedProductivityValue={selectedProductivityValue}
+                        setSelectedProductivityValue={setSelectedProductivityValue}
+                        engineerProductivityMetrics={engineerProductivityMetrics}
+                        productivityDateLabel={productivityDateLabel}
+                      />
+                    )}
+
+                    {showDayOverDayComparison && workspaceView === "overview" && (
+                      <ComparisonSummaryPanel report={report} />
+                    )}
+                    {showManualCarryForward && workspaceView === "overview" && (
+                      <CarryForwardSummaryPanel report={report} />
+                    )}
+
+                    {showClosedCallLedger && overallClosedCount > 0 && workspaceView === "overview" ? (
+                      <ClosedCallLedger
+                        overallClosedCount={overallClosedCount}
+                        closedRegionBreakdown={closedRegionBreakdown}
+                        showClosedOnly={showClosedOnly}
+                        selectedRegion={selectedRegion}
+                        openRecordsWithFilter={openRecordsWithFilter}
+                      />
+                    ) : null}
+                  </div>
+
+                  {workspaceView === "records" && (
+                    <div className={`recordsArea ${isRecordsSummaryHidden ? "summaryHidden" : ""}`}>
+                      <div className={`recordsScopeRow ${staleFlexRows.length > 0 ? "hasFlex" : ""}`}>
+                        {/* Left: active-category total split by Consumer / Commercial. */}
+                        <div className="recordsScopeCard">
+                          {activeRegionName ? (
+                            <span className="recordsScopeRegion">{activeRegionName}</span>
+                          ) : null}
+                          <span className="recordsScopeLabel">{recordsScopeLabel}</span>
+                          <strong className="recordsScopeTotal">{formatNumber(recordsScopeTotal)}</strong>
+                          <div className="recordsScopeSplit">
+                            <button
+                              type="button"
+                              className="recordsScopeSplitItem"
+                              title="Show Consumer records only"
+                              onClick={() => openRecordsWithFilter({ region: selectedRegion, consumerOnly: true })}
+                            >
+                              <span>Consumer</span>
+                              <strong>{formatNumber(recordsScopeConsumer)}</strong>
+                            </button>
+                            <button
+                              type="button"
+                              className="recordsScopeSplitItem"
+                              title="Show Commercial records only"
+                              onClick={() => openRecordsWithFilter({ region: selectedRegion, commercialOnly: true })}
+                            >
+                              <span>Commercial</span>
+                              <strong>{formatNumber(recordsScopeCommercial)}</strong>
+                            </button>
+                          </div>
+                          <div className="recordsScopeSplit">
+                            <button
+                              type="button"
+                              className="recordsScopeSplitItem"
+                              title="Show Warranty records only"
+                              onClick={() => openRecordsWithFilter({ region: selectedRegion, warrantyOnly: true })}
+                            >
+                              <span>Warranty</span>
+                              <strong>{formatNumber(recordsScopeWarranty)}</strong>
+                            </button>
+                            <button
+                              type="button"
+                              className="recordsScopeSplitItem"
+                              title="Show Trade records only"
+                              onClick={() => openRecordsWithFilter({ region: selectedRegion, tradeOnly: true })}
+                            >
+                              <span>Trade</span>
+                              <strong>{formatNumber(recordsScopeTrade)}</strong>
+                            </button>
+                          </div>
+                          {recordsScopeSegmentMix ? (
+                            <div className="recordsScopeChips">
+                              {recordsScopeSegmentMix.map((item) => (
+                                <button
+                                  key={item.key}
+                                  type="button"
+                                  className="recordsScopeChip"
+                                  title={`Show ${item.label} records only`}
+                                  onClick={item.onSelect}
+                                >
+                                  <strong>{formatNumber(item.count)}</strong> {item.label}
+                                </button>
+                              ))}
+                            </div>
+                          ) : null}
+                          <div className="recordsScopeManual">
+                            <span>Manual entries pending</span>
+                            <strong className={recordsScopeManualPending > 0 ? "pending" : ""}>
+                              {formatNumber(recordsScopeManualPending)}
+                            </strong>
+                          </div>
+                        </div>
+
+                        {/* Right: compressed unchanged-Flex-Status banner. */}
+                        {staleFlexRows.length > 0 ? (
+                          <div className="staleFlexBanner" role="status">
+                            <div className="staleFlexBannerHeader">
+                              <p className="staleFlexBannerSummary">
+                                <span aria-hidden="true">⚠</span>{" "}
+                                {formatNumber(staleFlexRows.length)} record(s) have a Status
+                                Aging of {STALE_FLEX_THRESHOLD_DAYS}+ days
+                              </p>
+                              <button
+                                type="button"
+                                className="staleFlexToggle"
+                                onClick={() => setIsStaleModalOpen(true)}
+                              >
+                                View all ({formatNumber(staleFlexRows.length)})
+                              </button>
+                            </div>
+                            {/* Compact inline list: Ticket ID + Days only. Full details
+                                (Flex Status / Location / Engineer) open in the modal. */}
+                            <div className="staleFlexPanel">
+                              <table className="staleFlexTable">
+                                <thead>
+                                  <tr>
+                                    <th>Ticket ID</th>
+                                    <th className="staleFlexDaysCol">Days</th>
+                                  </tr>
+                                </thead>
+                                <tbody>
+                                  {staleFlexRows.map((row) => {
+                                    const ticketId = String(row.output["Ticket ID"] ?? "");
+                                    const days = row.enriched?.current_status_aging ?? 0;
+                                    return (
+                                      <tr
+                                        key={row.serialNo}
+                                        className={`staleFlexRow ${staleSeverityClass(days)}`}
+                                        role="button"
+                                        tabIndex={0}
+                                        title={`Filter records to ticket ${ticketId || "—"}`}
+                                        onClick={() => jumpToStaleTicket(ticketId)}
+                                        onKeyDown={(event) => {
+                                          if (event.key === "Enter" || event.key === " ") {
+                                            event.preventDefault();
+                                            jumpToStaleTicket(ticketId);
+                                          }
+                                        }}
+                                      >
+                                        <td className="staleFlexTicket">{ticketId || "—"}</td>
+                                        <td className="staleFlexDaysCol">
+                                          <span className="staleFlexDaysBadge">{days}</span>
+                                        </td>
+                                      </tr>
+                                    );
+                                  })}
+                                </tbody>
+                              </table>
+                            </div>
+                          </div>
+                        ) : null}
+                      </div>
+                      <div className="downloadActions recordsToolbar">
+                        <div className="downloadActionGroup">
+                          <button
+                            className="downloadBtn excelBtn"
+                            onClick={() => exportReport(downloadReportAsXlsx)}
+                          >
+                            Download Excel (.xlsx)
+                          </button>
+                          <button
+                            className="downloadBtn csvBtn"
+                            onClick={() => exportReport(downloadReportAsExcel)}
+                          >
+                            Download CSV
+                          </button>
+                          {selectedRegion && selectedRegion !== "ALL" && regionKpiMetrics && (
+                            <>
+                              <button
+                                type="button"
+                                className="downloadBtn excelBtn"
+                                style={{ background: "linear-gradient(135deg, #0284c7, #0369a1)", borderColor: "#0284c7", color: "#ffffff" }}
+                                onClick={() => setIsKpiModalOpen(true)}
+                              >
+                                📊 VIEW TN REPORT
+                              </button>
+                              <button
+                                type="button"
+                                className="downloadBtn excelBtn"
+                                style={{ background: "linear-gradient(135deg, #0ea5e9, #0284c7)", borderColor: "#0ea5e9", color: "#ffffff" }}
+                                onClick={() => setIsChennaiKpiModalOpen(true)}
+                              >
+                                📊 VIEW EOD&BOD REPORT DASHBOARD
+                              </button>
+                            </>
+                          )}
+                          {(session?.user?.role === "SUPER_ADMIN" || (selectedRegion && selectedRegion !== "ALL" && regionKpiMetrics)) && (
+                            <button
+                              type="button"
+                              className="downloadBtn excelBtn"
+                              style={{ background: "linear-gradient(135deg, #f97316, #ea580c)", borderColor: "#f97316", color: "#ffffff" }}
+                              onClick={() => setWorkspaceView("productivity")}
+                            >
+                              📊 VIEW ENGINEER PRODUCTIVITY
+                            </button>
+                          )}
+                        </div>
+                        <div className="recordsToolbarRight">
+                          <div className="recordsSearchBar">
+                            <input
+                              id="records-search"
+                              type="search"
+                              value={recordsSearchQuery}
+                              aria-label="Search records"
+                              placeholder="Search WO, case ID, trade..."
+                              onChange={(event) => setRecordsSearchQuery(event.target.value)}
+                            />
+                          </div>
+                          <div className="columnsMenu" ref={columnsMenuRef}>
+                            <button
+                              type="button"
+                              className={`secondaryButton columnsMenuTrigger ${hiddenColumns.size > 0 ? "active" : ""}`}
+                              aria-haspopup="menu"
+                              aria-expanded={isColumnsMenuOpen}
+                              onClick={() => setIsColumnsMenuOpen((open) => !open)}
+                              title="Show or hide table columns"
+                            >
+                              <svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+                                <rect x="1.5" y="2.5" width="13" height="11" rx="1.5" stroke="currentColor" />
+                                <path d="M6 2.5v11M10 2.5v11" stroke="currentColor" />
+                              </svg>
+                              Columns
+                              {hiddenColumns.size > 0 ? (
+                                <span className="columnsMenuCount">{hiddenColumns.size}</span>
+                              ) : null}
+                            </button>
+                            {isColumnsMenuOpen ? (
+                              <div className="columnsMenuPopover" role="menu">
+                                <div className="columnsMenuHeader">
+                                  <span>Show columns</span>
+                                  <button
+                                    type="button"
+                                    className="columnsMenuReset"
+                                    disabled={hiddenColumns.size === 0}
+                                    onClick={() => setHiddenColumns(new Set())}
+                                  >
+                                    Show all
+                                  </button>
+                                </div>
+                                <div className="columnsMenuList">
+                                  {DAILY_CALL_PLAN_COLUMNS.map((column) => {
+                                    const locked = ALWAYS_VISIBLE_COLUMNS.has(column);
+                                    const isVisible = !hiddenColumns.has(column);
+                                    return (
+                                      <label
+                                        key={column}
+                                        className={`columnsMenuItem ${locked ? "locked" : ""}`}
+                                      >
+                                        <input
+                                          type="checkbox"
+                                          checked={isVisible}
+                                          disabled={locked}
+                                          onChange={() => {
+                                            if (locked) {
+                                              return;
+                                            }
+                                            setHiddenColumns((current) => {
+                                              const next = new Set(current);
+                                              if (next.has(column)) {
+                                                next.delete(column);
+                                              } else {
+                                                next.add(column);
+                                              }
+                                              return next;
+                                            });
+                                          }}
+                                        />
+                                        <span className="columnsMenuLabel">{column}</span>
+                                        {locked ? (
+                                          <span className="columnsMenuLock" title="Always visible">
+                                            Locked
+                                          </span>
+                                        ) : null}
+                                      </label>
+                                    );
+                                  })}
+                                </div>
+                              </div>
+                            ) : null}
+                          </div>
+                          <button
+                            type="button"
+                            className="secondaryButton fullRecordButton"
+                            onClick={() => setIsRecordsTableMaximized(true)}
+                            title="Expand the records table to full screen"
+                          >
+                            <svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+                              <path d="M2 6V2.5h3.5M14 6V2.5h-3.5M2 10v3.5h3.5M14 10v3.5h-3.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+                            </svg>
+                            Full Record
+                          </button>
+                          <button
+                            type="button"
+                            className="secondaryButton backToDashboardButton"
+                            onClick={() => setWorkspaceView("overview")}
+                          >
+                            Back to Dashboard
+                          </button>
+                        </div>
+                      </div>
+
+                      {colFilters.activeFilterCount > 0 && (
+                        <div className="colFilterSummary">
+                          <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
+                            <path d="M1 2h14l-5.5 6.5V14l-3-1.5V8.5L1 2z" fill="currentColor" />
+                          </svg>
+                          <span>
+                            {colFilters.activeFilterCount} column filter{colFilters.activeFilterCount > 1 ? "s" : ""} active
+                            {" · "}
+                            {filteredRows.length} of {regionFilteredRows.length} rows shown
+                          </span>
+                          <button type="button" onClick={colFilters.resetAll}>Clear All Filters</button>
+                        </div>
+                      )}
+                      {recordsSearchQuery && (
+                        <div className="colFilterSummary">
+                          <span>
+                            Search "{recordsSearchQuery}" active
+                            {" - "}
+                            {filteredRows.length} of {columnFilteredRows.length} rows shown
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => setRecordsSearchQuery("")}
+                          >
+                            Clear Search
+                          </button>
+                        </div>
+                      )}
+
+                      {renderDetailedRecordsTable(filteredRows)}
+                    </div>
+                  )}
+                </section>
+              ) : null}
+
+              {upload && showUploadBatches && workspaceView === "overview" ? (
+                <section className="panel">
+                  <div className="sectionHeader">
+                    <h2>Upload Batches</h2>
+                    <button type="button" disabled={isBusy || !canUseBatches} onClick={() => void handlePreview()}>
+                      Preview Matches
+                    </button>
+                  </div>
+                  <div className="batchGrid">
+                    {upload.batches.map((batch) => {
+                      const validation = upload.validations.find((v) => v.sourceType === batch.sourceType);
+                      const hasMissingColumns = validation && !validation.isValid && validation.missingColumns.length > 0;
+                      return (
+                        <div className="batchCard" key={batch.id}>
+                          <span>{SOURCE_LABELS[batch.sourceType]}</span>
+                          <strong>{batch.rowCount} rows</strong>
+                          <code>{batch.id}</code>
+                          <StatusPill tone={batch.errorCount === 0 && !hasMissingColumns ? "good" : "warn"}>
+                            {batch.status}
+                          </StatusPill>
+                          {hasMissingColumns && (
+                            <div style={{ color: "var(--danger)", fontSize: "11px", fontWeight: "bold", marginTop: "4px" }}>
+                              Missing columns: {validation.missingColumns.join(", ")}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </section>
+              ) : null}
+
+              {preview && showMatchPreviewSection && workspaceView === "overview" ? (
+                <MatchPreviewSection
+                  preview={preview}
+                  isBusy={isBusy}
+                  canUseBatches={canUseBatches}
+                  handleGenerate={handleGenerate}
+                  selectedPreviewCategory={selectedPreviewCategory}
+                  setSelectedPreviewCategory={setSelectedPreviewCategory}
+                  selectedRecords={selectedRecords}
+                />
+              ) : null}
+
+              {workspaceView === "overview" && (
+                <DashboardToggles
+                  showDayOverDayComparison={showDayOverDayComparison}
+                  setShowDayOverDayComparison={setShowDayOverDayComparison}
+                  showMatchPreviewSection={showMatchPreviewSection}
+                  setShowMatchPreviewSection={setShowMatchPreviewSection}
+                  showManualCarryForward={showManualCarryForward}
+                  setShowManualCarryForward={setShowManualCarryForward}
+                  showCaseTypeOverview={showCaseTypeOverview}
+                  setShowCaseTypeOverview={setShowCaseTypeOverview}
+                  showCustomerSegmentSplit={showCustomerSegmentSplit}
+                  setShowCustomerSegmentSplit={setShowCustomerSegmentSplit}
+                  showClosedCallLedger={showClosedCallLedger}
+                  setShowClosedCallLedger={setShowClosedCallLedger}
+                  showUploadBatches={showUploadBatches}
+                  setShowUploadBatches={setShowUploadBatches}
+                />
+              )}
+            </section>
+          </section>
+        </div>
+      </main>
 
       {/* 1. Salem Region KPI Summary Popup Modal */}
       {isKpiModalOpen && selectedRegion && selectedRegion !== "ALL" && regionKpiMetrics && (
@@ -3016,20 +3592,9 @@ export default function DashboardPage() {
           setIsChennaiKpiModalOpen={setIsChennaiKpiModalOpen}
         />
       )}
-      {/* 3. Super Admin Engineer Productivity Dashboard Popup Modal */}
-      {isProductivityModalOpen && (
-        <ProductivityModal
-          selectedRegion={selectedRegion}
-          activeRegionName={activeRegionName}
-          productivityFilterType={productivityFilterType}
-          setProductivityFilterType={setProductivityFilterType}
-          selectedProductivityValue={selectedProductivityValue}
-          setSelectedProductivityValue={setSelectedProductivityValue}
-          engineerProductivityMetrics={engineerProductivityMetrics}
-          productivityDateLabel={productivityDateLabel}
-          setIsProductivityModalOpen={setIsProductivityModalOpen}
-        />
-      )}
+
+      {/* 3. Super Admin Engineer Productivity Dashboard Page */}
+      {/* Replaced with direct panel rendering under workspaceView === "productivity" */}
 
       {isRtplTimeModalOpen && selectedRtplTimeCard && (
         <RTPLTimeModal
@@ -3140,6 +3705,6 @@ export default function DashboardPage() {
           </div>
         </div>
       )}
-    </main>
+    </div>
   );
 }

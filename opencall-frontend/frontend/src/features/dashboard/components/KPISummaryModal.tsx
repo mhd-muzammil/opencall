@@ -49,6 +49,7 @@ export function KPISummaryModal({
     addPartOrdered: number;
     toBeCancel: number;
     newCalls: number;
+    tradeOpenCalls: number;
   };
   tnFilteredRows: ReportRow[];
   getParsedDateForExcel: (filterType: string, selectedValue: string) => string;
@@ -187,18 +188,20 @@ export function KPISummaryModal({
                 { id: 3, desc: "Open Calls", val: regionKpiMetrics.openCalls },
                 { id: 4, desc: "Actionable Calls", val: regionKpiMetrics.actionable },
                 { id: 5, desc: "Planned Calls", val: regionKpiMetrics.planned },
-                { id: 6, desc: "Closed Calls", val: regionKpiMetrics.closedCalls, alert: true },
-                { id: 7, desc: "Engg onsite", val: regionKpiMetrics.enggOnsite },
-                { id: 8, desc: "To be schedule", val: regionKpiMetrics.toBeSchedule },
-                { id: 9, desc: "CX Reschedule Calls", val: regionKpiMetrics.cxReschedule },
-                { id: 10, desc: "SSC Pending Calls", val: regionKpiMetrics.sscPending },
-                { id: 11, desc: "Elevate/Tech Support Calls", val: regionKpiMetrics.elevateTech },
-                { id: 12, desc: "Under observation Calls", val: regionKpiMetrics.underObservation },
-                { id: 13, desc: "To be Yank", val: regionKpiMetrics.toBeYank },
-                { id: 14, desc: "Closed cancelled", val: regionKpiMetrics.closedCancelled },
-                { id: 15, desc: "Add.Part ordered", val: regionKpiMetrics.addPartOrdered, alert: true },
-                { id: 16, desc: "To be Cancel", val: regionKpiMetrics.toBeCancel },
-                { id: 17, desc: "New calls", val: regionKpiMetrics.newCalls, alert: true },
+                { id: 6, desc: "Attended", val: regionKpiMetrics.planned },
+                { id: 7, desc: "Closed Calls", val: regionKpiMetrics.closedCalls, alert: true },
+                { id: 8, desc: "Engg onsite", val: regionKpiMetrics.enggOnsite },
+                { id: 9, desc: "To be schedule", val: regionKpiMetrics.toBeSchedule },
+                { id: 10, desc: "CX Reschedule Calls", val: regionKpiMetrics.cxReschedule },
+                { id: 11, desc: "SSC Pending Calls", val: regionKpiMetrics.sscPending },
+                { id: 12, desc: "Elevate/Tech Support Calls", val: regionKpiMetrics.elevateTech },
+                { id: 13, desc: "Under observation Calls", val: regionKpiMetrics.underObservation },
+                { id: 14, desc: "To be Yank", val: regionKpiMetrics.toBeYank },
+                { id: 15, desc: "Closed cancelled", val: regionKpiMetrics.closedCancelled },
+                { id: 16, desc: "Add.Part ordered", val: regionKpiMetrics.addPartOrdered, alert: true },
+                { id: 17, desc: "To be Cancel", val: regionKpiMetrics.toBeCancel },
+                { id: 18, desc: "New calls", val: regionKpiMetrics.newCalls, alert: true },
+                { id: 19, desc: "Trade Open Calls", val: regionKpiMetrics.tradeOpenCalls },
               ].map((m) => (
                 <tr key={m.id} style={{ borderBottom: "1px solid #e2e8f0" }}>
                   <td style={{ padding: "6px", border: "1px solid #cbd5e1", textAlign: "center", background: "#f8fafc", fontWeight: "600", color: "#334155" }}>{m.id}</td>

@@ -2963,6 +2963,7 @@ export default function DashboardPage() {
                           report={report}
                           activeRows={activeRows}
                           overallStats={overallStats}
+                          selectedRegion={selectedRegion}
                         />
                         {showCaseTypeOverview && (
                           <CaseTypeCards

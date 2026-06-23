@@ -1,15 +1,172 @@
-import React, { useMemo } from "react";
+import React, { useMemo, useState, useEffect } from "react";
 import type { RegionStats } from "../types";
 import type { GeneratedReportResponse } from "../../../lib/api/types";
 import { isPcCase, isPrintCase, isCissCase, isTradeCase, isPrintInstallationCase, isConsumerCase } from "../utils";
+import { MANUAL_ENTRY_REQUIRED } from "../constants";
+import { ASP_CODE_REGION_MAP } from "@opencall/shared";
 
 interface OverviewChartsProps {
   report: GeneratedReportResponse;
   activeRows: Array<any>;
   overallStats: RegionStats;
+  selectedRegion?: string | null;
 }
 
-export function OverviewCharts({ report, activeRows, overallStats }: Readonly<OverviewChartsProps>) {
+export function OverviewCharts({ report, activeRows, overallStats, selectedRegion }: Readonly<OverviewChartsProps>) {
+  const [viewMode, setViewMode] = useState<"day" | "month">("day");
+  const [expanded, setExpanded] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [widgetRegion, setWidgetRegion] = useState<string>("ALL");
+
+  useEffect(() => {
+    setWidgetRegion(selectedRegion || "ALL");
+  }, [selectedRegion]);
+
+  const availableRegions = useMemo(() => {
+    const regionsSet = new Set<string>();
+    const allRows = report.rows || [];
+    allRows.forEach((row) => {
+      const loc = String(row.output?.["Work Location"] ?? "").trim().toUpperCase();
+      if (loc && loc !== MANUAL_ENTRY_REQUIRED) {
+        regionsSet.add(loc);
+      }
+    });
+    return Array.from(regionsSet).sort();
+  }, [report.rows]);
+
+  interface InflowOutflowItem {
+    label: string;
+    timestamp: number;
+    inflow: number;
+    outflow: number;
+    pending: number;
+  }
+
+  // Call Inflow & Outflow Analytics by Day and Month
+  const inflowOutflowData = useMemo(() => {
+    let allRows = report.rows || [];
+    
+    if (widgetRegion !== "ALL") {
+      allRows = allRows.filter(row => {
+        const loc = String(row.output?.["Work Location"] ?? "").trim().toUpperCase();
+        return loc === widgetRegion.toUpperCase();
+      });
+    }
+    
+    const dayMap = new Map<string, InflowOutflowItem>();
+    const monthMap = new Map<string, InflowOutflowItem>();
+
+    const monthNames = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+
+    allRows.forEach((row) => {
+      const createdTimeStr = String(row.output?.["Case Created Time"] ?? "").trim();
+      if (!createdTimeStr || createdTimeStr === MANUAL_ENTRY_REQUIRED) {
+        return;
+      }
+
+      let day = "";
+      let monthIndex = -1;
+      let year = "";
+
+      // 1. Try matching DD-MM-YYYY (or DD/MM/YYYY)
+      const dmyMatch = /^(\d{2})[-/](\d{2})[-/](\d{4})/.exec(createdTimeStr);
+      if (dmyMatch) {
+        day = dmyMatch[1] ?? "";
+        const monthCode = dmyMatch[2] ?? "";
+        year = dmyMatch[3] ?? "";
+        monthIndex = parseInt(monthCode, 10) - 1;
+      } else {
+        // 2. Try matching YYYY-MM-DD (or YYYY/MM/DD)
+        const ymdMatch = /^(\d{4})[-/](\d{2})[-/](\d{2})/.exec(createdTimeStr);
+        if (ymdMatch) {
+          year = ymdMatch[1] ?? "";
+          const monthCode = ymdMatch[2] ?? "";
+          day = ymdMatch[3] ?? "";
+          monthIndex = parseInt(monthCode, 10) - 1;
+        } else {
+          // 3. Fallback to standard JS Date parsing
+          const dateObj = new Date(createdTimeStr);
+          if (!isNaN(dateObj.getTime())) {
+            day = String(dateObj.getDate()).padStart(2, "0");
+            monthIndex = dateObj.getMonth();
+            year = String(dateObj.getFullYear());
+          }
+        }
+      }
+
+      if (!day || monthIndex < 0 || !year) {
+        return;
+      }
+
+      const timestamp = new Date(parseInt(year, 10), monthIndex, parseInt(day, 10)).getTime();
+
+      const monthName = monthNames[monthIndex] ?? "Unknown";
+      const dateKey = `${day}-${String(monthIndex + 1).padStart(2, "0")}-${year}`;
+      const monthKey = `${monthName} ${year}`;
+
+      const isClosed = row.carryForward?.closedSyntheticRow || 
+                       String(row.output?.["RTPL status"] ?? "").toLowerCase().includes("closed");
+
+      // Update day level map
+      if (!dayMap.has(dateKey)) {
+        dayMap.set(dateKey, { label: dateKey, timestamp, inflow: 0, outflow: 0, pending: 0 });
+      }
+      const dayData = dayMap.get(dateKey)!;
+      dayData.inflow += 1;
+      if (isClosed) {
+        dayData.outflow += 1;
+      } else {
+        dayData.pending += 1;
+      }
+
+      // Update month level map
+      if (!monthMap.has(monthKey)) {
+        const monthTimestamp = new Date(parseInt(year, 10), monthIndex, 1).getTime();
+        monthMap.set(monthKey, { label: monthKey, timestamp: monthTimestamp, inflow: 0, outflow: 0, pending: 0 });
+      }
+      const monthData = monthMap.get(monthKey)!;
+      monthData.inflow += 1;
+      if (isClosed) {
+        monthData.outflow += 1;
+      } else {
+        monthData.pending += 1;
+      }
+    });
+
+    const daysList = Array.from(dayMap.values()).sort((a, b) => b.timestamp - a.timestamp);
+    const monthsList = Array.from(monthMap.values()).sort((a, b) => b.timestamp - a.timestamp);
+
+    return { daysList, monthsList };
+  }, [report.rows, widgetRegion]);
+
+  const currentList = useMemo(() => {
+    return viewMode === "day" ? inflowOutflowData.daysList : inflowOutflowData.monthsList;
+  }, [inflowOutflowData, viewMode]);
+  
+  const filteredList = useMemo(() => {
+    if (!searchQuery.trim()) return currentList;
+    const query = searchQuery.toLowerCase().trim();
+    return currentList.filter(item => {
+      return item.label.toLowerCase().includes(query);
+    });
+  }, [currentList, searchQuery]);
+
+  const totals = useMemo(() => {
+    let inflow = 0;
+    let outflow = 0;
+    let pending = 0;
+    currentList.forEach(item => {
+      inflow += item.inflow;
+      outflow += item.outflow;
+      pending += item.pending;
+    });
+    return { inflow, outflow, pending };
+  }, [currentList]);
+
+  const visibleList = useMemo(() => {
+    return expanded ? filteredList : filteredList.slice(0, 7);
+  }, [filteredList, expanded]);
+
   // 1. Auto-Completion Rate
   const completionRate = useMemo(() => {
     const cf = report.carryForward;
@@ -956,6 +1113,199 @@ export function OverviewCharts({ report, activeRows, overallStats }: Readonly<Ov
               </div>
             ))}
           </div>
+        </div>
+
+        {/* Widget 7: Call Inflow & Outflow Analytics (Requested by user) */}
+        <div className="premiumCard saasPremiumCard" style={{ padding: "20px", gridColumn: "span 2", display: "flex", flexDirection: "column", minHeight: "380px" }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "16px", flexWrap: "wrap", gap: "12px" }}>
+            <div style={{ display: "flex", flexDirection: "column" }}>
+              <h4 className="premiumCardTitle" style={{ fontSize: "14.5px", margin: 0, display: "flex", alignItems: "center", gap: "6px", color: "#1e1b4b", fontWeight: 800 }}>
+                <span>Call Inflow & Outflow Analytics</span>
+                <span style={{ fontSize: "9px", color: "#8b5cf6", backgroundColor: "rgba(139, 92, 246, 0.08)", padding: "2px 8px", borderRadius: "10px", fontWeight: 800 }}>LIVE</span>
+              </h4>
+              <span style={{ fontSize: "11px", color: "#64748b", marginTop: "2px" }}>Day-by-day and month-by-month tracking of call case lifecycle</span>
+            </div>
+
+            {/* Toggle Day/Month, Region Select & Search */}
+            <div style={{ display: "flex", alignItems: "center", gap: "10px", flexWrap: "wrap" }}>
+              <select
+                value={widgetRegion}
+                onChange={(e) => {
+                  setWidgetRegion(e.target.value);
+                  setExpanded(false);
+                }}
+                style={{
+                  fontSize: "11.5px",
+                  padding: "6px 12px",
+                  borderRadius: "10px",
+                  border: "1px solid #e2e8f0",
+                  outline: "none",
+                  backgroundColor: "rgba(255, 255, 255, 0.6)",
+                  color: "#1e293b",
+                  fontWeight: 650,
+                  cursor: "pointer"
+                }}
+              >
+                <option value="ALL">All Regions</option>
+                {availableRegions.map((code) => (
+                  <option key={code} value={code}>
+                    {ASP_CODE_REGION_MAP[code] ?? code} ({code})
+                  </option>
+                ))}
+              </select>
+
+              <input
+                type="text"
+                placeholder="Search date/month..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                style={{
+                  fontSize: "11.5px",
+                  padding: "6px 12px",
+                  borderRadius: "10px",
+                  border: "1px solid #e2e8f0",
+                  outline: "none",
+                  width: "150px",
+                  backgroundColor: "rgba(255, 255, 255, 0.6)",
+                  color: "#1e293b",
+                  fontWeight: 600,
+                  transition: "border-color 0.2s"
+                }}
+              />
+              <div style={{ display: "flex", background: "rgba(241, 245, 249, 0.8)", padding: "2px", borderRadius: "10px", border: "1px solid #e2e8f0" }}>
+                <button
+                  type="button"
+                  onClick={() => { setViewMode("day"); setExpanded(false); }}
+                  style={{
+                    fontSize: "11px",
+                    fontWeight: 800,
+                    padding: "5px 12px",
+                    borderRadius: "8px",
+                    border: "none",
+                    background: viewMode === "day" ? "#ffffff" : "transparent",
+                    color: viewMode === "day" ? "#7c3aed" : "#64748b",
+                    boxShadow: viewMode === "day" ? "0 2px 4px rgba(0,0,0,0.06)" : "none",
+                    cursor: "pointer",
+                    transition: "all 0.2s"
+                  }}
+                >
+                  Day View
+                </button>
+                <button
+                  type="button"
+                  onClick={() => { setViewMode("month"); setExpanded(false); }}
+                  style={{
+                    fontSize: "11px",
+                    fontWeight: 800,
+                    padding: "5px 12px",
+                    borderRadius: "8px",
+                    border: "none",
+                    background: viewMode === "month" ? "#ffffff" : "transparent",
+                    color: viewMode === "month" ? "#7c3aed" : "#64748b",
+                    boxShadow: viewMode === "month" ? "0 2px 4px rgba(0,0,0,0.06)" : "none",
+                    cursor: "pointer",
+                    transition: "all 0.2s"
+                  }}
+                >
+                  Month View
+                </button>
+              </div>
+            </div>
+          </div>
+
+          {/* Stats Summary Panel */}
+          <div style={{ display: "flex", gap: "16px", marginBottom: "20px" }}>
+            <div style={{ flex: 1, background: "rgba(124, 58, 237, 0.03)", border: "1px solid rgba(124, 58, 237, 0.08)", padding: "12px", borderRadius: "12px", display: "flex", flexDirection: "column", alignItems: "center", boxShadow: "0 2px 8px rgba(124, 58, 237, 0.02)" }}>
+              <span style={{ fontSize: "10px", color: "#7c3aed", fontWeight: 800, textTransform: "uppercase", letterSpacing: "0.5px" }}>Total Inflow (New)</span>
+              <strong style={{ fontSize: "19px", color: "#1e1b4b", marginTop: "4px", fontWeight: 850 }}>{totals.inflow}</strong>
+            </div>
+            <div style={{ flex: 1, background: "rgba(16, 185, 129, 0.03)", border: "1px solid rgba(16, 185, 129, 0.08)", padding: "12px", borderRadius: "12px", display: "flex", flexDirection: "column", alignItems: "center", boxShadow: "0 2px 8px rgba(16, 185, 129, 0.02)" }}>
+              <span style={{ fontSize: "10px", color: "#10b981", fontWeight: 800, textTransform: "uppercase", letterSpacing: "0.5px" }}>Total Outflow (Closed)</span>
+              <strong style={{ fontSize: "19px", color: "#1e1b4b", marginTop: "4px", fontWeight: 850 }}>{totals.outflow}</strong>
+            </div>
+            <div style={{ flex: 1, background: "rgba(245, 158, 11, 0.03)", border: "1px solid rgba(245, 158, 11, 0.08)", padding: "12px", borderRadius: "12px", display: "flex", flexDirection: "column", alignItems: "center", boxShadow: "0 2px 8px rgba(245, 158, 11, 0.02)" }}>
+              <span style={{ fontSize: "10px", color: "#f59e0b", fontWeight: 800, textTransform: "uppercase", letterSpacing: "0.5px" }}>Total Pending</span>
+              <strong style={{ fontSize: "19px", color: "#1e1b4b", marginTop: "4px", fontWeight: 850 }}>{totals.pending}</strong>
+            </div>
+          </div>
+
+          {/* Table list */}
+          <div style={{ flex: 1, overflowX: "auto" }}>
+            <table style={{ width: "100%", borderCollapse: "collapse", textAlign: "left" }}>
+              <thead>
+                <tr style={{ borderBottom: "2px solid #f1f5f9" }}>
+                  <th style={{ padding: "10px 14px", fontSize: "11px", fontWeight: 800, color: "#64748b", textTransform: "uppercase", letterSpacing: "0.5px" }}>{viewMode === "day" ? "Date" : "Month"}</th>
+                  <th style={{ padding: "10px 14px", fontSize: "11px", fontWeight: 800, color: "#64748b", textTransform: "uppercase", letterSpacing: "0.5px", textAlign: "center" }}>Inflow (New)</th>
+                  <th style={{ padding: "10px 14px", fontSize: "11px", fontWeight: 800, color: "#64748b", textTransform: "uppercase", letterSpacing: "0.5px", textAlign: "center" }}>Outflow (Closed)</th>
+                  <th style={{ padding: "10px 14px", fontSize: "11px", fontWeight: 800, color: "#64748b", textTransform: "uppercase", letterSpacing: "0.5px", textAlign: "center" }}>Pending</th>
+                  <th style={{ padding: "10px 14px", fontSize: "11px", fontWeight: 800, color: "#64748b", textTransform: "uppercase", letterSpacing: "0.5px", width: "180px" }}>Completion Rate</th>
+                </tr>
+              </thead>
+              <tbody>
+                {filteredList.length === 0 ? (
+                  <tr>
+                    <td colSpan={5} style={{ padding: "24px", textAlign: "center", fontSize: "13px", color: "#94a3b8" }}>
+                      No data found matching filter
+                    </td>
+                  </tr>
+                ) : (
+                  visibleList.map((item) => {
+                    const rate = item.inflow > 0 ? Math.round((item.outflow / item.inflow) * 100) : 0;
+                    const keyVal = item.label;
+                    return (
+                      <tr key={keyVal} style={{ borderBottom: "1px solid #f1f5f9", transition: "background 0.2s" }}>
+                        <td style={{ padding: "12px 14px", fontSize: "13px", fontWeight: 750, color: "#1e293b" }}>{keyVal}</td>
+                        <td style={{ padding: "12px 14px", fontSize: "13px", fontWeight: 800, color: "#7c3aed", textAlign: "center" }}>
+                          <span style={{ background: "rgba(124, 58, 237, 0.08)", padding: "3px 10px", borderRadius: "8px" }}>{item.inflow}</span>
+                        </td>
+                        <td style={{ padding: "12px 14px", fontSize: "13px", fontWeight: 800, color: "#10b981", textAlign: "center" }}>
+                          <span style={{ background: "rgba(16, 185, 129, 0.08)", padding: "3px 10px", borderRadius: "8px" }}>{item.outflow}</span>
+                        </td>
+                        <td style={{ padding: "12px 14px", fontSize: "13px", fontWeight: 800, color: "#f59e0b", textAlign: "center" }}>
+                          <span style={{ background: "rgba(245, 158, 11, 0.08)", padding: "3px 10px", borderRadius: "8px" }}>{item.pending}</span>
+                        </td>
+                        <td style={{ padding: "12px 14px" }}>
+                          <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                            <div style={{ flex: 1, height: "6px", backgroundColor: "#f1f5f9", borderRadius: "3px", overflow: "hidden", display: "flex" }}>
+                              <div style={{ height: "100%", width: `${rate}%`, backgroundColor: "#10b981", borderRadius: "3px" }} />
+                              <div style={{ height: "100%", width: `${100 - rate}%`, backgroundColor: "#f59e0b" }} />
+                            </div>
+                            <span style={{ fontSize: "11px", fontWeight: 850, color: "#475569", minWidth: "32px", textAlign: "right" }}>{rate}%</span>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })
+                )}
+              </tbody>
+            </table>
+          </div>
+
+          {/* Show More / Show Less Button */}
+          {filteredList.length > 7 && (
+            <div style={{ display: "flex", justifyContent: "center", marginTop: "16px" }}>
+              <button
+                type="button"
+                onClick={() => setExpanded(!expanded)}
+                style={{
+                  fontSize: "11.5px",
+                  fontWeight: 800,
+                  color: "#7c3aed",
+                  background: "rgba(124, 58, 237, 0.05)",
+                  border: "1px solid rgba(124, 58, 237, 0.15)",
+                  cursor: "pointer",
+                  padding: "6px 16px",
+                  borderRadius: "10px",
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "4px",
+                  transition: "all 0.2s"
+                }}
+              >
+                {expanded ? "Show Less ▲" : `Show All (${filteredList.length}) ▼`}
+              </button>
+            </div>
+          )}
         </div>
       </div>
     </div>

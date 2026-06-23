@@ -565,7 +565,8 @@ export default function DashboardPage() {
     setSelectedEodBodValue("");
     setTnViewMode("EOD");
     setEodBodViewMode("EOD");
-  }, [report?.reportId, session, report]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [report?.reportId, session]);
 
   // Phase 5: record row-set memos moved to features/dashboard/hooks/useRecordRowSets.
   const {

@@ -26,7 +26,7 @@
 html,
 body {
   min-height: 100%;
-  scroll-behavior: smooth;
+  scroll-behavior: auto;
 }
 
 body {
@@ -2197,8 +2197,10 @@ tbody tr:nth-child(even) td {
   background: #f8fafc;
 }
 
-tbody tr:hover td {
-  background: #f1f5f9 !important;
+@media (hover: hover) {
+  tbody tr:hover td {
+    background: #f1f5f9 !important;
+  }
 }
 
 .changeCell {
@@ -2238,8 +2240,10 @@ tbody tr:nth-child(even) td.stickyActionColumn {
   background: #f8fafc;
 }
 
-tbody tr:hover td.stickyActionColumn {
-  background: #f1f5f9;
+@media (hover: hover) {
+  tbody tr:hover td.stickyActionColumn {
+    background: #f1f5f9;
+  }
 }
 
 th.stickyActionColumn {
@@ -2277,8 +2281,10 @@ th.stickyActionColumn {
 }
 
 /* Hover effect for sticky first column */
-.tableWrap tbody tr:hover td:first-child {
-  background: #f1f5f9 !important;
+@media (hover: hover) {
+  .tableWrap tbody tr:hover td:first-child {
+    background: #f1f5f9 !important;
+  }
 }
 
 /* Frozen "Ticket ID" column (records mode only). It is always the 2nd rendered
@@ -2308,8 +2314,10 @@ th.stickyActionColumn {
   background: #f8fafc;
 }
 
-.recordsMode .tableWrap tbody tr:hover td:nth-child(2) {
-  background: #f1f5f9 !important;
+@media (hover: hover) {
+  .recordsMode .tableWrap tbody tr:hover td:nth-child(2) {
+    background: #f1f5f9 !important;
+  }
 }
 
 
@@ -2506,8 +2514,10 @@ td.missingCell::after {
   opacity: 0.6;
 }
 
-tbody tr:hover td.missingCell {
-  background: #fef3c7 !important;
+@media (hover: hover) {
+  tbody tr:hover td.missingCell {
+    background: #fef3c7 !important;
+  }
 }
 
 td.carriedForwardCell {
@@ -2517,8 +2527,10 @@ td.carriedForwardCell {
   border-left: 3px solid #10b981;
 }
 
-tbody tr:hover td.carriedForwardCell {
-  background: #dcfce7 !important;
+@media (hover: hover) {
+  tbody tr:hover td.carriedForwardCell {
+    background: #dcfce7 !important;
+  }
 }
 
 td.missingCell.carriedForwardCell {
@@ -7805,5 +7817,45 @@ th .colFilterWrap {
   stroke: #cbd5e1;
   stroke-width: 1.5;
 }
+
+/* --- SCROLL AND TOUCH PERFORMANCE OPTIMIZATIONS --- */
+
+/* Eliminate 300ms double-tap delay on all interactive elements */
+a,
+button,
+input,
+select,
+textarea,
+[role="button"],
+[onClick],
+.rtplScopeTab,
+.regionFilterTab,
+.rtplTimeCardHeader,
+.pivotDropdownTrigger,
+.pivotCaseScopeButton,
+.pivotHeaderButton,
+.pivotValueButton,
+.pivotTotalButton,
+td {
+  touch-action: manipulation;
+}
+
+/* Force hardware GPU acceleration and smooth touch momentum scrolling on scroll containers */
+.tableWrap,
+.staleFlexPanel,
+.opsDrawer,
+.rtplTimeCardTableWrap,
+.pivotTableWrap,
+.drawerPanel,
+.staleFlexModalPanel,
+.modalBody,
+.modalCard,
+.modalOverlay,
+.drawerOverlay {
+  -webkit-overflow-scrolling: touch;
+  transform: translate3d(0, 0, 0);
+  will-change: transform;
+}
+
 
 

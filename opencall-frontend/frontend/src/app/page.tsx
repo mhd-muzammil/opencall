@@ -281,6 +281,7 @@ export default function DashboardPage() {
   const recordsTableWrapRef = useRef<HTMLDivElement | null>(null);
   const recordsScrollTopRef = useRef<HTMLDivElement | null>(null);
   const recordsScrollTopSpacerRef = useRef<HTMLDivElement | null>(null);
+  const recordsAreaRef = useRef<HTMLDivElement | null>(null);
   const [engineersList, setEngineersList] = useState<DropdownEngineer[]>([]);
   draftOutputRef.current = draftOutput;
 
@@ -404,7 +405,6 @@ export default function DashboardPage() {
   // Whether the stale-Flex-Status "View all" details modal is open.
   const [isStaleModalOpen, setIsStaleModalOpen] = useState(false);
   const [workspaceView, setWorkspaceView] = useState<"overview" | "records" | "rtpl" | "rtpl-dashboard" | "pivot" | "flex" | "productivity" | "tn-view-status" | "sla-tat" | "flex-eod-bod" | "admin-engineers">("overview");
-  const [isRecordsSummaryHidden, setIsRecordsSummaryHidden] = useState(false);
   const [pivotActiveStatus, setPivotActiveStatus] = useState<string | null>(null);
   const [pivotActiveWipAging, setPivotActiveWipAging] = useState<string | null>(null);
 
@@ -441,7 +441,9 @@ export default function DashboardPage() {
 
 
   useEffect(() => {
-    setIsRecordsSummaryHidden(false);
+    if (recordsAreaRef.current) {
+      recordsAreaRef.current.classList.remove("summaryHidden");
+    }
     if (recordsTableWrapRef.current) {
       recordsTableWrapRef.current.scrollTop = 0;
     }
@@ -856,7 +858,7 @@ export default function DashboardPage() {
       resizeObserver.disconnect();
       window.removeEventListener("resize", scheduleUpdate);
     };
-  }, [workspaceView, filteredRows, isRecordsSummaryHidden, hiddenColumns]);
+  }, [workspaceView, filteredRows, hiddenColumns]);
 
   // Phase 5: KPI-metric memos moved to features/dashboard/hooks/useKpiMetrics.
   const {
@@ -2280,7 +2282,9 @@ export default function DashboardPage() {
   // to this element's scrollLeft, its own onScroll sees the values already match
   // and stops — no boolean flag needed (robust to coalesced scroll events).
   function handleTableWrapScroll(event: React.UIEvent<HTMLDivElement>): void {
-    setIsRecordsSummaryHidden(event.currentTarget.scrollTop > 10);
+    if (recordsAreaRef.current) {
+      recordsAreaRef.current.classList.toggle("summaryHidden", event.currentTarget.scrollTop > 10);
+    }
     const proxy = recordsScrollTopRef.current;
     if (proxy && proxy.scrollLeft !== event.currentTarget.scrollLeft) {
       proxy.scrollLeft = event.currentTarget.scrollLeft;
@@ -3176,7 +3180,7 @@ export default function DashboardPage() {
                   </div>
 
                   {workspaceView === "records" && (
-                    <div className={`recordsArea ${isRecordsSummaryHidden ? "summaryHidden" : ""}`}>
+                    <div className="recordsArea" ref={recordsAreaRef}>
                       <div className={`recordsScopeRow ${staleFlexRows.length > 0 ? "hasFlex" : ""}`}>
                         {/* Left: active-category total split by Consumer / Commercial. */}
                         <div className="recordsScopeCard">

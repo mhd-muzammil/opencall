@@ -462,47 +462,6 @@ export function RTPLDashboard({
                 <span className={`rtplTimeCardBadge ${badgeClass}`}>{badgeText}</span>
               </div>
 
-              {/* BOD Fix button — only on Upload Time (carry-forward) card */}
-              {card.id === RTPL_CARRY_FORWARD_TIME_CARD_ID && (
-                <div
-                  className="rtplBodFixRow"
-                  style={{ padding: "6px 12px", display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap" }}
-                >
-                  {bodFixedTime ? (
-                    <span
-                      style={{
-                        fontSize: "11px",
-                        fontWeight: "700",
-                        color: "#16a34a",
-                        background: "#dcfce7",
-                        borderRadius: "6px",
-                        padding: "3px 9px",
-                        border: "1px solid #86efac",
-                      }}
-                    >
-                      🌅 BOD Fixed: {new Date(bodFixedTime).toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit", timeZone: "Asia/Kolkata" })}
-                    </span>
-                  ) : null}
-                  <button
-                    type="button"
-                    style={{
-                      fontSize: "11px",
-                      fontWeight: "700",
-                      padding: "3px 10px",
-                      borderRadius: "6px",
-                      border: "1px solid #2563eb",
-                      background: bodFixedTime ? "#eff6ff" : "#2563eb",
-                      color: bodFixedTime ? "#2563eb" : "#ffffff",
-                      cursor: "pointer",
-                    }}
-                    onClick={(e) => { e.stopPropagation(); onFixBod(); }}
-                    title={bodFixedTime ? "Re-fix BOD to current time" : "Fix BOD to current time"}
-                  >
-                    {bodFixedTime ? "🔄 Re-fix BOD" : "📌 Fix BOD"}
-                  </button>
-                </div>
-              )}
-
               {(() => {
                 let formattedDate = rtplAnalyticsDate;
                 if (rtplAnalyticsDate && rtplAnalyticsDate.includes("-")) {
@@ -655,29 +614,70 @@ export function RTPLDashboard({
                 );
               })()}
 
-              {/* BOD + EOD Download button — appears on all cards that have data */}
-              {(card.cardBod > 0 || card.cardEod > 0) && (
-                <div style={{ padding: "8px 12px", borderTop: "1px solid #e2e8f0", display: "flex", gap: "6px", justifyContent: "flex-end" }}>
-                  <button
-                    type="button"
-                    style={{
-                      fontSize: "11px",
-                      fontWeight: "700",
-                      padding: "4px 10px",
-                      borderRadius: "6px",
-                      border: "1px solid #0369a1",
-                      background: "linear-gradient(135deg, #0284c7, #0369a1)",
-                      color: "#ffffff",
-                      cursor: "pointer",
-                      display: "inline-flex",
-                      alignItems: "center",
-                      gap: "4px",
-                    }}
-                    onClick={(e) => { e.stopPropagation(); onDownloadBodEod(card); }}
-                    title={`Download BOD & EOD for ${card.label}`}
-                  >
-                    📥 BOD &amp; EOD
-                  </button>
+              {/* Action Buttons Row */}
+              {((card.cardBod > 0 || card.cardEod > 0) || card.id === RTPL_CARRY_FORWARD_TIME_CARD_ID) && (
+                <div style={{ padding: "8px 12px", borderTop: "1px solid #e2e8f0", display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap", justifyContent: "flex-end" }}>
+                  {/* BOD Fix button — only on Upload Time (carry-forward) card */}
+                  {card.id === RTPL_CARRY_FORWARD_TIME_CARD_ID && (
+                    <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                      {bodFixedTime ? (
+                        <span
+                          style={{
+                            fontSize: "11px",
+                            fontWeight: "700",
+                            color: "#16a34a",
+                            background: "#dcfce7",
+                            borderRadius: "6px",
+                            padding: "3px 9px",
+                            border: "1px solid #86efac",
+                          }}
+                        >
+                          🌅 BOD Fixed: {new Date(bodFixedTime).toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit", timeZone: "Asia/Kolkata" })}
+                        </span>
+                      ) : null}
+                      <button
+                        type="button"
+                        style={{
+                          fontSize: "11px",
+                          fontWeight: "700",
+                          padding: "3px 10px",
+                          borderRadius: "6px",
+                          border: "1px solid #2563eb",
+                          background: bodFixedTime ? "#eff6ff" : "#2563eb",
+                          color: bodFixedTime ? "#2563eb" : "#ffffff",
+                          cursor: "pointer",
+                        }}
+                        onClick={(e) => { e.stopPropagation(); onFixBod(); }}
+                        title={bodFixedTime ? "Re-fix BOD to current time" : "Fix BOD to current time"}
+                      >
+                        {bodFixedTime ? "🔄 Re-fix BOD" : "📌 Fix BOD"}
+                      </button>
+                    </div>
+                  )}
+
+                  {/* BOD + EOD Download button — appears on all cards that have data */}
+                  {(card.cardBod > 0 || card.cardEod > 0) && (
+                    <button
+                      type="button"
+                      style={{
+                        fontSize: "11px",
+                        fontWeight: "700",
+                        padding: "4px 10px",
+                        borderRadius: "6px",
+                        border: "1px solid #0369a1",
+                        background: "linear-gradient(135deg, #0284c7, #0369a1)",
+                        color: "#ffffff",
+                        cursor: "pointer",
+                        display: "inline-flex",
+                        alignItems: "center",
+                        gap: "4px",
+                      }}
+                      onClick={(e) => { e.stopPropagation(); onDownloadBodEod(card); }}
+                      title={`Download BOD & EOD for ${card.label}`}
+                    >
+                      📥 BOD &amp; EOD
+                    </button>
+                  )}
                 </div>
               )}
             </div>

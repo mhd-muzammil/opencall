@@ -3256,59 +3256,102 @@ export default function DashboardPage() {
 
                         {/* Right: compressed unchanged-Flex-Status banner. */}
                         {staleFlexRows.length > 0 ? (
-                          <div className="staleFlexBanner" role="status">
-                            <div className="staleFlexBannerHeader">
-                              <p className="staleFlexBannerSummary">
-                                <span aria-hidden="true">⚠</span>{" "}
-                                {formatNumber(staleFlexRows.length)} record(s) have a Status
-                                Aging of {STALE_FLEX_THRESHOLD_DAYS}+ days
+                          <div className="staleFlexBanner" role="status" style={{ borderLeft: "4px solid #f59e0b", padding: "10px 14px", background: "#fffbeb", borderRadius: "10px", border: "1px solid #fef3c7" }}>
+                            <div className="staleFlexBannerHeader" style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "8px" }}>
+                              <p className="staleFlexBannerSummary" style={{ margin: 0, fontSize: "12px", fontWeight: "800", color: "#b45309" }}>
+                                ⚠ Status Aging Summary
                               </p>
                               <button
                                 type="button"
                                 className="staleFlexToggle"
+                                style={{
+                                  fontSize: "11px",
+                                  fontWeight: "700",
+                                  padding: "3px 8px",
+                                  borderRadius: "6px",
+                                  border: "1px solid #d97706",
+                                  color: "#d97706",
+                                  background: "#ffffff",
+                                  cursor: "pointer"
+                                }}
                                 onClick={() => setIsStaleModalOpen(true)}
                               >
-                                View all ({formatNumber(staleFlexRows.length)})
+                                View Detailed List
                               </button>
                             </div>
-                            {/* Compact inline list: Ticket ID + Days only. Full details
-                                (Flex Status / Location / Engineer) open in the modal. */}
-                            <div className="staleFlexPanel">
-                              <table className="staleFlexTable">
-                                <thead>
-                                  <tr>
-                                    <th>Ticket ID</th>
-                                    <th className="staleFlexDaysCol">Days</th>
-                                  </tr>
-                                </thead>
-                                <tbody>
-                                  {staleFlexRows.map((row) => {
-                                    const ticketId = String(row.output["Ticket ID"] ?? "");
-                                    const days = row.enriched?.current_status_aging ?? 0;
-                                    return (
-                                      <tr
-                                        key={row.serialNo}
-                                        className={`staleFlexRow ${staleSeverityClass(days)}`}
-                                        role="button"
-                                        tabIndex={0}
-                                        title={`Filter records to ticket ${ticketId || "—"}`}
-                                        onClick={() => jumpToStaleTicket(ticketId)}
-                                        onKeyDown={(event) => {
-                                          if (event.key === "Enter" || event.key === " ") {
-                                            event.preventDefault();
-                                            jumpToStaleTicket(ticketId);
-                                          }
-                                        }}
-                                      >
-                                        <td className="staleFlexTicket">{ticketId || "—"}</td>
-                                        <td className="staleFlexDaysCol">
-                                          <span className="staleFlexDaysBadge">{days}</span>
-                                        </td>
-                                      </tr>
-                                    );
-                                  })}
-                                </tbody>
-                              </table>
+                            <div className="staleAgingGrid" style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: "10px" }}>
+                              <div
+                                style={{
+                                  background: "#ffffff",
+                                  border: "1px solid #fde68a",
+                                  borderRadius: "8px",
+                                  padding: "8px 10px",
+                                  textAlign: "center",
+                                  cursor: "pointer",
+                                  transition: "transform 0.2s"
+                                }}
+                                onClick={() => {
+                                  const ticketIds = staleFlexRows
+                                    .filter((r) => (r.enriched?.current_status_aging ?? 0) >= 2)
+                                    .map((r) => String(r.output["Ticket ID"] ?? "").trim())
+                                    .filter(Boolean);
+                                  openRecordsWithFilter({ ticketIds });
+                                }}
+                                title="Click to filter table to 2+ days aging"
+                              >
+                                <div style={{ fontSize: "10px", fontWeight: "700", color: "#6b7280", textTransform: "uppercase" }}>2+ Days</div>
+                                <div style={{ fontSize: "20px", fontWeight: "900", color: "#d97706", marginTop: "2px" }}>
+                                  {staleFlexRows.filter((r) => (r.enriched?.current_status_aging ?? 0) >= 2).length}
+                                </div>
+                              </div>
+                              <div
+                                style={{
+                                  background: "#ffffff",
+                                  border: "1px solid #fde68a",
+                                  borderRadius: "8px",
+                                  padding: "8px 10px",
+                                  textAlign: "center",
+                                  cursor: "pointer",
+                                  transition: "transform 0.2s"
+                                }}
+                                onClick={() => {
+                                  const ticketIds = staleFlexRows
+                                    .filter((r) => (r.enriched?.current_status_aging ?? 0) >= 6)
+                                    .map((r) => String(r.output["Ticket ID"] ?? "").trim())
+                                    .filter(Boolean);
+                                  openRecordsWithFilter({ ticketIds });
+                                }}
+                                title="Click to filter table to 6+ days aging"
+                              >
+                                <div style={{ fontSize: "10px", fontWeight: "700", color: "#6b7280", textTransform: "uppercase" }}>6+ Days</div>
+                                <div style={{ fontSize: "20px", fontWeight: "900", color: "#d97706", marginTop: "2px" }}>
+                                  {staleFlexRows.filter((r) => (r.enriched?.current_status_aging ?? 0) >= 6).length}
+                                </div>
+                              </div>
+                              <div
+                                style={{
+                                  background: "#ffffff",
+                                  border: "1px solid #fca5a5",
+                                  borderRadius: "8px",
+                                  padding: "8px 10px",
+                                  textAlign: "center",
+                                  cursor: "pointer",
+                                  transition: "transform 0.2s"
+                                }}
+                                onClick={() => {
+                                  const ticketIds = staleFlexRows
+                                    .filter((r) => (r.enriched?.current_status_aging ?? 0) >= 25)
+                                    .map((r) => String(r.output["Ticket ID"] ?? "").trim())
+                                    .filter(Boolean);
+                                  openRecordsWithFilter({ ticketIds });
+                                }}
+                                title="Click to filter table to 25+ days aging"
+                              >
+                                <div style={{ fontSize: "10px", fontWeight: "700", color: "#dc2626", textTransform: "uppercase" }}>25+ Days</div>
+                                <div style={{ fontSize: "20px", fontWeight: "900", color: "#dc2626", marginTop: "2px" }}>
+                                  {staleFlexRows.filter((r) => (r.enriched?.current_status_aging ?? 0) >= 25).length}
+                                </div>
+                              </div>
                             </div>
                           </div>
                         ) : null}

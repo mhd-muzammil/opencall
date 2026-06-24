@@ -508,7 +508,7 @@ export function RTPLDashboard({
                   return (
                     <td
                       style={{
-                        padding: "4px",
+                        padding: "2px 4px",
                         border: "1px solid #000000",
                         textAlign: "center",
                         background: cellBg,
@@ -548,23 +548,23 @@ export function RTPLDashboard({
                       style={{
                         width: "100%",
                         borderCollapse: "collapse",
-                        fontSize: "11px"
+                        fontSize: "10px"
                       }}
                     >
                       <thead>
                         <tr style={{ background: "#0ea5e9", color: "#000000", fontWeight: "bold" }}>
-                          <th colSpan={2} style={{ padding: "5px 8px", border: "1px solid #000000", textAlign: "left", fontSize: "11px" }}>
+                          <th colSpan={2} style={{ padding: "3px 6px", border: "1px solid #000000", textAlign: "left", fontSize: "10px" }}>
                             {formattedDate}
                           </th>
-                          <th colSpan={2} style={{ padding: "5px 8px", border: "1px solid #000000", textAlign: "right", fontSize: "11px" }}>
+                          <th colSpan={2} style={{ padding: "3px 6px", border: "1px solid #000000", textAlign: "right", fontSize: "10px" }}>
                             {regionLabel}
                           </th>
                         </tr>
                         <tr style={{ background: "#fef08a", color: "#000000", fontWeight: "bold" }}>
-                          <th style={{ width: "35px", padding: "5px 4px", border: "1px solid #000000", textAlign: "center" }}>S.No</th>
-                          <th style={{ padding: "5px 8px", border: "1px solid #000000", textAlign: "left" }}>Description</th>
-                          <th style={{ width: "50px", padding: "5px 4px", border: "1px solid #000000", textAlign: "center" }}>BOD</th>
-                          <th style={{ width: "50px", padding: "5px 4px", border: "1px solid #000000", textAlign: "center" }}>EOD</th>
+                          <th style={{ width: "30px", padding: "3px 4px", border: "1px solid #000000", textAlign: "center" }}>S.No</th>
+                          <th style={{ padding: "3px 6px", border: "1px solid #000000", textAlign: "left" }}>Description</th>
+                          <th style={{ width: "40px", padding: "3px 4px", border: "1px solid #000000", textAlign: "center" }}>BOD</th>
+                          <th style={{ width: "40px", padding: "3px 4px", border: "1px solid #000000", textAlign: "center" }}>EOD</th>
                         </tr>
                       </thead>
                       <tbody>
@@ -582,7 +582,7 @@ export function RTPLDashboard({
                             <tr key={metric.id} style={{ background: "#ffffff" }}>
                               <td
                                 style={{
-                                  padding: "4px",
+                                  padding: "2px 4px",
                                   border: "1px solid #000000",
                                   textAlign: "center",
                                   fontWeight: "bold",
@@ -593,7 +593,7 @@ export function RTPLDashboard({
                               </td>
                               <td
                                 style={{
-                                  padding: "4px 8px",
+                                  padding: "2px 6px",
                                   border: "1px solid #000000",
                                   textAlign: "left",
                                   fontWeight: "bold",

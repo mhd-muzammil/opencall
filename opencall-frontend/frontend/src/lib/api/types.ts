@@ -270,3 +270,21 @@ export interface ListEngineersResult {
   total: number;
 }
 
+export interface RtplStatus {
+  id: string;
+  name: string;
+  category: string;
+  sortOrder: number;
+  isActive: boolean;
+  createdBy: string | null;
+  updatedBy: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface DropdownRtplStatus {
+  id: string;
+  name: string;
+  category: string;
+}
+

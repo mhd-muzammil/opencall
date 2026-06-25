@@ -14,6 +14,8 @@ export type {
   Engineer,
   DropdownEngineer,
   ListEngineersResult,
+  RtplStatus,
+  DropdownRtplStatus,
 } from "./api/types";
 export {
   createOpenCallApiClient,
@@ -47,3 +49,10 @@ export const updateAdminEngineer = webApiClient.updateAdminEngineer;
 export const deactivateAdminEngineer = webApiClient.deactivateAdminEngineer;
 export const reactivateAdminEngineer = webApiClient.reactivateAdminEngineer;
 export const getEngineersDropdown = webApiClient.getEngineersDropdown;
+export const getAdminRtplStatuses = webApiClient.getAdminRtplStatuses;
+export const createAdminRtplStatus = webApiClient.createAdminRtplStatus;
+export const updateAdminRtplStatus = webApiClient.updateAdminRtplStatus;
+export const deactivateAdminRtplStatus = webApiClient.deactivateAdminRtplStatus;
+export const reactivateAdminRtplStatus = webApiClient.reactivateAdminRtplStatus;
+export const deleteAdminRtplStatus = webApiClient.deleteAdminRtplStatus;
+export const getRtplStatusesDropdown = webApiClient.getRtplStatusesDropdown;

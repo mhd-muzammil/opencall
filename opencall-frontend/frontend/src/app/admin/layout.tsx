@@ -18,6 +18,7 @@ const ALL_NAV: NavItem[] = [
   { href: "/admin/activity", label: "Activity feed", roles: ["SUPER_ADMIN", "REGION_ADMIN"] },
   { href: "/admin/users", label: "Users", roles: ["SUPER_ADMIN"] },
   { href: "/admin/engineers", label: "Engineers", roles: ["SUPER_ADMIN", "REGION_ADMIN"] },
+  { href: "/admin/rtpl-statuses", label: "RTPL statuses", roles: ["SUPER_ADMIN"] },
 ];
 
 export default function AdminLayout({ children }: { children: ReactNode }) {

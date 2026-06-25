@@ -6,7 +6,7 @@ import type {
   RuntimeHealthResponse,
 } from "../lib/apiClient";
 
-export type WorkspaceView = "overview" | "records" | "rtpl" | "rtpl-dashboard" | "pivot" | "flex" | "productivity" | "tn-view-status" | "sla-tat" | "flex-eod-bod" | "admin-engineers";
+export type WorkspaceView = "overview" | "records" | "rtpl" | "rtpl-dashboard" | "pivot" | "flex" | "productivity" | "tn-view-status" | "sla-tat" | "flex-eod-bod" | "admin-engineers" | "admin-rtpl-statuses";
 
 export const HEADER_COMPACT_STORAGE_KEY = "opencall.headerCompact";
 
@@ -79,6 +79,8 @@ export function AppHeader({
         return "Flex EOD & BOD Dashboard";
       case "admin-engineers":
         return "Add Engineers";
+      case "admin-rtpl-statuses":
+        return "RTPL Statuses";
       default:
         return "Operational Overview";
     }
@@ -106,6 +108,8 @@ export function AppHeader({
         return "Dashboards / Flex EOD & BOD";
       case "admin-engineers":
         return "Administration / Engineers";
+      case "admin-rtpl-statuses":
+        return "Administration / RTPL Statuses";
       default:
         return "Dashboards / Overview";
     }

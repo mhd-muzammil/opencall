@@ -12,6 +12,8 @@ import type {
   Engineer,
   DropdownEngineer,
   ListEngineersResult,
+  RtplStatus,
+  DropdownRtplStatus,
 } from "./types";
 
 export type FetchLike = typeof fetch;
@@ -91,6 +93,13 @@ export interface OpenCallApiClient {
   deactivateAdminEngineer(token: string, id: string): Promise<{ engineer: Engineer }>;
   reactivateAdminEngineer(token: string, id: string): Promise<{ engineer: Engineer }>;
   getEngineersDropdown(token: string, regionId?: string): Promise<{ engineers: DropdownEngineer[] }>;
+  getAdminRtplStatuses(token: string, filters?: { category?: string; search?: string; isActive?: boolean }): Promise<{ statuses: RtplStatus[] }>;
+  createAdminRtplStatus(token: string, input: { name: string; category?: string | null; sortOrder?: number }): Promise<{ status: RtplStatus }>;
+  updateAdminRtplStatus(token: string, id: string, input: { name?: string; category?: string; sortOrder?: number }): Promise<{ status: RtplStatus }>;
+  deactivateAdminRtplStatus(token: string, id: string): Promise<{ status: RtplStatus }>;
+  reactivateAdminRtplStatus(token: string, id: string): Promise<{ status: RtplStatus }>;
+  deleteAdminRtplStatus(token: string, id: string): Promise<{ success: boolean }>;
+  getRtplStatusesDropdown(token: string): Promise<{ statuses: DropdownRtplStatus[] }>;
 }
 
 function authHeaders(token: string): Record<string, string> {
@@ -354,6 +363,75 @@ export function createOpenCallApiClient({
       });
 
       return readJson<{ engineers: DropdownEngineer[] }>(response);
+    },
+
+    async getAdminRtplStatuses(token, filters = {}) {
+      const params = new URLSearchParams();
+      if (filters.category) params.append("category", filters.category);
+      if (filters.search) params.append("search", filters.search);
+      if (filters.isActive !== undefined) params.append("isActive", String(filters.isActive));
+
+      const queryString = params.toString() ? `?${params.toString()}` : "";
+      const response = await fetchImpl(url(`/api/v1/admin/rtpl-statuses${queryString}`), {
+        headers: authHeaders(token),
+      });
+
+      return readJson<{ statuses: RtplStatus[] }>(response);
+    },
+
+    async createAdminRtplStatus(token, input) {
+      const response = await fetchImpl(url(`/api/v1/admin/rtpl-statuses`), {
+        method: "POST",
+        headers: jsonAuthHeaders(token),
+        body: JSON.stringify(input),
+      });
+
+      return readJson<{ status: RtplStatus }>(response);
+    },
+
+    async updateAdminRtplStatus(token, id, input) {
+      const response = await fetchImpl(url(`/api/v1/admin/rtpl-statuses/${id}`), {
+        method: "PATCH",
+        headers: jsonAuthHeaders(token),
+        body: JSON.stringify(input),
+      });
+
+      return readJson<{ status: RtplStatus }>(response);
+    },
+
+    async deactivateAdminRtplStatus(token, id) {
+      const response = await fetchImpl(url(`/api/v1/admin/rtpl-statuses/${id}/deactivate`), {
+        method: "POST",
+        headers: authHeaders(token),
+      });
+
+      return readJson<{ status: RtplStatus }>(response);
+    },
+
+    async reactivateAdminRtplStatus(token, id) {
+      const response = await fetchImpl(url(`/api/v1/admin/rtpl-statuses/${id}/reactivate`), {
+        method: "POST",
+        headers: authHeaders(token),
+      });
+
+      return readJson<{ status: RtplStatus }>(response);
+    },
+
+    async deleteAdminRtplStatus(token, id) {
+      const response = await fetchImpl(url(`/api/v1/admin/rtpl-statuses/${id}`), {
+        method: "DELETE",
+        headers: authHeaders(token),
+      });
+
+      return readJson<{ success: boolean }>(response);
+    },
+
+    async getRtplStatusesDropdown(token) {
+      const response = await fetchImpl(url(`/api/v1/admin/rtpl-statuses/dropdown`), {
+        headers: authHeaders(token),
+      });
+
+      return readJson<{ statuses: DropdownRtplStatus[] }>(response);
     },
   };
 }

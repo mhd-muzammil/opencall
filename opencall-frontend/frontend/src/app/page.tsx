@@ -1,6 +1,6 @@
 "use client";
 
-import { DAILY_CALL_PLAN_COLUMNS, RTPL_STATUS_OPTIONS, RTPL_STATUS_GROUPS, ASP_CODE_REGION_MAP } from "@opencall/shared";
+import { DAILY_CALL_PLAN_COLUMNS, RTPL_STATUS_OPTIONS, ASP_CODE_REGION_MAP } from "@opencall/shared";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { ColumnFilterDropdown } from "../components/ColumnFilterDropdown";
 import { AppHeader } from "../components/AppHeader";
@@ -8,7 +8,7 @@ import { HistoryDrawer } from "../components/HistoryDrawer";
 import { MetricsGrid, type MetricsGridItem } from "../components/MetricsGrid";
 import { StatusPill } from "../components/StatusPill";
 import { UploadDrawer } from "../components/UploadDrawer";
-import { RTPLStatusDropdown } from "../components/RTPLStatusDropdown";
+import { RTPLStatusDropdown, buildStatusGroups, type StatusGroup } from "../components/RTPLStatusDropdown";
 import { useColumnFilters } from "../lib/useColumnFilters";
 import {
   MANUAL_ENTRY_REQUIRED,
@@ -127,11 +127,13 @@ import {
   deleteReportHistory,
   deleteReportRow,
   getEngineersDropdown,
+  getRtplStatusesDropdown,
   isApiAuthError,
 } from "../lib/apiClient";
 import type { DropdownEngineer } from "../lib/api/types";
 import { LoginScreen, SessionLoadingScreen } from "../features/auth/LoginScreen";
 import AdminEngineersPage from "./admin/engineers/page";
+import { AdminRtplStatusesManager } from "../components/AdminRtplStatusesManager";
 import {
   downloadReportAsXlsx,
   downloadReportAsExcel,
@@ -283,6 +285,13 @@ export default function DashboardPage() {
   const recordsScrollTopSpacerRef = useRef<HTMLDivElement | null>(null);
   const recordsAreaRef = useRef<HTMLDivElement | null>(null);
   const [engineersList, setEngineersList] = useState<DropdownEngineer[]>([]);
+  // Dynamic, admin-managed RTPL status groups. Empty until fetched; the dropdown
+  // falls back to the legacy hardcoded groups while empty.
+  const [rtplStatusGroups, setRtplStatusGroups] = useState<StatusGroup[]>([]);
+  // Flat list of known status names (dynamic if loaded, else legacy) — used to
+  // decide whether the current value is a custom free-text entry.
+  const rtplStatusFlatOptions: readonly string[] =
+    rtplStatusGroups.length > 0 ? rtplStatusGroups.flatMap((g) => g.options) : RTPL_STATUS_OPTIONS;
   draftOutputRef.current = draftOutput;
 
   const [sidebarWidth, setSidebarWidth] = useState<number>(260);
@@ -404,7 +413,7 @@ export default function DashboardPage() {
   const columnsMenuRef = useRef<HTMLDivElement | null>(null);
   // Whether the stale-Flex-Status "View all" details modal is open.
   const [isStaleModalOpen, setIsStaleModalOpen] = useState(false);
-  const [workspaceView, setWorkspaceView] = useState<"overview" | "records" | "rtpl" | "rtpl-dashboard" | "pivot" | "flex" | "productivity" | "tn-view-status" | "sla-tat" | "flex-eod-bod" | "admin-engineers">("overview");
+  const [workspaceView, setWorkspaceView] = useState<"overview" | "records" | "rtpl" | "rtpl-dashboard" | "pivot" | "flex" | "productivity" | "tn-view-status" | "sla-tat" | "flex-eod-bod" | "admin-engineers" | "admin-rtpl-statuses">("overview");
   const [pivotActiveStatus, setPivotActiveStatus] = useState<string | null>(null);
   const [pivotActiveWipAging, setPivotActiveWipAging] = useState<string | null>(null);
 
@@ -1207,9 +1216,13 @@ export default function DashboardPage() {
       getEngineersDropdown(session.token)
         .then((res) => setEngineersList(res.engineers))
         .catch(handleBackgroundError);
+      getRtplStatusesDropdown(session.token)
+        .then((res) => setRtplStatusGroups(buildStatusGroups(res.statuses)))
+        .catch(handleBackgroundError);
     } else {
       setHistorySessions([]);
       setEngineersList([]);
+      setRtplStatusGroups([]);
       hasAutoRestoredHistoryRef.current = false;
     }
   }, [session]);
@@ -2533,6 +2546,7 @@ export default function DashboardPage() {
                                 <RTPLStatusDropdown
                                   value={String(draftOutput[column] ?? "")}
                                   manualEntryRequiredLabel="Entry"
+                                  groups={rtplStatusGroups}
                                   onChange={(selected) => {
                                     if (selected === "Custom") {
                                       setDraftOutput((current) => ({
@@ -2547,7 +2561,7 @@ export default function DashboardPage() {
                                     }
                                   }}
                                 />
-                                {(draftOutput[column] === "" || !RTPL_STATUS_OPTIONS.some((opt) => opt === String(draftOutput[column]))) && (
+                                {(draftOutput[column] === "" || !rtplStatusFlatOptions.some((opt) => opt === String(draftOutput[column]))) && (
                                   <input
                                     className="cellInput"
                                     style={{ flex: 1 }}
@@ -2860,6 +2874,18 @@ export default function DashboardPage() {
             >
               <span className="sidebarIcon">
                 <span>👤</span> <span className="sidebarText">Add Engineers</span>
+              </span>
+            </button>
+          )}
+
+          {session.user.role === "SUPER_ADMIN" && (
+            <button
+              type="button"
+              className={`sidebarItem ${workspaceView === "admin-rtpl-statuses" ? "active" : ""}`}
+              onClick={() => setWorkspaceView("admin-rtpl-statuses")}
+            >
+              <span className="sidebarIcon">
+                <span>🏷️</span> <span className="sidebarText">RTPL Statuses</span>
               </span>
             </button>
           )}
@@ -3180,6 +3206,17 @@ export default function DashboardPage() {
 
                     {workspaceView === "admin-engineers" && (
                       <AdminEngineersPage />
+                    )}
+
+                    {workspaceView === "admin-rtpl-statuses" && (
+                      <AdminRtplStatusesManager
+                        onStatusesChanged={() => {
+                          if (!session) return;
+                          getRtplStatusesDropdown(session.token)
+                            .then((res) => setRtplStatusGroups(buildStatusGroups(res.statuses)))
+                            .catch(handleBackgroundError);
+                        }}
+                      />
                     )}
 
                     {workspaceView === "productivity" && (
@@ -3698,6 +3735,7 @@ export default function DashboardPage() {
           draftOutput={draftOutput}
           setDraftOutput={setDraftOutput}
           engineersList={engineersList}
+          rtplStatusGroups={rtplStatusGroups}
           cancelEditing={cancelEditing}
           saveEditing={saveEditing}
         />

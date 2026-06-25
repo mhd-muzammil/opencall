@@ -2,18 +2,44 @@
 
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { RTPL_STATUS_GROUPS, RTPL_STATUS_OPTIONS } from "@opencall/shared";
+import { RTPL_STATUS_GROUPS } from "@opencall/shared";
+import type { DropdownRtplStatus } from "../lib/api/types";
+
+export interface StatusGroup {
+  group: string;
+  options: readonly string[];
+}
 
 interface RTPLStatusDropdownProps {
   value: string;
   onChange: (value: string) => void;
   manualEntryRequiredLabel: string;
+  /**
+   * Dynamic, admin-managed status groups fetched from the API. When omitted the
+   * component falls back to the legacy hardcoded groups so it keeps working if a
+   * caller hasn't been wired up yet.
+   */
+  groups?: readonly StatusGroup[];
 }
 
-type StatusGroup = (typeof RTPL_STATUS_GROUPS)[number] | {
-  group: string;
-  options: readonly string[];
-};
+/**
+ * Convert the flat, ordered dropdown list returned by the API into the grouped
+ * shape the dropdown renders. Insertion order is preserved (the API already
+ * sorts by sort_order), so categories appear in their seeded display order.
+ */
+export function buildStatusGroups(statuses: readonly DropdownRtplStatus[]): StatusGroup[] {
+  const byCategory = new Map<string, string[]>();
+  for (const status of statuses) {
+    const category = status.category || "Other";
+    const existing = byCategory.get(category);
+    if (existing) {
+      existing.push(status.name);
+    } else {
+      byCategory.set(category, [status.name]);
+    }
+  }
+  return Array.from(byCategory.entries()).map(([group, options]) => ({ group, options }));
+}
 
 export function splitStatusGroupsForColumns(groups: readonly StatusGroup[]): [StatusGroup[], StatusGroup[]] {
   const columns: [StatusGroup[], StatusGroup[]] = [[], []];
@@ -28,7 +54,9 @@ export function splitStatusGroupsForColumns(groups: readonly StatusGroup[]): [St
   return columns;
 }
 
-export function RTPLStatusDropdown({ value, onChange, manualEntryRequiredLabel }: RTPLStatusDropdownProps) {
+export function RTPLStatusDropdown({ value, onChange, manualEntryRequiredLabel, groups }: RTPLStatusDropdownProps) {
+  const baseGroups: readonly StatusGroup[] = groups && groups.length > 0 ? groups : RTPL_STATUS_GROUPS;
+  const flatOptions = baseGroups.flatMap((g) => g.options);
   const [isOpen, setIsOpen] = useState(false);
   const triggerRef = useRef<HTMLButtonElement>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
@@ -62,7 +90,7 @@ export function RTPLStatusDropdown({ value, onChange, manualEntryRequiredLabel }
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, [isOpen]);
 
-  const isCustom = value !== "" && !RTPL_STATUS_OPTIONS.includes(value as any);
+  const isCustom = value !== "" && !flatOptions.includes(value);
 
   // Helper to render the item button
   const renderItem = (option: string, label: string) => {
@@ -107,10 +135,14 @@ export function RTPLStatusDropdown({ value, onChange, manualEntryRequiredLabel }
     return value;
   };
 
-  const statusGroups = [
-    ...RTPL_STATUS_GROUPS,
-    { group: "Other", options: ["Custom"] },
-  ] as const;
+  // Append the manual-entry "Custom" item, merging into an existing "Other"
+  // category if the admin happens to have created one (avoids duplicate keys).
+  const hasOther = baseGroups.some((g) => g.group === "Other");
+  const statusGroups: StatusGroup[] = hasOther
+    ? baseGroups.map((g) =>
+        g.group === "Other" ? { group: g.group, options: [...g.options, "Custom"] } : g,
+      )
+    : [...baseGroups, { group: "Other", options: ["Custom"] }];
   const [leftColumnGroups, rightColumnGroups] = splitStatusGroupsForColumns(statusGroups);
 
   return (

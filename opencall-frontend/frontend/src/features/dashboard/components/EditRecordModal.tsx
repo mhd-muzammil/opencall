@@ -6,7 +6,7 @@
 // The `isEditModalOpen && editingSerialNo !== null` render guard stays in page.tsx,
 // so editingSerialNo arrives narrowed to a number.
 import type { Dispatch, SetStateAction } from "react";
-import { RTPLStatusDropdown } from "../../../components/RTPLStatusDropdown";
+import { RTPLStatusDropdown, type StatusGroup } from "../../../components/RTPLStatusDropdown";
 import { MANUAL_ENTRY_REQUIRED } from "../constants";
 import type { DropdownEngineer } from "../../../lib/api/types";
 
@@ -16,6 +16,7 @@ export function EditRecordModal({
   draftOutput,
   setDraftOutput,
   engineersList,
+  rtplStatusGroups,
   cancelEditing,
   saveEditing,
 }: Readonly<{
@@ -24,6 +25,7 @@ export function EditRecordModal({
   draftOutput: Record<string, string | number>;
   setDraftOutput: Dispatch<SetStateAction<Record<string, string | number>>>;
   engineersList: DropdownEngineer[];
+  rtplStatusGroups: readonly StatusGroup[];
   cancelEditing: () => void;
   saveEditing: (serialNo: number) => Promise<void>;
 }>) {
@@ -87,6 +89,7 @@ export function EditRecordModal({
                   <RTPLStatusDropdown
                     value={String(draftOutput["RTPL status"] ?? "")}
                     manualEntryRequiredLabel="Entry"
+                    groups={rtplStatusGroups}
                     onChange={(selected) => {
                       setDraftOutput((current) => ({
                         ...current,

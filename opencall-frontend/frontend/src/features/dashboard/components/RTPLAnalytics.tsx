@@ -21,12 +21,12 @@ function calculateKpiMetricsForCardView(
   isBod: boolean
 ) {
   const active = isBod
-    ? rows.filter((r) => r.comparison?.changeType !== "NEW" && isWarrantyCase(r))
-    : rows.filter((r) => !r.carryForward.closedSyntheticRow && isWarrantyCase(r));
+    ? rows
+    : rows.filter((r) => !r.carryForward.closedSyntheticRow);
 
   const closed = isBod
     ? []
-    : rows.filter((r) => r.carryForward.closedSyntheticRow && isWarrantyCase(r));
+    : rows.filter((r) => r.carryForward.closedSyntheticRow);
 
   const getUniqueEngineers = (items: typeof rows) => {
     const list = items
@@ -74,7 +74,7 @@ function calculateKpiMetricsForCardView(
   };
   
   const tradeOpenRows = isBod
-    ? rows.filter((r) => r.comparison?.changeType !== "NEW" && isTradeRow(r))
+    ? rows.filter((r) => isTradeRow(r))
     : rows.filter((r) => !r.carryForward.closedSyntheticRow && isTradeRow(r));
 
   const closedCancelledRows = closed.filter((r) => matchStatus(r, ["cancel"]));
@@ -286,11 +286,13 @@ export function RTPLDashboard({
       // EOD for the Upload Time (carry-forward) card:
       //   - Snapshot set → current live status (reflects real-time edits as EOD)
       //   - No snapshot → old carry-forward logic (uploadTimeEodStatus)
-      let eodStatus = bodSnapshot !== null
-        ? String(rtplAnalyticsRows.find(
-            (r) => String(r.output["Ticket ID"] || "").trim() === ticketId
-          )?.output["RTPL status"] || "").trim()
-        : uploadTimeEodStatus;
+      let eodStatus = isCarryForward
+        ? (bodSnapshot !== null
+          ? String(rtplAnalyticsRows.find(
+              (r) => String(r.output["Ticket ID"] || "").trim() === ticketId
+            )?.output["RTPL status"] || "").trim()
+          : uploadTimeEodStatus)
+        : bodStatus;
 
       if (!isCarryForward) {
         // Collect changes up to cardIndex

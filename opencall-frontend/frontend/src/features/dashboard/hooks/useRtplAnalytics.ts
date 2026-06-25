@@ -21,6 +21,7 @@ export function useRtplAnalytics(params: {
   report: GeneratedReportResponse | null;
   rtplStatusChanges: RtplStatusChange[];
   selectedRtplTimeCardId: RtplTimeCardId;
+  bodFixedTime: string | null;
 }) {
   const {
     activeRows,
@@ -30,6 +31,7 @@ export function useRtplAnalytics(params: {
     report,
     rtplStatusChanges,
     selectedRtplTimeCardId,
+    bodFixedTime,
   } = params;
 
   const rtplRowsForSelectedScope = useMemo(() => {
@@ -108,9 +110,14 @@ export function useRtplAnalytics(params: {
         selectedRtplCaseScope === "overall" ||
         scopedTicketIds.has(change.ticketId.trim());
 
-      return matchesRegion && matchesScope;
+      const isAfterBodFix =
+        !bodFixedTime ||
+        (change.changedAt &&
+          new Date(change.changedAt).getTime() > new Date(bodFixedTime).getTime());
+
+      return matchesRegion && matchesScope && isAfterBodFix;
     });
-  }, [rtplAnalyticsRows, rtplStatusChanges, selectedRtplCaseScope, selectedRtplRegion]);
+  }, [rtplAnalyticsRows, rtplStatusChanges, selectedRtplCaseScope, selectedRtplRegion, bodFixedTime]);
 
   const rtplTimeCards = useMemo(
     () => buildRtplTimeCards(rtplAnalyticsRows, visibleRtplStatusChanges),

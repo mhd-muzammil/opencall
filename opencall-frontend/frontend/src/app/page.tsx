@@ -436,6 +436,29 @@ export default function DashboardPage() {
     } catch { return null; }
   });
 
+  // Reset BOD fix if a different report is loaded or a different analytics date is selected
+  useEffect(() => {
+    if (!report?.reportId) return;
+    try {
+      const storedReportId = window.sessionStorage.getItem("opencall.bodFixedReportId");
+      const storedDate = window.sessionStorage.getItem("opencall.bodFixedDate");
+      const currentReportId = String(report.reportId);
+      const currentDate = rtplAnalyticsDate || "";
+
+      if (
+        (storedReportId && storedReportId !== currentReportId) ||
+        (storedDate && storedDate !== currentDate)
+      ) {
+        setBodFixedTime(null);
+        setBodSnapshot(null);
+        window.sessionStorage.removeItem("opencall.bodFixedTime");
+        window.sessionStorage.removeItem("opencall.bodSnapshot");
+        window.sessionStorage.removeItem("opencall.bodFixedReportId");
+        window.sessionStorage.removeItem("opencall.bodFixedDate");
+      }
+    } catch { /* non-fatal */ }
+  }, [report?.reportId, rtplAnalyticsDate]);
+
   // Whether the 6PM auto-download has already fired for this session.
   const autoDownloadFiredRef = useRef(false);
 
@@ -914,6 +937,7 @@ export default function DashboardPage() {
     report,
     rtplStatusChanges,
     selectedRtplTimeCardId,
+    bodFixedTime,
   });
 
   const selectedRtplModalDetails = selectedRtplTimeCard
@@ -945,7 +969,15 @@ export default function DashboardPage() {
   function handleFixBod(): void {
     const now = new Date().toISOString();
     setBodFixedTime(now);
-    try { window.sessionStorage.setItem("opencall.bodFixedTime", now); } catch { /* non-fatal */ }
+    try {
+      window.sessionStorage.setItem("opencall.bodFixedTime", now);
+      if (report?.reportId) {
+        window.sessionStorage.setItem("opencall.bodFixedReportId", String(report.reportId));
+      }
+      if (rtplAnalyticsDate) {
+        window.sessionStorage.setItem("opencall.bodFixedDate", rtplAnalyticsDate);
+      }
+    } catch { /* non-fatal */ }
 
     // Capture the current RTPL status of every analytics row as the frozen BOD baseline.
     const snapshot: Record<string, string> = {};

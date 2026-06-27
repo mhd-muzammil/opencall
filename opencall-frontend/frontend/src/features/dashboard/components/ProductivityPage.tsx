@@ -1,9 +1,10 @@
 // Engineer Productivity dashboard page extracted from app/page.tsx (Phase 6.5) and updated to render as a separate page view.
-import type { Dispatch, SetStateAction } from "react";
+import { useState, useMemo, type Dispatch, type SetStateAction } from "react";
 import { downloadEngineerProductivityExcel } from "../../../lib/excelExport";
 
 export function ProductivityPage({
   selectedRegion,
+  setSelectedRegion,
   activeRegionName,
   productivityFilterType,
   setProductivityFilterType,
@@ -11,8 +12,11 @@ export function ProductivityPage({
   setSelectedProductivityValue,
   engineerProductivityMetrics,
   productivityDateLabel,
+  regionsList,
+  isSuperAdmin,
 }: Readonly<{
   selectedRegion: string | null;
+  setSelectedRegion: Dispatch<SetStateAction<string | null>>;
   activeRegionName: string;
   productivityFilterType: string;
   setProductivityFilterType: Dispatch<SetStateAction<string>>;
@@ -21,6 +25,8 @@ export function ProductivityPage({
   engineerProductivityMetrics: {
     list: Array<{
       name: string;
+      regionCode?: string;
+      regionName?: string;
       assigned: number;
       attended: number;
       closed: number;
@@ -33,7 +39,37 @@ export function ProductivityPage({
     datesList: string[];
   };
   productivityDateLabel: string;
+  regionsList: Array<{ aspCode: string; regionName: string; count: number }>;
+  isSuperAdmin: boolean;
 }>) {
+  const [searchQuery, setSearchQuery] = useState("");
+
+  // Filter list locally by search query (checks engineer name or region name)
+  const filteredList = useMemo(() => {
+    const query = searchQuery.trim().toLowerCase();
+    if (!query) return engineerProductivityMetrics.list;
+    return engineerProductivityMetrics.list.filter(item =>
+      item.name.toLowerCase().includes(query) ||
+      (item.regionName && item.regionName.toLowerCase().includes(query)) ||
+      (item.regionCode && item.regionCode.toLowerCase().includes(query))
+    );
+  }, [engineerProductivityMetrics.list, searchQuery]);
+
+  // Recalculate KPIs based on filtered results
+  const filteredTotalAttended = useMemo(() => {
+    return filteredList.reduce((sum, item) => sum + item.attended, 0);
+  }, [filteredList]);
+
+  const filteredActiveEngineers = filteredList.length;
+
+  const filteredAvgProductivity = useMemo(() => {
+    return filteredActiveEngineers > 0
+      ? (filteredTotalAttended / filteredActiveEngineers).toFixed(1)
+      : "0.0";
+  }, [filteredTotalAttended, filteredActiveEngineers]);
+
+  const showRegionColumn = !selectedRegion || selectedRegion === "ALL";
+
   return (
     <div className="panel" style={{ display: "grid", gap: "20px" }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", borderBottom: "1px solid var(--border)", paddingBottom: "16px", gap: "16px", flexWrap: "wrap" }}>
@@ -45,6 +81,62 @@ export function ProductivityPage({
         </div>
         
         <div style={{ display: "flex", gap: "12px", alignItems: "center", flexWrap: "wrap" }}>
+          {/* Region Filter for Super Admins */}
+          {isSuperAdmin && (
+            <div style={{ display: "flex", gap: "6px", alignItems: "center" }}>
+              <span style={{ fontSize: "13px", fontWeight: "600", color: "#475569" }}>Region:</span>
+              <select
+                value={selectedRegion || "ALL"}
+                onChange={(e) => setSelectedRegion(e.target.value === "ALL" ? "ALL" : e.target.value)}
+                style={{ padding: "6px 12px", borderRadius: "6px", border: "1px solid var(--border)", fontSize: "13px", fontWeight: "600", outline: "none", background: "#f8fafc", cursor: "pointer" }}
+              >
+                <option value="ALL">All Regions</option>
+                {regionsList.map(r => (
+                  <option key={r.aspCode} value={r.aspCode}>{r.regionName} ({r.aspCode})</option>
+                ))}
+              </select>
+            </div>
+          )}
+
+          {/* Search Box */}
+          <div style={{ display: "flex", gap: "6px", alignItems: "center", position: "relative" }}>
+            <span style={{ fontSize: "13px", fontWeight: "600", color: "#475569" }}>Search:</span>
+            <input
+              type="text"
+              placeholder="Search engg or region..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              style={{
+                padding: "6px 12px",
+                borderRadius: "6px",
+                border: "1px solid var(--border)",
+                fontSize: "13px",
+                outline: "none",
+                background: "#ffffff",
+                width: "180px"
+              }}
+            />
+            {searchQuery && (
+              <button
+                onClick={() => setSearchQuery("")}
+                style={{
+                  position: "absolute",
+                  right: "8px",
+                  top: "50%",
+                  transform: "translateY(-50%)",
+                  border: "none",
+                  background: "transparent",
+                  color: "#94a3b8",
+                  cursor: "pointer",
+                  fontSize: "14px",
+                  fontWeight: "bold",
+                }}
+              >
+                &times;
+              </button>
+            )}
+          </div>
+
           {/* Filter Type */}
           <div style={{ display: "flex", gap: "6px", alignItems: "center" }}>
             <span style={{ fontSize: "13px", fontWeight: "600", color: "#475569" }}>Filter:</span>
@@ -90,8 +182,8 @@ export function ProductivityPage({
               downloadEngineerProductivityExcel(
                 activeRegionName || "Global",
                 productivityDateLabel,
-                engineerProductivityMetrics.list,
-                engineerProductivityMetrics.totalAttended
+                filteredList,
+                filteredTotalAttended
               );
             }}
           >
@@ -100,17 +192,71 @@ export function ProductivityPage({
         </div>
       </div>
 
+      {/* KPI Stats Cards */}
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: "16px" }}>
+        {/* Card 1: Total Attended */}
+        <div style={{
+          background: "linear-gradient(135deg, #eff6ff, #dbeafe)",
+          border: "1px solid #bfdbfe",
+          borderRadius: "12px",
+          padding: "16px",
+          display: "flex",
+          flexDirection: "column",
+          gap: "4px",
+          boxShadow: "0 2px 4px rgba(0, 0, 0, 0.02)"
+        }}>
+          <span style={{ fontSize: "12px", fontWeight: "700", color: "#1e40af", textTransform: "uppercase", letterSpacing: "0.5px" }}>📞 Total Attended Calls</span>
+          <strong style={{ fontSize: "28px", fontWeight: "900", color: "#1e3a8a" }}>{filteredTotalAttended}</strong>
+          <span style={{ fontSize: "11px", color: "#60a5fa" }}>Across filtered engineers</span>
+        </div>
+
+        {/* Card 2: Active Engineers */}
+        <div style={{
+          background: "linear-gradient(135deg, #f0fdf4, #dcfce7)",
+          border: "1px solid #bbf7d0",
+          borderRadius: "12px",
+          padding: "16px",
+          display: "flex",
+          flexDirection: "column",
+          gap: "4px",
+          boxShadow: "0 2px 4px rgba(0, 0, 0, 0.02)"
+        }}>
+          <span style={{ fontSize: "12px", fontWeight: "700", color: "#166534", textTransform: "uppercase", letterSpacing: "0.5px" }}>👥 Active Engineers</span>
+          <strong style={{ fontSize: "28px", fontWeight: "900", color: "#14532d" }}>{filteredActiveEngineers}</strong>
+          <span style={{ fontSize: "11px", color: "#4ade80" }}>In selected view</span>
+        </div>
+
+        {/* Card 3: Avg Productivity */}
+        <div style={{
+          background: "linear-gradient(135deg, #faf5ff, #f3e8ff)",
+          border: "1px solid #e9d5ff",
+          borderRadius: "12px",
+          padding: "16px",
+          display: "flex",
+          flexDirection: "column",
+          gap: "4px",
+          boxShadow: "0 2px 4px rgba(0, 0, 0, 0.02)"
+        }}>
+          <span style={{ fontSize: "12px", fontWeight: "700", color: "#6b21a8", textTransform: "uppercase", letterSpacing: "0.5px" }}>⚡ Avg Calls / Engineer</span>
+          <strong style={{ fontSize: "28px", fontWeight: "900", color: "#581c87" }}>{filteredAvgProductivity}</strong>
+          <span style={{ fontSize: "11px", color: "#c084fc" }}>Average attended per active engg</span>
+        </div>
+      </div>
+
       <div style={{ overflowX: "auto" }}>
         <table className="kpiSummaryTable" style={{ width: "100%", borderCollapse: "collapse" }}>
           <thead>
             <tr style={{ background: "#fed7aa", color: "#7c2d12", fontWeight: "bold" }}>
-              <td colSpan={8} style={{ padding: "12px", border: "1px solid #cbd5e1", textAlign: "center", fontSize: "14px", fontWeight: "800" }}>
+              <td colSpan={showRegionColumn ? 9 : 8} style={{ padding: "12px", border: "1px solid #cbd5e1", textAlign: "center", fontSize: "14px", fontWeight: "800" }}>
                 Filter Applied: {productivityDateLabel}
               </td>
             </tr>
             <tr style={{ background: "#ffedd5", color: "#7c2d12", fontWeight: "bold" }}>
               <td style={{ padding: "10px", border: "1px solid #cbd5e1", textAlign: "center", fontSize: "13px", width: "70px" }}>S.No</td>
               <td style={{ padding: "10px", border: "1px solid #cbd5e1", fontSize: "13px" }}>Engineer Name</td>
+              {showRegionColumn && (
+                <td style={{ padding: "10px", border: "1px solid #cbd5e1", fontSize: "13px" }}>Region</td>
+              )}
               <td style={{ padding: "10px", border: "1px solid #cbd5e1", textAlign: "center", fontSize: "13px" }}>Assigned</td>
               <td style={{ padding: "10px", border: "1px solid #cbd5e1", textAlign: "center", fontSize: "13px" }}>Attended</td>
               <td style={{ padding: "10px", border: "1px solid #cbd5e1", textAlign: "center", fontSize: "13px" }}>Closed</td>
@@ -120,11 +266,14 @@ export function ProductivityPage({
             </tr>
           </thead>
           <tbody>
-            {engineerProductivityMetrics.list.length > 0 ? (
-              engineerProductivityMetrics.list.map((item, index) => (
+            {filteredList.length > 0 ? (
+              filteredList.map((item, index) => (
                 <tr key={item.name} style={{ borderBottom: "1px solid #e2e8f0" }}>
                   <td style={{ padding: "10px", border: "1px solid #cbd5e1", textAlign: "center", background: "#f8fafc", fontWeight: "600", color: "#334155" }}>{index + 1}</td>
                   <td style={{ padding: "10px", border: "1px solid #cbd5e1", fontWeight: "600", color: "#0f172a" }}>{item.name}</td>
+                  {showRegionColumn && (
+                    <td style={{ padding: "10px", border: "1px solid #cbd5e1", color: "#475569", fontSize: "12px", fontWeight: "500" }}>{item.regionName || item.regionCode || "—"}</td>
+                  )}
                   <td style={{ padding: "10px", border: "1px solid #cbd5e1", textAlign: "center", color: "#334155" }}>{item.assigned}</td>
                   <td style={{ padding: "10px", border: "1px solid #cbd5e1", textAlign: "center", fontWeight: "bold", color: "#0f172a", background: "#f1f5f9" }}>{item.attended}</td>
                   <td style={{ padding: "10px", border: "1px solid #cbd5e1", textAlign: "center", color: "#166534", fontWeight: "600" }}>{item.closed}</td>
@@ -135,18 +284,18 @@ export function ProductivityPage({
               ))
             ) : (
               <tr>
-                <td colSpan={8} style={{ padding: "24px", border: "1px solid #cbd5e1", textAlign: "center", color: "var(--muted)" }}>
+                <td colSpan={showRegionColumn ? 9 : 8} style={{ padding: "24px", border: "1px solid #cbd5e1", textAlign: "center", color: "var(--muted)" }}>
                   No engineer productivity records found for this period.
                 </td>
               </tr>
             )}
-            {engineerProductivityMetrics.list.length > 0 && (
+            {filteredList.length > 0 && (
               <tr style={{ background: "#f8fafc", fontWeight: "bold" }}>
-                <td colSpan={3} style={{ padding: "12px", border: "1px solid #cbd5e1", textAlign: "right", color: "#334155" }}>Total Attended</td>
+                <td colSpan={showRegionColumn ? 4 : 3} style={{ padding: "12px", border: "1px solid #cbd5e1", textAlign: "right", color: "#334155" }}>Total Attended</td>
                 <td style={{ padding: "12px", border: "1px solid #cbd5e1", textAlign: "center", background: "#fed7aa", color: "#7c2d12", fontWeight: "bold" }}>
-                  {engineerProductivityMetrics.totalAttended}
+                  {filteredTotalAttended}
                 </td>
-                <td colSpan={4} style={{ border: "1px solid #cbd5e1", background: "transparent" }}></td>
+                <td colSpan={showRegionColumn ? 5 : 4} style={{ border: "1px solid #cbd5e1", background: "transparent" }}></td>
               </tr>
             )}
           </tbody>

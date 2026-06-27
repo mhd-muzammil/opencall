@@ -9,6 +9,7 @@ import { useMemo } from "react";
 import { hasRequestToCancelFlexStatus } from "../../../lib/reportDashboardAnalytics";
 import type { GeneratedReportResponse } from "../../../lib/apiClient";
 import { MANUAL_ENTRY_REQUIRED } from "../constants";
+import { ASP_CODE_REGION_MAP } from "@opencall/shared";
 
 export function useProductivityAnalytics(params: {
   report: GeneratedReportResponse | null;
@@ -323,6 +324,10 @@ export function useProductivityAnalytics(params: {
       const engActive = active.filter(r => String(r.output.Engineer ?? "").trim() === engName);
       const engClosed = closed.filter(r => String(r.output.Engineer ?? "").trim() === engName);
 
+      const firstRow = filteredRowsForProd.find(r => String(r.output.Engineer ?? "").trim() === engName);
+      const regionCode = firstRow ? String(firstRow.output["Work Location"] ?? "").trim() : "";
+      const regionName = ASP_CODE_REGION_MAP[regionCode as keyof typeof ASP_CODE_REGION_MAP] || regionCode || "N/A";
+
       const countStatus = (items: typeof engActive, keywords: string[]) => {
         return items.filter(r => {
           const s = String(r.output["RTPL status"] ?? "").trim().toLowerCase();
@@ -340,6 +345,8 @@ export function useProductivityAnalytics(params: {
 
       return {
         name: engName,
+        regionCode,
+        regionName,
         assigned: assignedCount,
         attended: attendedCount,
         closed: closedCount,

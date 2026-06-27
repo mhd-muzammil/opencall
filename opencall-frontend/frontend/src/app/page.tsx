@@ -3192,6 +3192,7 @@ export default function DashboardPage() {
                     {workspaceView === "productivity" && (
                       <ProductivityPage
                         selectedRegion={selectedRegion}
+                        setSelectedRegion={setSelectedRegion}
                         activeRegionName={activeRegionName}
                         productivityFilterType={productivityFilterType}
                         setProductivityFilterType={setProductivityFilterType}
@@ -3199,6 +3200,8 @@ export default function DashboardPage() {
                         setSelectedProductivityValue={setSelectedProductivityValue}
                         engineerProductivityMetrics={engineerProductivityMetrics}
                         productivityDateLabel={productivityDateLabel}
+                        regionsList={report?.regionBreakdown ?? []}
+                        isSuperAdmin={session?.user?.role === "SUPER_ADMIN"}
                       />
                     )}
 

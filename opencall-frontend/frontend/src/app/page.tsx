@@ -74,8 +74,6 @@ import {
   MatchPreviewSection,
   RTPLTimeModal,
   ProductivityPage,
-  KPISummaryModal,
-  ChennaiKPIModal,
   RTPLDashboard,
   FlexDashboard,
   CaseTypeCards,
@@ -390,8 +388,6 @@ export default function DashboardPage() {
   const [showWarrantyOnly, setShowWarrantyOnly] = useState(false);
   const [showNonWarrantyOnly, setShowNonWarrantyOnly] = useState(false);
   const [showPcOnly, setShowPcOnly] = useState(false);
-  const [isKpiModalOpen, setIsKpiModalOpen] = useState(false);
-  const [isChennaiKpiModalOpen, setIsChennaiKpiModalOpen] = useState(false);
   const [productivityFilterType, setProductivityFilterType] = useState("Today");
   const [selectedProductivityValue, setSelectedProductivityValue] = useState("");
   const [tnFilterType, setTnFilterType] = useState("Today");
@@ -587,8 +583,6 @@ export default function DashboardPage() {
     setShowNonWarrantyOnly(false);
     setShowPcOnly(false);
     setPrintCaseFilter(null);
-    setIsKpiModalOpen(false);
-    setIsChennaiKpiModalOpen(false);
     setProductivityFilterType("Today");
     setSelectedProductivityValue("");
     setTnFilterType("Today");
@@ -2830,30 +2824,6 @@ export default function DashboardPage() {
             )}
           </button>
 
-          {/* Quick-action report summaries (modals) */}
-          {selectedRegion && selectedRegion !== "ALL" && regionKpiMetrics && (
-            <>
-              <button
-                type="button"
-                className="sidebarItem"
-                onClick={() => setIsKpiModalOpen(true)}
-              >
-                <span className="sidebarIcon">
-                  <span>📊</span> <span className="sidebarText">Salem TN KPI</span>
-                </span>
-              </button>
-              <button
-                type="button"
-                className="sidebarItem"
-                onClick={() => setIsChennaiKpiModalOpen(true)}
-              >
-                <span className="sidebarIcon">
-                  <span>📈</span> <span className="sidebarText">Chennai EOD/BOD</span>
-                </span>
-              </button>
-            </>
-          )}
-
           {(session.user.role === "SUPER_ADMIN" || (selectedRegion && selectedRegion !== "ALL" && regionKpiMetrics)) && (
             <button
               type="button"
@@ -3439,26 +3409,6 @@ export default function DashboardPage() {
                           >
                             Download CSV
                           </button>
-                          {selectedRegion && selectedRegion !== "ALL" && regionKpiMetrics && (
-                            <>
-                              <button
-                                type="button"
-                                className="downloadBtn excelBtn"
-                                style={{ background: "linear-gradient(135deg, #0284c7, #0369a1)", borderColor: "#0284c7", color: "#ffffff" }}
-                                onClick={() => setIsKpiModalOpen(true)}
-                              >
-                                📊 VIEW TN REPORT
-                              </button>
-                              <button
-                                type="button"
-                                className="downloadBtn excelBtn"
-                                style={{ background: "linear-gradient(135deg, #0ea5e9, #0284c7)", borderColor: "#0ea5e9", color: "#ffffff" }}
-                                onClick={() => setIsChennaiKpiModalOpen(true)}
-                              >
-                                📊 VIEW EOD&BOD REPORT DASHBOARD
-                              </button>
-                            </>
-                          )}
                           {(session?.user?.role === "SUPER_ADMIN" || (selectedRegion && selectedRegion !== "ALL" && regionKpiMetrics)) && (
                             <button
                               type="button"
@@ -3675,44 +3625,6 @@ export default function DashboardPage() {
           </section>
         </div>
       </main>
-
-      {/* 1. Salem Region KPI Summary Popup Modal */}
-      {isKpiModalOpen && selectedRegion && selectedRegion !== "ALL" && regionKpiMetrics && (
-        <KPISummaryModal
-          activeRegionName={activeRegionName}
-          tnViewMode={tnViewMode}
-          setTnViewMode={setTnViewMode}
-          tnFilterType={tnFilterType}
-          setTnFilterType={setTnFilterType}
-          selectedTnValue={selectedTnValue}
-          setSelectedTnValue={setSelectedTnValue}
-          regionDateMetadata={regionDateMetadata}
-          tnDateLabel={tnDateLabel}
-          regionKpiMetrics={regionKpiMetrics}
-          tnFilteredRows={tnFilteredRows}
-          getParsedDateForExcel={getParsedDateForExcel}
-          setIsKpiModalOpen={setIsKpiModalOpen}
-        />
-      )}
-
-      {/* 2. Chennai Region Dashboard Summary Popup Modal */}
-      {isChennaiKpiModalOpen && selectedRegion && selectedRegion !== "ALL" && chennaiKpiMetrics && (
-        <ChennaiKPIModal
-          activeRegionName={activeRegionName}
-          eodBodViewMode={eodBodViewMode}
-          setEodBodViewMode={setEodBodViewMode}
-          eodBodFilterType={eodBodFilterType}
-          setEodBodFilterType={setEodBodFilterType}
-          selectedEodBodValue={selectedEodBodValue}
-          setSelectedEodBodValue={setSelectedEodBodValue}
-          regionDateMetadata={regionDateMetadata}
-          chennaiKpiMetrics={chennaiKpiMetrics}
-          eodBodFilteredRows={eodBodFilteredRows}
-          getParsedDateForExcel={getParsedDateForExcel}
-          getDayOfWeek={getDayOfWeek}
-          setIsChennaiKpiModalOpen={setIsChennaiKpiModalOpen}
-        />
-      )}
 
       {/* 3. Super Admin Engineer Productivity Dashboard Page */}
       {/* Replaced with direct panel rendering under workspaceView === "productivity" */}

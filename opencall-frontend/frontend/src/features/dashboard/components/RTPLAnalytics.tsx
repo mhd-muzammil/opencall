@@ -3,7 +3,7 @@
 // calculation, filtering, scope-selection, region-selection, handler, or
 // modal-opening changes). openRtplCheckpointModal and openRecordsWithFilter are
 // passed in unchanged. These two sections render unconditionally in page.tsx.
-import type { Dispatch, SetStateAction } from "react";
+import { useMemo, type Dispatch, type SetStateAction } from "react";
 import { formatNumber, todayIsoDate, isWarrantyCase, isTradeCase } from "../utils";
 import type { ReportRow, RtplCaseScope } from "../types";
 import {
@@ -12,6 +12,7 @@ import {
   type RtplTimeCardId,
   type RtplTimeCard,
   type RtplStatusMetric,
+  buildRtplOperationalAnalytics,
 } from "../../../lib/reportDashboardAnalytics";
 import { RTPL_STATUS_OPTIONS } from "@opencall/shared";
 
@@ -180,6 +181,11 @@ export function RTPLDashboard({
   RTPL_STATUS_OPTIONS.forEach((status, index) => {
     statusOrderMap.set(status.toLowerCase(), index);
   });
+
+  const rtplStatusMetrics = useMemo(
+    () => buildRtplOperationalAnalytics(rtplAnalyticsRows),
+    [rtplAnalyticsRows],
+  );
 
   const compareStatuses = (a: string, b: string): number => {
     const idxA = statusOrderMap.has(a.toLowerCase()) ? statusOrderMap.get(a.toLowerCase())! : 9999;
@@ -448,6 +454,37 @@ export function RTPLDashboard({
           </button>
         ))}
       </div>
+
+      {rtplStatusMetrics.length > 0 ? (
+        <div className="rtplMetricGrid" style={{ marginBottom: "20px" }}>
+          {rtplStatusMetrics.map((metric, metricIndex) => (
+            <button
+              className="rtplMetricCard"
+              key={`${metric.status || "blank"}-${metricIndex}`}
+              type="button"
+              onClick={() =>
+                openRecordsWithFilter({
+                  region:
+                    selectedRtplRegion === ALL_REGIONS_FILTER
+                      ? null
+                      : selectedRtplRegion,
+                  rtplStatus: metric.status,
+                  warrantyOnly: selectedRtplCaseScope === "warranty",
+                  tradeOnly: selectedRtplCaseScope === "trade",
+                })
+              }
+              title={`Open ${metric.status} records`}
+            >
+              <span>{metric.status}</span>
+              <strong>{metric.count}</strong>
+            </button>
+          ))}
+        </div>
+      ) : (
+        <div className="rtplEmptyState" style={{ marginBottom: "20px" }}>
+          No RTPL statuses for the selected region.
+        </div>
+      )}
 
       <div className="rtplTimeCardGrid" aria-label="RTPL fixed checkpoint cards">
         {checkpointCards.map((card) => {

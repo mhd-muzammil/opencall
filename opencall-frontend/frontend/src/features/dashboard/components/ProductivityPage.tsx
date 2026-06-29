@@ -14,6 +14,7 @@ export function ProductivityPage({
   productivityDateLabel,
   regionsList,
   isSuperAdmin,
+  openRecordsWithFilter,
 }: Readonly<{
   selectedRegion: string | null;
   setSelectedRegion: Dispatch<SetStateAction<string | null>>;
@@ -28,11 +29,17 @@ export function ProductivityPage({
       regionCode?: string;
       regionName?: string;
       assigned: number;
+      assignedTickets?: readonly string[];
       attended: number;
+      attendedTickets?: readonly string[];
       closed: number;
+      closedTickets?: readonly string[];
       partOrdered: number;
+      partOrderedTickets?: readonly string[];
       underObservation: number;
+      underObservationTickets?: readonly string[];
       cxReschedule: number;
+      cxRescheduleTickets?: readonly string[];
     }>;
     totalAttended: number;
     monthsList: string[];
@@ -41,6 +48,20 @@ export function ProductivityPage({
   productivityDateLabel: string;
   regionsList: Array<{ aspCode: string; regionName: string; count: number }>;
   isSuperAdmin: boolean;
+  openRecordsWithFilter: (args: Readonly<{
+    region?: string | null;
+    woOtcCode?: string | null;
+    rtplStatus?: string | null;
+    rtplStatuses?: readonly string[] | null;
+    flexStatus?: string | null;
+    segment?: string | null;
+    segments?: readonly string[] | null;
+    workLocations?: readonly string[] | null;
+    wipAging?: string | null;
+    wipAgings?: readonly string[] | null;
+    engineers?: readonly string[] | null;
+    ticketIds?: readonly string[] | null;
+  }>) => void;
 }>) {
   const [searchQuery, setSearchQuery] = useState("");
 
@@ -68,7 +89,54 @@ export function ProductivityPage({
       : "0.0";
   }, [filteredTotalAttended, filteredActiveEngineers]);
 
+  const allAttendedTickets = useMemo(() => {
+    return filteredList.reduce<string[]>((acc, item) => {
+      if (item.attendedTickets) {
+        acc.push(...item.attendedTickets);
+      }
+      return acc;
+    }, []);
+  }, [filteredList]);
+
   const showRegionColumn = !selectedRegion || selectedRegion === "ALL";
+
+  const renderClickableCell = (
+    count: number,
+    ticketIds?: readonly string[],
+    isBold: boolean = false,
+    color?: string,
+    backgroundColor?: string
+  ) => {
+    const hasTickets = ticketIds && ticketIds.length > 0;
+    const displayVal = count === 0 ? "" : count;
+
+    return (
+      <td
+        style={{
+          padding: "10px",
+          border: "1px solid #cbd5e1",
+          textAlign: "center",
+          fontWeight: isBold || hasTickets ? "bold" : "normal",
+          color: color || "#334155",
+          background: backgroundColor || "transparent",
+          cursor: hasTickets ? "pointer" : "default",
+          textDecoration: hasTickets ? "underline" : "none",
+          userSelect: "none"
+        }}
+        onClick={() => {
+          if (hasTickets) {
+            openRecordsWithFilter({
+              region: selectedRegion === "ALL" ? null : selectedRegion,
+              ticketIds
+            });
+          }
+        }}
+        title={hasTickets ? `Click to view all ${count} records` : undefined}
+      >
+        {displayVal}
+      </td>
+    );
+  };
 
   return (
     <div className="panel" style={{ display: "grid", gap: "20px" }}>
@@ -270,16 +338,39 @@ export function ProductivityPage({
               filteredList.map((item, index) => (
                 <tr key={item.name} style={{ borderBottom: "1px solid #e2e8f0" }}>
                   <td style={{ padding: "10px", border: "1px solid #cbd5e1", textAlign: "center", background: "#f8fafc", fontWeight: "600", color: "#334155" }}>{index + 1}</td>
-                  <td style={{ padding: "10px", border: "1px solid #cbd5e1", fontWeight: "600", color: "#0f172a" }}>{item.name}</td>
+                  
+                  {/* Engineer Name (Clickable to show all engineer tickets) */}
+                  <td 
+                    style={{ 
+                      padding: "10px", 
+                      border: "1px solid #cbd5e1", 
+                      fontWeight: "600", 
+                      color: "#1e40af", 
+                      cursor: "pointer", 
+                      textDecoration: "underline" 
+                    }}
+                    onClick={() => {
+                      openRecordsWithFilter({
+                        region: selectedRegion === "ALL" ? null : selectedRegion,
+                        engineers: [item.name],
+                      });
+                    }}
+                    title={`Click to view all records for ${item.name}`}
+                  >
+                    {item.name}
+                  </td>
+
                   {showRegionColumn && (
                     <td style={{ padding: "10px", border: "1px solid #cbd5e1", color: "#475569", fontSize: "12px", fontWeight: "500" }}>{item.regionName || item.regionCode || "—"}</td>
                   )}
-                  <td style={{ padding: "10px", border: "1px solid #cbd5e1", textAlign: "center", color: "#334155" }}>{item.assigned}</td>
-                  <td style={{ padding: "10px", border: "1px solid #cbd5e1", textAlign: "center", fontWeight: "bold", color: "#0f172a", background: "#f1f5f9" }}>{item.attended}</td>
-                  <td style={{ padding: "10px", border: "1px solid #cbd5e1", textAlign: "center", color: "#166534", fontWeight: "600" }}>{item.closed}</td>
-                  <td style={{ padding: "10px", border: "1px solid #cbd5e1", textAlign: "center", color: "#92400e" }}>{item.partOrdered || ""}</td>
-                  <td style={{ padding: "10px", border: "1px solid #cbd5e1", textAlign: "center", color: "#1e3a8a" }}>{item.underObservation || ""}</td>
-                  <td style={{ padding: "10px", border: "1px solid #cbd5e1", textAlign: "center", color: "#701a75" }}>{item.cxReschedule || ""}</td>
+
+                  {/* Clickable Status Counts */}
+                  {renderClickableCell(item.assigned, item.assignedTickets, false, "#334155")}
+                  {renderClickableCell(item.attended, item.attendedTickets, true, "#0f172a", "#f1f5f9")}
+                  {renderClickableCell(item.closed, item.closedTickets, true, "#166534")}
+                  {renderClickableCell(item.partOrdered, item.partOrderedTickets, false, "#92400e")}
+                  {renderClickableCell(item.underObservation, item.underObservationTickets, false, "#1e3a8a")}
+                  {renderClickableCell(item.cxReschedule, item.cxRescheduleTickets, false, "#701a75")}
                 </tr>
               ))
             ) : (
@@ -292,7 +383,27 @@ export function ProductivityPage({
             {filteredList.length > 0 && (
               <tr style={{ background: "#f8fafc", fontWeight: "bold" }}>
                 <td colSpan={showRegionColumn ? 4 : 3} style={{ padding: "12px", border: "1px solid #cbd5e1", textAlign: "right", color: "#334155" }}>Total Attended</td>
-                <td style={{ padding: "12px", border: "1px solid #cbd5e1", textAlign: "center", background: "#fed7aa", color: "#7c2d12", fontWeight: "bold" }}>
+                <td
+                  style={{
+                    padding: "12px",
+                    border: "1px solid #cbd5e1",
+                    textAlign: "center",
+                    background: "#fed7aa",
+                    color: "#7c2d12",
+                    fontWeight: "bold",
+                    textDecoration: allAttendedTickets.length > 0 ? "underline" : "none",
+                    cursor: allAttendedTickets.length > 0 ? "pointer" : "default",
+                  }}
+                  onClick={() => {
+                    if (allAttendedTickets.length > 0) {
+                      openRecordsWithFilter({
+                        region: selectedRegion === "ALL" ? null : selectedRegion,
+                        ticketIds: allAttendedTickets,
+                      });
+                    }
+                  }}
+                  title={allAttendedTickets.length > 0 ? `Click to view all ${filteredTotalAttended} attended records` : undefined}
+                >
                   {filteredTotalAttended}
                 </td>
                 <td colSpan={showRegionColumn ? 5 : 4} style={{ border: "1px solid #cbd5e1", background: "transparent" }}></td>

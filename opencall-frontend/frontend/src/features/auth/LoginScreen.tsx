@@ -3,7 +3,6 @@ import type {
   DatabaseHealthResponse,
   RuntimeHealthResponse,
 } from "../../lib/apiClient";
-import { StatusPill } from "../../components/StatusPill";
 
 export function SessionLoadingScreen() {
   return (
@@ -32,8 +31,6 @@ export function LoginScreen({
   password,
   isBusy,
   message,
-  dbHealth,
-  runtimeHealth,
   onUsernameChange,
   onPasswordChange,
   onSubmit,
@@ -94,15 +91,6 @@ export function LoginScreen({
             {isBusy ? "Signing in..." : "Sign in"}
           </button>
         </form>
-
-        <div className="loginStatusGrid" aria-label="System status">
-          <StatusPill tone={dbHealth?.connected ? "good" : "bad"}>
-            DB {dbHealth?.connected ? "connected" : dbHealth?.status ?? "checking"}
-          </StatusPill>
-          <StatusPill tone={runtimeHealth?.ok ? "good" : "bad"}>
-            Runtime {runtimeHealth?.ok ? "ready" : runtimeHealth?.status ?? "checking"}
-          </StatusPill>
-        </div>
       </section>
     </main>
   );

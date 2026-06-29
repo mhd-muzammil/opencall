@@ -1,7 +1,7 @@
 import React, { useMemo, useState, useEffect } from "react";
 import type { RegionStats } from "../types";
 import type { GeneratedReportResponse } from "../../../lib/api/types";
-import { isPcCase, isPrintCase, isCissCase, isTradeCase, isPrintInstallationCase, isConsumerCase } from "../utils";
+import { isPcCase, isPrintCase, isCissCase, isTradeCase, isPrintInstallationCase, isConsumerCase, isWarrantyCase } from "../utils";
 import { MANUAL_ENTRY_REQUIRED } from "../constants";
 import { ASP_CODE_REGION_MAP } from "@opencall/shared";
 
@@ -17,6 +17,7 @@ export function OverviewCharts({ report, activeRows, overallStats, selectedRegio
   const [expanded, setExpanded] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [widgetRegion, setWidgetRegion] = useState<string>("ALL");
+  const [caseFilter, setCaseFilter] = useState<"all" | "trade" | "warranty">("all");
 
   useEffect(() => {
     setWidgetRegion(selectedRegion || "ALL");
@@ -51,6 +52,12 @@ export function OverviewCharts({ report, activeRows, overallStats, selectedRegio
         const loc = String(row.output?.["Work Location"] ?? "").trim().toUpperCase();
         return loc === widgetRegion.toUpperCase();
       });
+    }
+    
+    if (caseFilter === "trade") {
+      allRows = allRows.filter(row => isTradeCase(row));
+    } else if (caseFilter === "warranty") {
+      allRows = allRows.filter(row => isWarrantyCase(row));
     }
     
     const dayMap = new Map<string, InflowOutflowItem>();
@@ -137,7 +144,7 @@ export function OverviewCharts({ report, activeRows, overallStats, selectedRegio
     const monthsList = Array.from(monthMap.values()).sort((a, b) => b.timestamp - a.timestamp);
 
     return { daysList, monthsList };
-  }, [report.rows, widgetRegion]);
+  }, [report.rows, widgetRegion, caseFilter]);
 
   const currentList = useMemo(() => {
     return viewMode === "day" ? inflowOutflowData.daysList : inflowOutflowData.monthsList;
@@ -1152,6 +1159,29 @@ export function OverviewCharts({ report, activeRows, overallStats, selectedRegio
                     {ASP_CODE_REGION_MAP[code] ?? code} ({code})
                   </option>
                 ))}
+              </select>
+
+              <select
+                value={caseFilter}
+                onChange={(e) => {
+                  setCaseFilter(e.target.value as "all" | "trade" | "warranty");
+                  setExpanded(false);
+                }}
+                style={{
+                  fontSize: "11.5px",
+                  padding: "6px 12px",
+                  borderRadius: "10px",
+                  border: "1px solid #e2e8f0",
+                  outline: "none",
+                  backgroundColor: "rgba(255, 255, 255, 0.6)",
+                  color: "#1e293b",
+                  fontWeight: 650,
+                  cursor: "pointer"
+                }}
+              >
+                <option value="all">All Cases</option>
+                <option value="trade">Trade Cases</option>
+                <option value="warranty">Warranty Cases</option>
               </select>
 
               <input

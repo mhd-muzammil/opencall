@@ -1518,6 +1518,8 @@ code {
   gap: 8px;
   position: fixed;
   inset: 0;
+  height: 100vh;
+  box-sizing: border-box;
   z-index: 95; /* above the sticky header (20), below modals (100) */
   background: var(--surface, #ffffff);
   padding: 12px 16px 16px;
@@ -1526,9 +1528,9 @@ code {
 /* In full screen, let the table fill the remaining height instead of its
    fixed max-height. */
 .recordsTableZone.maximized .tableWrap {
-  flex: 1 1 auto;
-  max-height: none;
-  min-height: 0;
+  flex: 1 1 auto !important;
+  max-height: none !important;
+  min-height: 0 !important;
 }
 
 .recordsTableZoneBar {

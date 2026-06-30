@@ -85,6 +85,7 @@ import {
   TNViewStatusPage,
   SLATatPage,
   FlexEodBodPage,
+  CaseDetailDrawer,
 } from "../features/dashboard/components";
 import {
   useRecordRowSets,
@@ -276,6 +277,7 @@ export default function DashboardPage() {
   const [savingSerialNo, setSavingSerialNo] = useState<number | null>(null);
   const [draftOutput, setDraftOutput] = useState<Record<string, string | number>>({});
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
+  const [caseDetailRow, setCaseDetailRow] = useState<ReportRow | null>(null);
   const draftOutputRef = useRef(draftOutput);
   const hasAutoRestoredHistoryRef = useRef(false);
   const recordsTableWrapRef = useRef<HTMLDivElement | null>(null);
@@ -2669,6 +2671,28 @@ export default function DashboardPage() {
                         <div className="rowActions">
                           <button
                             type="button"
+                            className="secondaryButton caseViewBtn"
+                            title="View case details"
+                            aria-label="View case details"
+                            onClick={() => setCaseDetailRow(row)}
+                          >
+                            <svg
+                              width="16"
+                              height="16"
+                              viewBox="0 0 24 24"
+                              fill="none"
+                              stroke="currentColor"
+                              strokeWidth="2"
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                              aria-hidden="true"
+                            >
+                              <path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7Z" />
+                              <circle cx="12" cy="12" r="3" />
+                            </svg>
+                          </button>
+                          <button
+                            type="button"
                             className="secondaryButton"
                             onClick={() => startEditing(row)}
                           >
@@ -3654,6 +3678,15 @@ export default function DashboardPage() {
           rtplStatusGroups={rtplStatusGroups}
           cancelEditing={cancelEditing}
           saveEditing={saveEditing}
+        />
+      )}
+
+      {caseDetailRow && session && (
+        <CaseDetailDrawer
+          row={caseDetailRow}
+          token={session.token}
+          localStatusChanges={rtplStatusChanges}
+          onClose={() => setCaseDetailRow(null)}
         />
       )}
 

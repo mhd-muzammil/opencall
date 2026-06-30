@@ -7889,3 +7889,334 @@ td {
 
 
 
+
+/* ── Case Details (records → eye icon) ──────────────────────────── */
+.caseViewBtn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 6px;
+  line-height: 0;
+  color: var(--accent);
+}
+.caseViewBtn:hover:not(:disabled) {
+  color: var(--accent-strong);
+}
+.caseDetailSub {
+  margin: 4px 0 0;
+  font-size: 13px;
+  color: var(--muted);
+}
+.caseBadgeRow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+.caseMetricRow {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(118px, 1fr));
+  gap: 10px;
+}
+.caseMetric {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface-subtle);
+}
+.caseMetricValue {
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--text);
+  line-height: 1.1;
+}
+.caseMetricLabel {
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.caseSection {
+  display: grid;
+  gap: 10px;
+}
+.caseSectionTitle {
+  margin: 0;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.caseSubtleNote {
+  font-size: 12px;
+  color: var(--muted);
+}
+
+/* ── Case Details modal (centered full-page) ─────────────────────── */
+.caseModalOverlay {
+  position: fixed;
+  inset: 0;
+  z-index: 70;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: rgba(15, 23, 42, 0.45);
+  -webkit-backdrop-filter: blur(4px);
+  backdrop-filter: blur(4px);
+}
+.caseModalCard {
+  display: flex;
+  flex-direction: column;
+  width: min(1120px, 96vw);
+  max-height: 92vh;
+  overflow: hidden;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 18px;
+  box-shadow: 0 28px 70px rgba(15, 23, 42, 0.28);
+}
+.caseModalHeader {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 20px 24px;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface);
+}
+.caseModalBody {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 20px 24px 28px;
+  display: grid;
+  gap: 18px;
+  align-content: start;
+}
+.caseLayout {
+  display: grid;
+  grid-template-columns: minmax(0, 0.92fr) minmax(0, 1.08fr);
+  gap: 24px;
+  align-items: start;
+}
+.caseLayoutMain {
+  display: grid;
+  gap: 18px;
+  position: sticky;
+  top: 0;
+  align-self: start;
+}
+.caseLayoutSide {
+  display: grid;
+  gap: 12px;
+  min-width: 0;
+}
+.caseStatusPill {
+  display: inline-flex;
+  align-items: center;
+  padding: 5px 13px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: capitalize;
+  letter-spacing: 0.01em;
+  color: var(--accent-strong);
+  background: var(--accent-soft);
+  border: 1px solid var(--accent-ring);
+}
+@media (max-width: 900px) {
+  .caseModalOverlay { padding: 0; }
+  .caseModalCard {
+    width: 100vw;
+    height: 100vh;
+    max-height: 100vh;
+    border-radius: 0;
+  }
+  .caseLayout { grid-template-columns: 1fr; }
+  .caseLayoutMain { position: static; }
+}
+
+/* ── Case Details: collapsed "no change" timeline group ──────────── */
+.caseQuietCard {
+  background: var(--surface-subtle);
+  border-style: dashed;
+}
+.caseQuietToggle {
+  align-self: start;
+  margin-top: 4px;
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--accent);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.caseQuietToggle:hover {
+  color: var(--accent-strong);
+  text-decoration: underline;
+}
+.caseQuietList {
+  margin: 8px 0 0;
+  padding: 10px 12px;
+  list-style: none;
+  display: grid;
+  gap: 6px;
+  border-top: 1px solid var(--border);
+  font-size: 12px;
+  color: var(--muted);
+}
+
+/* ── Case Details: RTPL status progression timeline ──────────────── */
+.statusFlow {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.statusFlowItem {
+  position: relative;
+  display: grid;
+  grid-template-columns: 24px 1fr;
+  gap: 4px;
+  padding-bottom: 4px;
+}
+/* connecting line behind the dots */
+.statusFlowItem::before {
+  content: "";
+  position: absolute;
+  left: 11px;
+  top: 18px;
+  bottom: -4px;
+  width: 2px;
+  background: var(--border);
+}
+.statusFlowItem:last-child::before {
+  display: none;
+}
+.statusFlowDot {
+  margin-top: 12px;
+  width: 10px;
+  height: 10px;
+  border-radius: 999px;
+  background: #f97316;
+  box-shadow: 0 0 0 3px rgba(249, 115, 22, 0.16);
+  z-index: 1;
+}
+.statusFlowMain {
+  padding: 8px 0 14px;
+  border-bottom: 1px solid var(--border);
+  min-width: 0;
+}
+.statusFlowItem:last-child .statusFlowMain {
+  border-bottom: none;
+}
+.statusFlowTop {
+  display: grid;
+  grid-template-columns: 1fr auto auto;
+  align-items: start;
+  gap: 12px;
+}
+.statusFlowTitle {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text);
+  min-width: 0;
+}
+.statusFlowMeta {
+  display: grid;
+  gap: 2px;
+  text-align: right;
+  white-space: nowrap;
+}
+.statusFlowDate {
+  font-size: 12px;
+  color: var(--muted);
+}
+.statusFlowActor {
+  font-size: 12px;
+  color: var(--muted);
+}
+.statusFlowBadge {
+  align-self: start;
+  padding: 2px 9px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 700;
+  color: #c2410c;
+  background: #fff1e6;
+  white-space: nowrap;
+}
+.statusFlowNote {
+  margin: 10px 0 0;
+  padding: 10px 14px;
+  background: var(--surface-subtle);
+  border-left: 3px solid #f97316;
+  border-radius: 6px;
+  font-size: 13px;
+  color: var(--text);
+}
+.caseFullHistory {
+  margin-top: 8px;
+  border-top: 1px solid var(--border);
+  padding-top: 12px;
+}
+.caseFullHistory > summary {
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--accent);
+  list-style: none;
+}
+.caseFullHistory > summary::-webkit-details-marker {
+  display: none;
+}
+.caseFullHistory > summary:hover {
+  color: var(--accent-strong);
+}
+.caseFullHistory > .rcaTimeline {
+  margin-top: 14px;
+}
+@media (max-width: 560px) {
+  .statusFlowTop {
+    grid-template-columns: 1fr auto;
+  }
+  .statusFlowMeta {
+    grid-column: 1 / -1;
+    text-align: left;
+  }
+}
+
+/* ── Case Details: status timeline start/current markers ─────────── */
+.statusFlowTitleWrap {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  min-width: 0;
+}
+.statusFlowDotCurrent {
+  background: #16a34a;
+  box-shadow: 0 0 0 3px rgba(22, 163, 74, 0.18);
+}
+.statusFlowTag {
+  padding: 1px 8px;
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.statusFlowTagCurrent {
+  color: #15803d;
+  background: #dcfce7;
+}
+.statusFlowTagStart {
+  color: var(--muted);
+  background: var(--surface-subtle);
+}

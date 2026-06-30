@@ -77,7 +77,8 @@ export interface OpenCallApiClient {
   }): Promise<EditedReportRowResponse>;
   getRtplStatusChanges(input: {
     token: string;
-    reportId: string;
+    reportId?: string;
+    ticketId?: string;
     changeDate?: string;
     limit?: number;
   }): Promise<RtplStatusChange[]>;
@@ -233,9 +234,14 @@ export function createOpenCallApiClient({
 
     async getRtplStatusChanges(input) {
       const params = new URLSearchParams({
-        reportId: input.reportId,
         limit: String(input.limit ?? 50),
       });
+      if (input.reportId) {
+        params.set("reportId", input.reportId);
+      }
+      if (input.ticketId) {
+        params.set("ticketId", input.ticketId);
+      }
       if (input.changeDate) {
         params.set("changeDate", input.changeDate);
       }

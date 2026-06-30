@@ -3202,6 +3202,7 @@ export default function DashboardPage() {
                         productivityDateLabel={productivityDateLabel}
                         regionsList={report?.regionBreakdown ?? []}
                         isSuperAdmin={session?.user?.role === "SUPER_ADMIN"}
+                        openRecordsWithFilter={openRecordsWithFilter}
                       />
                     )}
 

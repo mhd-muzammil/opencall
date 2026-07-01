@@ -2305,6 +2305,7 @@ export default function DashboardPage() {
       return;
     }
     setRecordsSearchQuery(ticketId);
+    setWorkspaceView("records");
     setIsStaleModalOpen(false);
   }
 
@@ -3011,6 +3012,108 @@ export default function DashboardPage() {
                           </div>
                           <MetricsGrid items={overviewMetrics} />
                         </div>
+
+                        {staleFlexRows.length > 0 ? (
+                          <div className="staleFlexBanner" role="status" style={{ borderLeft: "4px solid #f59e0b", padding: "10px 14px", background: "#fffbeb", borderRadius: "10px", border: "1px solid #fef3c7", marginBottom: "20px" }}>
+                            <div className="staleFlexBannerHeader" style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "8px" }}>
+                              <p className="staleFlexBannerSummary" style={{ margin: 0, fontSize: "12px", fontWeight: "800", color: "#b45309" }}>
+                                ⚠ Status Aging Summary
+                              </p>
+                              <button
+                                type="button"
+                                className="staleFlexToggle"
+                                style={{
+                                  fontSize: "11px",
+                                  fontWeight: "700",
+                                  padding: "3px 8px",
+                                  borderRadius: "6px",
+                                  border: "1px solid #d97706",
+                                  color: "#d97706",
+                                  background: "#ffffff",
+                                  cursor: "pointer"
+                                }}
+                                onClick={() => setIsStaleModalOpen(true)}
+                              >
+                                View Detailed List
+                              </button>
+                            </div>
+                            <div className="staleAgingGrid" style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: "10px" }}>
+                              <div
+                                style={{
+                                  background: "#ffffff",
+                                  border: "1px solid #fde68a",
+                                  borderRadius: "8px",
+                                  padding: "8px 10px",
+                                  textAlign: "center",
+                                  cursor: "pointer",
+                                  transition: "transform 0.2s"
+                                }}
+                                onClick={() => {
+                                  const ticketIds = staleFlexRows
+                                    .filter((r) => (r.enriched?.current_status_aging ?? 0) >= 2)
+                                    .map((r) => String(r.output["Ticket ID"] ?? "").trim())
+                                    .filter(Boolean);
+                                  openRecordsWithFilter({ ticketIds });
+                                }}
+                                title="Click to filter table to 2+ days aging"
+                              >
+                                <div style={{ fontSize: "10px", fontWeight: "700", color: "#6b7280", textTransform: "uppercase" }}>2+ Days</div>
+                                <div style={{ fontSize: "20px", fontWeight: "900", color: "#d97706", marginTop: "2px" }}>
+                                  {staleFlexRows.filter((r) => (r.enriched?.current_status_aging ?? 0) >= 2).length}
+                                </div>
+                              </div>
+                              <div
+                                style={{
+                                  background: "#ffffff",
+                                  border: "1px solid #fde68a",
+                                  borderRadius: "8px",
+                                  padding: "8px 10px",
+                                  textAlign: "center",
+                                  cursor: "pointer",
+                                  transition: "transform 0.2s"
+                                }}
+                                onClick={() => {
+                                  const ticketIds = staleFlexRows
+                                    .filter((r) => (r.enriched?.current_status_aging ?? 0) >= 6)
+                                    .map((r) => String(r.output["Ticket ID"] ?? "").trim())
+                                    .filter(Boolean);
+                                  openRecordsWithFilter({ ticketIds });
+                                }}
+                                title="Click to filter table to 6+ days aging"
+                              >
+                                <div style={{ fontSize: "10px", fontWeight: "700", color: "#6b7280", textTransform: "uppercase" }}>6+ Days</div>
+                                <div style={{ fontSize: "20px", fontWeight: "900", color: "#d97706", marginTop: "2px" }}>
+                                  {staleFlexRows.filter((r) => (r.enriched?.current_status_aging ?? 0) >= 6).length}
+                                </div>
+                              </div>
+                              <div
+                                style={{
+                                  background: "#ffffff",
+                                  border: "1px solid #fca5a5",
+                                  borderRadius: "8px",
+                                  padding: "8px 10px",
+                                  textAlign: "center",
+                                  cursor: "pointer",
+                                  transition: "transform 0.2s"
+                                }}
+                                onClick={() => {
+                                  const ticketIds = staleFlexRows
+                                    .filter((r) => (r.enriched?.current_status_aging ?? 0) >= 25)
+                                    .map((r) => String(r.output["Ticket ID"] ?? "").trim())
+                                    .filter(Boolean);
+                                  openRecordsWithFilter({ ticketIds });
+                                }}
+                                title="Click to filter table to 25+ days aging"
+                              >
+                                <div style={{ fontSize: "10px", fontWeight: "700", color: "#dc2626", textTransform: "uppercase" }}>25+ Days</div>
+                                <div style={{ fontSize: "20px", fontWeight: "900", color: "#dc2626", marginTop: "2px" }}>
+                                  {staleFlexRows.filter((r) => (r.enriched?.current_status_aging ?? 0) >= 25).length}
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+                        ) : null}
+
                         <OverviewCharts
                           report={report}
                           activeRows={activeRows}
@@ -3250,178 +3353,99 @@ export default function DashboardPage() {
 
                   {workspaceView === "records" && (
                     <div className="recordsArea" ref={recordsAreaRef}>
-                      <div className={`recordsScopeRow ${staleFlexRows.length > 0 ? "hasFlex" : ""}`}>
-                        {/* Left: active-category total split by Consumer / Commercial. */}
+                      <div className="recordsScopeRow">
+                        {/* Active category breakdown grid layout */}
                         <div className="recordsScopeCard">
-                          {activeRegionName ? (
-                            <span className="recordsScopeRegion">{activeRegionName}</span>
-                          ) : null}
-                          <span className="recordsScopeLabel">{recordsScopeLabel}</span>
-                          <strong className="recordsScopeTotal">{formatNumber(recordsScopeTotal)}</strong>
-                          <div className="recordsScopeSplit">
-                            <button
-                              type="button"
-                              className="recordsScopeSplitItem"
-                              title="Show Consumer records only"
-                              onClick={() => openRecordsWithFilter({ region: selectedRegion, consumerOnly: true })}
-                            >
-                              <span>Consumer</span>
-                              <strong>{formatNumber(recordsScopeConsumer)}</strong>
-                            </button>
-                            <button
-                              type="button"
-                              className="recordsScopeSplitItem"
-                              title="Show Commercial records only"
-                              onClick={() => openRecordsWithFilter({ region: selectedRegion, commercialOnly: true })}
-                            >
-                              <span>Commercial</span>
-                              <strong>{formatNumber(recordsScopeCommercial)}</strong>
-                            </button>
+                          {/* Col 1: Total info */}
+                          <div className="recordsScopeColInfo">
+                            {activeRegionName ? (
+                              <span className="recordsScopeRegion">{activeRegionName}</span>
+                            ) : null}
+                            <span className="recordsScopeLabel">{recordsScopeLabel}</span>
+                            <strong className="recordsScopeTotal">{formatNumber(recordsScopeTotal)}</strong>
                           </div>
-                          <div className="recordsScopeSplit">
-                            <button
-                              type="button"
-                              className="recordsScopeSplitItem"
-                              title="Show Warranty records only"
-                              onClick={() => openRecordsWithFilter({ region: selectedRegion, warrantyOnly: true })}
-                            >
-                              <span>Warranty</span>
-                              <strong>{formatNumber(recordsScopeWarranty)}</strong>
-                            </button>
-                            <button
-                              type="button"
-                              className="recordsScopeSplitItem"
-                              title="Show Trade records only"
-                              onClick={() => openRecordsWithFilter({ region: selectedRegion, tradeOnly: true })}
-                            >
-                              <span>Trade</span>
-                              <strong>{formatNumber(recordsScopeTrade)}</strong>
-                            </button>
-                          </div>
-                          {recordsScopeSegmentMix ? (
-                            <div className="recordsScopeChips">
-                              {recordsScopeSegmentMix.map((item) => (
-                                <button
-                                  key={item.key}
-                                  type="button"
-                                  className="recordsScopeChip"
-                                  title={`Show ${item.label} records only`}
-                                  onClick={item.onSelect}
-                                >
-                                  <strong>{formatNumber(item.count)}</strong> {item.label}
-                                </button>
-                              ))}
-                            </div>
-                          ) : null}
-                          <div className="recordsScopeManual">
-                            <span>Manual entries pending</span>
-                            <strong className={recordsScopeManualPending > 0 ? "pending" : ""}>
-                              {formatNumber(recordsScopeManualPending)}
-                            </strong>
-                          </div>
-                        </div>
 
-                        {/* Right: compressed unchanged-Flex-Status banner. */}
-                        {staleFlexRows.length > 0 ? (
-                          <div className="staleFlexBanner" role="status" style={{ borderLeft: "4px solid #f59e0b", padding: "10px 14px", background: "#fffbeb", borderRadius: "10px", border: "1px solid #fef3c7" }}>
-                            <div className="staleFlexBannerHeader" style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "8px" }}>
-                              <p className="staleFlexBannerSummary" style={{ margin: 0, fontSize: "12px", fontWeight: "800", color: "#b45309" }}>
-                                ⚠ Status Aging Summary
-                              </p>
+                          {/* Col 2: Category Split */}
+                          <div className="recordsScopeColSplit">
+                            <span className="recordsScopeColHeader">Category Split</span>
+                            <div className="recordsScopeSplit" style={{ marginTop: 0 }}>
                               <button
                                 type="button"
-                                className="staleFlexToggle"
-                                style={{
-                                  fontSize: "11px",
-                                  fontWeight: "700",
-                                  padding: "3px 8px",
-                                  borderRadius: "6px",
-                                  border: "1px solid #d97706",
-                                  color: "#d97706",
-                                  background: "#ffffff",
-                                  cursor: "pointer"
-                                }}
-                                onClick={() => setIsStaleModalOpen(true)}
+                                className="recordsScopeSplitItem"
+                                title="Show Consumer records only"
+                                onClick={() => openRecordsWithFilter({ region: selectedRegion, consumerOnly: true })}
                               >
-                                View Detailed List
+                                <span>Consumer</span>
+                                <strong>{formatNumber(recordsScopeConsumer)}</strong>
+                              </button>
+                              <button
+                                type="button"
+                                className="recordsScopeSplitItem"
+                                title="Show Commercial records only"
+                                onClick={() => openRecordsWithFilter({ region: selectedRegion, commercialOnly: true })}
+                              >
+                                <span>Commercial</span>
+                                <strong>{formatNumber(recordsScopeCommercial)}</strong>
                               </button>
                             </div>
-                            <div className="staleAgingGrid" style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: "10px" }}>
-                              <div
-                                style={{
-                                  background: "#ffffff",
-                                  border: "1px solid #fde68a",
-                                  borderRadius: "8px",
-                                  padding: "8px 10px",
-                                  textAlign: "center",
-                                  cursor: "pointer",
-                                  transition: "transform 0.2s"
-                                }}
-                                onClick={() => {
-                                  const ticketIds = staleFlexRows
-                                    .filter((r) => (r.enriched?.current_status_aging ?? 0) >= 2)
-                                    .map((r) => String(r.output["Ticket ID"] ?? "").trim())
-                                    .filter(Boolean);
-                                  openRecordsWithFilter({ ticketIds });
-                                }}
-                                title="Click to filter table to 2+ days aging"
+                          </div>
+
+                          {/* Col 3: Type Split */}
+                          <div className="recordsScopeColSplit">
+                            <span className="recordsScopeColHeader">Type Split</span>
+                            <div className="recordsScopeSplit" style={{ marginTop: 0 }}>
+                              <button
+                                type="button"
+                                className="recordsScopeSplitItem"
+                                title="Show Warranty records only"
+                                onClick={() => openRecordsWithFilter({ region: selectedRegion, warrantyOnly: true })}
                               >
-                                <div style={{ fontSize: "10px", fontWeight: "700", color: "#6b7280", textTransform: "uppercase" }}>2+ Days</div>
-                                <div style={{ fontSize: "20px", fontWeight: "900", color: "#d97706", marginTop: "2px" }}>
-                                  {staleFlexRows.filter((r) => (r.enriched?.current_status_aging ?? 0) >= 2).length}
-                                </div>
-                              </div>
-                              <div
-                                style={{
-                                  background: "#ffffff",
-                                  border: "1px solid #fde68a",
-                                  borderRadius: "8px",
-                                  padding: "8px 10px",
-                                  textAlign: "center",
-                                  cursor: "pointer",
-                                  transition: "transform 0.2s"
-                                }}
-                                onClick={() => {
-                                  const ticketIds = staleFlexRows
-                                    .filter((r) => (r.enriched?.current_status_aging ?? 0) >= 6)
-                                    .map((r) => String(r.output["Ticket ID"] ?? "").trim())
-                                    .filter(Boolean);
-                                  openRecordsWithFilter({ ticketIds });
-                                }}
-                                title="Click to filter table to 6+ days aging"
+                                <span>Warranty</span>
+                                <strong>{formatNumber(recordsScopeWarranty)}</strong>
+                              </button>
+                              <button
+                                type="button"
+                                className="recordsScopeSplitItem"
+                                title="Show Trade records only"
+                                onClick={() => openRecordsWithFilter({ region: selectedRegion, tradeOnly: true })}
                               >
-                                <div style={{ fontSize: "10px", fontWeight: "700", color: "#6b7280", textTransform: "uppercase" }}>6+ Days</div>
-                                <div style={{ fontSize: "20px", fontWeight: "900", color: "#d97706", marginTop: "2px" }}>
-                                  {staleFlexRows.filter((r) => (r.enriched?.current_status_aging ?? 0) >= 6).length}
-                                </div>
-                              </div>
-                              <div
-                                style={{
-                                  background: "#ffffff",
-                                  border: "1px solid #fca5a5",
-                                  borderRadius: "8px",
-                                  padding: "8px 10px",
-                                  textAlign: "center",
-                                  cursor: "pointer",
-                                  transition: "transform 0.2s"
-                                }}
-                                onClick={() => {
-                                  const ticketIds = staleFlexRows
-                                    .filter((r) => (r.enriched?.current_status_aging ?? 0) >= 25)
-                                    .map((r) => String(r.output["Ticket ID"] ?? "").trim())
-                                    .filter(Boolean);
-                                  openRecordsWithFilter({ ticketIds });
-                                }}
-                                title="Click to filter table to 25+ days aging"
-                              >
-                                <div style={{ fontSize: "10px", fontWeight: "700", color: "#dc2626", textTransform: "uppercase" }}>25+ Days</div>
-                                <div style={{ fontSize: "20px", fontWeight: "900", color: "#dc2626", marginTop: "2px" }}>
-                                  {staleFlexRows.filter((r) => (r.enriched?.current_status_aging ?? 0) >= 25).length}
-                                </div>
-                              </div>
+                                <span>Trade</span>
+                                <strong>{formatNumber(recordsScopeTrade)}</strong>
+                              </button>
                             </div>
                           </div>
-                        ) : null}
+
+                          {/* Col 4: Segment Breakdown */}
+                          {recordsScopeSegmentMix ? (
+                            <div className="recordsScopeColChips">
+                              <span className="recordsScopeColHeader">Segment Breakdown</span>
+                              <div className="recordsScopeChips" style={{ marginTop: 0 }}>
+                                {recordsScopeSegmentMix.map((item) => (
+                                  <button
+                                    key={item.key}
+                                    type="button"
+                                    className="recordsScopeChip"
+                                    title={`Show ${item.label} records only`}
+                                    onClick={item.onSelect}
+                                  >
+                                    <strong>{formatNumber(item.count)}</strong> {item.label}
+                                  </button>
+                                ))}
+                              </div>
+                            </div>
+                          ) : null}
+
+                          {/* Col 5: Manual Action */}
+                          <div className="recordsScopeColManual">
+                            <span className="recordsScopeColHeader">Manual Action</span>
+                            <div className="recordsScopeManualInfo">
+                              <span>Pending</span>
+                              <strong className={recordsScopeManualPending > 0 ? "pending" : ""}>
+                                {formatNumber(recordsScopeManualPending)}
+                              </strong>
+                            </div>
+                          </div>
+                        </div>
                       </div>
                       <div className="downloadActions recordsToolbar">
                         <div className="downloadActionGroup">

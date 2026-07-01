@@ -111,6 +111,40 @@ describe("getLatestCompletedReportSession", () => {
     expect(getLatestCompletedReportSession([undated, dated])).toBe(dated);
   });
 
+  it("ignores impossible future-dated reports (corrupted data) when selecting the latest", () => {
+    // Regression: a mis-parsed title once stored report_date far in the future
+    // (e.g. "2026-12-05"). Such a row must never outrank the real latest report.
+    const now = Date.parse("2026-07-01T12:00:00.000Z");
+    const today = makeSession({
+      id: "today",
+      reportId: "today-report",
+      reportDate: "2026-07-01",
+      updatedAt: "2026-07-01T07:50:00.000Z",
+    });
+    const corruptedFuture = makeSession({
+      id: "corrupted",
+      reportId: "corrupted-report",
+      reportDate: "2026-12-05",
+      updatedAt: "2026-07-01T07:55:00.000Z",
+    });
+
+    expect(getLatestCompletedReportSession([corruptedFuture, today], now)).toBe(today);
+  });
+
+  it("still accepts a report dated today when the client clock is behind (timezone slack)", () => {
+    // Client clock at UTC midnight; a report dated "today" in a +tz is a few
+    // hours ahead but must remain selectable.
+    const now = Date.parse("2026-07-01T00:00:00.000Z");
+    const todayAhead = makeSession({
+      id: "today-ahead",
+      reportId: "today-report",
+      reportDate: "2026-07-01",
+      updatedAt: "2026-07-01T00:00:00.000Z",
+    });
+
+    expect(getLatestCompletedReportSession([todayAhead], now)).toBe(todayAhead);
+  });
+
   it("falls back to createdAt when updatedAt is not parseable", () => {
     const older = makeSession({
       id: "older",

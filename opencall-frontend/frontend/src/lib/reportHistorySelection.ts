@@ -17,9 +17,19 @@ function reportDateValue(session: ReportHistorySession): number {
   return Number.isFinite(parsed) ? parsed : -Infinity;
 }
 
+// A report's business date can never be in the future. Historical data
+// corruption (a mis-parsed title once wrote report_date = "2026-12-05") can
+// leave such rows in the DB; without this guard they'd outrank every real
+// report and get auto-restored forever. One day of slack absorbs timezone skew
+// between the client clock and a report dated "today" in another timezone.
+const FUTURE_REPORT_DATE_SLACK_MS = 24 * 60 * 60 * 1000;
+
 export function getLatestCompletedReportSession(
   sessions: readonly ReportHistorySession[],
+  nowMs: number = Date.now(),
 ): ReportHistorySession | null {
+  const futureCutoff = nowMs + FUTURE_REPORT_DATE_SLACK_MS;
+
   let latest: ReportHistorySession | null = null;
   let latestReportDate = -Infinity;
   let latestTimestamp = -1;
@@ -30,6 +40,14 @@ export function getLatestCompletedReportSession(
     }
 
     const reportDate = reportDateValue(session);
+
+    // Skip impossible future-dated reports (corrupted data) — but only when the
+    // date is known. Undated sessions (reportDate === -Infinity) still fall
+    // through to the updatedAt tiebreak below.
+    if (Number.isFinite(reportDate) && reportDate > futureCutoff) {
+      continue;
+    }
+
     const timestamp = historySessionTimestamp(session);
 
     // Rank by reportDate first so the report for the most recent date always

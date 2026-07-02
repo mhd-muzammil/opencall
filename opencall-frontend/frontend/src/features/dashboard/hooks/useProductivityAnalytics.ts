@@ -230,10 +230,9 @@ export function useProductivityAnalytics(params: {
       return true;
     });
 
-    // 2. This report is a single day's snapshot keyed to its report date, so
-    // the date/month pickers offer only that report's own date and month.
-    // Selecting either shows the whole report — there is no other day in it.
-    const monthNames = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+    // 2. Identify all unique months and dates in these rows
+    const monthsSet = new Set<string>();
+    const datesSet = new Set<string>();
 
     const getFormattedReportDate = (reportDateStr: string): string => {
       const parts = reportDateStr.split("-");
@@ -245,117 +244,115 @@ export function useProductivityAnalytics(params: {
 
     const todayStr = report.reportDate ? getFormattedReportDate(report.reportDate) : "";
 
-    const reportMonth = (() => {
-      const parts = todayStr.split("-");
-      const monthCode = parts[1] ?? "";
-      const year = parts[2] ?? "";
-      const monthIndex = parseInt(monthCode, 10) - 1;
-      const monthName = monthNames[monthIndex];
-      return monthName && year ? `${monthName} ${year}` : "";
-    })();
+    for (const r of regionRows) {
+      const createdTime = String(r.output["Case Created Time"] ?? "").trim();
+      if (createdTime && createdTime !== MANUAL_ENTRY_REQUIRED) {
+        const match = /^(\d{2})[-/](\d{2})[-/](\d{4})/.exec(createdTime);
+        if (match) {
+          const day = match[1] ?? "";
+          const monthCode = match[2] ?? "";
+          const year = match[3] ?? "";
 
-    const datesList = todayStr ? [todayStr] : [];
-    const monthsList = reportMonth ? [reportMonth] : [];
+          const monthIndex = parseInt(monthCode, 10) - 1;
+          const monthNames = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+          const monthName = monthNames[monthIndex] ?? "Unknown";
 
-    // 3. Filter rows based on type. The whole report belongs to the report's
-    // day, so "Today"/"All Dates" show everything; "Specific Date" shows the
-    // full report when the picked date is the report's date (otherwise nothing),
-    // and "Specific Month" the same for the report's month. This keeps
-    // "Today" and "Specific Date = <report date>" consistent.
+          monthsSet.add(`${monthName} ${year}`);
+          datesSet.add(`${day}-${monthCode}-${year}`);
+        }
+      }
+    }
+
+    const monthsList = Array.from(monthsSet).sort((a, b) => a.localeCompare(b));
+    const datesList = Array.from(datesSet).sort((a, b) => {
+      const parseDMY = (s: string) => {
+        const p = s.split("-");
+        const day = parseInt(p[0] ?? "0", 10);
+        const month = parseInt(p[1] ?? "0", 10) - 1;
+        const year = parseInt(p[2] ?? "0", 10);
+        return new Date(year, month, day).getTime();
+      };
+      return parseDMY(a) - parseDMY(b);
+    });
+
+    // 3. Filter rows based on type
     let filteredRowsForProd = regionRows;
-    if (productivityFilterType === "Specific Date") {
-      filteredRowsForProd = selectedProductivityValue === todayStr ? regionRows : [];
-    } else if (productivityFilterType === "Specific Month") {
-      filteredRowsForProd = selectedProductivityValue === reportMonth ? regionRows : [];
+    if (productivityFilterType === "Specific Date" && selectedProductivityValue) {
+      filteredRowsForProd = regionRows.filter(r => {
+        const createdTime = String(r.output["Case Created Time"] ?? "").trim();
+        if (createdTime && createdTime !== MANUAL_ENTRY_REQUIRED) {
+          const match = /^(\d{2})[-/](\d{2})[-/](\d{4})/.exec(createdTime);
+          if (match) {
+            const rowDate = `${match[1]}-${match[2]}-${match[3]}`;
+            return rowDate === selectedProductivityValue;
+          }
+        }
+        return false;
+      });
+    } else if (productivityFilterType === "Specific Month" && selectedProductivityValue) {
+      filteredRowsForProd = regionRows.filter(r => {
+        const createdTime = String(r.output["Case Created Time"] ?? "").trim();
+        if (createdTime && createdTime !== MANUAL_ENTRY_REQUIRED) {
+          const match = /^(\d{2})[-/](\d{2})[-/](\d{4})/.exec(createdTime);
+          if (match) {
+            const monthCode = match[2] ?? "";
+            const year = match[3] ?? "";
+            const monthIndex = parseInt(monthCode, 10) - 1;
+            const monthNames = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+            const rowMonth = `${monthNames[monthIndex]} ${year}`;
+            return rowMonth === selectedProductivityValue;
+          }
+        }
+        return false;
+      });
     }
 
     // 4. Group by unique engineers
     const active = filteredRowsForProd.filter((r) => !r.carryForward.closedSyntheticRow);
     const closed = filteredRowsForProd.filter((r) => r.carryForward.closedSyntheticRow);
 
-    const engineerName = (r: typeof filteredRowsForProd[number]) =>
-      String(r.output.Engineer ?? "").trim();
+    const getUniqueEngineers = (items: typeof filteredRowsForProd) => {
+      const list = items
+        .map((r) => String(r.output.Engineer ?? "").trim())
+        .filter((name) => name && name !== "Manual Entry Required");
+      return Array.from(new Set(list));
+    };
 
-    // Group engineers case-insensitively so different casings of the same name
-    // (e.g. "sriram" and "Sriram") collapse into one row. Each key tracks how
-    // often every original spelling appears so the most common one is shown.
-    const casingCountsByKey = new Map<string, Map<string, number>>();
-    for (const r of filteredRowsForProd) {
-      const name = engineerName(r);
-      if (!name || name === "Manual Entry Required") continue;
-      const key = name.toLowerCase();
-      let casingCounts = casingCountsByKey.get(key);
-      if (!casingCounts) {
-        casingCounts = new Map();
-        casingCountsByKey.set(key, casingCounts);
-      }
-      casingCounts.set(name, (casingCounts.get(name) ?? 0) + 1);
-    }
+    const allEngNames = getUniqueEngineers(filteredRowsForProd);
 
-    const list = Array.from(casingCountsByKey.entries()).map(([engKey, casingCounts]) => {
-      // Most frequent spelling wins; ties keep the first seen (Map is ordered).
-      let engName = "";
-      let bestCount = -1;
-      for (const [casing, count] of casingCounts) {
-        if (count > bestCount) {
-          bestCount = count;
-          engName = casing;
-        }
-      }
+    const list = allEngNames.map((engName) => {
+      const engActive = active.filter(r => String(r.output.Engineer ?? "").trim() === engName);
+      const engClosed = closed.filter(r => String(r.output.Engineer ?? "").trim() === engName);
 
-      const engActive = active.filter(r => engineerName(r).toLowerCase() === engKey);
-      const engClosed = closed.filter(r => engineerName(r).toLowerCase() === engKey);
-
-      const firstRow = filteredRowsForProd.find(r => engineerName(r).toLowerCase() === engKey);
+      const firstRow = filteredRowsForProd.find(r => String(r.output.Engineer ?? "").trim() === engName);
       const regionCode = firstRow ? String(firstRow.output["Work Location"] ?? "").trim() : "";
       const regionName = ASP_CODE_REGION_MAP[regionCode as keyof typeof ASP_CODE_REGION_MAP] || regionCode || "N/A";
 
-      const matchStatus = (items: typeof engActive, keywords: string[]) => {
+      const countStatus = (items: typeof engActive, keywords: string[]) => {
         return items.filter(r => {
           const s = String(r.output["RTPL status"] ?? "").trim().toLowerCase();
           return keywords.some(kw => s.includes(kw.toLowerCase()));
-        });
+        }).length;
       };
 
-      // Ticket IDs behind each count, so the dashboard cells can drill into the
-      // records table showing exactly those cases. Empty/placeholder ids are
-      // dropped so they never create a filter that matches nothing.
-      const ticketsOf = (rows: typeof engActive) =>
-        rows
-          .map(r => String(r.output["Ticket ID"] ?? "").trim())
-          .filter(id => id && id !== MANUAL_ENTRY_REQUIRED);
+      const closedCount = engClosed.length + countStatus(engActive, ["closed"]);
+      const partOrderedCount = countStatus(engActive, ["part", "additional part", "part order pending"]);
+      const underObservationCount = countStatus(engActive, ["observation", "crt pending", "ct validation"]);
+      const cxRescheduleCount = countStatus(engActive, ["cx", "reschedule", "cust pending", "customer pending"]);
 
-      // Closed calls are a standalone "completed" credit — they are NOT folded
-      // into Attended/Assigned, so those reflect only still-open workload.
-      const closedRows = [...engClosed, ...matchStatus(engActive, ["closed"])];
-      const partOrderedRows = matchStatus(engActive, ["part", "additional part", "part order pending"]);
-      const underObservationRows = matchStatus(engActive, ["observation", "crt pending", "ct validation"]);
-      const cxRescheduleRows = matchStatus(engActive, ["cx", "reschedule", "cust pending", "customer pending"]);
-
-      // Attended = open work the engineer has progressed (excludes CX reschedule,
-      // which is customer-side). Assigned = full open workload (adds CX).
-      const attendedRows = [...partOrderedRows, ...underObservationRows];
-      const assignedRows = [...attendedRows, ...cxRescheduleRows];
+      const attendedCount = closedCount + partOrderedCount + underObservationCount;
+      const assignedCount = attendedCount + cxRescheduleCount;
 
       return {
         name: engName,
         regionCode,
         regionName,
-        // Every ticket for this engineer (active + closed), so clicking the
-        // name drills in case-insensitively rather than by exact-case name.
-        allTickets: ticketsOf([...engActive, ...engClosed]),
-        assigned: assignedRows.length,
-        assignedTickets: ticketsOf(assignedRows),
-        attended: attendedRows.length,
-        attendedTickets: ticketsOf(attendedRows),
-        closed: closedRows.length,
-        closedTickets: ticketsOf(closedRows),
-        partOrdered: partOrderedRows.length,
-        partOrderedTickets: ticketsOf(partOrderedRows),
-        underObservation: underObservationRows.length,
-        underObservationTickets: ticketsOf(underObservationRows),
-        cxReschedule: cxRescheduleRows.length,
-        cxRescheduleTickets: ticketsOf(cxRescheduleRows),
+        assigned: assignedCount,
+        attended: attendedCount,
+        closed: closedCount,
+        partOrdered: partOrderedCount,
+        underObservation: underObservationCount,
+        cxReschedule: cxRescheduleCount,
       };
     }).sort((a, b) => b.attended - a.attended || a.name.localeCompare(b.name));
 

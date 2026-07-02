@@ -412,15 +412,6 @@ export default function DashboardPage() {
   // Whether the stale-Flex-Status "View all" details modal is open.
   const [isStaleModalOpen, setIsStaleModalOpen] = useState(false);
   const [workspaceView, setWorkspaceView] = useState<"overview" | "records" | "rtpl" | "rtpl-dashboard" | "pivot" | "flex" | "productivity" | "tn-view-status" | "sla-tat" | "flex-eod-bod" | "admin-engineers" | "admin-rtpl-statuses">("overview");
-  // When the Records table is opened by drilling in from the Engineer
-  // Productivity page (e.g. clicking an Assigned/Closed count), remember it so
-  // the Records view can show a "Back to Engineer Productivity" button. Stays
-  // null when the user opens Records directly (sidebar) or from anywhere else.
-  const [recordsBackTarget, setRecordsBackTarget] = useState<null | "productivity">(null);
-  // True while the Records table is scoped to an explicit list of ticket IDs
-  // (e.g. drilled in from an Engineer Productivity count). It makes the table
-  // search across active AND closed rows so every drilled ticket is shown.
-  const [ticketDrillActive, setTicketDrillActive] = useState(false);
   const [pivotActiveStatus, setPivotActiveStatus] = useState<string | null>(null);
   const [pivotActiveWipAging, setPivotActiveWipAging] = useState<string | null>(null);
 
@@ -623,7 +614,6 @@ export default function DashboardPage() {
     regionFilteredRows,
   } = useRecordRowSets({
     report,
-    ticketDrillActive,
     showClosedOnly,
     showConsumerOnly,
     showCommercialOnly,
@@ -915,49 +905,10 @@ export default function DashboardPage() {
   });
 
 
-  // Format a stored report date (YYYY-MM-DD) as the DD-MM-YYYY the productivity
-  // view shows; pass anything else through unchanged.
-  const toDisplayDate = (iso: string | null | undefined): string => {
-    if (!iso) return "";
-    const p = iso.split("-");
-    return p.length === 3 && p[0] && p[1] && p[2] && p[0].length === 4
-      ? `${p[2]}-${p[1]}-${p[0]}`
-      : iso;
-  };
-
-  // One entry per past report day (most recent first) for the Engineer
-  // Productivity "Specific Date" picker. Each day maps to its most recent
-  // completed history session, which is reloaded when the date is picked.
-  const productivityHistoryDates = useMemo(() => {
-    const byDate = new Map<string, { date: string; session: ReportHistorySession; ts: number }>();
-    for (const s of historySessions) {
-      if (s.status !== "COMPLETED" || !s.reportDate) continue;
-      const date = toDisplayDate(s.reportDate);
-      const ts = Date.parse(s.updatedAt || s.createdAt) || 0;
-      const existing = byDate.get(date);
-      if (!existing || ts > existing.ts) {
-        byDate.set(date, { date, session: s, ts });
-      }
-    }
-    return Array.from(byDate.values())
-      .sort((a, b) => {
-        const pa = a.session.reportDate ? Date.parse(a.session.reportDate) : 0;
-        const pb = b.session.reportDate ? Date.parse(b.session.reportDate) : 0;
-        return pb - pa;
-      })
-      .map(({ date, session }) => ({ date, session }));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [historySessions]);
-
   useEffect(() => {
     if (productivityFilterType === "Specific Date") {
-      const validDates = productivityHistoryDates.map((d) => d.date);
-      const loadedDate = toDisplayDate(report?.reportDate);
-      // Default to the currently loaded report's day so switching to "Specific
-      // Date" doesn't silently reload a different day.
-      const preferred = validDates.includes(loadedDate) ? loadedDate : (validDates[0] || "");
-      if (!selectedProductivityValue || !validDates.includes(selectedProductivityValue)) {
-        setSelectedProductivityValue(preferred);
+      if (!selectedProductivityValue || !engineerProductivityMetrics.datesList.includes(selectedProductivityValue)) {
+        setSelectedProductivityValue(engineerProductivityMetrics.datesList[0] || "");
       }
     } else if (productivityFilterType === "Specific Month") {
       if (!selectedProductivityValue || !engineerProductivityMetrics.monthsList.includes(selectedProductivityValue)) {
@@ -966,8 +917,7 @@ export default function DashboardPage() {
     } else {
       setSelectedProductivityValue("");
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [productivityFilterType, productivityHistoryDates, report?.reportDate, engineerProductivityMetrics.monthsList, selectedProductivityValue]);
+  }, [productivityFilterType, engineerProductivityMetrics.datesList, engineerProductivityMetrics.monthsList, selectedProductivityValue]);
 
 
 
@@ -1615,18 +1565,6 @@ export default function DashboardPage() {
     });
   }
 
-  // Engineer Productivity "Specific Date" picker: load the report for the chosen
-  // past day. No reload when it is already the day currently on screen.
-  async function handleProductivityDateSelect(date: string) {
-    setSelectedProductivityValue(date);
-    const entry = productivityHistoryDates.find((d) => d.date === date);
-    if (!entry || !session) return;
-    if (date === toDisplayDate(report?.reportDate)) return;
-    await runAction(async () => {
-      await restoreHistorySession(entry.session, { closeHistoryPanel: false });
-    });
-  }
-
   async function handleHistoryRename(historySession: ReportHistorySession, newTitle: string) {
     if (!session) return;
     await runAction(async () => {
@@ -2057,8 +1995,6 @@ export default function DashboardPage() {
     setPrintCaseFilter(printCase);
     setSelectedRtplRegion(region && region !== "ALL" ? region : ALL_REGIONS_FILTER);
     colFilters.resetAll();
-    const hasTicketDrill = Boolean(ticketIds && ticketIds.length > 0);
-    setTicketDrillActive(hasTicketDrill);
     if (ticketIds && ticketIds.length > 0) {
       colFilters.setColumnFilter("Ticket ID", new Set(ticketIds));
     }
@@ -2088,14 +2024,6 @@ export default function DashboardPage() {
     }
     if (engineers && engineers.length > 0) {
       colFilters.setColumnFilter("Engineer", new Set(engineers));
-    }
-    // Remember the productivity origin so Records can offer a "Back to Engineer
-    // Productivity" button. Re-filtering while already in Records (e.g. segment
-    // chips) preserves whatever origin brought the user here.
-    if (workspaceView === "productivity") {
-      setRecordsBackTarget("productivity");
-    } else if (workspaceView !== "records") {
-      setRecordsBackTarget(null);
     }
     setWorkspaceView("records");
   }
@@ -2377,8 +2305,6 @@ export default function DashboardPage() {
       return;
     }
     setRecordsSearchQuery(ticketId);
-    setRecordsBackTarget(null);
-    setTicketDrillActive(false);
     setWorkspaceView("records");
     setIsStaleModalOpen(false);
   }
@@ -2913,7 +2839,7 @@ export default function DashboardPage() {
             type="button"
             className={`sidebarItem ${workspaceView === "records" ? "active" : ""}`}
             disabled={!report}
-            onClick={() => { setRecordsBackTarget(null); setTicketDrillActive(false); setWorkspaceView("records"); }}
+            onClick={() => setWorkspaceView("records")}
           >
             <span className="sidebarIcon">
               <span>📋</span> <span className="sidebarText">Records Table</span>
@@ -3401,8 +3327,6 @@ export default function DashboardPage() {
                         setSelectedProductivityValue={setSelectedProductivityValue}
                         engineerProductivityMetrics={engineerProductivityMetrics}
                         productivityDateLabel={productivityDateLabel}
-                        historyDateOptions={productivityHistoryDates.map((d) => d.date)}
-                        onSelectHistoryDate={handleProductivityDateSelect}
                         regionsList={report?.regionBreakdown ?? []}
                         isSuperAdmin={session?.user?.role === "SUPER_ADMIN"}
                         openRecordsWithFilter={openRecordsWithFilter}
@@ -3429,16 +3353,6 @@ export default function DashboardPage() {
 
                   {workspaceView === "records" && (
                     <div className="recordsArea" ref={recordsAreaRef}>
-                      {recordsBackTarget === "productivity" && (
-                        <button
-                          type="button"
-                          className="downloadBtn"
-                          style={{ alignSelf: "flex-start", display: "inline-flex", alignItems: "center", gap: "6px", marginBottom: "12px", background: "#eef2ff", borderColor: "#c7d2fe", color: "#3730a3", fontWeight: 600 }}
-                          onClick={() => { setWorkspaceView("productivity"); setRecordsBackTarget(null); setTicketDrillActive(false); }}
-                        >
-                          ← Back to Engineer Productivity
-                        </button>
-                      )}
                       <RTPLDashboard
                         rtplAnalyticsDate={rtplAnalyticsDate}
                         setRtplAnalyticsDate={setRtplAnalyticsDate}

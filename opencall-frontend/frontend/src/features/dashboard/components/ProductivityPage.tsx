@@ -12,8 +12,6 @@ export function ProductivityPage({
   setSelectedProductivityValue,
   engineerProductivityMetrics,
   productivityDateLabel,
-  historyDateOptions,
-  onSelectHistoryDate,
   regionsList,
   isSuperAdmin,
   openRecordsWithFilter,
@@ -30,7 +28,6 @@ export function ProductivityPage({
       name: string;
       regionCode?: string;
       regionName?: string;
-      allTickets?: readonly string[];
       assigned: number;
       assignedTickets?: readonly string[];
       attended: number;
@@ -49,10 +46,6 @@ export function ProductivityPage({
     datesList: string[];
   };
   productivityDateLabel: string;
-  // Past report days for the "Specific Date" picker; selecting one loads that
-  // day's report via onSelectHistoryDate.
-  historyDateOptions?: readonly string[];
-  onSelectHistoryDate?: (date: string) => void;
   regionsList: Array<{ aspCode: string; regionName: string; count: number }>;
   isSuperAdmin: boolean;
   openRecordsWithFilter: (args: Readonly<{
@@ -68,7 +61,6 @@ export function ProductivityPage({
     wipAgings?: readonly string[] | null;
     engineers?: readonly string[] | null;
     ticketIds?: readonly string[] | null;
-    closedOnly?: boolean;
   }>) => void;
 }>) {
   const [searchQuery, setSearchQuery] = useState("");
@@ -236,17 +228,11 @@ export function ProductivityPage({
               </span>
               <select
                 value={selectedProductivityValue}
-                onChange={(e) => {
-                  if (productivityFilterType === "Specific Date" && onSelectHistoryDate) {
-                    onSelectHistoryDate(e.target.value);
-                  } else {
-                    setSelectedProductivityValue(e.target.value);
-                  }
-                }}
+                onChange={(e) => setSelectedProductivityValue(e.target.value)}
                 style={{ padding: "6px 12px", borderRadius: "6px", border: "1px solid var(--border)", fontSize: "13px", fontWeight: "600", outline: "none", background: "#f8fafc", cursor: "pointer" }}
               >
                 {productivityFilterType === "Specific Date"
-                  ? (historyDateOptions ?? engineerProductivityMetrics.datesList).map(d => (
+                  ? engineerProductivityMetrics.datesList.map(d => (
                       <option key={d} value={d}>{d}</option>
                     ))
                   : engineerProductivityMetrics.monthsList.map(m => (
@@ -366,11 +352,7 @@ export function ProductivityPage({
                     onClick={() => {
                       openRecordsWithFilter({
                         region: selectedRegion === "ALL" ? null : selectedRegion,
-                        // Drill by the engineer's ticket ids so mixed-casing name
-                        // variants ("sriram"/"Sriram") are all included.
-                        ...(item.allTickets && item.allTickets.length > 0
-                          ? { ticketIds: item.allTickets }
-                          : { engineers: [item.name] }),
+                        engineers: [item.name],
                       });
                     }}
                     title={`Click to view all records for ${item.name}`}

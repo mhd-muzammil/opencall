@@ -915,10 +915,49 @@ export default function DashboardPage() {
   });
 
 
+  // Format a stored report date (YYYY-MM-DD) as the DD-MM-YYYY the productivity
+  // view shows; pass anything else through unchanged.
+  const toDisplayDate = (iso: string | null | undefined): string => {
+    if (!iso) return "";
+    const p = iso.split("-");
+    return p.length === 3 && p[0] && p[1] && p[2] && p[0].length === 4
+      ? `${p[2]}-${p[1]}-${p[0]}`
+      : iso;
+  };
+
+  // One entry per past report day (most recent first) for the Engineer
+  // Productivity "Specific Date" picker. Each day maps to its most recent
+  // completed history session, which is reloaded when the date is picked.
+  const productivityHistoryDates = useMemo(() => {
+    const byDate = new Map<string, { date: string; session: ReportHistorySession; ts: number }>();
+    for (const s of historySessions) {
+      if (s.status !== "COMPLETED" || !s.reportDate) continue;
+      const date = toDisplayDate(s.reportDate);
+      const ts = Date.parse(s.updatedAt || s.createdAt) || 0;
+      const existing = byDate.get(date);
+      if (!existing || ts > existing.ts) {
+        byDate.set(date, { date, session: s, ts });
+      }
+    }
+    return Array.from(byDate.values())
+      .sort((a, b) => {
+        const pa = a.session.reportDate ? Date.parse(a.session.reportDate) : 0;
+        const pb = b.session.reportDate ? Date.parse(b.session.reportDate) : 0;
+        return pb - pa;
+      })
+      .map(({ date, session }) => ({ date, session }));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [historySessions]);
+
   useEffect(() => {
     if (productivityFilterType === "Specific Date") {
-      if (!selectedProductivityValue || !engineerProductivityMetrics.datesList.includes(selectedProductivityValue)) {
-        setSelectedProductivityValue(engineerProductivityMetrics.datesList[0] || "");
+      const validDates = productivityHistoryDates.map((d) => d.date);
+      const loadedDate = toDisplayDate(report?.reportDate);
+      // Default to the currently loaded report's day so switching to "Specific
+      // Date" doesn't silently reload a different day.
+      const preferred = validDates.includes(loadedDate) ? loadedDate : (validDates[0] || "");
+      if (!selectedProductivityValue || !validDates.includes(selectedProductivityValue)) {
+        setSelectedProductivityValue(preferred);
       }
     } else if (productivityFilterType === "Specific Month") {
       if (!selectedProductivityValue || !engineerProductivityMetrics.monthsList.includes(selectedProductivityValue)) {
@@ -927,7 +966,8 @@ export default function DashboardPage() {
     } else {
       setSelectedProductivityValue("");
     }
-  }, [productivityFilterType, engineerProductivityMetrics.datesList, engineerProductivityMetrics.monthsList, selectedProductivityValue]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [productivityFilterType, productivityHistoryDates, report?.reportDate, engineerProductivityMetrics.monthsList, selectedProductivityValue]);
 
 
 
@@ -1572,6 +1612,18 @@ export default function DashboardPage() {
     if (!session) return;
     await runAction(async () => {
       await restoreHistorySession(historySession);
+    });
+  }
+
+  // Engineer Productivity "Specific Date" picker: load the report for the chosen
+  // past day. No reload when it is already the day currently on screen.
+  async function handleProductivityDateSelect(date: string) {
+    setSelectedProductivityValue(date);
+    const entry = productivityHistoryDates.find((d) => d.date === date);
+    if (!entry || !session) return;
+    if (date === toDisplayDate(report?.reportDate)) return;
+    await runAction(async () => {
+      await restoreHistorySession(entry.session, { closeHistoryPanel: false });
     });
   }
 
@@ -3349,6 +3401,8 @@ export default function DashboardPage() {
                         setSelectedProductivityValue={setSelectedProductivityValue}
                         engineerProductivityMetrics={engineerProductivityMetrics}
                         productivityDateLabel={productivityDateLabel}
+                        historyDateOptions={productivityHistoryDates.map((d) => d.date)}
+                        onSelectHistoryDate={handleProductivityDateSelect}
                         regionsList={report?.regionBreakdown ?? []}
                         isSuperAdmin={session?.user?.role === "SUPER_ADMIN"}
                         openRecordsWithFilter={openRecordsWithFilter}

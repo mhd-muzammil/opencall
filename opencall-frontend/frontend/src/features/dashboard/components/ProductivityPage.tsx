@@ -28,6 +28,7 @@ export function ProductivityPage({
       name: string;
       regionCode?: string;
       regionName?: string;
+      allTickets?: readonly string[];
       assigned: number;
       assignedTickets?: readonly string[];
       attended: number;
@@ -61,6 +62,7 @@ export function ProductivityPage({
     wipAgings?: readonly string[] | null;
     engineers?: readonly string[] | null;
     ticketIds?: readonly string[] | null;
+    closedOnly?: boolean;
   }>) => void;
 }>) {
   const [searchQuery, setSearchQuery] = useState("");
@@ -352,7 +354,11 @@ export function ProductivityPage({
                     onClick={() => {
                       openRecordsWithFilter({
                         region: selectedRegion === "ALL" ? null : selectedRegion,
-                        engineers: [item.name],
+                        // Drill by the engineer's ticket ids so mixed-casing name
+                        // variants ("sriram"/"Sriram") are all included.
+                        ...(item.allTickets && item.allTickets.length > 0
+                          ? { ticketIds: item.allTickets }
+                          : { engineers: [item.name] }),
                       });
                     }}
                     title={`Click to view all records for ${item.name}`}

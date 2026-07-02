@@ -18,6 +18,7 @@ import {
 
 export function useRecordRowSets(params: {
   report: GeneratedReportResponse | null;
+  ticketDrillActive: boolean;
   showClosedOnly: boolean;
   showConsumerOnly: boolean;
   showCommercialOnly: boolean;
@@ -33,6 +34,7 @@ export function useRecordRowSets(params: {
 }) {
   const {
     report,
+    ticketDrillActive,
     showClosedOnly,
     showConsumerOnly,
     showCommercialOnly,
@@ -100,6 +102,11 @@ export function useRecordRowSets(params: {
 
   const tableBaseRows = useMemo(() => {
     if (!report) return [];
+    // Drilling in from a specific set of ticket IDs (e.g. an Engineer
+    // Productivity count) searches every report row — active and closed
+    // synthetic alike — so the ticket-id column filter can surface all of them
+    // and the row count matches the number shown on the dashboard.
+    if (ticketDrillActive) return report.rows;
     if (showClosedOnly) return closedRows;
 
     // Customer / warranty / special-case scope (mutually exclusive).
@@ -129,6 +136,8 @@ export function useRecordRowSets(params: {
     if (printCaseFilter === "fix") return scopeRows.filter(isPrintFixCase);
     return scopeRows;
   }, [
+    report,
+    ticketDrillActive,
     activeRows,
     cissRows,
     closedRows,

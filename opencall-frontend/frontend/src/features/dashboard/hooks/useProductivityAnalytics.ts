@@ -275,7 +275,12 @@ export function useProductivityAnalytics(params: {
       return parseDMY(a) - parseDMY(b);
     });
 
-    // 3. Filter rows based on type
+    // 3. Filter rows based on type.
+    // "Today" and "All Dates" both use the full current report: a daily report
+    // is already today's snapshot (all currently-open cases, created on prior
+    // days, plus closed rows), so it is not narrowed by Case Created Time —
+    // consistent with the TN View / EOD-BOD tabs. "Specific Date"/"Specific
+    // Month" slice by Case Created Time.
     let filteredRowsForProd = regionRows;
     if (productivityFilterType === "Specific Date" && selectedProductivityValue) {
       filteredRowsForProd = regionRows.filter(r => {
@@ -311,48 +316,85 @@ export function useProductivityAnalytics(params: {
     const active = filteredRowsForProd.filter((r) => !r.carryForward.closedSyntheticRow);
     const closed = filteredRowsForProd.filter((r) => r.carryForward.closedSyntheticRow);
 
-    const getUniqueEngineers = (items: typeof filteredRowsForProd) => {
-      const list = items
-        .map((r) => String(r.output.Engineer ?? "").trim())
-        .filter((name) => name && name !== "Manual Entry Required");
-      return Array.from(new Set(list));
-    };
+    const engineerName = (r: typeof filteredRowsForProd[number]) =>
+      String(r.output.Engineer ?? "").trim();
 
-    const allEngNames = getUniqueEngineers(filteredRowsForProd);
+    // Group engineers case-insensitively so different casings of the same name
+    // (e.g. "sriram" and "Sriram") collapse into one row. Each key tracks how
+    // often every original spelling appears so the most common one is shown.
+    const casingCountsByKey = new Map<string, Map<string, number>>();
+    for (const r of filteredRowsForProd) {
+      const name = engineerName(r);
+      if (!name || name === "Manual Entry Required") continue;
+      const key = name.toLowerCase();
+      let casingCounts = casingCountsByKey.get(key);
+      if (!casingCounts) {
+        casingCounts = new Map();
+        casingCountsByKey.set(key, casingCounts);
+      }
+      casingCounts.set(name, (casingCounts.get(name) ?? 0) + 1);
+    }
 
-    const list = allEngNames.map((engName) => {
-      const engActive = active.filter(r => String(r.output.Engineer ?? "").trim() === engName);
-      const engClosed = closed.filter(r => String(r.output.Engineer ?? "").trim() === engName);
+    const list = Array.from(casingCountsByKey.entries()).map(([engKey, casingCounts]) => {
+      // Most frequent spelling wins; ties keep the first seen (Map is ordered).
+      let engName = "";
+      let bestCount = -1;
+      for (const [casing, count] of casingCounts) {
+        if (count > bestCount) {
+          bestCount = count;
+          engName = casing;
+        }
+      }
 
-      const firstRow = filteredRowsForProd.find(r => String(r.output.Engineer ?? "").trim() === engName);
+      const engActive = active.filter(r => engineerName(r).toLowerCase() === engKey);
+      const engClosed = closed.filter(r => engineerName(r).toLowerCase() === engKey);
+
+      const firstRow = filteredRowsForProd.find(r => engineerName(r).toLowerCase() === engKey);
       const regionCode = firstRow ? String(firstRow.output["Work Location"] ?? "").trim() : "";
       const regionName = ASP_CODE_REGION_MAP[regionCode as keyof typeof ASP_CODE_REGION_MAP] || regionCode || "N/A";
 
-      const countStatus = (items: typeof engActive, keywords: string[]) => {
+      const matchStatus = (items: typeof engActive, keywords: string[]) => {
         return items.filter(r => {
           const s = String(r.output["RTPL status"] ?? "").trim().toLowerCase();
           return keywords.some(kw => s.includes(kw.toLowerCase()));
-        }).length;
+        });
       };
 
-      const closedCount = engClosed.length + countStatus(engActive, ["closed"]);
-      const partOrderedCount = countStatus(engActive, ["part", "additional part", "part order pending"]);
-      const underObservationCount = countStatus(engActive, ["observation", "crt pending", "ct validation"]);
-      const cxRescheduleCount = countStatus(engActive, ["cx", "reschedule", "cust pending", "customer pending"]);
+      // Ticket IDs behind each count, so the dashboard cells can drill into the
+      // records table showing exactly those cases. Empty/placeholder ids are
+      // dropped so they never create a filter that matches nothing.
+      const ticketsOf = (rows: typeof engActive) =>
+        rows
+          .map(r => String(r.output["Ticket ID"] ?? "").trim())
+          .filter(id => id && id !== MANUAL_ENTRY_REQUIRED);
 
-      const attendedCount = closedCount + partOrderedCount + underObservationCount;
-      const assignedCount = attendedCount + cxRescheduleCount;
+      const closedRows = [...engClosed, ...matchStatus(engActive, ["closed"])];
+      const partOrderedRows = matchStatus(engActive, ["part", "additional part", "part order pending"]);
+      const underObservationRows = matchStatus(engActive, ["observation", "crt pending", "ct validation"]);
+      const cxRescheduleRows = matchStatus(engActive, ["cx", "reschedule", "cust pending", "customer pending"]);
+
+      const attendedRows = [...closedRows, ...partOrderedRows, ...underObservationRows];
+      const assignedRows = [...attendedRows, ...cxRescheduleRows];
 
       return {
         name: engName,
         regionCode,
         regionName,
-        assigned: assignedCount,
-        attended: attendedCount,
-        closed: closedCount,
-        partOrdered: partOrderedCount,
-        underObservation: underObservationCount,
-        cxReschedule: cxRescheduleCount,
+        // Every ticket for this engineer (active + closed), so clicking the
+        // name drills in case-insensitively rather than by exact-case name.
+        allTickets: ticketsOf([...engActive, ...engClosed]),
+        assigned: assignedRows.length,
+        assignedTickets: ticketsOf(assignedRows),
+        attended: attendedRows.length,
+        attendedTickets: ticketsOf(attendedRows),
+        closed: closedRows.length,
+        closedTickets: ticketsOf(closedRows),
+        partOrdered: partOrderedRows.length,
+        partOrderedTickets: ticketsOf(partOrderedRows),
+        underObservation: underObservationRows.length,
+        underObservationTickets: ticketsOf(underObservationRows),
+        cxReschedule: cxRescheduleRows.length,
+        cxRescheduleTickets: ticketsOf(cxRescheduleRows),
       };
     }).sort((a, b) => b.attended - a.attended || a.name.localeCompare(b.name));
 

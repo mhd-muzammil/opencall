@@ -412,6 +412,15 @@ export default function DashboardPage() {
   // Whether the stale-Flex-Status "View all" details modal is open.
   const [isStaleModalOpen, setIsStaleModalOpen] = useState(false);
   const [workspaceView, setWorkspaceView] = useState<"overview" | "records" | "rtpl" | "rtpl-dashboard" | "pivot" | "flex" | "productivity" | "tn-view-status" | "sla-tat" | "flex-eod-bod" | "admin-engineers" | "admin-rtpl-statuses">("overview");
+  // When the Records table is opened by drilling in from the Engineer
+  // Productivity page (e.g. clicking an Assigned/Closed count), remember it so
+  // the Records view can show a "Back to Engineer Productivity" button. Stays
+  // null when the user opens Records directly (sidebar) or from anywhere else.
+  const [recordsBackTarget, setRecordsBackTarget] = useState<null | "productivity">(null);
+  // True while the Records table is scoped to an explicit list of ticket IDs
+  // (e.g. drilled in from an Engineer Productivity count). It makes the table
+  // search across active AND closed rows so every drilled ticket is shown.
+  const [ticketDrillActive, setTicketDrillActive] = useState(false);
   const [pivotActiveStatus, setPivotActiveStatus] = useState<string | null>(null);
   const [pivotActiveWipAging, setPivotActiveWipAging] = useState<string | null>(null);
 
@@ -614,6 +623,7 @@ export default function DashboardPage() {
     regionFilteredRows,
   } = useRecordRowSets({
     report,
+    ticketDrillActive,
     showClosedOnly,
     showConsumerOnly,
     showCommercialOnly,
@@ -1995,6 +2005,8 @@ export default function DashboardPage() {
     setPrintCaseFilter(printCase);
     setSelectedRtplRegion(region && region !== "ALL" ? region : ALL_REGIONS_FILTER);
     colFilters.resetAll();
+    const hasTicketDrill = Boolean(ticketIds && ticketIds.length > 0);
+    setTicketDrillActive(hasTicketDrill);
     if (ticketIds && ticketIds.length > 0) {
       colFilters.setColumnFilter("Ticket ID", new Set(ticketIds));
     }
@@ -2024,6 +2036,14 @@ export default function DashboardPage() {
     }
     if (engineers && engineers.length > 0) {
       colFilters.setColumnFilter("Engineer", new Set(engineers));
+    }
+    // Remember the productivity origin so Records can offer a "Back to Engineer
+    // Productivity" button. Re-filtering while already in Records (e.g. segment
+    // chips) preserves whatever origin brought the user here.
+    if (workspaceView === "productivity") {
+      setRecordsBackTarget("productivity");
+    } else if (workspaceView !== "records") {
+      setRecordsBackTarget(null);
     }
     setWorkspaceView("records");
   }
@@ -2305,6 +2325,8 @@ export default function DashboardPage() {
       return;
     }
     setRecordsSearchQuery(ticketId);
+    setRecordsBackTarget(null);
+    setTicketDrillActive(false);
     setWorkspaceView("records");
     setIsStaleModalOpen(false);
   }
@@ -2839,7 +2861,7 @@ export default function DashboardPage() {
             type="button"
             className={`sidebarItem ${workspaceView === "records" ? "active" : ""}`}
             disabled={!report}
-            onClick={() => setWorkspaceView("records")}
+            onClick={() => { setRecordsBackTarget(null); setTicketDrillActive(false); setWorkspaceView("records"); }}
           >
             <span className="sidebarIcon">
               <span>📋</span> <span className="sidebarText">Records Table</span>
@@ -3353,6 +3375,16 @@ export default function DashboardPage() {
 
                   {workspaceView === "records" && (
                     <div className="recordsArea" ref={recordsAreaRef}>
+                      {recordsBackTarget === "productivity" && (
+                        <button
+                          type="button"
+                          className="downloadBtn"
+                          style={{ alignSelf: "flex-start", display: "inline-flex", alignItems: "center", gap: "6px", marginBottom: "12px", background: "#eef2ff", borderColor: "#c7d2fe", color: "#3730a3", fontWeight: 600 }}
+                          onClick={() => { setWorkspaceView("productivity"); setRecordsBackTarget(null); setTicketDrillActive(false); }}
+                        >
+                          ← Back to Engineer Productivity
+                        </button>
+                      )}
                       <div className="recordsScopeRow">
                         {/* Active category breakdown grid layout */}
                         <div className="recordsScopeCard">

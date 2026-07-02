@@ -3385,6 +3385,26 @@ export default function DashboardPage() {
                           ← Back to Engineer Productivity
                         </button>
                       )}
+                      <RTPLDashboard
+                        rtplAnalyticsDate={rtplAnalyticsDate}
+                        setRtplAnalyticsDate={setRtplAnalyticsDate}
+                        rtplAnalyticsRows={rtplAnalyticsRows}
+                        rtplCaseScopeOptions={rtplCaseScopeOptions}
+                        selectedRtplCaseScope={selectedRtplCaseScope}
+                        setSelectedRtplCaseScope={setSelectedRtplCaseScope}
+                        rtplRegionOptions={rtplRegionOptions}
+                        selectedRtplRegion={selectedRtplRegion}
+                        setSelectedRtplRegion={setSelectedRtplRegion}
+                        rtplTimeCards={rtplTimeCards}
+                        selectedRtplTimeCard={selectedRtplTimeCard}
+                        openRtplCheckpointModal={openRtplCheckpointModal}
+                        openRecordsWithFilter={openRecordsWithFilter}
+                        bodFixedTime={bodFixedTime}
+                        bodSnapshot={bodSnapshot}
+                        onFixBod={handleFixBod}
+                        onDownloadBodEod={handleDownloadBodEod}
+                        hideTimeCards={true}
+                      />
                       <div className="recordsScopeRow">
                         {/* Active category breakdown grid layout */}
                         <div className="recordsScopeCard">

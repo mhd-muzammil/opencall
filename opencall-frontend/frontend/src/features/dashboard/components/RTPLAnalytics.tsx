@@ -142,6 +142,7 @@ export function RTPLDashboard({
   bodSnapshot,
   onFixBod,
   onDownloadBodEod,
+  hideTimeCards = false,
 }: Readonly<{
   rtplAnalyticsDate: string;
   setRtplAnalyticsDate: Dispatch<SetStateAction<string>>;
@@ -175,6 +176,7 @@ export function RTPLDashboard({
   onFixBod: () => void;
   /** Called to download BOD + EOD as an Excel workbook */
   onDownloadBodEod: (card: RtplTimeCard & { cardBod: number; cardEod: number; breakdown: Array<{ status: string; bodCount: number; eodCount: number }> }) => void;
+  hideTimeCards?: boolean;
 }>) {
   // Set up the status order mapping helper based on RTPL_STATUS_OPTIONS
   const statusOrderMap = new Map<string, number>();
@@ -486,243 +488,245 @@ export function RTPLDashboard({
         </div>
       )}
 
-      <div className="rtplTimeCardGrid" aria-label="RTPL fixed checkpoint cards">
-        {checkpointCards.map((card) => {
-          const badgeText = card.id === RTPL_CARRY_FORWARD_TIME_CARD_ID ? "BASELINE" : card.count > 0 ? "CHANGED" : "NO CHANGE";
-          const badgeClass = card.id === RTPL_CARRY_FORWARD_TIME_CARD_ID ? "baseline" : card.count > 0 ? "changed" : "no-change";
+      {!hideTimeCards && (
+        <div className="rtplTimeCardGrid" aria-label="RTPL fixed checkpoint cards">
+          {checkpointCards.map((card) => {
+            const badgeText = card.id === RTPL_CARRY_FORWARD_TIME_CARD_ID ? "BASELINE" : card.count > 0 ? "CHANGED" : "NO CHANGE";
+            const badgeClass = card.id === RTPL_CARRY_FORWARD_TIME_CARD_ID ? "baseline" : card.count > 0 ? "changed" : "no-change";
 
-          return (
-            <div
-              key={card.id}
-              className={`rtplTimeCard ${selectedRtplTimeCard?.id === card.id ? "active" : ""}`}
-            >
-              <div className="rtplTimeCardHeader" onClick={() => openRtplCheckpointModal(card.id)}>
-                <span className="rtplTimeCardTitle">{card.label}</span>
-                <span className={`rtplTimeCardBadge ${badgeClass}`}>{badgeText}</span>
-              </div>
+            return (
+              <div
+                key={card.id}
+                className={`rtplTimeCard ${selectedRtplTimeCard?.id === card.id ? "active" : ""}`}
+              >
+                <div className="rtplTimeCardHeader" onClick={() => openRtplCheckpointModal(card.id)}>
+                  <span className="rtplTimeCardTitle">{card.label}</span>
+                  <span className={`rtplTimeCardBadge ${badgeClass}`}>{badgeText}</span>
+                </div>
 
-              {(() => {
-                let formattedDate = rtplAnalyticsDate;
-                if (rtplAnalyticsDate && rtplAnalyticsDate.includes("-")) {
-                  const parts = rtplAnalyticsDate.split("-");
-                  if (parts.length === 3) {
-                    formattedDate = `${parts[2]}-${parts[1]}-${parts[0]}`;
+                {(() => {
+                  let formattedDate = rtplAnalyticsDate;
+                  if (rtplAnalyticsDate && rtplAnalyticsDate.includes("-")) {
+                    const parts = rtplAnalyticsDate.split("-");
+                    if (parts.length === 3) {
+                      formattedDate = `${parts[2]}-${parts[1]}-${parts[0]}`;
+                    }
                   }
-                }
-                const regionLabel = rtplRegionOptions.find((o) => o.value === selectedRtplRegion)?.label || selectedRtplRegion;
+                  const regionLabel = rtplRegionOptions.find((o) => o.value === selectedRtplRegion)?.label || selectedRtplRegion;
 
-                const metricsRows = [
-                  { id: 1, desc: "Engineer Count", key: "engineerCount" },
-                  { id: 2, desc: "No.of Engg Presents", key: "enggPresents" },
-                  { id: 3, desc: "Open Calls", key: "openCalls" },
-                  { id: 4, desc: "Actionable Calls", key: "actionable" },
-                  { id: 5, desc: "Planned Calls", key: "planned" },
-                  { id: 6, desc: "Attended", key: "planned", isEodOnly: true },
-                  { id: 7, desc: "Closed Calls", key: "closedCalls", isEodOnly: true, alert: true },
-                  { id: 8, desc: "Engg onsite", key: "enggOnsite" },
-                  { id: 9, desc: "To be schedule", key: "toBeSchedule" },
-                  { id: 10, desc: "CX Reschedule Calls", key: "cxReschedule" },
-                  { id: 11, desc: "SSC Pending Calls", key: "sscPending" },
-                  { id: 12, desc: "Elevate/Tech Support Calls", key: "elevateTech" },
-                  { id: 13, desc: "Under observation Calls", key: "underObservation" },
-                  { id: 14, desc: "To be Yank", key: "toBeYank" },
-                  { id: 15, desc: "Closed cancelled", key: "closedCancelled", isEodOnly: true },
-                  { id: 16, desc: "Add.Part ordered", key: "addPartOrdered", alert: true },
-                  { id: 17, desc: "To be Cancel", key: "toBeCancel" },
-                  { id: 18, desc: "New calls", key: "newCalls", isEodOnly: true, alert: true },
-                  { id: 19, desc: "Trade Open Calls", key: "tradeOpenCalls" },
-                ] as const;
+                  const metricsRows = [
+                    { id: 1, desc: "Engineer Count", key: "engineerCount" },
+                    { id: 2, desc: "No.of Engg Presents", key: "enggPresents" },
+                    { id: 3, desc: "Open Calls", key: "openCalls" },
+                    { id: 4, desc: "Actionable Calls", key: "actionable" },
+                    { id: 5, desc: "Planned Calls", key: "planned" },
+                    { id: 6, desc: "Attended", key: "planned", isEodOnly: true },
+                    { id: 7, desc: "Closed Calls", key: "closedCalls", isEodOnly: true, alert: true },
+                    { id: 8, desc: "Engg onsite", key: "enggOnsite" },
+                    { id: 9, desc: "To be schedule", key: "toBeSchedule" },
+                    { id: 10, desc: "CX Reschedule Calls", key: "cxReschedule" },
+                    { id: 11, desc: "SSC Pending Calls", key: "sscPending" },
+                    { id: 12, desc: "Elevate/Tech Support Calls", key: "elevateTech" },
+                    { id: 13, desc: "Under observation Calls", key: "underObservation" },
+                    { id: 14, desc: "To be Yank", key: "toBeYank" },
+                    { id: 15, desc: "Closed cancelled", key: "closedCancelled", isEodOnly: true },
+                    { id: 16, desc: "Add.Part ordered", key: "addPartOrdered", alert: true },
+                    { id: 17, desc: "To be Cancel", key: "toBeCancel" },
+                    { id: 18, desc: "New calls", key: "newCalls", isEodOnly: true, alert: true },
+                    { id: 19, desc: "Trade Open Calls", key: "tradeOpenCalls" },
+                  ] as const;
 
-                const renderCell = (
-                  val: number,
-                  isAlert: boolean,
-                  isEmptyOverride: boolean,
-                  ticketsList: string[]
-                ) => {
-                  const displayVal = isEmptyOverride || val === 0 ? "" : val;
-                  const hasValue = displayVal !== "";
-                  const cellBg = isAlert ? "#fef08a" : "transparent";
-                  const cellColor = isAlert ? "#854d0e" : "#0f172a";
+                  const renderCell = (
+                    val: number,
+                    isAlert: boolean,
+                    isEmptyOverride: boolean,
+                    ticketsList: string[]
+                  ) => {
+                    const displayVal = isEmptyOverride || val === 0 ? "" : val;
+                    const hasValue = displayVal !== "";
+                    const cellBg = isAlert ? "#fef08a" : "transparent";
+                    const cellColor = isAlert ? "#854d0e" : "#0f172a";
+
+                    return (
+                      <td
+                        style={{
+                          padding: "2px 4px",
+                          border: "1px solid #000000",
+                          textAlign: "center",
+                          background: cellBg,
+                          color: cellColor,
+                          fontWeight: "bold",
+                          cursor: hasValue ? "pointer" : "default",
+                          userSelect: "none"
+                        }}
+                        onClick={(e) => {
+                          if (hasValue) {
+                            e.stopPropagation();
+                            openRecordsWithFilter({
+                              region: selectedRtplRegion === ALL_REGIONS_FILTER ? null : selectedRtplRegion,
+                              ticketIds: ticketsList,
+                            });
+                          }
+                        }}
+                        title={hasValue ? `Show these ${displayVal} records` : undefined}
+                      >
+                        {displayVal}
+                      </td>
+                    );
+                  };
 
                   return (
-                    <td
+                    <div
+                      className="rtplTimeCardTableWrap"
                       style={{
-                        padding: "2px 4px",
+                        overflowX: "auto",
+                        margin: "12px 0",
                         border: "1px solid #000000",
-                        textAlign: "center",
-                        background: cellBg,
-                        color: cellColor,
-                        fontWeight: "bold",
-                        cursor: hasValue ? "pointer" : "default",
-                        userSelect: "none"
+                        borderRadius: "4px"
                       }}
-                      onClick={(e) => {
-                        if (hasValue) {
-                          e.stopPropagation();
-                          openRecordsWithFilter({
-                            region: selectedRtplRegion === ALL_REGIONS_FILTER ? null : selectedRtplRegion,
-                            ticketIds: ticketsList,
-                          });
-                        }
-                      }}
-                      title={hasValue ? `Show these ${displayVal} records` : undefined}
+                      onClick={(e) => e.stopPropagation()}
                     >
-                      {displayVal}
-                    </td>
+                      <table
+                        style={{
+                          width: "100%",
+                          borderCollapse: "collapse",
+                          fontSize: "10px"
+                        }}
+                      >
+                        <thead>
+                          <tr style={{ background: "#0ea5e9", color: "#000000", fontWeight: "bold" }}>
+                            <th colSpan={2} style={{ padding: "3px 6px", border: "1px solid #000000", textAlign: "left", fontSize: "10px" }}>
+                              {formattedDate}
+                            </th>
+                            <th colSpan={2} style={{ padding: "3px 6px", border: "1px solid #000000", textAlign: "right", fontSize: "10px" }}>
+                              {regionLabel}
+                            </th>
+                          </tr>
+                          <tr style={{ background: "#fef08a", color: "#000000", fontWeight: "bold" }}>
+                            <th style={{ width: "30px", padding: "3px 4px", border: "1px solid #000000", textAlign: "center" }}>S.No</th>
+                            <th style={{ padding: "3px 6px", border: "1px solid #000000", textAlign: "left" }}>Description</th>
+                            <th style={{ width: "40px", padding: "3px 4px", border: "1px solid #000000", textAlign: "center" }}>BOD</th>
+                            <th style={{ width: "40px", padding: "3px 4px", border: "1px solid #000000", textAlign: "center" }}>EOD</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {metricsRows.map((metric) => {
+                            const bodVal = card.bodKpiMetrics[metric.key as keyof typeof card.bodKpiMetrics] as number;
+                            const eodVal = card.eodKpiMetrics[metric.key as keyof typeof card.eodKpiMetrics] as number;
+
+                            const bodTickets = card.bodKpiMetrics.tickets[metric.key as keyof typeof card.bodKpiMetrics.tickets] || [];
+                            const eodTickets = card.eodKpiMetrics.tickets[metric.key as keyof typeof card.eodKpiMetrics.tickets] || [];
+
+                            const isAlert = !!(metric as any).alert;
+                            const isEodOnly = !!(metric as any).isEodOnly;
+
+                            return (
+                              <tr key={metric.id} style={{ background: "#ffffff" }}>
+                                <td
+                                  style={{
+                                    padding: "2px 4px",
+                                    border: "1px solid #000000",
+                                    textAlign: "center",
+                                    fontWeight: "bold",
+                                    color: "#000000"
+                                  }}
+                                >
+                                  {metric.id}
+                                </td>
+                                <td
+                                  style={{
+                                    padding: "2px 6px",
+                                    border: "1px solid #000000",
+                                    textAlign: "left",
+                                    fontWeight: "bold",
+                                    color: "#000000",
+                                    whiteSpace: "nowrap"
+                                  }}
+                                >
+                                  {metric.desc}
+                                </td>
+                                {renderCell(bodVal, isAlert, isEodOnly, bodTickets)}
+                                {renderCell(eodVal, isAlert, false, eodTickets)}
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
                   );
-                };
+                })()}
 
-                return (
-                  <div
-                    className="rtplTimeCardTableWrap"
-                    style={{
-                      overflowX: "auto",
-                      margin: "12px 0",
-                      border: "1px solid #000000",
-                      borderRadius: "4px"
-                    }}
-                    onClick={(e) => e.stopPropagation()}
-                  >
-                    <table
-                      style={{
-                        width: "100%",
-                        borderCollapse: "collapse",
-                        fontSize: "10px"
-                      }}
-                    >
-                      <thead>
-                        <tr style={{ background: "#0ea5e9", color: "#000000", fontWeight: "bold" }}>
-                          <th colSpan={2} style={{ padding: "3px 6px", border: "1px solid #000000", textAlign: "left", fontSize: "10px" }}>
-                            {formattedDate}
-                          </th>
-                          <th colSpan={2} style={{ padding: "3px 6px", border: "1px solid #000000", textAlign: "right", fontSize: "10px" }}>
-                            {regionLabel}
-                          </th>
-                        </tr>
-                        <tr style={{ background: "#fef08a", color: "#000000", fontWeight: "bold" }}>
-                          <th style={{ width: "30px", padding: "3px 4px", border: "1px solid #000000", textAlign: "center" }}>S.No</th>
-                          <th style={{ padding: "3px 6px", border: "1px solid #000000", textAlign: "left" }}>Description</th>
-                          <th style={{ width: "40px", padding: "3px 4px", border: "1px solid #000000", textAlign: "center" }}>BOD</th>
-                          <th style={{ width: "40px", padding: "3px 4px", border: "1px solid #000000", textAlign: "center" }}>EOD</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {metricsRows.map((metric) => {
-                          const bodVal = card.bodKpiMetrics[metric.key as keyof typeof card.bodKpiMetrics] as number;
-                          const eodVal = card.eodKpiMetrics[metric.key as keyof typeof card.eodKpiMetrics] as number;
-
-                          const bodTickets = card.bodKpiMetrics.tickets[metric.key as keyof typeof card.bodKpiMetrics.tickets] || [];
-                          const eodTickets = card.eodKpiMetrics.tickets[metric.key as keyof typeof card.eodKpiMetrics.tickets] || [];
-
-                          const isAlert = !!(metric as any).alert;
-                          const isEodOnly = !!(metric as any).isEodOnly;
-
-                          return (
-                            <tr key={metric.id} style={{ background: "#ffffff" }}>
-                              <td
-                                style={{
-                                  padding: "2px 4px",
-                                  border: "1px solid #000000",
-                                  textAlign: "center",
-                                  fontWeight: "bold",
-                                  color: "#000000"
-                                }}
-                              >
-                                {metric.id}
-                              </td>
-                              <td
-                                style={{
-                                  padding: "2px 6px",
-                                  border: "1px solid #000000",
-                                  textAlign: "left",
-                                  fontWeight: "bold",
-                                  color: "#000000",
-                                  whiteSpace: "nowrap"
-                                }}
-                              >
-                                {metric.desc}
-                              </td>
-                              {renderCell(bodVal, isAlert, isEodOnly, bodTickets)}
-                              {renderCell(eodVal, isAlert, false, eodTickets)}
-                            </tr>
-                          );
-                        })}
-                      </tbody>
-                    </table>
-                  </div>
-                );
-              })()}
-
-              {/* Action Buttons Row */}
-              {((card.cardBod > 0 || card.cardEod > 0) || card.id === RTPL_CARRY_FORWARD_TIME_CARD_ID) && (
-                <div style={{ padding: "8px 12px", borderTop: "1px solid #e2e8f0", display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap", justifyContent: "flex-end" }}>
-                  {/* BOD Fix button — only on Upload Time (carry-forward) card */}
-                  {card.id === RTPL_CARRY_FORWARD_TIME_CARD_ID && (
-                    <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-                      {bodFixedTime ? (
-                        <span
+                {/* Action Buttons Row */}
+                {((card.cardBod > 0 || card.cardEod > 0) || card.id === RTPL_CARRY_FORWARD_TIME_CARD_ID) && (
+                  <div style={{ padding: "8px 12px", borderTop: "1px solid #e2e8f0", display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap", justifyContent: "flex-end" }}>
+                    {/* BOD Fix button — only on Upload Time (carry-forward) card */}
+                    {card.id === RTPL_CARRY_FORWARD_TIME_CARD_ID && (
+                      <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                        {bodFixedTime ? (
+                          <span
+                            style={{
+                              fontSize: "11px",
+                              fontWeight: "700",
+                              color: "#16a34a",
+                              background: "#dcfce7",
+                              borderRadius: "6px",
+                              padding: "3px 9px",
+                              border: "1px solid #86efac",
+                            }}
+                          >
+                            🌅 BOD Fixed: {new Date(bodFixedTime).toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit", timeZone: "Asia/Kolkata" })}
+                          </span>
+                        ) : null}
+                        <button
+                          type="button"
                           style={{
                             fontSize: "11px",
                             fontWeight: "700",
-                            color: "#16a34a",
-                            background: "#dcfce7",
+                            padding: "3px 10px",
                             borderRadius: "6px",
-                            padding: "3px 9px",
-                            border: "1px solid #86efac",
+                            border: "1px solid #2563eb",
+                            background: bodFixedTime ? "#eff6ff" : "#2563eb",
+                            color: bodFixedTime ? "#2563eb" : "#ffffff",
+                            cursor: "pointer",
                           }}
+                          onClick={(e) => { e.stopPropagation(); onFixBod(); }}
+                          title={bodFixedTime ? "Re-fix BOD to current time" : "Fix BOD to current time"}
                         >
-                          🌅 BOD Fixed: {new Date(bodFixedTime).toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit", timeZone: "Asia/Kolkata" })}
-                        </span>
-                      ) : null}
+                          {bodFixedTime ? "🔄 Re-fix BOD" : "📌 Fix BOD"}
+                        </button>
+                      </div>
+                    )}
+
+                    {/* BOD + EOD Download button — appears on all cards that have data */}
+                    {(card.cardBod > 0 || card.cardEod > 0) && (
                       <button
                         type="button"
                         style={{
                           fontSize: "11px",
                           fontWeight: "700",
-                          padding: "3px 10px",
+                          padding: "4px 10px",
                           borderRadius: "6px",
-                          border: "1px solid #2563eb",
-                          background: bodFixedTime ? "#eff6ff" : "#2563eb",
-                          color: bodFixedTime ? "#2563eb" : "#ffffff",
+                          border: "1px solid #0369a1",
+                          background: "linear-gradient(135deg, #0284c7, #0369a1)",
+                          color: "#ffffff",
                           cursor: "pointer",
+                          display: "inline-flex",
+                          alignItems: "center",
+                          gap: "4px",
                         }}
-                        onClick={(e) => { e.stopPropagation(); onFixBod(); }}
-                        title={bodFixedTime ? "Re-fix BOD to current time" : "Fix BOD to current time"}
+                        onClick={(e) => { e.stopPropagation(); onDownloadBodEod(card); }}
+                        title={`Download BOD & EOD for ${card.label}`}
                       >
-                        {bodFixedTime ? "🔄 Re-fix BOD" : "📌 Fix BOD"}
+                        📥 BOD &amp; EOD
                       </button>
-                    </div>
-                  )}
-
-                  {/* BOD + EOD Download button — appears on all cards that have data */}
-                  {(card.cardBod > 0 || card.cardEod > 0) && (
-                    <button
-                      type="button"
-                      style={{
-                        fontSize: "11px",
-                        fontWeight: "700",
-                        padding: "4px 10px",
-                        borderRadius: "6px",
-                        border: "1px solid #0369a1",
-                        background: "linear-gradient(135deg, #0284c7, #0369a1)",
-                        color: "#ffffff",
-                        cursor: "pointer",
-                        display: "inline-flex",
-                        alignItems: "center",
-                        gap: "4px",
-                      }}
-                      onClick={(e) => { e.stopPropagation(); onDownloadBodEod(card); }}
-                      title={`Download BOD & EOD for ${card.label}`}
-                    >
-                      📥 BOD &amp; EOD
-                    </button>
-                  )}
-                </div>
-              )}
-            </div>
-          );
-        })}
-      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 }

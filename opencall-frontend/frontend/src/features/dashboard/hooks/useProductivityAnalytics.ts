@@ -325,12 +325,16 @@ export function useProductivityAnalytics(params: {
           .map(r => String(r.output["Ticket ID"] ?? "").trim())
           .filter(id => id && id !== MANUAL_ENTRY_REQUIRED);
 
+      // Closed calls are a standalone "completed" credit — they are NOT folded
+      // into Attended/Assigned, so those reflect only still-open workload.
       const closedRows = [...engClosed, ...matchStatus(engActive, ["closed"])];
       const partOrderedRows = matchStatus(engActive, ["part", "additional part", "part order pending"]);
       const underObservationRows = matchStatus(engActive, ["observation", "crt pending", "ct validation"]);
       const cxRescheduleRows = matchStatus(engActive, ["cx", "reschedule", "cust pending", "customer pending"]);
 
-      const attendedRows = [...closedRows, ...partOrderedRows, ...underObservationRows];
+      // Attended = open work the engineer has progressed (excludes CX reschedule,
+      // which is customer-side). Assigned = full open workload (adds CX).
+      const attendedRows = [...partOrderedRows, ...underObservationRows];
       const assignedRows = [...attendedRows, ...cxRescheduleRows];
 
       return {

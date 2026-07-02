@@ -230,9 +230,10 @@ export function useProductivityAnalytics(params: {
       return true;
     });
 
-    // 2. Identify all unique months and dates in these rows
-    const monthsSet = new Set<string>();
-    const datesSet = new Set<string>();
+    // 2. This report is a single day's snapshot keyed to its report date, so
+    // the date/month pickers offer only that report's own date and month.
+    // Selecting either shows the whole report — there is no other day in it.
+    const monthNames = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
 
     const getFormattedReportDate = (reportDateStr: string): string => {
       const parts = reportDateStr.split("-");
@@ -244,72 +245,28 @@ export function useProductivityAnalytics(params: {
 
     const todayStr = report.reportDate ? getFormattedReportDate(report.reportDate) : "";
 
-    for (const r of regionRows) {
-      const createdTime = String(r.output["Case Created Time"] ?? "").trim();
-      if (createdTime && createdTime !== MANUAL_ENTRY_REQUIRED) {
-        const match = /^(\d{2})[-/](\d{2})[-/](\d{4})/.exec(createdTime);
-        if (match) {
-          const day = match[1] ?? "";
-          const monthCode = match[2] ?? "";
-          const year = match[3] ?? "";
+    const reportMonth = (() => {
+      const parts = todayStr.split("-");
+      const monthCode = parts[1] ?? "";
+      const year = parts[2] ?? "";
+      const monthIndex = parseInt(monthCode, 10) - 1;
+      const monthName = monthNames[monthIndex];
+      return monthName && year ? `${monthName} ${year}` : "";
+    })();
 
-          const monthIndex = parseInt(monthCode, 10) - 1;
-          const monthNames = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
-          const monthName = monthNames[monthIndex] ?? "Unknown";
+    const datesList = todayStr ? [todayStr] : [];
+    const monthsList = reportMonth ? [reportMonth] : [];
 
-          monthsSet.add(`${monthName} ${year}`);
-          datesSet.add(`${day}-${monthCode}-${year}`);
-        }
-      }
-    }
-
-    const monthsList = Array.from(monthsSet).sort((a, b) => a.localeCompare(b));
-    const datesList = Array.from(datesSet).sort((a, b) => {
-      const parseDMY = (s: string) => {
-        const p = s.split("-");
-        const day = parseInt(p[0] ?? "0", 10);
-        const month = parseInt(p[1] ?? "0", 10) - 1;
-        const year = parseInt(p[2] ?? "0", 10);
-        return new Date(year, month, day).getTime();
-      };
-      return parseDMY(a) - parseDMY(b);
-    });
-
-    // 3. Filter rows based on type.
-    // "Today" and "All Dates" both use the full current report: a daily report
-    // is already today's snapshot (all currently-open cases, created on prior
-    // days, plus closed rows), so it is not narrowed by Case Created Time —
-    // consistent with the TN View / EOD-BOD tabs. "Specific Date"/"Specific
-    // Month" slice by Case Created Time.
+    // 3. Filter rows based on type. The whole report belongs to the report's
+    // day, so "Today"/"All Dates" show everything; "Specific Date" shows the
+    // full report when the picked date is the report's date (otherwise nothing),
+    // and "Specific Month" the same for the report's month. This keeps
+    // "Today" and "Specific Date = <report date>" consistent.
     let filteredRowsForProd = regionRows;
-    if (productivityFilterType === "Specific Date" && selectedProductivityValue) {
-      filteredRowsForProd = regionRows.filter(r => {
-        const createdTime = String(r.output["Case Created Time"] ?? "").trim();
-        if (createdTime && createdTime !== MANUAL_ENTRY_REQUIRED) {
-          const match = /^(\d{2})[-/](\d{2})[-/](\d{4})/.exec(createdTime);
-          if (match) {
-            const rowDate = `${match[1]}-${match[2]}-${match[3]}`;
-            return rowDate === selectedProductivityValue;
-          }
-        }
-        return false;
-      });
-    } else if (productivityFilterType === "Specific Month" && selectedProductivityValue) {
-      filteredRowsForProd = regionRows.filter(r => {
-        const createdTime = String(r.output["Case Created Time"] ?? "").trim();
-        if (createdTime && createdTime !== MANUAL_ENTRY_REQUIRED) {
-          const match = /^(\d{2})[-/](\d{2})[-/](\d{4})/.exec(createdTime);
-          if (match) {
-            const monthCode = match[2] ?? "";
-            const year = match[3] ?? "";
-            const monthIndex = parseInt(monthCode, 10) - 1;
-            const monthNames = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
-            const rowMonth = `${monthNames[monthIndex]} ${year}`;
-            return rowMonth === selectedProductivityValue;
-          }
-        }
-        return false;
-      });
+    if (productivityFilterType === "Specific Date") {
+      filteredRowsForProd = selectedProductivityValue === todayStr ? regionRows : [];
+    } else if (productivityFilterType === "Specific Month") {
+      filteredRowsForProd = selectedProductivityValue === reportMonth ? regionRows : [];
     }
 
     // 4. Group by unique engineers

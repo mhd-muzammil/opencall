@@ -364,7 +364,11 @@ export function useProductivityAnalytics(params: {
       const cxRescheduleCount = countStatus(engActive, ["cx", "reschedule", "cust pending", "customer pending"]);
 
       const attendedCount = closedCount + partOrderedCount + underObservationCount;
-      const assignedCount = attendedCount + cxRescheduleCount;
+      // Assigned = the engineer's total case count (all their active rows), so it
+      // matches what clicking the engineer's name shows in the records table.
+      // The status columns above are a breakdown and need not sum to this, since
+      // cases in statuses like "Entry"/"Actionable" aren't a tracked sub-status.
+      const assignedCount = engActive.length;
 
       return {
         name: engName,

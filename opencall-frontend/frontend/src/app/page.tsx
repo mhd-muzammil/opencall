@@ -140,6 +140,8 @@ import {
   downloadEngineerProductivityExcel,
 } from "../lib/excelExport";
 import * as XLSX from "xlsx";
+// Styling-capable SheetJS fork (same API); used where the export needs cell colors/borders.
+import * as XLSXStyle from "xlsx-js-style";
 import {
   ALL_REGIONS_FILTER,
   buildFlexOperationalAnalytics,
@@ -997,39 +999,67 @@ export default function DashboardPage() {
     try { window.sessionStorage.setItem("opencall.bodSnapshot", JSON.stringify(snapshot)); } catch { /* non-fatal */ }
   }
 
-  // Download BOD + EOD status breakdown as a two-sheet Excel file.
+  // Download BOD + EOD status breakdown as a single combined sheet.
   function handleDownloadBodEod(
     card: { label: string; cardBod: number; cardEod: number; breakdown: Array<{ status: string; bodCount: number; eodCount: number }> },
   ): void {
     const dateStr = rtplAnalyticsDate || todayIsoDate();
     const cardLabel = card.label.replace(/[^a-zA-Z0-9 _-]/g, "").trim();
 
-    // BOD sheet data
-    const bodAoa: (string | number)[][] = [
-      [`BOD Status Summary — ${cardLabel} — ${dateStr}`],
-      ["S.No", "Status", "BOD Count"],
-      ...card.breakdown.map((entry, idx) => [idx + 1, entry.status, entry.bodCount]),
-      ["Total", "", card.cardBod],
+    // Combined BOD + EOD data on one sheet.
+    const aoa: (string | number)[][] = [
+      [`Status Summary — ${cardLabel} — ${dateStr}`],
+      ["S.No", "Status", "BOD Count", "EOD Count"],
+      ...card.breakdown.map((entry, idx) => [idx + 1, entry.status, entry.bodCount, entry.eodCount]),
+      ["Total", "", card.cardBod, card.cardEod],
     ];
 
-    // EOD sheet data
-    const eodAoa: (string | number)[][] = [
-      [`EOD Status Summary — ${cardLabel} — ${dateStr}`],
-      ["S.No", "Status", "EOD Count"],
-      ...card.breakdown.map((entry, idx) => [idx + 1, entry.status, entry.eodCount]),
-      ["Total", "", card.cardEod],
-    ];
+    const wb = XLSXStyle.utils.book_new();
+    const sheet = XLSXStyle.utils.aoa_to_sheet(aoa);
+    sheet["!cols"] = [{ wch: 8 }, { wch: 35 }, { wch: 12 }, { wch: 12 }];
+    // Merge the title across all 4 columns.
+    sheet["!merges"] = [{ s: { r: 0, c: 0 }, e: { r: 0, c: 3 } }];
 
-    const wb = XLSX.utils.book_new();
-    const bodSheet = XLSX.utils.aoa_to_sheet(bodAoa);
-    bodSheet["!cols"] = [{ wch: 8 }, { wch: 35 }, { wch: 12 }];
-    XLSX.utils.book_append_sheet(wb, bodSheet, "BOD");
+    // ---- Cell styling to match the report template ----
+    const thinBorder = { style: "thin", color: { rgb: "000000" } };
+    const allBorders = { top: thinBorder, bottom: thinBorder, left: thinBorder, right: thinBorder };
+    const center = { horizontal: "center", vertical: "center" };
 
-    const eodSheet = XLSX.utils.aoa_to_sheet(eodAoa);
-    eodSheet["!cols"] = [{ wch: 8 }, { wch: 35 }, { wch: 12 }];
-    XLSX.utils.book_append_sheet(wb, eodSheet, "EOD");
+    const lastRow = aoa.length - 1; // Total row index
+    const lastCol = 3; // D
+    for (let r = 0; r <= lastRow; r++) {
+      for (let c = 0; c <= lastCol; c++) {
+        const addr = XLSXStyle.utils.encode_cell({ r, c });
+        const cell = sheet[addr] ?? (sheet[addr] = { t: "s", v: "" });
+        if (r === 0) {
+          // Blue title row.
+          cell.s = {
+            fill: { patternType: "solid", fgColor: { rgb: "00B0F0" } },
+            font: { bold: true, sz: 12, color: { rgb: "000000" } },
+            alignment: center,
+            border: allBorders,
+          };
+        } else if (r === 1) {
+          // Yellow header row.
+          cell.s = {
+            fill: { patternType: "solid", fgColor: { rgb: "FFFF00" } },
+            font: { bold: true, color: { rgb: "000000" } },
+            alignment: center,
+            border: allBorders,
+          };
+        } else {
+          // Data rows + Total row: bordered; center numeric columns; bold the Total row.
+          cell.s = {
+            font: { bold: r === lastRow, color: { rgb: "000000" } },
+            alignment: c === 1 ? { vertical: "center" } : center,
+            border: allBorders,
+          };
+        }
+      }
+    }
 
-    XLSX.writeFile(wb, `RTPL_BOD_EOD_${cardLabel.replace(/\s+/g, "_")}_${dateStr}.xlsx`);
+    XLSXStyle.utils.book_append_sheet(wb, sheet, "BOD & EOD");
+    XLSXStyle.writeFile(wb, `RTPL_BOD_EOD_${cardLabel.replace(/\s+/g, "_")}_${dateStr}.xlsx`);
   }
   // 6:00 PM IST auto-download: fires once per session when the clock crosses 18:00.
   useEffect(() => {

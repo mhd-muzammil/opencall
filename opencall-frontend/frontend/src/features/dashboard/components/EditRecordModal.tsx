@@ -139,13 +139,14 @@ export function EditRecordModal({
                   }
                 >
                   <option value="">Entry</option>
-                  <option value="Print">Print</option>
                   <option value="PC">PC</option>
+                  <option value="Print">Print</option>
                   <option value="Install">Install</option>
-                  <option value="Trade">Trade</option>
+                  <option value="Trade PC">Trade PC</option>
+                  <option value="Trade Print">Trade Print</option>
                   {draftOutput["Segment"] &&
                    draftOutput["Segment"] !== MANUAL_ENTRY_REQUIRED &&
-                   !["Print", "PC", "Install", "Trade"].includes(String(draftOutput["Segment"])) && (
+                   !["PC", "Print", "Install", "Trade PC", "Trade Print"].includes(String(draftOutput["Segment"])) && (
                     <option value={String(draftOutput["Segment"])}>{String(draftOutput["Segment"])}</option>
                   )}
                 </select>

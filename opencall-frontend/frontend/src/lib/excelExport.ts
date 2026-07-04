@@ -11,6 +11,11 @@ import {
   OPEN_CALL_SHEET,
   PIVOT_TEMPLATE_URL,
 } from "./pivotWorkbook";
+import {
+  isTradeCase,
+  isWarrantyCase,
+  isPrintCase as isPrintTypeCase,
+} from "../features/dashboard/utils/caseClassification";
 import * as XLSX from "xlsx";
 
 // A call is treated as "closed" when its (current or previous) RTPL status reads
@@ -458,13 +463,9 @@ export function downloadRegionSummaryExcel(
     return String(r.output["WIP aging"] || "").trim();
   };
 
-  const isTradeRow = (r: GeneratedReportResponse["rows"][number]): boolean => {
-    const code = String(r.output["WO OTC CODE"] ?? "").trim().toUpperCase();
-    return code.includes("TRADE") || code.startsWith("01");
-  };
-  const isWarrantyRow = (r: GeneratedReportResponse["rows"][number]): boolean => {
-    return !isTradeRow(r);
-  };
+  // Trade/Warranty now flow from the backend-derived Segment (single source of truth).
+  const isTradeRow = isTradeCase;
+  const isWarrantyRow = isWarrantyCase;
 
   // 1. Calculate the counts
   const activeRows = isBod
@@ -506,12 +507,9 @@ export function downloadRegionSummaryExcel(
     return Number.isFinite(parsed) ? parsed : null;
   };
 
-  const isPrintCase = (r: GeneratedReportResponse["rows"][number]): boolean => {
-    const segment = String(r.output.Segment ?? "").trim().toLowerCase();
-    const prodLine = String(r.output["Product Line Name"] ?? "").trim().toLowerCase();
-    const woOtcCode = String(r.output["WO OTC CODE"] ?? "").trim().toUpperCase();
-    return segment === "print" || prodLine.includes("print") || woOtcCode.startsWith("05F");
-  };
+  // Print-type detection also flows from the Segment. activeRows are already
+  // warranty-filtered, so this yields warranty Print + Install rows.
+  const isPrintCase = isPrintTypeCase;
 
   let aoaData: (string | number)[][];
   let merges: XLSX.Range[] = [];

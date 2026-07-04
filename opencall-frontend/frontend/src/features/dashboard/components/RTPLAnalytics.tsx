@@ -69,14 +69,10 @@ function calculateKpiMetricsForCardView(
   const addPartOrderedRows = active.filter(r => matchStatus(r, ["Additional Part", "Part Order Pending", "Parts Hold", "Part need to order"]));
   const toBeCancelRows = active.filter(r => matchStatus(r, ["Need to Cancel", "Need to Cancel Mail", "Request to Cancel"]));
   
-  const isTradeRow = (r: typeof rows[number]) => {
-    const code = String(r.output["WO OTC CODE"] ?? "").trim().toUpperCase();
-    return code.includes("TRADE") || code.startsWith("01");
-  };
-  
+  // Trade now flows from the backend-derived Segment (single source of truth).
   const tradeOpenRows = isBod
-    ? rows.filter((r) => isTradeRow(r))
-    : rows.filter((r) => !r.carryForward.closedSyntheticRow && isTradeRow(r));
+    ? rows.filter((r) => isTradeCase(r))
+    : rows.filter((r) => !r.carryForward.closedSyntheticRow && isTradeCase(r));
 
   const closedCancelledRows = closed.filter((r) => matchStatus(r, ["cancel"]));
   const newCallsRows = active.filter((r) => r.comparison?.changeType === "NEW");

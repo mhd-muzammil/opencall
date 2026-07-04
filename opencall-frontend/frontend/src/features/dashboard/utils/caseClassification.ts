@@ -1,38 +1,20 @@
-// Pure case-classification utilities extracted from app/page.tsx (Phase 3).
-// Moved verbatim — no behavior changes.
+// Pure case-classification utilities. These read the backend-derived Segment as the
+// single source of truth (Trade is baked into the Segment value) rather than
+// re-deriving Trade/PC/Print from WO OTC codes on the client.
 import type { GeneratedReportResponse } from "../../../lib/apiClient";
-import {
-  MANUAL_ENTRY_REQUIRED,
-  CISS_PRODUCT_LINE,
-  TRADE_WO_OTC_CODE_KEYWORD,
-  PRINT_INSTALLATION_WO_OTC_CODE,
-} from "../constants";
-import { normalizeWoOtcCode, getWoOtcCodePrefix } from "./woOtcUtils";
+import { MANUAL_ENTRY_REQUIRED, CISS_PRODUCT_LINE } from "../constants";
 
 export function segmentValue(row: GeneratedReportResponse["rows"][number]): string {
   return String(row.output.Segment ?? "").trim().toLowerCase();
 }
 
+// The Segment is the single source of truth, derived once in the backend from the
+// FieldEZ (Flex WIP) "Business Segment" + "WO OTC Code" columns. It is one of:
+//   "PC" | "Print" | "Install" | "Trade PC" | "Trade Print" | ""
+// (see getSegment in the backend enrichmentHelpers). Trade is baked into the value,
+// so every classifier below reads the Segment rather than re-deriving from OTC codes.
 export function isTradeCase(row: GeneratedReportResponse["rows"][number]): boolean {
-  const code = normalizeWoOtcCode(row.output["WO OTC CODE"]);
-  if (code.includes(TRADE_WO_OTC_CODE_KEYWORD) || code.startsWith("01")) {
-    return true;
-  }
-  const segment = segmentValue(row);
-  // A "Trade" segment is non-warranty even when the OTC code is not 01/Trade.
-  if (segment === "trade") {
-    return true;
-  }
-  // A PC carrying a component field install code ("05F - Comp Field Install") is a
-  // billable/non-warranty PC job, so it belongs in Trade -> PC Total, not the
-  // warranty dashboard. (Blank/Install segments with 05F remain warranty installs.)
-  if (
-    segment === "pc" &&
-    getWoOtcCodePrefix(row.output["WO OTC CODE"]) === PRINT_INSTALLATION_WO_OTC_CODE
-  ) {
-    return true;
-  }
-  return false;
+  return segmentValue(row).startsWith("trade");
 }
 
 export function isCissCase(row: GeneratedReportResponse["rows"][number]): boolean {
@@ -52,40 +34,21 @@ export function isSegmentCase(
   return String(row.output.Segment ?? "").trim().toLowerCase() === segment.toLowerCase();
 }
 
+// PC-type case (warranty "PC" or non-warranty "Trade PC"). Gate with isWarrantyCase
+// / isTradeCase at the call site to split warranty PC vs Trade PC.
 export function isPcCase(row: GeneratedReportResponse["rows"][number]): boolean {
-  if (isPrintInstallationCase(row)) {
-    return false;
-  }
   const segment = segmentValue(row);
-  const prodLine = String(row.output["Product Line Name"] ?? "").trim().toLowerCase();
-
-  // An explicit segment always wins.
-  if (segment === "pc") return true;
-  if (segment === "print") return false;
-
-  // Segment is blank/unknown: fall back to Product Line keywords.
-  return (
-    prodLine.includes("notebook") ||
-    prodLine.includes("desktop") ||
-    prodLine.includes("chromebook") ||
-    prodLine.includes("workstation") ||
-    prodLine.includes("display") ||
-    prodLine.includes("pc") ||
-    prodLine.includes("mws")
-  );
+  return segment === "pc" || segment === "trade pc";
 }
 
+// Print-type case (everything that is not PC-type): "Print", "Install", "Trade Print",
+// and any blank/unknown segment. Preserves the previous "!isPcCase" contract.
 export function isPrintCase(row: GeneratedReportResponse["rows"][number]): boolean {
   return !isPcCase(row);
 }
 
 export function isPrintInstallationCase(row: GeneratedReportResponse["rows"][number]): boolean {
-  const segment = segmentValue(row);
-  // An explicit segment always wins over the OTC code.
-  if (segment === "install") return true;
-  if (segment === "pc" || segment === "print") return false;
-  // Segment is blank/unknown: fall back to the print-installation OTC code (05F).
-  return getWoOtcCodePrefix(row.output["WO OTC CODE"]) === PRINT_INSTALLATION_WO_OTC_CODE;
+  return segmentValue(row) === "install";
 }
 
 export function isPrintFixCase(row: GeneratedReportResponse["rows"][number]): boolean {

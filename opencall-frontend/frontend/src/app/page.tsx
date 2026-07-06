@@ -230,6 +230,7 @@ const EDITABLE_COLUMN_API_FIELD: Partial<Record<string, string>> = {
   "HP Owner Status": "hp_owner_status",
   "Customer Mail": "customer_mail",
   RCA: "rca",
+  Part: "part",
 };
 
 // Phase 2: ReportRowPatchValues moved to features/dashboard/types.
@@ -247,6 +248,7 @@ const EDITED_RESPONSE_COLUMN: Partial<
     | "customerMail"
     | "rca"
     | "remarks"
+    | "part"
   >>
 > = {
   "RTPL status": "rtplStatus",
@@ -259,6 +261,7 @@ const EDITED_RESPONSE_COLUMN: Partial<
   "HP Owner Status": "hpOwnerStatus",
   "Customer Mail": "customerMail",
   RCA: "rca",
+  Part: "part",
 };
 
 

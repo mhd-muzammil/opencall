@@ -330,6 +330,7 @@ export function CaseDetailDrawer({
   const rtplStatus = readVal("RTPL status");
   const flexStatus = readVal("Flex Status");
   const segment = readVal("Segment");
+  const partVal = readVal("Part");
   const changeType = row.comparison?.changeType ?? null;
 
   const [timeline, setTimeline] = useState<RcaTimelineResponse | null>(null);
@@ -695,9 +696,33 @@ export function CaseDetailDrawer({
 
             <div className="caseLayoutSide">
               {/* RTPL status progression — when each status changed */}
-              <div className="rcaTimelineHeader">
-                <h3>RTPL Status Timeline</h3>
-                <small className="caseSubtleNote">Each status change and the date it happened.</small>
+              <div className="rcaTimelineHeader" style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: "10px" }}>
+                <div>
+                  <h3>RTPL Status Timeline</h3>
+                  <small className="caseSubtleNote">Each status change and the date it happened.</small>
+                </div>
+                {partVal && (
+                  <a
+                    href={`http://localhost:5173/hp-stock?search=${encodeURIComponent(caseId || "")}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inventoryLink"
+                    style={{
+                      fontSize: "11px",
+                      fontWeight: 600,
+                      color: "#fff",
+                      backgroundColor: "#4f46e5",
+                      padding: "6px 10px",
+                      borderRadius: "6px",
+                      textDecoration: "none",
+                      display: "inline-block",
+                      textAlign: "center",
+                      whiteSpace: "nowrap"
+                    }}
+                  >
+                    Inventory Details
+                  </a>
+                )}
               </div>
 
               {statusTimelineLoading && (

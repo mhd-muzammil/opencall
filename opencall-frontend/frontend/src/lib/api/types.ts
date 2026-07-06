@@ -202,6 +202,7 @@ export interface EditedReportRowResponse {
   wipAging: string | null;
   statusAging: string | null;
   hpOwnerStatus: string | null;
+  part: string | null;
   manualFieldsCompleted: boolean;
   manualFieldsMissing: string[];
   updatedAt: string;

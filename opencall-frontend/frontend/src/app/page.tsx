@@ -1270,109 +1270,63 @@ export default function DashboardPage() {
   const restoreHistorySessionRef = useRef(restoreHistorySession);
   restoreHistorySessionRef.current = restoreHistorySession;
 
+  // Background upload watcher. This intentionally does NOT re-fetch or re-merge
+  // the report the user is working on — doing so every few seconds reloaded the
+  // grid and reverted rows the user had just saved (a save that hadn't yet
+  // committed when the regenerate read the DB would come back stale). The user's
+  // own edits are already reflected locally by saveEditing from the API
+  // response, so no periodic refresh is needed. The ONLY job here is to detect a
+  // genuinely NEW upload (a new report created AFTER this one loaded) and switch
+  // the user onto it — never a reload of the current report.
   useEffect(() => {
     if (!session || !report?.reportId || !upload) return;
 
     const token = session.token;
-    const flexWipBatchId = upload.batches.find((b) => b.sourceType === "FLEX_WIP")?.id;
-    if (!flexWipBatchId) return;
-    const activeFlexWipBatchId: string = flexWipBatchId;
-
-    const renderwaysBatchId = upload.batches.find((b) => b.sourceType === "RENDERWAYS")?.id;
-    const callPlanBatchId = upload.batches.find((b) => b.sourceType === "CALL_PLAN")?.id;
-
     const currentReportDate = report.reportDate;
     const currentRegionId = regionId;
     const currentReportId = report.reportId;
-    const currentSessionId = report.sessionId;
 
     let timerId: NodeJS.Timeout;
+    // Newest report timestamp known when this report loaded. Only a report
+    // uploaded strictly after this triggers an auto-switch. `null` until the
+    // first check records the baseline (so pre-existing reports never switch).
+    let baselineNewestCreatedAt: string | null = null;
+    const POLL_MS = 15000;
 
-    async function poll() {
-      // Skip polling if saving, editing, or busy to prevent state conflicts
-      if (savingSerialNoRef.current !== null || isBusyRef.current) {
-        timerId = setTimeout(poll, 10000);
+    async function checkForNewUpload() {
+      // Never interrupt an in-progress edit / save / busy operation.
+      if (
+        savingSerialNoRef.current !== null ||
+        isBusyRef.current ||
+        editingSerialNoRef.current !== null
+      ) {
+        timerId = setTimeout(checkForNewUpload, POLL_MS);
         return;
       }
 
       try {
-        const [latestRep, latestStatusChanges] = await Promise.all([
-          generateReport({
-            token: token,
-            regionId: currentRegionId,
-            reportDate: currentReportDate,
-            flexUploadBatchId: activeFlexWipBatchId,
-            ...(renderwaysBatchId ? { renderwaysUploadBatchId: renderwaysBatchId } : {}),
-            ...(callPlanBatchId ? { callPlanUploadBatchId: callPlanBatchId } : {}),
-          }),
-          getRtplStatusChanges({
-            token: token,
-            reportId: currentReportId,
-            changeDate: rtplAnalyticsDate,
-            limit: RTPL_STATUS_CHANGE_LIMIT,
-          }),
-        ]);
+        const sessions = await getReportHistory(token);
+        const newest = sessions
+          .filter(
+            (s) =>
+              s.status === "COMPLETED" &&
+              s.reportId !== null &&
+              s.reportDate === currentReportDate &&
+              s.regionId === currentRegionId,
+          )
+          .sort((a, b) => b.createdAt.localeCompare(a.createdAt))[0];
 
-        // Verify the reportId hasn't changed in the background before updating state
-        setReport((prevReport) => {
-          if (!prevReport || prevReport.reportId !== latestRep.reportId) {
-            return prevReport;
-          }
-
-          // Merge latest rows, preserving the row that is currently being edited
-          const updatedRows = latestRep.rows.map((newRow) => {
-            if (editingSerialNoRef.current !== null && newRow.serialNo === editingSerialNoRef.current) {
-              const prevRow = prevReport.rows.find((r) => r.serialNo === editingSerialNoRef.current);
-              return prevRow ? prevRow : newRow;
-            }
-            return newRow;
-          });
-
-          return {
-            ...prevReport,
-            rows: updatedRows,
-            totalRows: latestRep.totalRows,
-            duplicateTicketCount: latestRep.duplicateTicketCount,
-            unmatchedTicketCount: latestRep.unmatchedTicketCount,
-            duplicateTracking: latestRep.duplicateTracking,
-            carryForward: latestRep.carryForward,
-            comparison: latestRep.comparison,
-            regionBreakdown: latestRep.regionBreakdown,
-          };
-        });
-
-        setRtplStatusChanges((prevChanges) => {
-          // Only update if changes have actually updated to avoid unnecessary renders
-          if (JSON.stringify(prevChanges) === JSON.stringify(latestStatusChanges)) {
-            return prevChanges;
-          }
-          return latestStatusChanges;
-        });
-
-        // Auto-switch: when a NEWER completed report exists for the same day and
-        // region (e.g. the SUPER_ADMIN uploaded fresh files), move this user
-        // onto it so everyone converges on the latest report. The newer report
-        // already carries forward this report's accumulated work. Never switch
-        // while the user is mid-edit — that would interrupt them and drop the
-        // half-typed row; the switch simply waits for the next idle poll.
-        if (editingSerialNoRef.current === null) {
-          const sessions = await getReportHistory(token);
-          const newest = sessions
-            .filter(
-              (s) =>
-                s.status === "COMPLETED" &&
-                s.reportId !== null &&
-                s.reportDate === currentReportDate &&
-                s.regionId === currentRegionId,
-            )
-            .sort((a, b) => b.createdAt.localeCompare(a.createdAt))[0];
-
-          if (
-            newest &&
-            newest.id !== currentSessionId &&
+        if (newest) {
+          if (baselineNewestCreatedAt === null) {
+            // First check: record what already exists; do not switch.
+            baselineNewestCreatedAt = newest.createdAt;
+          } else if (
+            newest.createdAt > baselineNewestCreatedAt &&
             newest.reportId !== currentReportId &&
             restoreHistorySessionRef.current
           ) {
+            // A genuinely NEW report was uploaded after this one loaded — move
+            // the user onto it. This is the ONLY auto-switch trigger.
             await restoreHistorySessionRef.current(newest, {
               closeHistoryPanel: true,
               successMessage: "Loaded the latest uploaded report for this day.",
@@ -1380,19 +1334,18 @@ export default function DashboardPage() {
             return; // effect re-initialises on the new report; stop this cycle
           }
         }
-
       } catch (error) {
         if (isApiAuthError(error)) {
           handleBackgroundError(error);
         } else {
-          console.error("Background poll failed:", error);
+          console.error("Background upload check failed:", error);
         }
       } finally {
-        timerId = setTimeout(poll, 10000);
+        timerId = setTimeout(checkForNewUpload, POLL_MS);
       }
     }
 
-    timerId = setTimeout(poll, 10000);
+    timerId = setTimeout(checkForNewUpload, POLL_MS);
 
     return () => {
       clearTimeout(timerId);
@@ -1402,7 +1355,6 @@ export default function DashboardPage() {
     report?.reportId,
     upload?.batches,
     regionId,
-    rtplAnalyticsDate,
   ]);
 
 

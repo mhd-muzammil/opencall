@@ -3259,7 +3259,6 @@ export default function DashboardPage() {
                         bodSnapshot={bodSnapshot}
                         onFixBod={handleFixBod}
                         onDownloadBodEod={handleDownloadBodEod}
-                        hideTimeCards={true}
                       />
                     )}
 

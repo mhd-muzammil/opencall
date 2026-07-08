@@ -424,27 +424,6 @@ export function RTPLDashboard({
           <span className="statusBadge neutral">
             {rtplAnalyticsRows.length} rows
           </span>
-          {(() => {
-            // Single BOD & EOD download (BOD = Morning, EOD = Evening). Replaces
-            // the per-time-card download now that the checkpoint cards are hidden.
-            const downloadCard =
-              checkpointCards.find((c) => c.id === RTPL_CARRY_FORWARD_TIME_CARD_ID) ??
-              checkpointCards[0];
-            if (!downloadCard || (downloadCard.cardBod === 0 && downloadCard.cardEod === 0)) {
-              return null;
-            }
-            return (
-              <button
-                type="button"
-                className="primaryButton"
-                style={{ display: "inline-flex", alignItems: "center", gap: "4px" }}
-                onClick={() => onDownloadBodEod(downloadCard)}
-                title="Download BOD & EOD (BOD = Morning, EOD = Evening)"
-              >
-                📥 BOD &amp; EOD
-              </button>
-            );
-          })()}
         </div>
       </div>
 
@@ -509,8 +488,14 @@ export function RTPLDashboard({
       )}
 
       {!hideTimeCards && (
-        <div className="rtplTimeCardGrid" aria-label="RTPL fixed checkpoint cards">
-          {checkpointCards.map((card) => {
+        <div className="rtplTimeCardGrid" aria-label="RTPL BOD / EOD summary">
+          {/* Only the "Upload Time" baseline BOD/EOD table is shown. The
+              clock-time checkpoint cards (11:45 AM / 2:00 PM / 4:00 PM / 6:00 PM)
+              were removed per request; this single card carries the BOD/EOD
+              table and its download. */}
+          {checkpointCards
+            .filter((card) => card.id === RTPL_CARRY_FORWARD_TIME_CARD_ID)
+            .map((card) => {
             const badgeText = card.id === RTPL_CARRY_FORWARD_TIME_CARD_ID ? "BASELINE" : card.count > 0 ? "CHANGED" : "NO CHANGE";
             const badgeClass = card.id === RTPL_CARRY_FORWARD_TIME_CARD_ID ? "baseline" : card.count > 0 ? "changed" : "no-change";
 

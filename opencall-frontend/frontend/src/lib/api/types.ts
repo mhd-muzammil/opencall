@@ -192,6 +192,7 @@ export interface EditedReportRowResponse {
   workLocation: string | null;
   engineer: string | null;
   rtplStatus: string | null;
+  eveningRtplStatus: string | null;
   customerMail: string | null;
   rca: string | null;
   remarks: string | null;

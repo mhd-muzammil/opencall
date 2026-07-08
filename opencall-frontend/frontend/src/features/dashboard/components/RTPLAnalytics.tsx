@@ -424,6 +424,27 @@ export function RTPLDashboard({
           <span className="statusBadge neutral">
             {rtplAnalyticsRows.length} rows
           </span>
+          {(() => {
+            // Single BOD & EOD download (BOD = Morning, EOD = Evening). Replaces
+            // the per-time-card download now that the checkpoint cards are hidden.
+            const downloadCard =
+              checkpointCards.find((c) => c.id === RTPL_CARRY_FORWARD_TIME_CARD_ID) ??
+              checkpointCards[0];
+            if (!downloadCard || (downloadCard.cardBod === 0 && downloadCard.cardEod === 0)) {
+              return null;
+            }
+            return (
+              <button
+                type="button"
+                className="primaryButton"
+                style={{ display: "inline-flex", alignItems: "center", gap: "4px" }}
+                onClick={() => onDownloadBodEod(downloadCard)}
+                title="Download BOD & EOD (BOD = Morning, EOD = Evening)"
+              >
+                📥 BOD &amp; EOD
+              </button>
+            );
+          })()}
         </div>
       </div>
 

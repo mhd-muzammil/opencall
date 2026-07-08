@@ -222,7 +222,8 @@ const MANUAL_FIELD_BY_COLUMN: Partial<Record<string, ManualCarryForwardField>> =
 
 
 const EDITABLE_COLUMN_API_FIELD: Partial<Record<string, string>> = {
-  "RTPL status": "rtpl_status",
+  // "RTPL status" (Morning) is read-only; the editable status is "Evening status".
+  "Evening status": "evening_rtpl_status",
   "Current Remarks": "remarks",
   Segment: "segment",
   Engineer: "engineer",
@@ -240,6 +241,7 @@ const EDITED_RESPONSE_COLUMN: Partial<
   Record<string, keyof Pick<
     EditedReportRowResponse,
     | "rtplStatus"
+    | "eveningRtplStatus"
     | "segment"
     | "engineer"
     | "location"
@@ -252,6 +254,7 @@ const EDITED_RESPONSE_COLUMN: Partial<
   >>
 > = {
   "RTPL status": "rtplStatus",
+  "Evening status": "eveningRtplStatus",
   "Current Remarks": "remarks",
   Segment: "segment",
   Engineer: "engineer",
@@ -1680,9 +1683,12 @@ export default function DashboardPage() {
       const displayValue = column === "Case Created Time"
         ? formatDisplayDateTime(value)
         : value;
-      // "Current Remarks" is optional — an empty value stays blank rather than
-      // being flagged as a missing manual entry.
-      const emptyFallback = column === "Current Remarks" ? "" : MANUAL_ENTRY_REQUIRED;
+      // "Current Remarks" and "Evening status" are optional — an empty value
+      // stays blank rather than being flagged as a missing manual entry.
+      const emptyFallback =
+        column === "Current Remarks" || column === "Evening status"
+          ? ""
+          : MANUAL_ENTRY_REQUIRED;
       nextOutput[column] =
         typeof displayValue === "string" && displayValue.trim().length > 0
           ? displayValue
@@ -2515,7 +2521,7 @@ export default function DashboardPage() {
 
                   return (
                     <th key={column} className={tableColumnClassName(column)}>
-                      {column}
+                      {column === "RTPL status" ? "Morning status" : column}
                       {isFilterable && (
                         <ColumnFilterDropdown
                           column={column}
@@ -2564,7 +2570,12 @@ export default function DashboardPage() {
                             ? draftOutput[column]
                             : row.output[column];
                       const isManualRequired = value === MANUAL_ENTRY_REQUIRED;
-                      const isReadOnly = column === "S.no" || column === "Ticket ID";
+                      // "RTPL status" is now the read-only Morning (BOD) baseline;
+                      // employees edit the "Evening status" column instead.
+                      const isReadOnly =
+                        column === "S.no" ||
+                        column === "Ticket ID" ||
+                        column === "RTPL status";
                       const manualField = MANUAL_FIELD_BY_COLUMN[column];
                       const isCarriedForward =
                         manualField
@@ -2590,7 +2601,7 @@ export default function DashboardPage() {
                           }
                         >
                           {isEditing && !isReadOnly ? (
-                            column === "RTPL status" ? (
+                            column === "Evening status" ? (
                               <div style={{ display: "flex", gap: "4px", alignItems: "center" }}>
                                 <RTPLStatusDropdown
                                   value={String(draftOutput[column] ?? "")}
@@ -3248,6 +3259,7 @@ export default function DashboardPage() {
                         bodSnapshot={bodSnapshot}
                         onFixBod={handleFixBod}
                         onDownloadBodEod={handleDownloadBodEod}
+                        hideTimeCards={true}
                       />
                     )}
 

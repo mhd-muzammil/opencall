@@ -495,18 +495,22 @@ export function RTPLDashboard({
               table and its download. */}
           {checkpointCards
             .filter((card) => card.id === RTPL_CARRY_FORWARD_TIME_CARD_ID)
-            .map((card) => {
-            const badgeText = card.id === RTPL_CARRY_FORWARD_TIME_CARD_ID ? "BASELINE" : card.count > 0 ? "CHANGED" : "NO CHANGE";
-            const badgeClass = card.id === RTPL_CARRY_FORWARD_TIME_CARD_ID ? "baseline" : card.count > 0 ? "changed" : "no-change";
+            .flatMap((card) =>
+              ([
+                { mode: "bod", title: "BOD", showBod: true, showEod: false },
+                { mode: "eod", title: "EOD", showBod: false, showEod: true },
+                { mode: "both", title: "BOD & EOD", showBod: true, showEod: true },
+              ] as const).map((view) => {
+            const valueColCount = (view.showBod ? 1 : 0) + (view.showEod ? 1 : 0);
 
             return (
               <div
-                key={card.id}
-                className={`rtplTimeCard ${selectedRtplTimeCard?.id === card.id ? "active" : ""}`}
+                key={`${card.id}-${view.mode}`}
+                className="rtplTimeCard"
               >
                 <div className="rtplTimeCardHeader" onClick={() => openRtplCheckpointModal(card.id)}>
-                  <span className="rtplTimeCardTitle">{card.label}</span>
-                  <span className={`rtplTimeCardBadge ${badgeClass}`}>{badgeText}</span>
+                  <span className="rtplTimeCardTitle">{view.title}</span>
+                  <span className="rtplTimeCardBadge baseline">BASELINE</span>
                 </div>
 
                 {(() => {
@@ -603,15 +607,15 @@ export function RTPLDashboard({
                             <th colSpan={2} style={{ padding: "3px 6px", border: "1px solid #000000", textAlign: "left", fontSize: "10px" }}>
                               {formattedDate}
                             </th>
-                            <th colSpan={2} style={{ padding: "3px 6px", border: "1px solid #000000", textAlign: "right", fontSize: "10px" }}>
+                            <th colSpan={valueColCount} style={{ padding: "3px 6px", border: "1px solid #000000", textAlign: "right", fontSize: "10px" }}>
                               {regionLabel}
                             </th>
                           </tr>
                           <tr style={{ background: "#fef08a", color: "#000000", fontWeight: "bold" }}>
                             <th style={{ width: "30px", padding: "3px 4px", border: "1px solid #000000", textAlign: "center" }}>S.No</th>
                             <th style={{ padding: "3px 6px", border: "1px solid #000000", textAlign: "left" }}>Description</th>
-                            <th style={{ width: "40px", padding: "3px 4px", border: "1px solid #000000", textAlign: "center" }}>BOD</th>
-                            <th style={{ width: "40px", padding: "3px 4px", border: "1px solid #000000", textAlign: "center" }}>EOD</th>
+                            {view.showBod && <th style={{ width: "40px", padding: "3px 4px", border: "1px solid #000000", textAlign: "center" }}>BOD</th>}
+                            {view.showEod && <th style={{ width: "40px", padding: "3px 4px", border: "1px solid #000000", textAlign: "center" }}>EOD</th>}
                           </tr>
                         </thead>
                         <tbody>
@@ -650,8 +654,8 @@ export function RTPLDashboard({
                                 >
                                   {metric.desc}
                                 </td>
-                                {renderCell(bodVal, isAlert, isEodOnly, bodTickets)}
-                                {renderCell(eodVal, isAlert, false, eodTickets)}
+                                {view.showBod && renderCell(bodVal, isAlert, isEodOnly, bodTickets)}
+                                {view.showEod && renderCell(eodVal, isAlert, false, eodTickets)}
                               </tr>
                             );
                           })}
@@ -661,8 +665,8 @@ export function RTPLDashboard({
                   );
                 })()}
 
-                {/* Action Buttons Row */}
-                {((card.cardBod > 0 || card.cardEod > 0) || card.id === RTPL_CARRY_FORWARD_TIME_CARD_ID) && (
+                {/* Action row (Fix BOD + BOD & EOD download) only on the combined table */}
+                {view.mode === "both" && (
                   <div style={{ padding: "8px 12px", borderTop: "1px solid #e2e8f0", display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap", justifyContent: "flex-end" }}>
                     {/* BOD Fix button — only on Upload Time (carry-forward) card */}
                     {card.id === RTPL_CARRY_FORWARD_TIME_CARD_ID && (
@@ -729,7 +733,7 @@ export function RTPLDashboard({
                 )}
               </div>
             );
-          })}
+          }))}
         </div>
       )}
     </div>

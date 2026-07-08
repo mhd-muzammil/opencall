@@ -1263,6 +1263,13 @@ export default function DashboardPage() {
   const isBusyRef = useRef(isBusy);
   isBusyRef.current = isBusy;
 
+  // Referenced from the background poll to auto-switch onto a newer report
+  // without rebuilding the poll timer on every render. `restoreHistorySession`
+  // is a hoisted function declaration, so it is defined here even though it
+  // appears later in the file; reassign each render to keep the ref current.
+  const restoreHistorySessionRef = useRef(restoreHistorySession);
+  restoreHistorySessionRef.current = restoreHistorySession;
+
   useEffect(() => {
     if (!session || !report?.reportId || !upload) return;
 
@@ -1277,6 +1284,7 @@ export default function DashboardPage() {
     const currentReportDate = report.reportDate;
     const currentRegionId = regionId;
     const currentReportId = report.reportId;
+    const currentSessionId = report.sessionId;
 
     let timerId: NodeJS.Timeout;
 
@@ -1340,6 +1348,38 @@ export default function DashboardPage() {
           }
           return latestStatusChanges;
         });
+
+        // Auto-switch: when a NEWER completed report exists for the same day and
+        // region (e.g. the SUPER_ADMIN uploaded fresh files), move this user
+        // onto it so everyone converges on the latest report. The newer report
+        // already carries forward this report's accumulated work. Never switch
+        // while the user is mid-edit — that would interrupt them and drop the
+        // half-typed row; the switch simply waits for the next idle poll.
+        if (editingSerialNoRef.current === null) {
+          const sessions = await getReportHistory(token);
+          const newest = sessions
+            .filter(
+              (s) =>
+                s.status === "COMPLETED" &&
+                s.reportId !== null &&
+                s.reportDate === currentReportDate &&
+                s.regionId === currentRegionId,
+            )
+            .sort((a, b) => b.createdAt.localeCompare(a.createdAt))[0];
+
+          if (
+            newest &&
+            newest.id !== currentSessionId &&
+            newest.reportId !== currentReportId &&
+            restoreHistorySessionRef.current
+          ) {
+            await restoreHistorySessionRef.current(newest, {
+              closeHistoryPanel: true,
+              successMessage: "Loaded the latest uploaded report for this day.",
+            });
+            return; // effect re-initialises on the new report; stop this cycle
+          }
+        }
 
       } catch (error) {
         if (isApiAuthError(error)) {

@@ -2200,6 +2200,36 @@ export default function DashboardPage() {
     }
   };
 
+  // The RTPL panel is embedded at the top of the records view and doubles as the
+  // records filter. Its scope/region tabs previously only re-computed the
+  // analytics cards, leaving the records table below unchanged — so selecting
+  // e.g. Trade + Salem "did nothing" to the list. These handlers mirror the tab
+  // selection into the records-table filter state and clear the status column
+  // filter, so the table shows the full scope+region set to drill into. Region
+  // and scope are independent — changing one keeps the other.
+  const selectRecordsRtplScope = (scope: RtplCaseScope) => {
+    setSelectedRtplCaseScope(scope);
+    setSelectedWoOtcCode(null);
+    setShowClosedOnly(false);
+    setShowConsumerOnly(false);
+    setShowCommercialOnly(false);
+    setShowCissOnly(false);
+    setShowRcaOnly(false);
+    setShowPcOnly(false);
+    setPrintCaseFilter(null);
+    setShowNonWarrantyOnly(false);
+    setShowWarrantyOnly(scope === "warranty");
+    setShowTradeOnly(scope === "trade");
+    colFilters.resetAll();
+  };
+
+  const selectRecordsRtplRegion = (value: string) => {
+    setSelectedRtplRegion(value);
+    setSelectedRegion(value === ALL_REGIONS_FILTER ? null : value);
+    setSelectedWoOtcCode(null);
+    colFilters.resetAll();
+  };
+
   // Open rows scoped to the region chosen in the overview dropdown (null/"ALL"
   // → every region). Drives the operational-health header cards below.
   const regionScopedActiveRows = useMemo(() => {
@@ -3429,10 +3459,10 @@ export default function DashboardPage() {
                         rtplAnalyticsRows={rtplAnalyticsRows}
                         rtplCaseScopeOptions={rtplCaseScopeOptions}
                         selectedRtplCaseScope={selectedRtplCaseScope}
-                        setSelectedRtplCaseScope={setSelectedRtplCaseScope}
+                        setSelectedRtplCaseScope={selectRecordsRtplScope}
                         rtplRegionOptions={rtplRegionOptions}
                         selectedRtplRegion={selectedRtplRegion}
-                        setSelectedRtplRegion={setSelectedRtplRegion}
+                        setSelectedRtplRegion={selectRecordsRtplRegion}
                         rtplTimeCards={rtplTimeCards}
                         selectedRtplTimeCard={selectedRtplTimeCard}
                         openRtplCheckpointModal={openRtplCheckpointModal}

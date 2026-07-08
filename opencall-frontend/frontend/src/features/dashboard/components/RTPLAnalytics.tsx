@@ -145,10 +145,13 @@ export function RTPLDashboard({
   rtplAnalyticsRows: ReportRow[];
   rtplCaseScopeOptions: Array<{ value: RtplCaseScope; label: string; description: string; count: number }>;
   selectedRtplCaseScope: RtplCaseScope;
-  setSelectedRtplCaseScope: Dispatch<SetStateAction<RtplCaseScope>>;
+  // Accepts a plain value setter or a React state dispatcher. The records-view
+  // instance passes a handler that also re-filters the records table, not just
+  // the analytics cards.
+  setSelectedRtplCaseScope: (value: RtplCaseScope) => void;
   rtplRegionOptions: Array<{ value: string; label: string; count: number }>;
   selectedRtplRegion: string;
-  setSelectedRtplRegion: Dispatch<SetStateAction<string>>;
+  setSelectedRtplRegion: (value: string) => void;
   rtplTimeCards: RtplTimeCard[];
   selectedRtplTimeCard: RtplTimeCard | null;
   openRtplCheckpointModal: (cardId: RtplTimeCardId, status?: string | null) => void;

@@ -82,18 +82,44 @@ export function EditRecordModal({
             }}
           >
             <div className="formFieldGroup">
-              {/* RTPL Status */}
+              {/* Morning Status (BOD) — read-only. Auto-set from the previous
+                  day's Evening status; the team works on Evening, not this. */}
               <div className="formField">
-                <label htmlFor="modal-rtpl-status">RTPL Status</label>
+                <label htmlFor="modal-morning-status">Morning Status</label>
+                <input
+                  id="modal-morning-status"
+                  className="modalInput"
+                  style={{
+                    backgroundColor: "rgba(120,120,120,0.10)",
+                    color: "var(--muted, #6b7280)",
+                    cursor: "default",
+                  }}
+                  value={
+                    String(draftOutput["RTPL status"] ?? "").trim() &&
+                    String(draftOutput["RTPL status"]) !== MANUAL_ENTRY_REQUIRED
+                      ? String(draftOutput["RTPL status"])
+                      : "Not set"
+                  }
+                  readOnly
+                  tabIndex={-1}
+                  aria-readonly="true"
+                  title="Morning (BOD) status — carried from the previous day's Evening status; read-only"
+                />
+              </div>
+
+              {/* Evening Status (EOD) — the editable status the team updates
+                  through the day. Saved to evening_rtpl_status. */}
+              <div className="formField">
+                <label htmlFor="modal-evening-status">Evening Status</label>
                 <div className="statusFieldContainer">
                   <RTPLStatusDropdown
-                    value={String(draftOutput["RTPL status"] ?? "")}
+                    value={String(draftOutput["Evening status"] ?? "")}
                     manualEntryRequiredLabel="Entry"
                     groups={rtplStatusGroups}
                     onChange={(selected) => {
                       setDraftOutput((current) => ({
                         ...current,
-                        "RTPL status": selected,
+                        "Evening status": selected,
                       }));
                     }}
                   />

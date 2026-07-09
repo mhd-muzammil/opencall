@@ -242,7 +242,9 @@ const MANUAL_FIELD_BY_COLUMN: Partial<Record<string, ManualCarryForwardField>> =
 
 
 const EDITABLE_COLUMN_API_FIELD: Partial<Record<string, string>> = {
-  // "RTPL status" (Morning) is read-only; the editable status is "Evening status".
+  // Both statuses are editable: "RTPL status" is the Morning (BOD) column and
+  // "Evening status" is the Evening (EOD) column.
+  "RTPL status": "rtpl_status",
   "Evening status": "evening_rtpl_status",
   "Current Remarks": "remarks",
   Segment: "segment",
@@ -2639,14 +2641,13 @@ export default function DashboardPage() {
                               ? draftOutput[column]
                               : (row.output as Record<string, string | number>)[column];
                       const isManualRequired = value === MANUAL_ENTRY_REQUIRED;
-                      // "RTPL status" is now the read-only Morning (BOD) baseline;
-                      // employees edit the "Evening status" column instead. Raw
-                      // Excel columns are always read-only.
+                      // Both the Morning ("RTPL status") and Evening ("Evening
+                      // status") columns are editable. Raw Excel columns and the
+                      // identity columns are always read-only.
                       const isReadOnly =
                         isRawColumn ||
                         column === "S.no" ||
-                        column === "Ticket ID" ||
-                        column === "RTPL status";
+                        column === "Ticket ID";
                       const manualField = MANUAL_FIELD_BY_COLUMN[column];
                       const isCarriedForward =
                         manualField
@@ -2672,7 +2673,7 @@ export default function DashboardPage() {
                           }
                         >
                           {isEditing && !isReadOnly ? (
-                            column === "Evening status" ? (
+                            column === "Evening status" || column === "RTPL status" ? (
                               <div style={{ display: "flex", gap: "4px", alignItems: "center" }}>
                                 <RTPLStatusDropdown
                                   value={String(draftOutput[column] ?? "")}

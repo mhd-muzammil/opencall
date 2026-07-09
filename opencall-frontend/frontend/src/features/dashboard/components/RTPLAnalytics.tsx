@@ -286,52 +286,20 @@ export function RTPLDashboard({
 
   // 2. Gather status counts and active statuses for each card
   const allActiveStatuses = new Set<string>();
-  const cardStatusCountsList = rtplTimeCards.map((card, cardIndex) => {
-    const isCarryForward = card.id === RTPL_CARRY_FORWARD_TIME_CARD_ID;
-
-    const rowsWithStatuses = rowStatusesList.map(({ ticketId, bodStatus, uploadTimeEodStatus }) => {
-      // EOD for the Upload Time (carry-forward) card:
-      //   - Snapshot set → current live status (reflects real-time edits as EOD)
-      //   - No snapshot → old carry-forward logic (uploadTimeEodStatus)
-      let eodStatus = isCarryForward
-        ? (bodSnapshot !== null
-          ? String(rtplAnalyticsRows.find(
-              (r) => String(r.output["Ticket ID"] || "").trim() === ticketId
-            )?.output["RTPL status"] || "").trim()
-          : uploadTimeEodStatus)
-        : bodStatus;
-
-      if (!isCarryForward) {
-        // Collect changes up to cardIndex
-        const changesUpToCard: any[] = [];
-        for (let j = 1; j <= cardIndex; j++) {
-          const prevCard = rtplTimeCards[j];
-          if (prevCard) {
-            prevCard.details.forEach((detail) => {
-              if (detail.type === "change" && detail.ticketId === ticketId) {
-                changesUpToCard.push(detail);
-              }
-            });
-          }
-        }
-
-        if (changesUpToCard.length > 0) {
-          const sortedChanges = [...changesUpToCard].sort((a, b) =>
-            String(a.changedAt || "").localeCompare(String(b.changedAt || ""))
-          );
-          const latestTo = String(sortedChanges[sortedChanges.length - 1].toStatus || "").trim();
-          if (latestTo) {
-            eodStatus = latestTo;
-          }
-        }
-      }
-
-      return {
-        ticketId,
-        bodStatus,
-        eodStatus,
-      };
-    });
+  const cardStatusCountsList = rtplTimeCards.map((card) => {
+    // BOD = the Morning ("RTPL status") column; EOD = the "Evening status"
+    // column. Both are read straight from each row so the BOD/EOD tables match
+    // the records grid exactly. Placeholder/blank values are treated as "no
+    // status" so they are not counted (Evening is blank until worked).
+    const cleanStatus = (value: string): string => {
+      const trimmed = (value ?? "").trim();
+      return !trimmed || trimmed.toLowerCase() === "manual entry required" ? "" : trimmed;
+    };
+    const rowsWithStatuses = rtplAnalyticsRows.map((r) => ({
+      ticketId: String(r.output["Ticket ID"] || "").trim(),
+      bodStatus: cleanStatus(String(r.output["RTPL status"] ?? "")),
+      eodStatus: cleanStatus(String(r.output["Evening status"] ?? "")),
+    }));
 
     const cardBod = rowsWithStatuses.filter((r) => r.bodStatus).length;
     const cardEod = rowsWithStatuses.filter((r) => r.eodStatus).length;

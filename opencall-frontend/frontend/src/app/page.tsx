@@ -1,6 +1,6 @@
 "use client";
 
-import { DAILY_CALL_PLAN_COLUMNS, RTPL_STATUS_OPTIONS, ASP_CODE_REGION_MAP } from "@opencall/shared";
+import { DAILY_CALL_PLAN_COLUMNS, RTPL_STATUS_OPTIONS, ASP_CODE_REGION_MAP, type DailyCallPlanColumn } from "@opencall/shared";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { ColumnFilterDropdown } from "../components/ColumnFilterDropdown";
 import { AppHeader } from "../components/AppHeader";
@@ -132,6 +132,8 @@ import {
 import type { DropdownEngineer } from "../lib/api/types";
 import { LoginScreen, SessionLoadingScreen } from "../features/auth/LoginScreen";
 import AdminEngineersPage from "./admin/engineers/page";
+import { RecordFormatPage } from "../features/dashboard/components/RecordFormatPage";
+import { getRecordLayout } from "../lib/recordLayoutApiClient";
 import { AdminRtplStatusesManager } from "../components/AdminRtplStatusesManager";
 import {
   downloadReportAsXlsx,
@@ -410,13 +412,16 @@ export default function DashboardPage() {
   // from the rendered table only — exports always output the full column set.
   // "S.no" and "Ticket ID" are always visible (Ticket ID may be frozen-left).
   const [hiddenColumns, setHiddenColumns] = useState<Set<string>>(new Set());
+  // The user's saved per-user records-column layout (ordered, visible-only), or
+  // null when they use the default full layout. Drives visibleColumns + export.
+  const [recordLayout, setRecordLayout] = useState<string[] | null>(null);
   const [isColumnsMenuOpen, setIsColumnsMenuOpen] = useState(false);
   // Whether the records table is expanded to a full-screen overlay.
   const [isRecordsTableMaximized, setIsRecordsTableMaximized] = useState(false);
   const columnsMenuRef = useRef<HTMLDivElement | null>(null);
   // Whether the stale-Flex-Status "View all" details modal is open.
   const [isStaleModalOpen, setIsStaleModalOpen] = useState(false);
-  const [workspaceView, setWorkspaceView] = useState<"overview" | "records" | "rtpl" | "rtpl-dashboard" | "pivot" | "flex" | "productivity" | "tn-view-status" | "sla-tat" | "flex-eod-bod" | "admin-engineers" | "admin-rtpl-statuses">("overview");
+  const [workspaceView, setWorkspaceView] = useState<"overview" | "records" | "rtpl" | "rtpl-dashboard" | "pivot" | "flex" | "productivity" | "tn-view-status" | "sla-tat" | "flex-eod-bod" | "admin-engineers" | "admin-rtpl-statuses" | "record-format">("overview");
   const [pivotActiveStatus, setPivotActiveStatus] = useState<string | null>(null);
   const [pivotActiveWipAging, setPivotActiveWipAging] = useState<string | null>(null);
 
@@ -832,10 +837,17 @@ export default function DashboardPage() {
 
   // View-only set of columns currently rendered in the records table. Driven by
   // hiddenColumns; the underlying data/exports are untouched.
-  const visibleColumns = useMemo(
-    () => DAILY_CALL_PLAN_COLUMNS.filter((c) => !hiddenColumns.has(c)),
-    [hiddenColumns],
-  );
+  // Base column set/order = the user's saved layout (if any), else the full
+  // default. The session "Columns" toggle (hiddenColumns) then hides on top.
+  const visibleColumns = useMemo(() => {
+    const base: DailyCallPlanColumn[] =
+      recordLayout && recordLayout.length > 0
+        ? (recordLayout.filter((c) =>
+            (DAILY_CALL_PLAN_COLUMNS as readonly string[]).includes(c),
+          ) as DailyCallPlanColumn[])
+        : [...DAILY_CALL_PLAN_COLUMNS];
+    return base.filter((c) => !hiddenColumns.has(c));
+  }, [recordLayout, hiddenColumns]);
 
   // Keep the top proxy scrollbar's spacer width matched to the inner <table>'s
   // real content width so the proxy thumb and the table scroll in lock-step.
@@ -1247,6 +1259,9 @@ export default function DashboardPage() {
         .catch(handleBackgroundError);
       getRtplStatusesDropdown(session.token)
         .then((res) => setRtplStatusGroups(buildStatusGroups(res.statuses)))
+        .catch(handleBackgroundError);
+      getRecordLayout(session.token)
+        .then((layout) => setRecordLayout(layout?.orderedColumns ?? null))
         .catch(handleBackgroundError);
     } else {
       setHistorySessions([]);
@@ -2948,6 +2963,16 @@ export default function DashboardPage() {
             </button>
           )}
 
+          <button
+            type="button"
+            className={`sidebarItem ${workspaceView === "record-format" ? "active" : ""}`}
+            onClick={() => setWorkspaceView("record-format")}
+          >
+            <span className="sidebarIcon">
+              <span>🧩</span> <span className="sidebarText">Record Format</span>
+            </span>
+          </button>
+
           <div className="sidebarSection">Utilities & System</div>
 
           {session.user.role === "SUPER_ADMIN" && (
@@ -3013,7 +3038,7 @@ export default function DashboardPage() {
           onOpenHistory={() => setIsHistoryPanelOpen(true)}
           onGenerateReport={() => void handleGenerate()}
           onExportXlsx={() => exportReport(downloadReportAsXlsx)}
-          onExportCsv={() => exportReport(downloadReportAsExcel)}
+          onExportCsv={() => exportReport((r) => downloadReportAsExcel(r, visibleColumns))}
           onLogout={handleLogout}
         />
 
@@ -3368,6 +3393,14 @@ export default function DashboardPage() {
                       <AdminEngineersPage />
                     )}
 
+                    {workspaceView === "record-format" && session && (
+                      <RecordFormatPage
+                        token={session.token}
+                        initialColumns={recordLayout}
+                        onSaved={(cols) => setRecordLayout(cols)}
+                      />
+                    )}
+
                     {workspaceView === "admin-rtpl-statuses" && (
                       <AdminRtplStatusesManager
                         onStatusesChanged={() => {
@@ -3540,7 +3573,7 @@ export default function DashboardPage() {
                           </button>
                           <button
                             className="downloadBtn csvBtn"
-                            onClick={() => exportReport(downloadReportAsExcel)}
+                            onClick={() => exportReport((r) => downloadReportAsExcel(r, visibleColumns))}
                           >
                             Download CSV
                           </button>

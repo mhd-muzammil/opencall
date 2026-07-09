@@ -145,8 +145,9 @@ function coerceNumericCell(
 
 export function mapRowToStandardExport(
   row: GeneratedReportResponse["rows"][number],
+  columns: readonly (typeof STANDARD_EXPORT_COLUMNS)[number][] = STANDARD_EXPORT_COLUMNS,
 ): ExportCellValue[] {
-  return STANDARD_EXPORT_COLUMNS.map((col) => {
+  return columns.map((col) => {
     const value = row.output[col];
 
     if (value !== null && value !== undefined && value !== "") {
@@ -188,23 +189,32 @@ const SNO_COLUMN_INDEX = STANDARD_EXPORT_COLUMNS.indexOf("S.no");
 function withSequentialSerial(
   cells: ExportCellValue[],
   index: number,
+  snoIndex: number = SNO_COLUMN_INDEX,
 ): ExportCellValue[] {
-  if (SNO_COLUMN_INDEX >= 0) {
-    cells[SNO_COLUMN_INDEX] = index + 1;
+  if (snoIndex >= 0) {
+    cells[snoIndex] = index + 1;
   }
   return cells;
 }
 
+// Header labels for export mirror the on-screen relabels (the stored column key
+// stays the same). Keep in sync with the records grid.
+const EXPORT_HEADER_LABEL: Partial<Record<string, string>> = {
+  "RTPL status": "Morning status",
+};
+
 export function buildReportExportMatrix(
   report: GeneratedReportResponse,
+  columns: readonly (typeof STANDARD_EXPORT_COLUMNS)[number][] = STANDARD_EXPORT_COLUMNS,
 ): ExportCellValue[][] {
-  const headers = [...STANDARD_EXPORT_COLUMNS];
+  const headers = columns.map((c) => EXPORT_HEADER_LABEL[c] ?? c);
+  const snoIndex = columns.indexOf("S.no");
   const data: ExportCellValue[][] = [headers];
 
   report.rows
     .filter((item) => !hasRequestToCancelFlexStatus(item))
     .forEach((row, index) => {
-      data.push(withSequentialSerial(mapRowToStandardExport(row), index));
+      data.push(withSequentialSerial(mapRowToStandardExport(row, columns), index, snoIndex));
     });
 
   return data;
@@ -313,8 +323,11 @@ export function buildPivotMatrix(
   return [...filterRows, spacerRow, valueBanner, columnHeader, ...body, grandTotalRow];
 }
 
-export function downloadReportAsExcel(report: GeneratedReportResponse): void {
-  const data = buildReportExportMatrix(report);
+export function downloadReportAsExcel(
+  report: GeneratedReportResponse,
+  columns?: readonly (typeof STANDARD_EXPORT_COLUMNS)[number][],
+): void {
+  const data = buildReportExportMatrix(report, columns ?? STANDARD_EXPORT_COLUMNS);
   const escapeCSV = (
     value: string | number | boolean | null | undefined,
   ): string => {

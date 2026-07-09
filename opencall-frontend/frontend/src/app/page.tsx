@@ -837,16 +837,22 @@ export default function DashboardPage() {
   // View-only set of columns currently rendered in the records table. Driven by
   // hiddenColumns; the underlying data/exports are untouched.
   // Base column set/order = the user's saved layout (if any), else the full
-  // default. The session "Columns" toggle (hiddenColumns) then hides on top.
-  const visibleColumns = useMemo(() => {
-    const base: DailyCallPlanColumn[] =
+  // default. The layout may include raw Excel headers (not just the standard
+  // report columns). The session "Columns" toggle (hiddenColumns) hides on top.
+  const visibleColumns = useMemo<string[]>(() => {
+    const base: string[] =
       recordLayout && recordLayout.length > 0
-        ? (recordLayout.filter((c) =>
-            (DAILY_CALL_PLAN_COLUMNS as readonly string[]).includes(c),
-          ) as DailyCallPlanColumn[])
+        ? recordLayout
         : [...DAILY_CALL_PLAN_COLUMNS];
     return base.filter((c) => !hiddenColumns.has(c));
   }, [recordLayout, hiddenColumns]);
+
+  // A column is "standard" if it is one of the report's mapped columns; anything
+  // else is a raw Excel header rendered read-only from the row's raw Flex data.
+  const STANDARD_COLUMN_SET = useMemo(
+    () => new Set<string>(DAILY_CALL_PLAN_COLUMNS as readonly string[]),
+    [],
+  );
 
   // Keep the top proxy scrollbar's spacer width matched to the inner <table>'s
   // real content width so the proxy thumb and the table scroll in lock-step.
@@ -2577,16 +2583,24 @@ export default function DashboardPage() {
                     }
                   >
                     {visibleColumns.map((column) => {
+                      // Raw Excel headers (not standard report columns) are
+                      // merged into row.output by the backend and render
+                      // read-only.
+                      const isRawColumn = !STANDARD_COLUMN_SET.has(column);
                       const value =
                         column === "S.no"
                           ? visibleSerialNo
-                          : isEditing
-                            ? draftOutput[column]
-                            : row.output[column];
+                          : isRawColumn
+                            ? (row.output as Record<string, string | number>)[column] ?? ""
+                            : isEditing
+                              ? draftOutput[column]
+                              : (row.output as Record<string, string | number>)[column];
                       const isManualRequired = value === MANUAL_ENTRY_REQUIRED;
                       // "RTPL status" is now the read-only Morning (BOD) baseline;
-                      // employees edit the "Evening status" column instead.
+                      // employees edit the "Evening status" column instead. Raw
+                      // Excel columns are always read-only.
                       const isReadOnly =
+                        isRawColumn ||
                         column === "S.no" ||
                         column === "Ticket ID" ||
                         column === "RTPL status";

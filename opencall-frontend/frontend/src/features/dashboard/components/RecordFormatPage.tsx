@@ -1,8 +1,5 @@
 import { useState } from "react";
-import { DAILY_CALL_PLAN_COLUMNS } from "@opencall/shared";
 import { saveRecordLayout, resetRecordLayout } from "../../../lib/recordLayoutApiClient";
-
-const CATALOG = DAILY_CALL_PLAN_COLUMNS as readonly string[];
 
 // Display label overrides (the stored key stays the report column key).
 const LABEL_OVERRIDE: Record<string, string> = {
@@ -15,12 +12,12 @@ interface ColumnItem {
   visible: boolean;
 }
 
-function buildInitial(orderedColumns: string[] | null): ColumnItem[] {
+function buildInitial(orderedColumns: string[] | null, catalog: readonly string[]): ColumnItem[] {
   if (!orderedColumns || orderedColumns.length === 0) {
-    return CATALOG.map((column) => ({ column, visible: true }));
+    return catalog.map((column) => ({ column, visible: true }));
   }
-  const inLayout = orderedColumns.filter((c) => CATALOG.includes(c));
-  const rest = CATALOG.filter((c) => !inLayout.includes(c));
+  const inLayout = orderedColumns.filter((c) => catalog.includes(c));
+  const rest = catalog.filter((c) => !inLayout.includes(c));
   return [
     ...inLayout.map((column) => ({ column, visible: true })),
     ...rest.map((column) => ({ column, visible: false })),
@@ -30,13 +27,20 @@ function buildInitial(orderedColumns: string[] | null): ColumnItem[] {
 export function RecordFormatPage({
   token,
   initialColumns,
+  catalog,
+  extraColumns = [],
   onSaved,
 }: Readonly<{
   token: string;
   initialColumns: string[] | null;
+  /** Full selectable column set (standard report columns + raw Excel headers). */
+  catalog: string[];
+  /** Raw Excel headers (a subset of catalog) — tagged as "Excel field". */
+  extraColumns?: string[];
   onSaved: (orderedColumns: string[] | null) => void;
 }>) {
-  const [items, setItems] = useState<ColumnItem[]>(() => buildInitial(initialColumns));
+  const extraSet = new Set(extraColumns);
+  const [items, setItems] = useState<ColumnItem[]>(() => buildInitial(initialColumns, catalog));
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<{ text: string; tone: "ok" | "error" } | null>(null);
 
@@ -82,7 +86,7 @@ export function RecordFormatPage({
     try {
       await resetRecordLayout(token);
       onSaved(null);
-      setItems(buildInitial(null));
+      setItems(buildInitial(null, catalog));
       setMessage({ text: "Reset to the default layout (all columns, default order).", tone: "ok" });
     } catch (error) {
       setMessage({ text: `Reset failed: ${(error as Error).message}`, tone: "error" });
@@ -156,6 +160,7 @@ export function RecordFormatPage({
             </label>
 
             <span className="rfName">{label(it.column)}</span>
+            {extraSet.has(it.column) && <span className="rfTag">Excel field</span>}
             <span className={`rfState ${it.visible ? "on" : "off"}`}>
               {it.visible ? "Shown" : "Hidden"}
             </span>

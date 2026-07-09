@@ -143,18 +143,26 @@ function coerceNumericCell(
   return value;
 }
 
+const STANDARD_COLUMN_SET = new Set<string>(STANDARD_EXPORT_COLUMNS);
+
 export function mapRowToStandardExport(
   row: GeneratedReportResponse["rows"][number],
-  columns: readonly (typeof STANDARD_EXPORT_COLUMNS)[number][] = STANDARD_EXPORT_COLUMNS,
+  columns: readonly string[] = STANDARD_EXPORT_COLUMNS,
 ): ExportCellValue[] {
   return columns.map((col) => {
-    const value = row.output[col];
+    const value = (row.output as Record<string, string | number | undefined>)[col];
+
+    // Raw Excel headers (not standard report columns) are merged into output by
+    // the backend; emit their value as-is (no placeholder / carry-forward logic).
+    if (!STANDARD_COLUMN_SET.has(col)) {
+      return value === null || value === undefined ? "" : value;
+    }
 
     if (value !== null && value !== undefined && value !== "") {
       if (value === MANUAL_ENTRY_REQUIRED) {
         return MANUAL_ENTRY_EXPORT_LABEL;
       }
-      return coerceNumericCell(col, value);
+      return coerceNumericCell(col as (typeof STANDARD_EXPORT_COLUMNS)[number], value);
     }
 
     if (!row.carryForward.closedSyntheticRow) {
@@ -205,7 +213,7 @@ const EXPORT_HEADER_LABEL: Partial<Record<string, string>> = {
 
 export function buildReportExportMatrix(
   report: GeneratedReportResponse,
-  columns: readonly (typeof STANDARD_EXPORT_COLUMNS)[number][] = STANDARD_EXPORT_COLUMNS,
+  columns: readonly string[] = STANDARD_EXPORT_COLUMNS,
 ): ExportCellValue[][] {
   const headers = columns.map((c) => EXPORT_HEADER_LABEL[c] ?? c);
   const snoIndex = columns.indexOf("S.no");
@@ -325,7 +333,7 @@ export function buildPivotMatrix(
 
 export function downloadReportAsExcel(
   report: GeneratedReportResponse,
-  columns?: readonly (typeof STANDARD_EXPORT_COLUMNS)[number][],
+  columns?: readonly string[],
 ): void {
   const data = buildReportExportMatrix(report, columns ?? STANDARD_EXPORT_COLUMNS);
   const escapeCSV = (

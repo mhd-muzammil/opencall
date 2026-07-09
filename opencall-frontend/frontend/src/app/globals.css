@@ -8432,6 +8432,17 @@ td {
   background: #f1f5f9;
   color: #94a3b8;
 }
+.rfTag {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  color: #0369a1;
+  background: #e0f2fe;
+  border: 1px solid #bae6fd;
+  border-radius: 999px;
+  padding: 1px 7px;
+}
 .rfSwitch {
   position: relative;
   display: inline-flex;

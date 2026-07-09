@@ -2,12 +2,14 @@
 
 import { useEffect, useState } from "react";
 import { readSession } from "../../../lib/session";
-import { getRecordLayout } from "../../../lib/recordLayoutApiClient";
+import { getRecordLayout, getRecordColumnsCatalog } from "../../../lib/recordLayoutApiClient";
 import { RecordFormatPage } from "../../../features/dashboard/components/RecordFormatPage";
 
 export default function AdminRecordFormatPage() {
   const [token, setToken] = useState<string | null>(null);
   const [initialColumns, setInitialColumns] = useState<string[] | null>(null);
+  const [catalog, setCatalog] = useState<string[]>([]);
+  const [extraColumns, setExtraColumns] = useState<string[]>([]);
   const [loaded, setLoaded] = useState(false);
 
   useEffect(() => {
@@ -17,9 +19,15 @@ export default function AdminRecordFormatPage() {
       return;
     }
     setToken(session.token);
-    getRecordLayout(session.token)
-      .then((layout) => setInitialColumns(layout?.orderedColumns ?? null))
-      .catch(() => setInitialColumns(null))
+    Promise.all([
+      getRecordLayout(session.token).catch(() => null),
+      getRecordColumnsCatalog(session.token).catch(() => ({ standard: [], extra: [], columns: [] })),
+    ])
+      .then(([layout, cat]) => {
+        setInitialColumns(layout?.orderedColumns ?? null);
+        setCatalog(cat.columns);
+        setExtraColumns(cat.extra);
+      })
       .finally(() => setLoaded(true));
   }, []);
 
@@ -45,6 +53,8 @@ export default function AdminRecordFormatPage() {
     <RecordFormatPage
       token={token}
       initialColumns={initialColumns}
+      catalog={catalog}
+      extraColumns={extraColumns}
       onSaved={() => {}}
     />
   );

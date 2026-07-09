@@ -17,6 +17,24 @@ function authHeaders(token: string): HeadersInit {
   };
 }
 
+export interface RecordColumnCatalog {
+  /** Standard report columns (the fixed 27). */
+  standard: string[];
+  /** Extra raw Excel headers not represented by a standard column. */
+  extra: string[];
+  /** standard + extra, in order — the full selectable set. */
+  columns: string[];
+}
+
+/** All columns a user can choose from: standard report columns + raw Excel headers. */
+export async function getRecordColumnsCatalog(token: string): Promise<RecordColumnCatalog> {
+  const response = await fetch(url("/api/v1/record-layout/catalog"), {
+    headers: authHeaders(token),
+    cache: "no-store",
+  });
+  return readJson<RecordColumnCatalog>(response);
+}
+
 /** The current user's saved records-grid layout, or null when not customised. */
 export async function getRecordLayout(token: string): Promise<RecordLayout | null> {
   const response = await fetch(url("/api/v1/record-layout"), {

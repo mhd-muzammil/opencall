@@ -16,7 +16,11 @@ import {
   isWarrantyCase,
   isPrintCase as isPrintTypeCase,
 } from "../features/dashboard/utils/caseClassification";
-import * as XLSX from "xlsx";
+// Runtime `xlsx` (~900KB) is loaded lazily at export time so it stays out of the
+// initial page bundle. Only the type namespace is imported statically (erased at
+// build). Every function that touches the workbook API is async and awaits this.
+import type * as XLSXNS from "xlsx";
+const loadXlsx = (): Promise<typeof import("xlsx")> => import("xlsx");
 
 // A call is treated as "closed" when its (current or previous) RTPL status reads
 // as closed — WO Closed, Physically Closed, Partner Complete, etc.
@@ -395,11 +399,12 @@ function triggerDownload(bytes: Uint8Array, filename: string, mime: string): voi
 // Fallback when the PivotTable template can't be fetched: a plain two-sheet
 // workbook (Open + Closed) with no pivot, so the export still works before the
 // template asset is in place.
-function downloadDataSheetsWorkbook(
+async function downloadDataSheetsWorkbook(
   openAoa: ExportCellValue[][],
   closedAoa: ExportCellValue[][],
   filename: string,
-): void {
+): Promise<void> {
+  const XLSX = await loadXlsx();
   const headers = openAoa[0] ?? [];
   const wb = XLSX.utils.book_new();
 
@@ -442,17 +447,18 @@ export async function downloadReportAsXlsx(
       `Native PivotTable template (${PIVOT_TEMPLATE_URL}) unavailable; exporting data sheets only.`,
       error,
     );
-    downloadDataSheetsWorkbook(openCallAoa, closedCallsAoa, filename);
+    await downloadDataSheetsWorkbook(openCallAoa, closedCallsAoa, filename);
   }
 }
 
-export function downloadRegionSummaryExcel(
+export async function downloadRegionSummaryExcel(
   regionName: string,
   reportDate: string,
   rows: readonly GeneratedReportResponse["rows"][number][],
   isChennaiStyle?: boolean,
   isBod?: boolean,
-): void {
+): Promise<void> {
+  const XLSX = await loadXlsx();
   const isChennai = isChennaiStyle !== undefined ? isChennaiStyle : regionName.toLowerCase().includes("chennai");
 
   const formatDisplayDateOnly = (dateStr: string): string => {
@@ -533,7 +539,7 @@ export function downloadRegionSummaryExcel(
   const isPrintCase = isPrintTypeCase;
 
   let aoaData: (string | number)[][];
-  let merges: XLSX.Range[] = [];
+  let merges: XLSXNS.Range[] = [];
   let colWidths: { wch: number }[] = [];
 
   if (isChennai) {
@@ -689,12 +695,13 @@ export function downloadRegionSummaryExcel(
   XLSX.writeFile(wb, `${regionName}_Region_Summary_${reportDate}.xlsx`);
 }
 
-export function downloadEngineerProductivityExcel(
+export async function downloadEngineerProductivityExcel(
   regionName: string,
   dateLabel: string,
   list: any[],
   totalAttended: number,
-): void {
+): Promise<void> {
+  const XLSX = await loadXlsx();
   const aoaData = [
     ["Date " + dateLabel, "", "", "", "", "", "", ""],
     ["S.No", "Engineer Name", "Assigned", "Attended", "Closed", "Part ordered", "Under Observation", "CX Reschedule"],

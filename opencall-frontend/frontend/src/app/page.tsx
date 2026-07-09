@@ -140,9 +140,9 @@ import {
   downloadRegionSummaryExcel,
   downloadEngineerProductivityExcel,
 } from "../lib/excelExport";
-import * as XLSX from "xlsx";
-// Styling-capable SheetJS fork (same API); used where the export needs cell colors/borders.
-import * as XLSXStyle from "xlsx-js-style";
+// xlsx / xlsx-js-style are ~1MB+ and only needed when the user exports. They are
+// loaded lazily (dynamic import) at export time so they stay out of the initial
+// page bundle and don't slow first paint after login.
 import {
   ALL_REGIONS_FILTER,
   buildFlexOperationalAnalytics,
@@ -172,6 +172,25 @@ const STALE_FLEX_THRESHOLD_DAYS = 2;
 
 // localStorage key for persisting which records-table columns are hidden.
 const HIDDEN_COLUMNS_STORAGE_KEY = "opencall.records.hiddenColumns";
+
+// localStorage key for persisting the active workspace view so a page refresh
+// keeps the user where they were instead of dropping back to the dashboard.
+const WORKSPACE_VIEW_STORAGE_KEY = "opencall.workspaceView";
+const WORKSPACE_VIEWS = [
+  "overview",
+  "records",
+  "rtpl",
+  "rtpl-dashboard",
+  "pivot",
+  "flex",
+  "productivity",
+  "tn-view-status",
+  "sla-tat",
+  "flex-eod-bod",
+  "admin-engineers",
+  "admin-rtpl-statuses",
+] as const;
+type WorkspaceView = (typeof WORKSPACE_VIEWS)[number];
 
 // Columns that can never be hidden from the records table. "Ticket ID" is the
 // frozen-left identifier column and "S.no" is the row index.
@@ -420,7 +439,30 @@ export default function DashboardPage() {
   const columnsMenuRef = useRef<HTMLDivElement | null>(null);
   // Whether the stale-Flex-Status "View all" details modal is open.
   const [isStaleModalOpen, setIsStaleModalOpen] = useState(false);
-  const [workspaceView, setWorkspaceView] = useState<"overview" | "records" | "rtpl" | "rtpl-dashboard" | "pivot" | "flex" | "productivity" | "tn-view-status" | "sla-tat" | "flex-eod-bod" | "admin-engineers" | "admin-rtpl-statuses">("overview");
+  const [workspaceView, setWorkspaceView] = useState<WorkspaceView>("overview");
+  // Restore the last-used view after mount (kept out of the useState initializer
+  // to avoid an SSR/hydration mismatch — matches the hiddenColumns pattern).
+  const hasRestoredWorkspaceViewRef = useRef(false);
+  useEffect(() => {
+    if (hasRestoredWorkspaceViewRef.current) return;
+    hasRestoredWorkspaceViewRef.current = true;
+    try {
+      const stored = window.localStorage.getItem(WORKSPACE_VIEW_STORAGE_KEY);
+      if (stored && (WORKSPACE_VIEWS as readonly string[]).includes(stored)) {
+        setWorkspaceView(stored as WorkspaceView);
+      }
+    } catch {
+      /* storage unavailable (private mode); keep default */
+    }
+  }, []);
+  // Persist the active view so a refresh returns to the same page.
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(WORKSPACE_VIEW_STORAGE_KEY, workspaceView);
+    } catch {
+      /* non-fatal */
+    }
+  }, [workspaceView]);
   const [pivotActiveStatus, setPivotActiveStatus] = useState<string | null>(null);
   const [pivotActiveWipAging, setPivotActiveWipAging] = useState<string | null>(null);
 
@@ -1020,9 +1062,10 @@ export default function DashboardPage() {
   }
 
   // Download BOD + EOD status breakdown as a single combined sheet.
-  function handleDownloadBodEod(
+  async function handleDownloadBodEod(
     card: { label: string; cardBod: number; cardEod: number; breakdown: Array<{ status: string; bodCount: number; eodCount: number }> },
-  ): void {
+  ): Promise<void> {
+    const XLSXStyle = await import("xlsx-js-style");
     const dateStr = rtplAnalyticsDate || todayIsoDate();
     const cardLabel = card.label.replace(/[^a-zA-Z0-9 _-]/g, "").trim();
 

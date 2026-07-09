@@ -144,7 +144,12 @@ describe("buildReportExportMatrix", () => {
     const carriedRow = matrix[1];
     const closedRow = matrix[2];
 
-    expect(header).toEqual([...STANDARD_EXPORT_COLUMNS]);
+    // The exported header relabels the "RTPL status" key as "Morning status"
+    // (the on-screen label); "Evening status" keeps its own name.
+    const expectedHeader = [...STANDARD_EXPORT_COLUMNS].map((c) =>
+      c === "RTPL status" ? "Morning status" : c,
+    );
+    expect(header).toEqual(expectedHeader);
     expect(header).not.toEqual(expect.arrayContaining([...EXPORT_METADATA_COLUMNS]));
     expect(carriedRow).toHaveLength(STANDARD_EXPORT_COLUMNS.length);
     expect(closedRow).toHaveLength(STANDARD_EXPORT_COLUMNS.length);

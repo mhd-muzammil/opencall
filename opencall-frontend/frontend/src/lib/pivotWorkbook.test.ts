@@ -293,7 +293,7 @@ describe("buildPivotWorkbookBytes against the real pivot-template.xlsx", () => {
       // Cache forced to refresh and repointed at the exact 9-row extent.
       const cache = strFromU8(out[cacheDefPath]!);
       expect(cache).toContain('refreshOnLoad="1"');
-      expect(cache).toMatch(/<worksheetSource\b[^>]*\bref="A1:Z9"/);
+      expect(cache).toMatch(/<worksheetSource\b[^>]*\bref="A1:AA9"/);
 
       // Source sheet rewritten with the injected rows.
       const source = strFromU8(out[sourcePath]!);

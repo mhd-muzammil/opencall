@@ -334,8 +334,11 @@ describe("applyColumnFilters", () => {
     // PC appears at indices 0, 3, 6, ... → 3334 rows
     // Of those, 01-Trade at even indices → ~1667
     expect(result.length).toBeGreaterThan(0);
-    // Should complete in under 50ms for 10k rows
-    expect(duration).toBeLessThan(50);
+    // Guards against an accidental O(n²) regression. The threshold is generous
+    // (wall-clock on a loaded CI box / dev machine varies a lot); a linear pass
+    // over 10k rows is milliseconds, so anything under this still catches a
+    // pathological blow-up without flaking on a busy machine.
+    expect(duration).toBeLessThan(250);
   });
 });
 

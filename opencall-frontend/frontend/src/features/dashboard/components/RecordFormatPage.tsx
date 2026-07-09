@@ -4,10 +4,11 @@ import { saveRecordLayout, resetRecordLayout } from "../../../lib/recordLayoutAp
 
 const CATALOG = DAILY_CALL_PLAN_COLUMNS as readonly string[];
 
-// Display label overrides (the stored key stays the same as the report column).
+// Display label overrides (the stored key stays the report column key).
 const LABEL_OVERRIDE: Record<string, string> = {
   "RTPL status": "Morning status",
 };
+const label = (column: string) => LABEL_OVERRIDE[column] ?? column;
 
 interface ColumnItem {
   column: string;
@@ -37,7 +38,7 @@ export function RecordFormatPage({
 }>) {
   const [items, setItems] = useState<ColumnItem[]>(() => buildInitial(initialColumns));
   const [busy, setBusy] = useState(false);
-  const [message, setMessage] = useState<string | null>(null);
+  const [message, setMessage] = useState<{ text: string; tone: "ok" | "error" } | null>(null);
 
   const move = (index: number, dir: -1 | 1) => {
     setItems((cur) => {
@@ -59,7 +60,7 @@ export function RecordFormatPage({
 
   const handleSave = async () => {
     if (visibleColumns.length === 0) {
-      setMessage("Keep at least one column visible.");
+      setMessage({ text: "Keep at least one column visible.", tone: "error" });
       return;
     }
     setBusy(true);
@@ -67,9 +68,9 @@ export function RecordFormatPage({
     try {
       await saveRecordLayout(token, visibleColumns);
       onSaved(visibleColumns);
-      setMessage("Saved — your Records page now uses this layout.");
+      setMessage({ text: "Saved — your Records page now uses this layout.", tone: "ok" });
     } catch (error) {
-      setMessage(`Save failed: ${(error as Error).message}`);
+      setMessage({ text: `Save failed: ${(error as Error).message}`, tone: "error" });
     } finally {
       setBusy(false);
     }
@@ -82,73 +83,108 @@ export function RecordFormatPage({
       await resetRecordLayout(token);
       onSaved(null);
       setItems(buildInitial(null));
-      setMessage("Reset to the default layout (all columns, default order).");
+      setMessage({ text: "Reset to the default layout (all columns, default order).", tone: "ok" });
     } catch (error) {
-      setMessage(`Reset failed: ${(error as Error).message}`);
+      setMessage({ text: `Reset failed: ${(error as Error).message}`, tone: "error" });
     } finally {
       setBusy(false);
     }
   };
 
   return (
-    <div className="recordFormatPage" style={{ padding: 20, maxWidth: 680 }}>
-      <h2 style={{ margin: "0 0 4px" }}>Record Format</h2>
-      <p style={{ color: "#64748b", marginTop: 0 }}>
-        Choose which columns appear on your Records page and in what order. This
-        applies only to your own view (and your Excel/CSV export). Unchecked
-        columns are hidden. The Change / Ops / Action columns always stay at the
-        end.
+    <section className="adminPage rfPage">
+      <div className="adminPageHeader">
+        <div>
+          <p className="eyebrow">Administration</p>
+          <h2>Record Format</h2>
+        </div>
+        <div className="adminPageActions">
+          <button type="button" className="btnSecondary" onClick={handleReset} disabled={busy}>
+            Reset to default
+          </button>
+          <button type="button" className="btnPrimary" onClick={handleSave} disabled={busy}>
+            {busy ? "Saving…" : "Save layout"}
+          </button>
+        </div>
+      </div>
+
+      <p className="muted rfIntro">
+        Choose which columns appear on your Records page and in what order — this applies
+        only to your own view and your Excel/CSV export. Toggle a column off to hide it, and
+        use the arrows to reorder. The Change / Ops / Action columns always stay at the end.
       </p>
 
-      {message && (
-        <div className="alert" style={{ margin: "8px 0" }}>
-          {message}
-        </div>
-      )}
+      {message && <div className={`rfBanner ${message.tone}`}>{message.text}</div>}
 
-      <div style={{ display: "flex", gap: 8, alignItems: "center", margin: "12px 0" }}>
-        <button type="button" className="primaryButton" onClick={handleSave} disabled={busy}>
-          Save layout
-        </button>
-        <button type="button" className="secondaryButton" onClick={handleReset} disabled={busy}>
-          Reset to default
-        </button>
-        <span style={{ color: "#64748b", fontSize: 13 }}>
-          {visibleColumns.length} of {items.length} columns shown
+      <div className="rfPreview">
+        <span className="rfPreviewLabel">Preview order</span>
+        <div className="rfPreviewChips">
+          {visibleColumns.length === 0 ? (
+            <span className="muted">No columns selected</span>
+          ) : (
+            visibleColumns.map((c) => (
+              <span key={c} className="rfChip">
+                {label(c)}
+              </span>
+            ))
+          )}
+        </div>
+      </div>
+
+      <div className="rfListBar">
+        <span className="rfListTitle">Columns</span>
+        <span className="rfCount">
+          {visibleColumns.length} of {items.length} shown
         </span>
       </div>
 
-      <ol style={{ listStyle: "none", padding: 0, margin: 0, border: "1px solid #e2e8f0", borderRadius: 8, overflow: "hidden" }}>
+      <ul className="rfList">
         {items.map((it, i) => (
-          <li
-            key={it.column}
-            style={{
-              display: "flex",
-              alignItems: "center",
-              gap: 10,
-              padding: "7px 12px",
-              borderBottom: i < items.length - 1 ? "1px solid #f1f5f9" : undefined,
-              background: it.visible ? "#ffffff" : "#f8fafc",
-              opacity: it.visible ? 1 : 0.6,
-            }}
-          >
-            <span style={{ width: 22, textAlign: "right", color: "#94a3b8", fontSize: 12 }}>{i + 1}</span>
-            <input
-              type="checkbox"
-              checked={it.visible}
-              onChange={() => toggle(i)}
-              aria-label={`Show ${it.column}`}
-            />
-            <span style={{ flex: 1, fontWeight: 600 }}>{LABEL_OVERRIDE[it.column] ?? it.column}</span>
-            <button type="button" className="secondaryButton" onClick={() => move(i, -1)} disabled={i === 0} title="Move up" style={{ padding: "2px 8px" }}>
-              ↑
-            </button>
-            <button type="button" className="secondaryButton" onClick={() => move(i, 1)} disabled={i === items.length - 1} title="Move down" style={{ padding: "2px 8px" }}>
-              ↓
-            </button>
+          <li key={it.column} className={`rfRow ${it.visible ? "" : "isHidden"}`}>
+            <span className="rfIndex">{i + 1}</span>
+
+            <label className="rfSwitch" title={it.visible ? "Shown — click to hide" : "Hidden — click to show"}>
+              <input
+                type="checkbox"
+                checked={it.visible}
+                onChange={() => toggle(i)}
+                aria-label={`Show ${it.column}`}
+              />
+              <span className="rfSwitchTrack" aria-hidden="true">
+                <span className="rfSwitchThumb" />
+              </span>
+            </label>
+
+            <span className="rfName">{label(it.column)}</span>
+            <span className={`rfState ${it.visible ? "on" : "off"}`}>
+              {it.visible ? "Shown" : "Hidden"}
+            </span>
+
+            <div className="rfMove">
+              <button
+                type="button"
+                className="rfMoveBtn"
+                onClick={() => move(i, -1)}
+                disabled={i === 0}
+                aria-label={`Move ${it.column} up`}
+                title="Move up"
+              >
+                ↑
+              </button>
+              <button
+                type="button"
+                className="rfMoveBtn"
+                onClick={() => move(i, 1)}
+                disabled={i === items.length - 1}
+                aria-label={`Move ${it.column} down`}
+                title="Move down"
+              >
+                ↓
+              </button>
+            </div>
           </li>
         ))}
-      </ol>
-    </div>
+      </ul>
+    </section>
   );
 }

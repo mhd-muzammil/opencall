@@ -132,7 +132,6 @@ import {
 import type { DropdownEngineer } from "../lib/api/types";
 import { LoginScreen, SessionLoadingScreen } from "../features/auth/LoginScreen";
 import AdminEngineersPage from "./admin/engineers/page";
-import { RecordFormatPage } from "../features/dashboard/components/RecordFormatPage";
 import { getRecordLayout } from "../lib/recordLayoutApiClient";
 import { AdminRtplStatusesManager } from "../components/AdminRtplStatusesManager";
 import {
@@ -421,7 +420,7 @@ export default function DashboardPage() {
   const columnsMenuRef = useRef<HTMLDivElement | null>(null);
   // Whether the stale-Flex-Status "View all" details modal is open.
   const [isStaleModalOpen, setIsStaleModalOpen] = useState(false);
-  const [workspaceView, setWorkspaceView] = useState<"overview" | "records" | "rtpl" | "rtpl-dashboard" | "pivot" | "flex" | "productivity" | "tn-view-status" | "sla-tat" | "flex-eod-bod" | "admin-engineers" | "admin-rtpl-statuses" | "record-format">("overview");
+  const [workspaceView, setWorkspaceView] = useState<"overview" | "records" | "rtpl" | "rtpl-dashboard" | "pivot" | "flex" | "productivity" | "tn-view-status" | "sla-tat" | "flex-eod-bod" | "admin-engineers" | "admin-rtpl-statuses">("overview");
   const [pivotActiveStatus, setPivotActiveStatus] = useState<string | null>(null);
   const [pivotActiveWipAging, setPivotActiveWipAging] = useState<string | null>(null);
 
@@ -2963,16 +2962,6 @@ export default function DashboardPage() {
             </button>
           )}
 
-          <button
-            type="button"
-            className={`sidebarItem ${workspaceView === "record-format" ? "active" : ""}`}
-            onClick={() => setWorkspaceView("record-format")}
-          >
-            <span className="sidebarIcon">
-              <span>🧩</span> <span className="sidebarText">Record Format</span>
-            </span>
-          </button>
-
           <div className="sidebarSection">Utilities & System</div>
 
           {session.user.role === "SUPER_ADMIN" && (
@@ -3391,14 +3380,6 @@ export default function DashboardPage() {
 
                     {workspaceView === "admin-engineers" && (
                       <AdminEngineersPage />
-                    )}
-
-                    {workspaceView === "record-format" && session && (
-                      <RecordFormatPage
-                        token={session.token}
-                        initialColumns={recordLayout}
-                        onSaved={(cols) => setRecordLayout(cols)}
-                      />
                     )}
 
                     {workspaceView === "admin-rtpl-statuses" && (

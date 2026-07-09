@@ -131,12 +131,9 @@ export function RTPLDashboard({
   selectedRtplRegion,
   setSelectedRtplRegion,
   rtplTimeCards,
-  selectedRtplTimeCard,
   openRtplCheckpointModal,
   openRecordsWithFilter,
-  bodFixedTime,
   bodSnapshot,
-  onFixBod,
   onDownloadBodEod,
   hideTimeCards = false,
 }: Readonly<{
@@ -633,48 +630,12 @@ export function RTPLDashboard({
                   );
                 })()}
 
-                {/* Action row (Fix BOD + BOD & EOD download) only on the combined table */}
+                {/* Action row — the BOD & EOD download only. "Fix BOD" was
+                    removed: BOD is now the Morning column (already the fixed,
+                    carried-forward start-of-day value), so freezing a snapshot
+                    no longer does anything. */}
                 {view.mode === "both" && (
                   <div style={{ padding: "8px 12px", borderTop: "1px solid #e2e8f0", display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap", justifyContent: "flex-end" }}>
-                    {/* BOD Fix button — only on Upload Time (carry-forward) card */}
-                    {card.id === RTPL_CARRY_FORWARD_TIME_CARD_ID && (
-                      <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-                        {bodFixedTime ? (
-                          <span
-                            style={{
-                              fontSize: "11px",
-                              fontWeight: "700",
-                              color: "#16a34a",
-                              background: "#dcfce7",
-                              borderRadius: "6px",
-                              padding: "3px 9px",
-                              border: "1px solid #86efac",
-                            }}
-                          >
-                            🌅 BOD Fixed: {new Date(bodFixedTime).toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit", timeZone: "Asia/Kolkata" })}
-                          </span>
-                        ) : null}
-                        <button
-                          type="button"
-                          style={{
-                            fontSize: "11px",
-                            fontWeight: "700",
-                            padding: "3px 10px",
-                            borderRadius: "6px",
-                            border: "1px solid #2563eb",
-                            background: bodFixedTime ? "#eff6ff" : "#2563eb",
-                            color: bodFixedTime ? "#2563eb" : "#ffffff",
-                            cursor: "pointer",
-                          }}
-                          onClick={(e) => { e.stopPropagation(); onFixBod(); }}
-                          title={bodFixedTime ? "Re-fix BOD to current time" : "Fix BOD to current time"}
-                        >
-                          {bodFixedTime ? "🔄 Re-fix BOD" : "📌 Fix BOD"}
-                        </button>
-                      </div>
-                    )}
-
-                    {/* BOD + EOD Download button — appears on all cards that have data */}
                     {(card.cardBod > 0 || card.cardEod > 0) && (
                       <button
                         type="button"

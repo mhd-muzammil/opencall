@@ -12,9 +12,15 @@ interface ColumnItem {
   visible: boolean;
 }
 
-function buildInitial(orderedColumns: string[] | null, catalog: readonly string[]): ColumnItem[] {
+function buildInitial(
+  orderedColumns: string[] | null,
+  catalog: readonly string[],
+  extraSet: Set<string>,
+): ColumnItem[] {
   if (!orderedColumns || orderedColumns.length === 0) {
-    return catalog.map((column) => ({ column, visible: true }));
+    // Default view = standard report columns shown; raw Excel extras available
+    // but hidden until the user turns them on.
+    return catalog.map((column) => ({ column, visible: !extraSet.has(column) }));
   }
   const inLayout = orderedColumns.filter((c) => catalog.includes(c));
   const rest = catalog.filter((c) => !inLayout.includes(c));
@@ -40,7 +46,7 @@ export function RecordFormatPage({
   onSaved: (orderedColumns: string[] | null) => void;
 }>) {
   const extraSet = new Set(extraColumns);
-  const [items, setItems] = useState<ColumnItem[]>(() => buildInitial(initialColumns, catalog));
+  const [items, setItems] = useState<ColumnItem[]>(() => buildInitial(initialColumns, catalog, extraSet));
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<{ text: string; tone: "ok" | "error" } | null>(null);
 
@@ -86,8 +92,8 @@ export function RecordFormatPage({
     try {
       await resetRecordLayout(token);
       onSaved(null);
-      setItems(buildInitial(null, catalog));
-      setMessage({ text: "Reset to the default layout (all columns, default order).", tone: "ok" });
+      setItems(buildInitial(null, catalog, extraSet));
+      setMessage({ text: "Reset to the default layout (standard columns, default order).", tone: "ok" });
     } catch (error) {
       setMessage({ text: `Reset failed: ${(error as Error).message}`, tone: "error" });
     } finally {

@@ -69,14 +69,10 @@ function calculateKpiMetricsForCardView(
   const addPartOrderedRows = active.filter(r => matchStatus(r, ["Additional Part", "Part Order Pending", "Parts Hold", "Part need to order"]));
   const toBeCancelRows = active.filter(r => matchStatus(r, ["Need to Cancel", "Need to Cancel Mail", "Request to Cancel"]));
   
-  const isTradeRow = (r: typeof rows[number]) => {
-    const code = String(r.output["WO OTC CODE"] ?? "").trim().toUpperCase();
-    return code.includes("TRADE") || code.startsWith("01");
-  };
-  
+  // Trade now flows from the backend-derived Segment (single source of truth).
   const tradeOpenRows = isBod
-    ? rows.filter((r) => isTradeRow(r))
-    : rows.filter((r) => !r.carryForward.closedSyntheticRow && isTradeRow(r));
+    ? rows.filter((r) => isTradeCase(r))
+    : rows.filter((r) => !r.carryForward.closedSyntheticRow && isTradeCase(r));
 
   const closedCancelledRows = closed.filter((r) => matchStatus(r, ["cancel"]));
   const newCallsRows = active.filter((r) => r.comparison?.changeType === "NEW");
@@ -135,12 +131,9 @@ export function RTPLDashboard({
   selectedRtplRegion,
   setSelectedRtplRegion,
   rtplTimeCards,
-  selectedRtplTimeCard,
   openRtplCheckpointModal,
   openRecordsWithFilter,
-  bodFixedTime,
   bodSnapshot,
-  onFixBod,
   onDownloadBodEod,
   hideTimeCards = false,
 }: Readonly<{
@@ -149,10 +142,13 @@ export function RTPLDashboard({
   rtplAnalyticsRows: ReportRow[];
   rtplCaseScopeOptions: Array<{ value: RtplCaseScope; label: string; description: string; count: number }>;
   selectedRtplCaseScope: RtplCaseScope;
-  setSelectedRtplCaseScope: Dispatch<SetStateAction<RtplCaseScope>>;
+  // Accepts a plain value setter or a React state dispatcher. The records-view
+  // instance passes a handler that also re-filters the records table, not just
+  // the analytics cards.
+  setSelectedRtplCaseScope: (value: RtplCaseScope) => void;
   rtplRegionOptions: Array<{ value: string; label: string; count: number }>;
   selectedRtplRegion: string;
-  setSelectedRtplRegion: Dispatch<SetStateAction<string>>;
+  setSelectedRtplRegion: (value: string) => void;
   rtplTimeCards: RtplTimeCard[];
   selectedRtplTimeCard: RtplTimeCard | null;
   openRtplCheckpointModal: (cardId: RtplTimeCardId, status?: string | null) => void;
@@ -287,52 +283,20 @@ export function RTPLDashboard({
 
   // 2. Gather status counts and active statuses for each card
   const allActiveStatuses = new Set<string>();
-  const cardStatusCountsList = rtplTimeCards.map((card, cardIndex) => {
-    const isCarryForward = card.id === RTPL_CARRY_FORWARD_TIME_CARD_ID;
-
-    const rowsWithStatuses = rowStatusesList.map(({ ticketId, bodStatus, uploadTimeEodStatus }) => {
-      // EOD for the Upload Time (carry-forward) card:
-      //   - Snapshot set → current live status (reflects real-time edits as EOD)
-      //   - No snapshot → old carry-forward logic (uploadTimeEodStatus)
-      let eodStatus = isCarryForward
-        ? (bodSnapshot !== null
-          ? String(rtplAnalyticsRows.find(
-              (r) => String(r.output["Ticket ID"] || "").trim() === ticketId
-            )?.output["RTPL status"] || "").trim()
-          : uploadTimeEodStatus)
-        : bodStatus;
-
-      if (!isCarryForward) {
-        // Collect changes up to cardIndex
-        const changesUpToCard: any[] = [];
-        for (let j = 1; j <= cardIndex; j++) {
-          const prevCard = rtplTimeCards[j];
-          if (prevCard) {
-            prevCard.details.forEach((detail) => {
-              if (detail.type === "change" && detail.ticketId === ticketId) {
-                changesUpToCard.push(detail);
-              }
-            });
-          }
-        }
-
-        if (changesUpToCard.length > 0) {
-          const sortedChanges = [...changesUpToCard].sort((a, b) =>
-            String(a.changedAt || "").localeCompare(String(b.changedAt || ""))
-          );
-          const latestTo = String(sortedChanges[sortedChanges.length - 1].toStatus || "").trim();
-          if (latestTo) {
-            eodStatus = latestTo;
-          }
-        }
-      }
-
-      return {
-        ticketId,
-        bodStatus,
-        eodStatus,
-      };
-    });
+  const cardStatusCountsList = rtplTimeCards.map((card) => {
+    // BOD = the Morning ("RTPL status") column; EOD = the "Evening status"
+    // column. Both are read straight from each row so the BOD/EOD tables match
+    // the records grid exactly. Placeholder/blank values are treated as "no
+    // status" so they are not counted (Evening is blank until worked).
+    const cleanStatus = (value: string): string => {
+      const trimmed = (value ?? "").trim();
+      return !trimmed || trimmed.toLowerCase() === "manual entry required" ? "" : trimmed;
+    };
+    const rowsWithStatuses = rtplAnalyticsRows.map((r) => ({
+      ticketId: String(r.output["Ticket ID"] || "").trim(),
+      bodStatus: cleanStatus(String(r.output["RTPL status"] ?? "")),
+      eodStatus: cleanStatus(String(r.output["Evening status"] ?? "")),
+    }));
 
     const cardBod = rowsWithStatuses.filter((r) => r.bodStatus).length;
     const cardEod = rowsWithStatuses.filter((r) => r.eodStatus).length;
@@ -489,19 +453,29 @@ export function RTPLDashboard({
       )}
 
       {!hideTimeCards && (
-        <div className="rtplTimeCardGrid" aria-label="RTPL fixed checkpoint cards">
-          {checkpointCards.map((card) => {
-            const badgeText = card.id === RTPL_CARRY_FORWARD_TIME_CARD_ID ? "BASELINE" : card.count > 0 ? "CHANGED" : "NO CHANGE";
-            const badgeClass = card.id === RTPL_CARRY_FORWARD_TIME_CARD_ID ? "baseline" : card.count > 0 ? "changed" : "no-change";
+        <div className="rtplTimeCardGrid" aria-label="RTPL BOD / EOD summary">
+          {/* Only the "Upload Time" baseline BOD/EOD table is shown. The
+              clock-time checkpoint cards (11:45 AM / 2:00 PM / 4:00 PM / 6:00 PM)
+              were removed per request; this single card carries the BOD/EOD
+              table and its download. */}
+          {checkpointCards
+            .filter((card) => card.id === RTPL_CARRY_FORWARD_TIME_CARD_ID)
+            .flatMap((card) =>
+              ([
+                { mode: "bod", title: "BOD", showBod: true, showEod: false },
+                { mode: "eod", title: "EOD", showBod: false, showEod: true },
+                { mode: "both", title: "BOD & EOD", showBod: true, showEod: true },
+              ] as const).map((view) => {
+            const valueColCount = (view.showBod ? 1 : 0) + (view.showEod ? 1 : 0);
 
             return (
               <div
-                key={card.id}
-                className={`rtplTimeCard ${selectedRtplTimeCard?.id === card.id ? "active" : ""}`}
+                key={`${card.id}-${view.mode}`}
+                className="rtplTimeCard"
               >
                 <div className="rtplTimeCardHeader" onClick={() => openRtplCheckpointModal(card.id)}>
-                  <span className="rtplTimeCardTitle">{card.label}</span>
-                  <span className={`rtplTimeCardBadge ${badgeClass}`}>{badgeText}</span>
+                  <span className="rtplTimeCardTitle">{view.title}</span>
+                  <span className="rtplTimeCardBadge baseline">BASELINE</span>
                 </div>
 
                 {(() => {
@@ -598,15 +572,15 @@ export function RTPLDashboard({
                             <th colSpan={2} style={{ padding: "3px 6px", border: "1px solid #000000", textAlign: "left", fontSize: "10px" }}>
                               {formattedDate}
                             </th>
-                            <th colSpan={2} style={{ padding: "3px 6px", border: "1px solid #000000", textAlign: "right", fontSize: "10px" }}>
+                            <th colSpan={valueColCount} style={{ padding: "3px 6px", border: "1px solid #000000", textAlign: "right", fontSize: "10px" }}>
                               {regionLabel}
                             </th>
                           </tr>
                           <tr style={{ background: "#fef08a", color: "#000000", fontWeight: "bold" }}>
                             <th style={{ width: "30px", padding: "3px 4px", border: "1px solid #000000", textAlign: "center" }}>S.No</th>
                             <th style={{ padding: "3px 6px", border: "1px solid #000000", textAlign: "left" }}>Description</th>
-                            <th style={{ width: "40px", padding: "3px 4px", border: "1px solid #000000", textAlign: "center" }}>BOD</th>
-                            <th style={{ width: "40px", padding: "3px 4px", border: "1px solid #000000", textAlign: "center" }}>EOD</th>
+                            {view.showBod && <th style={{ width: "40px", padding: "3px 4px", border: "1px solid #000000", textAlign: "center" }}>BOD</th>}
+                            {view.showEod && <th style={{ width: "40px", padding: "3px 4px", border: "1px solid #000000", textAlign: "center" }}>EOD</th>}
                           </tr>
                         </thead>
                         <tbody>
@@ -645,8 +619,8 @@ export function RTPLDashboard({
                                 >
                                   {metric.desc}
                                 </td>
-                                {renderCell(bodVal, isAlert, isEodOnly, bodTickets)}
-                                {renderCell(eodVal, isAlert, false, eodTickets)}
+                                {view.showBod && renderCell(bodVal, isAlert, isEodOnly, bodTickets)}
+                                {view.showEod && renderCell(eodVal, isAlert, false, eodTickets)}
                               </tr>
                             );
                           })}
@@ -656,48 +630,12 @@ export function RTPLDashboard({
                   );
                 })()}
 
-                {/* Action Buttons Row */}
-                {((card.cardBod > 0 || card.cardEod > 0) || card.id === RTPL_CARRY_FORWARD_TIME_CARD_ID) && (
+                {/* Action row — the BOD & EOD download only. "Fix BOD" was
+                    removed: BOD is now the Morning column (already the fixed,
+                    carried-forward start-of-day value), so freezing a snapshot
+                    no longer does anything. */}
+                {view.mode === "both" && (
                   <div style={{ padding: "8px 12px", borderTop: "1px solid #e2e8f0", display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap", justifyContent: "flex-end" }}>
-                    {/* BOD Fix button — only on Upload Time (carry-forward) card */}
-                    {card.id === RTPL_CARRY_FORWARD_TIME_CARD_ID && (
-                      <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-                        {bodFixedTime ? (
-                          <span
-                            style={{
-                              fontSize: "11px",
-                              fontWeight: "700",
-                              color: "#16a34a",
-                              background: "#dcfce7",
-                              borderRadius: "6px",
-                              padding: "3px 9px",
-                              border: "1px solid #86efac",
-                            }}
-                          >
-                            🌅 BOD Fixed: {new Date(bodFixedTime).toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit", timeZone: "Asia/Kolkata" })}
-                          </span>
-                        ) : null}
-                        <button
-                          type="button"
-                          style={{
-                            fontSize: "11px",
-                            fontWeight: "700",
-                            padding: "3px 10px",
-                            borderRadius: "6px",
-                            border: "1px solid #2563eb",
-                            background: bodFixedTime ? "#eff6ff" : "#2563eb",
-                            color: bodFixedTime ? "#2563eb" : "#ffffff",
-                            cursor: "pointer",
-                          }}
-                          onClick={(e) => { e.stopPropagation(); onFixBod(); }}
-                          title={bodFixedTime ? "Re-fix BOD to current time" : "Fix BOD to current time"}
-                        >
-                          {bodFixedTime ? "🔄 Re-fix BOD" : "📌 Fix BOD"}
-                        </button>
-                      </div>
-                    )}
-
-                    {/* BOD + EOD Download button — appears on all cards that have data */}
                     {(card.cardBod > 0 || card.cardEod > 0) && (
                       <button
                         type="button"
@@ -724,7 +662,7 @@ export function RTPLDashboard({
                 )}
               </div>
             );
-          })}
+          }))}
         </div>
       )}
     </div>

@@ -9,6 +9,7 @@ import { useMemo } from "react";
 import { hasRequestToCancelFlexStatus } from "../../../lib/reportDashboardAnalytics";
 import type { GeneratedReportResponse } from "../../../lib/apiClient";
 import { MANUAL_ENTRY_REQUIRED } from "../constants";
+import { canonicalEngineerName } from "../engineerAliases";
 import { ASP_CODE_REGION_MAP } from "@opencall/shared";
 
 export function useProductivityAnalytics(params: {
@@ -311,20 +312,42 @@ export function useProductivityAnalytics(params: {
     const active = filteredRowsForProd.filter((r) => !r.carryForward.closedSyntheticRow);
     const closed = filteredRowsForProd.filter((r) => r.carryForward.closedSyntheticRow);
 
-    const getUniqueEngineers = (items: typeof filteredRowsForProd) => {
-      const list = items
-        .map((r) => String(r.output.Engineer ?? "").trim())
-        .filter((name) => name && name !== "Manual Entry Required");
-      return Array.from(new Set(list));
-    };
+    // Resolve each raw Engineer value to its canonical name: apply manual
+    // aliases ("Lava Kumar" -> "Lava") then group case-insensitively so pure
+    // casing variants ("sriram"/"Sriram") merge too.
+    const engineerName = (r: typeof filteredRowsForProd[number]) =>
+      canonicalEngineerName(String(r.output.Engineer ?? ""));
 
-    const allEngNames = getUniqueEngineers(filteredRowsForProd);
+    // Per engineer key (lower-cased canonical name), track how often each
+    // spelling appears so the most common one is displayed.
+    const casingCountsByKey = new Map<string, Map<string, number>>();
+    for (const r of filteredRowsForProd) {
+      const name = engineerName(r);
+      if (!name || name === "Manual Entry Required") continue;
+      const key = name.toLowerCase();
+      let casingCounts = casingCountsByKey.get(key);
+      if (!casingCounts) {
+        casingCounts = new Map();
+        casingCountsByKey.set(key, casingCounts);
+      }
+      casingCounts.set(name, (casingCounts.get(name) ?? 0) + 1);
+    }
 
-    const list = allEngNames.map((engName) => {
-      const engActive = active.filter(r => String(r.output.Engineer ?? "").trim() === engName);
-      const engClosed = closed.filter(r => String(r.output.Engineer ?? "").trim() === engName);
+    const list = Array.from(casingCountsByKey.entries()).map(([engKey, casingCounts]) => {
+      // Most frequent spelling wins; ties keep the first seen (Map is ordered).
+      let engName = "";
+      let bestCount = -1;
+      for (const [casing, count] of casingCounts) {
+        if (count > bestCount) {
+          bestCount = count;
+          engName = casing;
+        }
+      }
 
-      const firstRow = filteredRowsForProd.find(r => String(r.output.Engineer ?? "").trim() === engName);
+      const engActive = active.filter(r => engineerName(r).toLowerCase() === engKey);
+      const engClosed = closed.filter(r => engineerName(r).toLowerCase() === engKey);
+
+      const firstRow = filteredRowsForProd.find(r => engineerName(r).toLowerCase() === engKey);
       const regionCode = firstRow ? String(firstRow.output["Work Location"] ?? "").trim() : "";
       const regionName = ASP_CODE_REGION_MAP[regionCode as keyof typeof ASP_CODE_REGION_MAP] || regionCode || "N/A";
 

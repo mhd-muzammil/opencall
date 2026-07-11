@@ -1,6 +1,6 @@
 "use client";
 
-import { DAILY_CALL_PLAN_COLUMNS, RTPL_STATUS_OPTIONS, ASP_CODE_REGION_MAP } from "@opencall/shared";
+import { DAILY_CALL_PLAN_COLUMNS, RTPL_STATUS_OPTIONS, ASP_CODE_REGION_MAP, type DailyCallPlanColumn } from "@opencall/shared";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { ColumnFilterDropdown } from "../components/ColumnFilterDropdown";
 import { AppHeader } from "../components/AppHeader";
@@ -132,6 +132,7 @@ import {
 import type { DropdownEngineer } from "../lib/api/types";
 import { LoginScreen, SessionLoadingScreen } from "../features/auth/LoginScreen";
 import AdminEngineersPage from "./admin/engineers/page";
+import { getRecordLayout } from "../lib/recordLayoutApiClient";
 import { AdminRtplStatusesManager } from "../components/AdminRtplStatusesManager";
 import {
   downloadReportAsXlsx,
@@ -139,7 +140,9 @@ import {
   downloadRegionSummaryExcel,
   downloadEngineerProductivityExcel,
 } from "../lib/excelExport";
-import * as XLSX from "xlsx";
+// xlsx / xlsx-js-style are ~1MB+ and only needed when the user exports. They are
+// loaded lazily (dynamic import) at export time so they stay out of the initial
+// page bundle and don't slow first paint after login.
 import {
   ALL_REGIONS_FILTER,
   buildFlexOperationalAnalytics,
@@ -169,6 +172,25 @@ const STALE_FLEX_THRESHOLD_DAYS = 2;
 
 // localStorage key for persisting which records-table columns are hidden.
 const HIDDEN_COLUMNS_STORAGE_KEY = "opencall.records.hiddenColumns";
+
+// localStorage key for persisting the active workspace view so a page refresh
+// keeps the user where they were instead of dropping back to the dashboard.
+const WORKSPACE_VIEW_STORAGE_KEY = "opencall.workspaceView";
+const WORKSPACE_VIEWS = [
+  "overview",
+  "records",
+  "rtpl",
+  "rtpl-dashboard",
+  "pivot",
+  "flex",
+  "productivity",
+  "tn-view-status",
+  "sla-tat",
+  "flex-eod-bod",
+  "admin-engineers",
+  "admin-rtpl-statuses",
+] as const;
+type WorkspaceView = (typeof WORKSPACE_VIEWS)[number];
 
 // Columns that can never be hidden from the records table. "Ticket ID" is the
 // frozen-left identifier column and "S.no" is the row index.
@@ -220,7 +242,10 @@ const MANUAL_FIELD_BY_COLUMN: Partial<Record<string, ManualCarryForwardField>> =
 
 
 const EDITABLE_COLUMN_API_FIELD: Partial<Record<string, string>> = {
+  // Both statuses are editable: "RTPL status" is the Morning (BOD) column and
+  // "Evening status" is the Evening (EOD) column.
   "RTPL status": "rtpl_status",
+  "Evening status": "evening_rtpl_status",
   "Current Remarks": "remarks",
   Segment: "segment",
   Engineer: "engineer",
@@ -239,6 +264,7 @@ const EDITED_RESPONSE_COLUMN: Partial<
   Record<string, keyof Pick<
     EditedReportRowResponse,
     | "rtplStatus"
+    | "eveningRtplStatus"
     | "segment"
     | "engineer"
     | "location"
@@ -252,6 +278,7 @@ const EDITED_RESPONSE_COLUMN: Partial<
   >>
 > = {
   "RTPL status": "rtplStatus",
+  "Evening status": "eveningRtplStatus",
   "Current Remarks": "remarks",
   Segment: "segment",
   Engineer: "engineer",
@@ -408,13 +435,39 @@ export default function DashboardPage() {
   // from the rendered table only — exports always output the full column set.
   // "S.no" and "Ticket ID" are always visible (Ticket ID may be frozen-left).
   const [hiddenColumns, setHiddenColumns] = useState<Set<string>>(new Set());
+  // The user's saved per-user records-column layout (ordered, visible-only), or
+  // null when they use the default full layout. Drives visibleColumns + export.
+  const [recordLayout, setRecordLayout] = useState<string[] | null>(null);
   const [isColumnsMenuOpen, setIsColumnsMenuOpen] = useState(false);
   // Whether the records table is expanded to a full-screen overlay.
   const [isRecordsTableMaximized, setIsRecordsTableMaximized] = useState(false);
   const columnsMenuRef = useRef<HTMLDivElement | null>(null);
   // Whether the stale-Flex-Status "View all" details modal is open.
   const [isStaleModalOpen, setIsStaleModalOpen] = useState(false);
-  const [workspaceView, setWorkspaceView] = useState<"overview" | "records" | "rtpl" | "rtpl-dashboard" | "pivot" | "flex" | "productivity" | "tn-view-status" | "sla-tat" | "flex-eod-bod" | "admin-engineers" | "admin-rtpl-statuses">("overview");
+  const [workspaceView, setWorkspaceView] = useState<WorkspaceView>("overview");
+  // Restore the last-used view after mount (kept out of the useState initializer
+  // to avoid an SSR/hydration mismatch — matches the hiddenColumns pattern).
+  const hasRestoredWorkspaceViewRef = useRef(false);
+  useEffect(() => {
+    if (hasRestoredWorkspaceViewRef.current) return;
+    hasRestoredWorkspaceViewRef.current = true;
+    try {
+      const stored = window.localStorage.getItem(WORKSPACE_VIEW_STORAGE_KEY);
+      if (stored && (WORKSPACE_VIEWS as readonly string[]).includes(stored)) {
+        setWorkspaceView(stored as WorkspaceView);
+      }
+    } catch {
+      /* storage unavailable (private mode); keep default */
+    }
+  }, []);
+  // Persist the active view so a refresh returns to the same page.
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(WORKSPACE_VIEW_STORAGE_KEY, workspaceView);
+    } catch {
+      /* non-fatal */
+    }
+  }, [workspaceView]);
   const [pivotActiveStatus, setPivotActiveStatus] = useState<string | null>(null);
   const [pivotActiveWipAging, setPivotActiveWipAging] = useState<string | null>(null);
 
@@ -830,9 +883,22 @@ export default function DashboardPage() {
 
   // View-only set of columns currently rendered in the records table. Driven by
   // hiddenColumns; the underlying data/exports are untouched.
-  const visibleColumns = useMemo(
-    () => DAILY_CALL_PLAN_COLUMNS.filter((c) => !hiddenColumns.has(c)),
-    [hiddenColumns],
+  // Base column set/order = the user's saved layout (if any), else the full
+  // default. The layout may include raw Excel headers (not just the standard
+  // report columns). The session "Columns" toggle (hiddenColumns) hides on top.
+  const visibleColumns = useMemo<string[]>(() => {
+    const base: string[] =
+      recordLayout && recordLayout.length > 0
+        ? recordLayout
+        : [...DAILY_CALL_PLAN_COLUMNS];
+    return base.filter((c) => !hiddenColumns.has(c));
+  }, [recordLayout, hiddenColumns]);
+
+  // A column is "standard" if it is one of the report's mapped columns; anything
+  // else is a raw Excel header rendered read-only from the row's raw Flex data.
+  const STANDARD_COLUMN_SET = useMemo(
+    () => new Set<string>(DAILY_CALL_PLAN_COLUMNS as readonly string[]),
+    [],
   );
 
   // Keep the top proxy scrollbar's spacer width matched to the inner <table>'s
@@ -1000,39 +1066,68 @@ export default function DashboardPage() {
     try { window.sessionStorage.setItem("opencall.bodSnapshot", JSON.stringify(snapshot)); } catch { /* non-fatal */ }
   }
 
-  // Download BOD + EOD status breakdown as a two-sheet Excel file.
-  function handleDownloadBodEod(
+  // Download BOD + EOD status breakdown as a single combined sheet.
+  async function handleDownloadBodEod(
     card: { label: string; cardBod: number; cardEod: number; breakdown: Array<{ status: string; bodCount: number; eodCount: number }> },
-  ): void {
+  ): Promise<void> {
+    const XLSXStyle = await import("xlsx-js-style");
     const dateStr = rtplAnalyticsDate || todayIsoDate();
     const cardLabel = card.label.replace(/[^a-zA-Z0-9 _-]/g, "").trim();
 
-    // BOD sheet data
-    const bodAoa: (string | number)[][] = [
-      [`BOD Status Summary — ${cardLabel} — ${dateStr}`],
-      ["S.No", "Status", "BOD Count"],
-      ...card.breakdown.map((entry, idx) => [idx + 1, entry.status, entry.bodCount]),
-      ["Total", "", card.cardBod],
+    // Combined BOD + EOD data on one sheet.
+    const aoa: (string | number)[][] = [
+      [`Status Summary — ${cardLabel} — ${dateStr}`],
+      ["S.No", "Status", "BOD Count", "EOD Count"],
+      ...card.breakdown.map((entry, idx) => [idx + 1, entry.status, entry.bodCount, entry.eodCount]),
+      ["Total", "", card.cardBod, card.cardEod],
     ];
 
-    // EOD sheet data
-    const eodAoa: (string | number)[][] = [
-      [`EOD Status Summary — ${cardLabel} — ${dateStr}`],
-      ["S.No", "Status", "EOD Count"],
-      ...card.breakdown.map((entry, idx) => [idx + 1, entry.status, entry.eodCount]),
-      ["Total", "", card.cardEod],
-    ];
+    const wb = XLSXStyle.utils.book_new();
+    const sheet = XLSXStyle.utils.aoa_to_sheet(aoa);
+    sheet["!cols"] = [{ wch: 8 }, { wch: 35 }, { wch: 12 }, { wch: 12 }];
+    // Merge the title across all 4 columns.
+    sheet["!merges"] = [{ s: { r: 0, c: 0 }, e: { r: 0, c: 3 } }];
 
-    const wb = XLSX.utils.book_new();
-    const bodSheet = XLSX.utils.aoa_to_sheet(bodAoa);
-    bodSheet["!cols"] = [{ wch: 8 }, { wch: 35 }, { wch: 12 }];
-    XLSX.utils.book_append_sheet(wb, bodSheet, "BOD");
+    // ---- Cell styling to match the report template ----
+    const thinBorder = { style: "thin", color: { rgb: "000000" } };
+    const allBorders = { top: thinBorder, bottom: thinBorder, left: thinBorder, right: thinBorder };
+    const center = { horizontal: "center", vertical: "center" };
 
-    const eodSheet = XLSX.utils.aoa_to_sheet(eodAoa);
-    eodSheet["!cols"] = [{ wch: 8 }, { wch: 35 }, { wch: 12 }];
-    XLSX.utils.book_append_sheet(wb, eodSheet, "EOD");
+    const lastRow = aoa.length - 1; // Total row index
+    const lastCol = 3; // D
+    for (let r = 0; r <= lastRow; r++) {
+      for (let c = 0; c <= lastCol; c++) {
+        const addr = XLSXStyle.utils.encode_cell({ r, c });
+        const cell = sheet[addr] ?? (sheet[addr] = { t: "s", v: "" });
+        if (r === 0) {
+          // Blue title row.
+          cell.s = {
+            fill: { patternType: "solid", fgColor: { rgb: "00B0F0" } },
+            font: { bold: true, sz: 12, color: { rgb: "000000" } },
+            alignment: center,
+            border: allBorders,
+          };
+        } else if (r === 1) {
+          // Yellow header row.
+          cell.s = {
+            fill: { patternType: "solid", fgColor: { rgb: "FFFF00" } },
+            font: { bold: true, color: { rgb: "000000" } },
+            alignment: center,
+            border: allBorders,
+          };
+        } else {
+          // Data rows + Total row: bordered; center numeric columns; bold the Total row.
+          cell.s = {
+            font: { bold: r === lastRow, color: { rgb: "000000" } },
+            alignment: c === 1 ? { vertical: "center" } : center,
+            border: allBorders,
+          };
+        }
+      }
+    }
 
-    XLSX.writeFile(wb, `RTPL_BOD_EOD_${cardLabel.replace(/\s+/g, "_")}_${dateStr}.xlsx`);
+    XLSXStyle.utils.book_append_sheet(wb, sheet, "BOD & EOD");
+    XLSXStyle.writeFile(wb, `RTPL_BOD_EOD_${cardLabel.replace(/\s+/g, "_")}_${dateStr}.xlsx`);
   }
   // 6:00 PM IST auto-download: fires once per session when the clock crosses 18:00.
   useEffect(() => {
@@ -1218,6 +1313,9 @@ export default function DashboardPage() {
       getRtplStatusesDropdown(session.token)
         .then((res) => setRtplStatusGroups(buildStatusGroups(res.statuses)))
         .catch(handleBackgroundError);
+      getRecordLayout(session.token)
+        .then((layout) => setRecordLayout(layout?.orderedColumns ?? null))
+        .catch(handleBackgroundError);
     } else {
       setHistorySessions([]);
       setEngineersList([]);
@@ -1236,96 +1334,89 @@ export default function DashboardPage() {
   const isBusyRef = useRef(isBusy);
   isBusyRef.current = isBusy;
 
+  // Referenced from the background poll to auto-switch onto a newer report
+  // without rebuilding the poll timer on every render. `restoreHistorySession`
+  // is a hoisted function declaration, so it is defined here even though it
+  // appears later in the file; reassign each render to keep the ref current.
+  const restoreHistorySessionRef = useRef(restoreHistorySession);
+  restoreHistorySessionRef.current = restoreHistorySession;
+
+  // Background upload watcher. This intentionally does NOT re-fetch or re-merge
+  // the report the user is working on — doing so every few seconds reloaded the
+  // grid and reverted rows the user had just saved (a save that hadn't yet
+  // committed when the regenerate read the DB would come back stale). The user's
+  // own edits are already reflected locally by saveEditing from the API
+  // response, so no periodic refresh is needed. The ONLY job here is to detect a
+  // genuinely NEW upload (a new report created AFTER this one loaded) and switch
+  // the user onto it — never a reload of the current report.
   useEffect(() => {
     if (!session || !report?.reportId || !upload) return;
 
     const token = session.token;
-    const flexWipBatchId = upload.batches.find((b) => b.sourceType === "FLEX_WIP")?.id;
-    if (!flexWipBatchId) return;
-    const activeFlexWipBatchId: string = flexWipBatchId;
-
-    const renderwaysBatchId = upload.batches.find((b) => b.sourceType === "RENDERWAYS")?.id;
-    const callPlanBatchId = upload.batches.find((b) => b.sourceType === "CALL_PLAN")?.id;
-
     const currentReportDate = report.reportDate;
     const currentRegionId = regionId;
     const currentReportId = report.reportId;
 
     let timerId: NodeJS.Timeout;
+    // Newest report timestamp known when this report loaded. Only a report
+    // uploaded strictly after this triggers an auto-switch. `null` until the
+    // first check records the baseline (so pre-existing reports never switch).
+    let baselineNewestCreatedAt: string | null = null;
+    const POLL_MS = 15000;
 
-    async function poll() {
-      // Skip polling if saving, editing, or busy to prevent state conflicts
-      if (savingSerialNoRef.current !== null || isBusyRef.current) {
-        timerId = setTimeout(poll, 10000);
+    async function checkForNewUpload() {
+      // Never interrupt an in-progress edit / save / busy operation.
+      if (
+        savingSerialNoRef.current !== null ||
+        isBusyRef.current ||
+        editingSerialNoRef.current !== null
+      ) {
+        timerId = setTimeout(checkForNewUpload, POLL_MS);
         return;
       }
 
       try {
-        const [latestRep, latestStatusChanges] = await Promise.all([
-          generateReport({
-            token: token,
-            regionId: currentRegionId,
-            reportDate: currentReportDate,
-            flexUploadBatchId: activeFlexWipBatchId,
-            ...(renderwaysBatchId ? { renderwaysUploadBatchId: renderwaysBatchId } : {}),
-            ...(callPlanBatchId ? { callPlanUploadBatchId: callPlanBatchId } : {}),
-          }),
-          getRtplStatusChanges({
-            token: token,
-            reportId: currentReportId,
-            changeDate: rtplAnalyticsDate,
-            limit: RTPL_STATUS_CHANGE_LIMIT,
-          }),
-        ]);
+        const sessions = await getReportHistory(token);
+        const newest = sessions
+          .filter(
+            (s) =>
+              s.status === "COMPLETED" &&
+              s.reportId !== null &&
+              s.reportDate === currentReportDate &&
+              s.regionId === currentRegionId,
+          )
+          .sort((a, b) => b.createdAt.localeCompare(a.createdAt))[0];
 
-        // Verify the reportId hasn't changed in the background before updating state
-        setReport((prevReport) => {
-          if (!prevReport || prevReport.reportId !== latestRep.reportId) {
-            return prevReport;
+        if (newest) {
+          if (baselineNewestCreatedAt === null) {
+            // First check: record what already exists; do not switch.
+            baselineNewestCreatedAt = newest.createdAt;
+          } else if (
+            newest.createdAt > baselineNewestCreatedAt &&
+            newest.reportId !== currentReportId &&
+            restoreHistorySessionRef.current
+          ) {
+            // A genuinely NEW report was uploaded after this one loaded — move
+            // the user onto it. This is the ONLY auto-switch trigger.
+            await restoreHistorySessionRef.current(newest, {
+              closeHistoryPanel: true,
+              successMessage: "Loaded the latest uploaded report for this day.",
+            });
+            return; // effect re-initialises on the new report; stop this cycle
           }
-
-          // Merge latest rows, preserving the row that is currently being edited
-          const updatedRows = latestRep.rows.map((newRow) => {
-            if (editingSerialNoRef.current !== null && newRow.serialNo === editingSerialNoRef.current) {
-              const prevRow = prevReport.rows.find((r) => r.serialNo === editingSerialNoRef.current);
-              return prevRow ? prevRow : newRow;
-            }
-            return newRow;
-          });
-
-          return {
-            ...prevReport,
-            rows: updatedRows,
-            totalRows: latestRep.totalRows,
-            duplicateTicketCount: latestRep.duplicateTicketCount,
-            unmatchedTicketCount: latestRep.unmatchedTicketCount,
-            duplicateTracking: latestRep.duplicateTracking,
-            carryForward: latestRep.carryForward,
-            comparison: latestRep.comparison,
-            regionBreakdown: latestRep.regionBreakdown,
-          };
-        });
-
-        setRtplStatusChanges((prevChanges) => {
-          // Only update if changes have actually updated to avoid unnecessary renders
-          if (JSON.stringify(prevChanges) === JSON.stringify(latestStatusChanges)) {
-            return prevChanges;
-          }
-          return latestStatusChanges;
-        });
-
+        }
       } catch (error) {
         if (isApiAuthError(error)) {
           handleBackgroundError(error);
         } else {
-          console.error("Background poll failed:", error);
+          console.error("Background upload check failed:", error);
         }
       } finally {
-        timerId = setTimeout(poll, 10000);
+        timerId = setTimeout(checkForNewUpload, POLL_MS);
       }
     }
 
-    timerId = setTimeout(poll, 10000);
+    timerId = setTimeout(checkForNewUpload, POLL_MS);
 
     return () => {
       clearTimeout(timerId);
@@ -1335,7 +1426,6 @@ export default function DashboardPage() {
     report?.reportId,
     upload?.batches,
     regionId,
-    rtplAnalyticsDate,
   ]);
 
 
@@ -1661,9 +1751,12 @@ export default function DashboardPage() {
       const displayValue = column === "Case Created Time"
         ? formatDisplayDateTime(value)
         : value;
-      // "Current Remarks" is optional — an empty value stays blank rather than
-      // being flagged as a missing manual entry.
-      const emptyFallback = column === "Current Remarks" ? "" : MANUAL_ENTRY_REQUIRED;
+      // "Current Remarks" and "Evening status" are optional — an empty value
+      // stays blank rather than being flagged as a missing manual entry.
+      const emptyFallback =
+        column === "Current Remarks" || column === "Evening status"
+          ? ""
+          : MANUAL_ENTRY_REQUIRED;
       nextOutput[column] =
         typeof displayValue === "string" && displayValue.trim().length > 0
           ? displayValue
@@ -2133,6 +2226,36 @@ export default function DashboardPage() {
     }
   };
 
+  // The RTPL panel is embedded at the top of the records view and doubles as the
+  // records filter. Its scope/region tabs previously only re-computed the
+  // analytics cards, leaving the records table below unchanged — so selecting
+  // e.g. Trade + Salem "did nothing" to the list. These handlers mirror the tab
+  // selection into the records-table filter state and clear the status column
+  // filter, so the table shows the full scope+region set to drill into. Region
+  // and scope are independent — changing one keeps the other.
+  const selectRecordsRtplScope = (scope: RtplCaseScope) => {
+    setSelectedRtplCaseScope(scope);
+    setSelectedWoOtcCode(null);
+    setShowClosedOnly(false);
+    setShowConsumerOnly(false);
+    setShowCommercialOnly(false);
+    setShowCissOnly(false);
+    setShowRcaOnly(false);
+    setShowPcOnly(false);
+    setPrintCaseFilter(null);
+    setShowNonWarrantyOnly(false);
+    setShowWarrantyOnly(scope === "warranty");
+    setShowTradeOnly(scope === "trade");
+    colFilters.resetAll();
+  };
+
+  const selectRecordsRtplRegion = (value: string) => {
+    setSelectedRtplRegion(value);
+    setSelectedRegion(value === ALL_REGIONS_FILTER ? null : value);
+    setSelectedWoOtcCode(null);
+    colFilters.resetAll();
+  };
+
   // Open rows scoped to the region chosen in the overview dropdown (null/"ALL"
   // → every region). Drives the operational-health header cards below.
   const regionScopedActiveRows = useMemo(() => {
@@ -2466,7 +2589,7 @@ export default function DashboardPage() {
 
                   return (
                     <th key={column} className={tableColumnClassName(column)}>
-                      {column}
+                      {column === "RTPL status" ? "Morning status" : column}
                       {isFilterable && (
                         <ColumnFilterDropdown
                           column={column}
@@ -2508,14 +2631,26 @@ export default function DashboardPage() {
                     }
                   >
                     {visibleColumns.map((column) => {
+                      // Raw Excel headers (not standard report columns) are
+                      // merged into row.output by the backend and render
+                      // read-only.
+                      const isRawColumn = !STANDARD_COLUMN_SET.has(column);
                       const value =
                         column === "S.no"
                           ? visibleSerialNo
-                          : isEditing
-                            ? draftOutput[column]
-                            : row.output[column];
+                          : isRawColumn
+                            ? (row.output as Record<string, string | number>)[column] ?? ""
+                            : isEditing
+                              ? draftOutput[column]
+                              : (row.output as Record<string, string | number>)[column];
                       const isManualRequired = value === MANUAL_ENTRY_REQUIRED;
-                      const isReadOnly = column === "S.no" || column === "Ticket ID";
+                      // Both the Morning ("RTPL status") and Evening ("Evening
+                      // status") columns are editable. Raw Excel columns and the
+                      // identity columns are always read-only.
+                      const isReadOnly =
+                        isRawColumn ||
+                        column === "S.no" ||
+                        column === "Ticket ID";
                       const manualField = MANUAL_FIELD_BY_COLUMN[column];
                       const isCarriedForward =
                         manualField
@@ -2541,7 +2676,7 @@ export default function DashboardPage() {
                           }
                         >
                           {isEditing && !isReadOnly ? (
-                            column === "RTPL status" ? (
+                            column === "Evening status" || column === "RTPL status" ? (
                               <div style={{ display: "flex", gap: "4px", alignItems: "center" }}>
                                 <RTPLStatusDropdown
                                   value={String(draftOutput[column] ?? "")}
@@ -2953,7 +3088,7 @@ export default function DashboardPage() {
           onOpenHistory={() => setIsHistoryPanelOpen(true)}
           onGenerateReport={() => void handleGenerate()}
           onExportXlsx={() => exportReport(downloadReportAsXlsx)}
-          onExportCsv={() => exportReport(downloadReportAsExcel)}
+          onExportCsv={() => exportReport((r) => downloadReportAsExcel(r, visibleColumns))}
           onLogout={handleLogout}
         />
 
@@ -3362,10 +3497,10 @@ export default function DashboardPage() {
                         rtplAnalyticsRows={rtplAnalyticsRows}
                         rtplCaseScopeOptions={rtplCaseScopeOptions}
                         selectedRtplCaseScope={selectedRtplCaseScope}
-                        setSelectedRtplCaseScope={setSelectedRtplCaseScope}
+                        setSelectedRtplCaseScope={selectRecordsRtplScope}
                         rtplRegionOptions={rtplRegionOptions}
                         selectedRtplRegion={selectedRtplRegion}
-                        setSelectedRtplRegion={setSelectedRtplRegion}
+                        setSelectedRtplRegion={selectRecordsRtplRegion}
                         rtplTimeCards={rtplTimeCards}
                         selectedRtplTimeCard={selectedRtplTimeCard}
                         openRtplCheckpointModal={openRtplCheckpointModal}
@@ -3480,7 +3615,7 @@ export default function DashboardPage() {
                           </button>
                           <button
                             className="downloadBtn csvBtn"
-                            onClick={() => exportReport(downloadReportAsExcel)}
+                            onClick={() => exportReport((r) => downloadReportAsExcel(r, visibleColumns))}
                           >
                             Download CSV
                           </button>

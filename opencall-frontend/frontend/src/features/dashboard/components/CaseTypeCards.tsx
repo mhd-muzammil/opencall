@@ -3,7 +3,6 @@
 // click-through, state, or handler changes). openRecordsWithFilter is passed in
 // unchanged. The `showCaseTypeOverview` render guard stays in page.tsx.
 import { formatNumber } from "../utils";
-import { PC_SEGMENT } from "../constants";
 import type { ReportRow, PrintCaseFilter } from "../types";
 
 export function CaseTypeCards({
@@ -44,7 +43,7 @@ export function CaseTypeCards({
     region?: string | null;
     printCase?: PrintCaseFilter | null;
     cissOnly?: boolean;
-    segment?: string | null;
+    pcOnly?: boolean;
     tradeOnly?: boolean;
     rcaOnly?: boolean;
   }>) => void;
@@ -116,7 +115,7 @@ export function CaseTypeCards({
           </div>
         </div>
         <div className="caseTypeCard">
-          <button type="button" className="caseTypeSummary" onClick={() => openRecordsWithFilter({ segment: PC_SEGMENT })}>
+          <button type="button" className="caseTypeSummary" onClick={() => openRecordsWithFilter({ pcOnly: true })}>
             <span>PC Cases</span>
             <strong>{formatNumber(pcRows.length)}</strong>
             <small>Segment is PC</small>
@@ -126,7 +125,7 @@ export function CaseTypeCards({
               <button
                 type="button"
                 key={entry.aspCode}
-                onClick={() => openRecordsWithFilter({ region: entry.aspCode, segment: PC_SEGMENT })}
+                onClick={() => openRecordsWithFilter({ region: entry.aspCode, pcOnly: true })}
               >
                 <span>{entry.regionName}</span>
                 <strong>{entry.pc}</strong>

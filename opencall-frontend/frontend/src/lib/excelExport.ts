@@ -11,7 +11,16 @@ import {
   OPEN_CALL_SHEET,
   PIVOT_TEMPLATE_URL,
 } from "./pivotWorkbook";
-import * as XLSX from "xlsx";
+import {
+  isTradeCase,
+  isWarrantyCase,
+  isPrintCase as isPrintTypeCase,
+} from "../features/dashboard/utils/caseClassification";
+// Runtime `xlsx` (~900KB) is loaded lazily at export time so it stays out of the
+// initial page bundle. Only the type namespace is imported statically (erased at
+// build). Every function that touches the workbook API is async and awaits this.
+import type * as XLSXNS from "xlsx";
+const loadXlsx = (): Promise<typeof import("xlsx")> => import("xlsx");
 
 // A call is treated as "closed" when its (current or previous) RTPL status reads
 // as closed — WO Closed, Physically Closed, Partner Complete, etc.
@@ -138,17 +147,26 @@ function coerceNumericCell(
   return value;
 }
 
+const STANDARD_COLUMN_SET = new Set<string>(STANDARD_EXPORT_COLUMNS);
+
 export function mapRowToStandardExport(
   row: GeneratedReportResponse["rows"][number],
+  columns: readonly string[] = STANDARD_EXPORT_COLUMNS,
 ): ExportCellValue[] {
-  return STANDARD_EXPORT_COLUMNS.map((col) => {
-    const value = row.output[col];
+  return columns.map((col) => {
+    const value = (row.output as Record<string, string | number | undefined>)[col];
+
+    // Raw Excel headers (not standard report columns) are merged into output by
+    // the backend; emit their value as-is (no placeholder / carry-forward logic).
+    if (!STANDARD_COLUMN_SET.has(col)) {
+      return value === null || value === undefined ? "" : value;
+    }
 
     if (value !== null && value !== undefined && value !== "") {
       if (value === MANUAL_ENTRY_REQUIRED) {
         return MANUAL_ENTRY_EXPORT_LABEL;
       }
-      return coerceNumericCell(col, value);
+      return coerceNumericCell(col as (typeof STANDARD_EXPORT_COLUMNS)[number], value);
     }
 
     if (!row.carryForward.closedSyntheticRow) {
@@ -183,23 +201,32 @@ const SNO_COLUMN_INDEX = STANDARD_EXPORT_COLUMNS.indexOf("S.no");
 function withSequentialSerial(
   cells: ExportCellValue[],
   index: number,
+  snoIndex: number = SNO_COLUMN_INDEX,
 ): ExportCellValue[] {
-  if (SNO_COLUMN_INDEX >= 0) {
-    cells[SNO_COLUMN_INDEX] = index + 1;
+  if (snoIndex >= 0) {
+    cells[snoIndex] = index + 1;
   }
   return cells;
 }
 
+// Header labels for export mirror the on-screen relabels (the stored column key
+// stays the same). Keep in sync with the records grid.
+const EXPORT_HEADER_LABEL: Partial<Record<string, string>> = {
+  "RTPL status": "Morning status",
+};
+
 export function buildReportExportMatrix(
   report: GeneratedReportResponse,
+  columns: readonly string[] = STANDARD_EXPORT_COLUMNS,
 ): ExportCellValue[][] {
-  const headers = [...STANDARD_EXPORT_COLUMNS];
+  const headers = columns.map((c) => EXPORT_HEADER_LABEL[c] ?? c);
+  const snoIndex = columns.indexOf("S.no");
   const data: ExportCellValue[][] = [headers];
 
   report.rows
     .filter((item) => !hasRequestToCancelFlexStatus(item))
     .forEach((row, index) => {
-      data.push(withSequentialSerial(mapRowToStandardExport(row), index));
+      data.push(withSequentialSerial(mapRowToStandardExport(row, columns), index, snoIndex));
     });
 
   return data;
@@ -308,8 +335,11 @@ export function buildPivotMatrix(
   return [...filterRows, spacerRow, valueBanner, columnHeader, ...body, grandTotalRow];
 }
 
-export function downloadReportAsExcel(report: GeneratedReportResponse): void {
-  const data = buildReportExportMatrix(report);
+export function downloadReportAsExcel(
+  report: GeneratedReportResponse,
+  columns?: readonly string[],
+): void {
+  const data = buildReportExportMatrix(report, columns ?? STANDARD_EXPORT_COLUMNS);
   const escapeCSV = (
     value: string | number | boolean | null | undefined,
   ): string => {
@@ -369,11 +399,12 @@ function triggerDownload(bytes: Uint8Array, filename: string, mime: string): voi
 // Fallback when the PivotTable template can't be fetched: a plain two-sheet
 // workbook (Open + Closed) with no pivot, so the export still works before the
 // template asset is in place.
-function downloadDataSheetsWorkbook(
+async function downloadDataSheetsWorkbook(
   openAoa: ExportCellValue[][],
   closedAoa: ExportCellValue[][],
   filename: string,
-): void {
+): Promise<void> {
+  const XLSX = await loadXlsx();
   const headers = openAoa[0] ?? [];
   const wb = XLSX.utils.book_new();
 
@@ -416,17 +447,18 @@ export async function downloadReportAsXlsx(
       `Native PivotTable template (${PIVOT_TEMPLATE_URL}) unavailable; exporting data sheets only.`,
       error,
     );
-    downloadDataSheetsWorkbook(openCallAoa, closedCallsAoa, filename);
+    await downloadDataSheetsWorkbook(openCallAoa, closedCallsAoa, filename);
   }
 }
 
-export function downloadRegionSummaryExcel(
+export async function downloadRegionSummaryExcel(
   regionName: string,
   reportDate: string,
   rows: readonly GeneratedReportResponse["rows"][number][],
   isChennaiStyle?: boolean,
   isBod?: boolean,
-): void {
+): Promise<void> {
+  const XLSX = await loadXlsx();
   const isChennai = isChennaiStyle !== undefined ? isChennaiStyle : regionName.toLowerCase().includes("chennai");
 
   const formatDisplayDateOnly = (dateStr: string): string => {
@@ -458,13 +490,9 @@ export function downloadRegionSummaryExcel(
     return String(r.output["WIP aging"] || "").trim();
   };
 
-  const isTradeRow = (r: GeneratedReportResponse["rows"][number]): boolean => {
-    const code = String(r.output["WO OTC CODE"] ?? "").trim().toUpperCase();
-    return code.includes("TRADE") || code.startsWith("01");
-  };
-  const isWarrantyRow = (r: GeneratedReportResponse["rows"][number]): boolean => {
-    return !isTradeRow(r);
-  };
+  // Trade/Warranty now flow from the backend-derived Segment (single source of truth).
+  const isTradeRow = isTradeCase;
+  const isWarrantyRow = isWarrantyCase;
 
   // 1. Calculate the counts
   const activeRows = isBod
@@ -506,15 +534,12 @@ export function downloadRegionSummaryExcel(
     return Number.isFinite(parsed) ? parsed : null;
   };
 
-  const isPrintCase = (r: GeneratedReportResponse["rows"][number]): boolean => {
-    const segment = String(r.output.Segment ?? "").trim().toLowerCase();
-    const prodLine = String(r.output["Product Line Name"] ?? "").trim().toLowerCase();
-    const woOtcCode = String(r.output["WO OTC CODE"] ?? "").trim().toUpperCase();
-    return segment === "print" || prodLine.includes("print") || woOtcCode.startsWith("05F");
-  };
+  // Print-type detection also flows from the Segment. activeRows are already
+  // warranty-filtered, so this yields warranty Print + Install rows.
+  const isPrintCase = isPrintTypeCase;
 
   let aoaData: (string | number)[][];
-  let merges: XLSX.Range[] = [];
+  let merges: XLSXNS.Range[] = [];
   let colWidths: { wch: number }[] = [];
 
   if (isChennai) {
@@ -670,12 +695,13 @@ export function downloadRegionSummaryExcel(
   XLSX.writeFile(wb, `${regionName}_Region_Summary_${reportDate}.xlsx`);
 }
 
-export function downloadEngineerProductivityExcel(
+export async function downloadEngineerProductivityExcel(
   regionName: string,
   dateLabel: string,
   list: any[],
   totalAttended: number,
-): void {
+): Promise<void> {
+  const XLSX = await loadXlsx();
   const aoaData = [
     ["Date " + dateLabel, "", "", "", "", "", "", ""],
     ["S.No", "Engineer Name", "Assigned", "Attended", "Closed", "Part ordered", "Under Observation", "CX Reschedule"],

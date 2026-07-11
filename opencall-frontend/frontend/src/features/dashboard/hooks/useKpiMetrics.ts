@@ -1,5 +1,6 @@
 // Derived KPI-metric memos extracted from app/page.tsx (Phase 5).
-// useMemo bodies and dependency arrays preserved verbatim — no behavior changes.
+// Trade Open Calls now uses the shared Segment-based isTradeCase (single source of
+// truth) instead of an inlined WO-OTC check.
 //
 // NOTE: kpiBaseRows is NOT in this hook. regionKpiMetrics/chennaiKpiMetrics depend
 // on tnFilteredRows/eodBodFilteredRows (which belong to useProductivityAnalytics and
@@ -8,7 +9,7 @@
 import { useMemo } from "react";
 import type { GeneratedReportResponse } from "../../../lib/apiClient";
 import type { ReportRow } from "../types";
-import { isWarrantyCase, isPrintCase, countManualRequiredCells } from "../utils";
+import { isWarrantyCase, isPrintCase, isTradeCase, countManualRequiredCells } from "../utils";
 
 export function useKpiMetrics(params: {
   report: GeneratedReportResponse | null;
@@ -71,11 +72,6 @@ export function useKpiMetrics(params: {
       return matchesKeyword && !matchesExclude;
     };
 
-    const isTradeRow = (r: typeof rows[number]) => {
-      const code = String(r.output["WO OTC CODE"] ?? "").trim().toUpperCase();
-      return code.includes("TRADE") || code.startsWith("01");
-    };
-
     const actionable = active.filter(r => matchStatus(r, ["actionable"], ["customer", "cust", "cx", "delay", "pending"])).length;
     const planned = active.filter(r => matchStatus(r, ["assigned", "scheduled", "onsite"], ["pending", "to be"])).length;
     const enggOnsite = active.filter(r => matchStatus(r, ["assigned", "onsite"], ["pending", "to be"])).length;
@@ -89,8 +85,8 @@ export function useKpiMetrics(params: {
     const toBeCancel = active.filter(r => matchStatus(r, ["Need to Cancel", "Need to Cancel Mail", "Request to Cancel"])).length;
     const newCalls = active.filter((r) => r.comparison?.changeType === "NEW").length;
     const tradeOpenCalls = isBod
-      ? rows.filter((r) => r.comparison?.changeType !== "NEW" && isTradeRow(r)).length
-      : rows.filter((r) => !r.carryForward.closedSyntheticRow && isTradeRow(r)).length;
+      ? rows.filter((r) => r.comparison?.changeType !== "NEW" && isTradeCase(r)).length
+      : rows.filter((r) => !r.carryForward.closedSyntheticRow && isTradeCase(r)).length;
 
     const closedCancelled = closed.filter((r) => matchStatus(r, ["cancel"])).length;
 

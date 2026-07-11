@@ -82,9 +82,11 @@ export function EditRecordModal({
             }}
           >
             <div className="formFieldGroup">
-              {/* RTPL Status */}
+              {/* Morning Status (BOD) — editable. Auto-set from the previous
+                  day's Evening status, and can be corrected here. Saved to
+                  rtpl_status. */}
               <div className="formField">
-                <label htmlFor="modal-rtpl-status">RTPL Status</label>
+                <label htmlFor="modal-morning-status">Morning Status</label>
                 <div className="statusFieldContainer">
                   <RTPLStatusDropdown
                     value={String(draftOutput["RTPL status"] ?? "")}
@@ -94,6 +96,25 @@ export function EditRecordModal({
                       setDraftOutput((current) => ({
                         ...current,
                         "RTPL status": selected,
+                      }));
+                    }}
+                  />
+                </div>
+              </div>
+
+              {/* Evening Status (EOD) — the editable status the team updates
+                  through the day. Saved to evening_rtpl_status. */}
+              <div className="formField">
+                <label htmlFor="modal-evening-status">Evening Status</label>
+                <div className="statusFieldContainer">
+                  <RTPLStatusDropdown
+                    value={String(draftOutput["Evening status"] ?? "")}
+                    manualEntryRequiredLabel="Entry"
+                    groups={rtplStatusGroups}
+                    onChange={(selected) => {
+                      setDraftOutput((current) => ({
+                        ...current,
+                        "Evening status": selected,
                       }));
                     }}
                   />
@@ -139,13 +160,14 @@ export function EditRecordModal({
                   }
                 >
                   <option value="">Entry</option>
-                  <option value="Print">Print</option>
                   <option value="PC">PC</option>
+                  <option value="Print">Print</option>
                   <option value="Install">Install</option>
-                  <option value="Trade">Trade</option>
+                  <option value="Trade PC">Trade PC</option>
+                  <option value="Trade Print">Trade Print</option>
                   {draftOutput["Segment"] &&
                    draftOutput["Segment"] !== MANUAL_ENTRY_REQUIRED &&
-                   !["Print", "PC", "Install", "Trade"].includes(String(draftOutput["Segment"])) && (
+                   !["PC", "Print", "Install", "Trade PC", "Trade Print"].includes(String(draftOutput["Segment"])) && (
                     <option value={String(draftOutput["Segment"])}>{String(draftOutput["Segment"])}</option>
                   )}
                 </select>

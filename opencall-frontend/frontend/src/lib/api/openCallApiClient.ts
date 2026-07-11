@@ -63,6 +63,7 @@ export interface OpenCallApiClient {
     values: {
       engineer?: string | null;
       rtpl_status?: string | null;
+      evening_rtpl_status?: string | null;
       customer_mail?: string | null;
       rca?: string | null;
       remarks?: string | null;

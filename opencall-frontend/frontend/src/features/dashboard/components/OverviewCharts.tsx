@@ -457,7 +457,12 @@ export function OverviewCharts({ report, activeRows, overallStats, selectedRegio
 
     activeRows.forEach((row) => {
       const isConsumer = isConsumerCase(row);
-      if (isPcCase(row)) {
+      // Trade is checked first: the Segment now encodes "Trade PC"/"Trade Print",
+      // so PC/Print/Installation below are the warranty buckets only.
+      if (isTradeCase(row)) {
+        if (isConsumer) tradeConsumer++;
+        else tradeCommercial++;
+      } else if (isPcCase(row)) {
         if (isConsumer) pcConsumer++;
         else pcCommercial++;
       } else if (isPrintInstallationCase(row)) {
@@ -466,9 +471,6 @@ export function OverviewCharts({ report, activeRows, overallStats, selectedRegio
       } else if (isPrintCase(row)) {
         if (isConsumer) printConsumer++;
         else printCommercial++;
-      } else if (isTradeCase(row)) {
-        if (isConsumer) tradeConsumer++;
-        else tradeCommercial++;
       }
     });
 

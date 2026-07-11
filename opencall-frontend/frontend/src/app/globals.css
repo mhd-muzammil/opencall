@@ -8295,3 +8295,217 @@ td {
   color: var(--muted);
   background: var(--surface-subtle);
 }
+
+/* ── Record Format (admin console) ─────────────────────────────────────── */
+.rfPage {
+  max-width: 880px;
+}
+.rfIntro {
+  margin: -4px 0 16px;
+  max-width: 720px;
+  line-height: 1.55;
+}
+.rfBanner {
+  border-radius: 10px;
+  padding: 10px 14px;
+  font-size: 13px;
+  font-weight: 600;
+  margin-bottom: 16px;
+  border: 1px solid transparent;
+}
+.rfBanner.ok {
+  background: var(--accent-soft);
+  color: var(--accent-strong);
+  border-color: var(--accent-ring);
+}
+.rfBanner.error {
+  background: #fef2f2;
+  color: var(--danger);
+  border-color: #fecaca;
+}
+.rfPreview {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 12px 14px;
+  margin-bottom: 18px;
+}
+.rfPreviewLabel {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--muted);
+  padding-top: 5px;
+  white-space: nowrap;
+}
+.rfPreviewChips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.rfChip {
+  display: inline-flex;
+  align-items: center;
+  font-size: 12px;
+  font-weight: 600;
+  background: var(--accent-soft);
+  color: var(--accent-strong);
+  border: 1px solid var(--accent-ring);
+  border-radius: 999px;
+  padding: 3px 10px;
+}
+.rfListBar {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+.rfListTitle {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text);
+}
+.rfCount {
+  font-size: 12px;
+  color: var(--muted);
+  font-weight: 600;
+}
+.rfList {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  overflow: hidden;
+  background: var(--surface);
+}
+.rfRow {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 14px;
+  border-top: 1px solid var(--border);
+  transition: background 0.12s ease;
+}
+.rfRow:first-child {
+  border-top: none;
+}
+.rfRow:hover {
+  background: var(--background);
+}
+.rfRow.isHidden {
+  background: #fafbfc;
+}
+.rfRow.isHidden .rfName {
+  color: var(--muted);
+}
+.rfIndex {
+  width: 22px;
+  text-align: right;
+  font-size: 12px;
+  font-weight: 700;
+  color: #94a3b8;
+  font-variant-numeric: tabular-nums;
+}
+.rfName {
+  flex: 1;
+  font-weight: 600;
+  color: var(--text);
+  font-size: 14px;
+}
+.rfState {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  border-radius: 999px;
+  padding: 2px 9px;
+}
+.rfState.on {
+  background: var(--accent-soft);
+  color: var(--accent-strong);
+}
+.rfState.off {
+  background: #f1f5f9;
+  color: #94a3b8;
+}
+.rfTag {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  color: #0369a1;
+  background: #e0f2fe;
+  border: 1px solid #bae6fd;
+  border-radius: 999px;
+  padding: 1px 7px;
+}
+.rfSwitch {
+  position: relative;
+  display: inline-flex;
+  cursor: pointer;
+}
+.rfSwitch input {
+  position: absolute;
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+.rfSwitchTrack {
+  width: 38px;
+  height: 22px;
+  border-radius: 999px;
+  background: #cbd5e1;
+  display: inline-flex;
+  align-items: center;
+  padding: 2px;
+  transition: background 0.15s ease;
+}
+.rfSwitchThumb {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.25);
+  transition: transform 0.15s ease;
+}
+.rfSwitch input:checked + .rfSwitchTrack {
+  background: var(--accent);
+}
+.rfSwitch input:checked + .rfSwitchTrack .rfSwitchThumb {
+  transform: translateX(16px);
+}
+.rfSwitch input:focus-visible + .rfSwitchTrack {
+  box-shadow: 0 0 0 3px var(--accent-ring);
+}
+.rfMove {
+  display: inline-flex;
+  gap: 4px;
+}
+.rfMoveBtn {
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text);
+  cursor: pointer;
+  font-size: 13px;
+  line-height: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.12s ease;
+}
+.rfMoveBtn:hover:not(:disabled) {
+  border-color: var(--accent);
+  color: var(--accent);
+  background: var(--accent-soft);
+}
+.rfMoveBtn:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}

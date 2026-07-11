@@ -10,7 +10,15 @@
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "lint": "next lint",
     "test": "vitest run",
-    "test:next-assets": "node scripts/check-next-assets.mjs"
+    "test:next-assets": "node scripts/check-next-assets.mjs",
+    "test:e2e": "playwright test",
+    "test:e2e:smoke": "playwright test --grep @smoke",
+    "test:e2e:regression": "playwright test --grep @regression",
+    "test:e2e:api": "playwright test tests/api",
+    "test:e2e:ui": "playwright test --ui",
+    "test:e2e:headed": "playwright test --headed",
+    "test:e2e:report": "playwright show-report",
+    "test:e2e:install": "playwright install --with-deps chromium"
   },
   "dependencies": {
     "@opencall/shared": "workspace:*",
@@ -19,9 +27,11 @@
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
     "xlsx": "0.18.5",
+    "xlsx-js-style": "^1.2.0",
     "zod": "^3.24.1"
   },
   "devDependencies": {
+    "@playwright/test": "^1.61.0",
     "@types/node": "^22.10.2",
     "@types/react": "^19.0.2",
     "@types/react-dom": "^19.0.2",

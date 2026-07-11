@@ -430,8 +430,10 @@ export default function DashboardPage() {
   const [showWarrantyOnly, setShowWarrantyOnly] = useState(false);
   const [showNonWarrantyOnly, setShowNonWarrantyOnly] = useState(false);
   const [showPcOnly, setShowPcOnly] = useState(false);
-  const [productivityFilterType, setProductivityFilterType] = useState("Today");
+  const [productivityFilterType, setProductivityFilterType] = useState("Specific Date");
   const [selectedProductivityValue, setSelectedProductivityValue] = useState("");
+  const [productivityFromDate, setProductivityFromDate] = useState("");
+  const [productivityToDate, setProductivityToDate] = useState("");
   const [tnFilterType, setTnFilterType] = useState("Today");
   const [selectedTnValue, setSelectedTnValue] = useState("");
   const [eodBodFilterType, setEodBodFilterType] = useState("Today");
@@ -651,8 +653,10 @@ export default function DashboardPage() {
     setShowNonWarrantyOnly(false);
     setShowPcOnly(false);
     setPrintCaseFilter(null);
-    setProductivityFilterType("Today");
+    setProductivityFilterType("Specific Date");
     setSelectedProductivityValue("");
+    setProductivityFromDate("");
+    setProductivityToDate("");
     setTnFilterType("Today");
     setSelectedTnValue("");
     setEodBodFilterType("Today");
@@ -775,6 +779,8 @@ export default function DashboardPage() {
     selectedEodBodValue,
     productivityFilterType,
     selectedProductivityValue,
+    productivityFromDate,
+    productivityToDate,
   });
 
   useEffect(() => {
@@ -987,7 +993,9 @@ export default function DashboardPage() {
   useEffect(() => {
     if (productivityFilterType === "Specific Date") {
       if (!selectedProductivityValue || !engineerProductivityMetrics.datesList.includes(selectedProductivityValue)) {
-        setSelectedProductivityValue(engineerProductivityMetrics.datesList[0] || "");
+        // Default to the latest ("till date") available date, not the oldest.
+        const dates = engineerProductivityMetrics.datesList;
+        setSelectedProductivityValue(dates[dates.length - 1] || "");
       }
     } else if (productivityFilterType === "Specific Month") {
       if (!selectedProductivityValue || !engineerProductivityMetrics.monthsList.includes(selectedProductivityValue)) {
@@ -3554,6 +3562,10 @@ export default function DashboardPage() {
                         setProductivityFilterType={setProductivityFilterType}
                         selectedProductivityValue={selectedProductivityValue}
                         setSelectedProductivityValue={setSelectedProductivityValue}
+                        productivityFromDate={productivityFromDate}
+                        setProductivityFromDate={setProductivityFromDate}
+                        productivityToDate={productivityToDate}
+                        setProductivityToDate={setProductivityToDate}
                         engineerProductivityMetrics={engineerProductivityMetrics}
                         productivityDateLabel={productivityDateLabel}
                         regionsList={report?.regionBreakdown ?? []}

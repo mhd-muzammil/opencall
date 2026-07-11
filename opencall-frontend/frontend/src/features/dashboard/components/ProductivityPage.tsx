@@ -10,6 +10,10 @@ export function ProductivityPage({
   setProductivityFilterType,
   selectedProductivityValue,
   setSelectedProductivityValue,
+  productivityFromDate,
+  setProductivityFromDate,
+  productivityToDate,
+  setProductivityToDate,
   engineerProductivityMetrics,
   productivityDateLabel,
   regionsList,
@@ -23,6 +27,10 @@ export function ProductivityPage({
   setProductivityFilterType: Dispatch<SetStateAction<string>>;
   selectedProductivityValue: string;
   setSelectedProductivityValue: Dispatch<SetStateAction<string>>;
+  productivityFromDate: string;
+  setProductivityFromDate: Dispatch<SetStateAction<string>>;
+  productivityToDate: string;
+  setProductivityToDate: Dispatch<SetStateAction<string>>;
   engineerProductivityMetrics: {
     list: Array<{
       name: string;
@@ -216,9 +224,32 @@ export function ProductivityPage({
               <option value="Today">Today</option>
               <option value="Specific Date">Specific Date</option>
               <option value="Specific Month">Specific Month</option>
+              <option value="Date Range">Date Range</option>
               <option value="All Dates">All History</option>
             </select>
           </div>
+
+          {/* Conditional From / To date range */}
+          {productivityFilterType === "Date Range" && (
+            <div style={{ display: "flex", gap: "6px", alignItems: "center" }}>
+              <span style={{ fontSize: "13px", fontWeight: "600", color: "#475569" }}>From:</span>
+              <input
+                type="date"
+                value={productivityFromDate}
+                max={productivityToDate || undefined}
+                onChange={(e) => setProductivityFromDate(e.target.value)}
+                style={{ padding: "6px 10px", borderRadius: "6px", border: "1px solid var(--border)", fontSize: "13px", fontWeight: "600", outline: "none", background: "#f8fafc", cursor: "pointer" }}
+              />
+              <span style={{ fontSize: "13px", fontWeight: "600", color: "#475569" }}>To:</span>
+              <input
+                type="date"
+                value={productivityToDate}
+                min={productivityFromDate || undefined}
+                onChange={(e) => setProductivityToDate(e.target.value)}
+                style={{ padding: "6px 10px", borderRadius: "6px", border: "1px solid var(--border)", fontSize: "13px", fontWeight: "600", outline: "none", background: "#f8fafc", cursor: "pointer" }}
+              />
+            </div>
+          )}
 
           {/* Conditional Specific Date / Specific Month value */}
           {(productivityFilterType === "Specific Date" || productivityFilterType === "Specific Month") && (

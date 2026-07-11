@@ -22,6 +22,8 @@ export function useProductivityAnalytics(params: {
   selectedEodBodValue: string;
   productivityFilterType: string;
   selectedProductivityValue: string;
+  productivityFromDate?: string;
+  productivityToDate?: string;
 }) {
   const {
     report,
@@ -33,6 +35,8 @@ export function useProductivityAnalytics(params: {
     selectedEodBodValue,
     productivityFilterType,
     selectedProductivityValue,
+    productivityFromDate = "",
+    productivityToDate = "",
   } = params;
 
   const kpiBaseRows = useMemo(() => {
@@ -306,6 +310,33 @@ export function useProductivityAnalytics(params: {
         }
         return false;
       });
+    } else if (
+      productivityFilterType === "Date Range" &&
+      (productivityFromDate || productivityToDate)
+    ) {
+      // "Case Created Time" is DD-MM-YYYY (or DD/MM/YYYY); the date inputs are
+      // YYYY-MM-DD. Include a row when its created date is within [from, to]
+      // (each bound optional, both inclusive).
+      const fromTs = productivityFromDate
+        ? new Date(`${productivityFromDate}T00:00:00`).getTime()
+        : null;
+      const toTs = productivityToDate
+        ? new Date(`${productivityToDate}T23:59:59`).getTime()
+        : null;
+      filteredRowsForProd = regionRows.filter((r) => {
+        const createdTime = String(r.output["Case Created Time"] ?? "").trim();
+        if (!createdTime || createdTime === MANUAL_ENTRY_REQUIRED) return false;
+        const match = /^(\d{2})[-/](\d{2})[-/](\d{4})/.exec(createdTime);
+        if (!match) return false;
+        const rowTs = new Date(
+          parseInt(match[3] ?? "0", 10),
+          parseInt(match[2] ?? "1", 10) - 1,
+          parseInt(match[1] ?? "1", 10),
+        ).getTime();
+        if (fromTs !== null && rowTs < fromTs) return false;
+        if (toTs !== null && rowTs > toTs) return false;
+        return true;
+      });
     }
 
     // 4. Group by unique engineers
@@ -382,7 +413,14 @@ export function useProductivityAnalytics(params: {
     const totalAttended = list.reduce((sum, item) => sum + item.attended, 0);
 
     return { list, totalAttended, monthsList, datesList, todayStr };
-  }, [report, selectedRegion, productivityFilterType, selectedProductivityValue]);
+  }, [
+    report,
+    selectedRegion,
+    productivityFilterType,
+    selectedProductivityValue,
+    productivityFromDate,
+    productivityToDate,
+  ]);
 
   const productivityDateLabel = useMemo(() => {
     if (productivityFilterType === "Today") {
@@ -394,8 +432,20 @@ export function useProductivityAnalytics(params: {
     if (productivityFilterType === "Specific Month") {
       return selectedProductivityValue || "Specific Month";
     }
+    if (productivityFilterType === "Date Range") {
+      if (productivityFromDate || productivityToDate) {
+        return `${productivityFromDate || "…"} → ${productivityToDate || "…"}`;
+      }
+      return "Date Range";
+    }
     return "All Dates";
-  }, [productivityFilterType, engineerProductivityMetrics.todayStr, selectedProductivityValue]);
+  }, [
+    productivityFilterType,
+    engineerProductivityMetrics.todayStr,
+    selectedProductivityValue,
+    productivityFromDate,
+    productivityToDate,
+  ]);
 
   return {
     kpiBaseRows,

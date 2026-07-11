@@ -71,6 +71,7 @@ import {
   ComparisonSummaryPanel,
   DashboardToggles,
   ClosedCallLedger,
+  ClosedCallsDashboardView,
   MatchPreviewSection,
   RTPLTimeModal,
   ProductivityPage,
@@ -179,6 +180,7 @@ const HIDDEN_COLUMNS_STORAGE_KEY = "opencall.records.hiddenColumns";
 const WORKSPACE_VIEW_STORAGE_KEY = "opencall.workspaceView";
 const WORKSPACE_VIEWS = [
   "overview",
+  "closed-calls",
   "records",
   "rtpl",
   "rtpl-dashboard",
@@ -2954,6 +2956,21 @@ export default function DashboardPage() {
           </button>
           )}
 
+          {canSeeSection("closed-calls") && (
+          <button
+            type="button"
+            className={`sidebarItem ${workspaceView === "closed-calls" ? "active" : ""}`}
+            onClick={() => setWorkspaceView("closed-calls")}
+          >
+            <span className="sidebarIcon">
+              <span>📁</span> <span className="sidebarText">Closed Calls</span>
+            </span>
+            {overallClosedCount > 0 && (
+              <span className="sidebarBadge" style={{ background: "#10b981" }}>{overallClosedCount}</span>
+            )}
+          </button>
+          )}
+
           {canSeeSection("rtpl-dashboard") && (
           <button
             type="button"
@@ -3542,6 +3559,18 @@ export default function DashboardPage() {
                         regionsList={report?.regionBreakdown ?? []}
                         isSuperAdmin={session?.user?.role === "SUPER_ADMIN"}
                         openRecordsWithFilter={openRecordsWithFilter}
+                      />
+                    )}
+
+                    {workspaceView === "closed-calls" && (
+                      <ClosedCallsDashboardView
+                        overallClosedCount={overallClosedCount}
+                        closedRegionBreakdown={closedRegionBreakdown}
+                        closedRows={closedRows}
+                        selectedRegion={selectedRegion}
+                        setSelectedRegion={setSelectedRegion}
+                        openRecordsWithFilter={openRecordsWithFilter}
+                        onOpenCaseDetail={(row) => setCaseDetailRow(row)}
                       />
                     )}
 

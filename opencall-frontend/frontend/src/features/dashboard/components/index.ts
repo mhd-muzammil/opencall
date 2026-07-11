@@ -20,6 +20,7 @@ export * from "./TNViewStatusPage";
 export * from "./SLATatPage";
 export * from "./FlexEodBodPage";
 export * from "./CaseDetailDrawer";
+export * from "./ClosedCallsDashboardView";
 
 
 

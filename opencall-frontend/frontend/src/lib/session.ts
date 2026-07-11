@@ -1,12 +1,25 @@
 export type UserRole = "SUPER_ADMIN" | "REGION_ADMIN";
 
+export interface ClientSpecialAccessInfo {
+  id: string;
+  username: string;
+  roleName: string | null;
+  sections: string[];
+  allRegions: boolean;
+  regions: string[];
+  dataScope: "overall" | "warranty" | "trade";
+  permissionLevel: "view" | "edit";
+}
+
 export interface ClientSessionUser {
   id: string;
-  email: string;
+  email: string | null;
   username: string | null;
-  role: UserRole;
+  role: UserRole | "SPECIAL_ACCESS";
   regionId: string | null;
   mustChangePassword?: boolean;
+  // Present only for special-access logins (scoped credentials, not `users` rows).
+  specialAccess?: ClientSpecialAccessInfo | null;
 }
 
 export interface ClientSession {

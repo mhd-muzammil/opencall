@@ -6,17 +6,32 @@ export interface ApiErrorBody {
   };
 }
 
+export interface SpecialAccessSessionInfo {
+  id: string;
+  username: string;
+  roleName: string | null;
+  sections: string[];
+  allRegions: boolean;
+  regions: string[];
+  dataScope: "overall" | "warranty" | "trade";
+  permissionLevel: "view" | "edit";
+}
+
 export interface LoginResponse {
   token: string;
   user: {
     id: string;
-    email: string;
+    email: string | null;
     username: string | null;
-    role: "SUPER_ADMIN" | "REGION_ADMIN";
+    role: "SUPER_ADMIN" | "REGION_ADMIN" | "SPECIAL_ACCESS";
     regionId: string | null;
     region_id: string | null;
     mustChangePassword: boolean;
+    // Attached client-side (from the sibling below) for special-access logins.
+    specialAccess?: SpecialAccessSessionInfo | null;
   };
+  // Present only when the login is a special-access credential.
+  specialAccess?: SpecialAccessSessionInfo;
 }
 
 export interface UploadBatch {

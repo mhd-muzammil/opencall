@@ -51,7 +51,10 @@ export function AppHeader({
   onLogout: () => void;
   initialCompact?: boolean;
 }>) {
-  const userDisplayName = session.user.email.split("@")[0] || session.user.email;
+  const userDisplayName =
+    (session.user.email ? session.user.email.split("@")[0] : null) ||
+    session.user.username ||
+    "user";
   const roleLabel = session.user.role
     .split("_")
     .map((part) => part.charAt(0) + part.slice(1).toLowerCase())

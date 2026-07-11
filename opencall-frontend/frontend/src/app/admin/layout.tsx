@@ -17,6 +17,7 @@ const ALL_NAV: NavItem[] = [
   { href: "/admin/rca", label: "RCA tracker", roles: ["SUPER_ADMIN", "REGION_ADMIN"] },
   { href: "/admin/activity", label: "Activity feed", roles: ["SUPER_ADMIN", "REGION_ADMIN"] },
   { href: "/admin/users", label: "Users", roles: ["SUPER_ADMIN"] },
+  { href: "/admin/special-access", label: "Special Access", roles: ["SUPER_ADMIN"] },
   { href: "/admin/engineers", label: "Engineers", roles: ["SUPER_ADMIN", "REGION_ADMIN"] },
   { href: "/admin/rtpl-statuses", label: "RTPL statuses", roles: ["SUPER_ADMIN"] },
   { href: "/admin/record-format", label: "Record Format", roles: ["SUPER_ADMIN", "REGION_ADMIN"] },
@@ -56,7 +57,9 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
     return null;
   }
 
-  const visibleNav = ALL_NAV.filter((item) => item.roles.includes(session.user.role));
+  const visibleNav = ALL_NAV.filter((item) =>
+    item.roles.some((role) => role === session.user.role),
+  );
 
   function logout() {
     clearSession();

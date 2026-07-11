@@ -156,6 +156,7 @@ import {
   type RtplTimeCardId,
 } from "../lib/reportDashboardAnalytics";
 import { getLatestCompletedReportSession } from "../lib/reportHistorySelection";
+import { fetchSpecialAccessReport } from "../lib/specialAccessApiClient";
 
 // Phase 2: dashboard/analytics types moved to features/dashboard/types.
 
@@ -297,6 +298,13 @@ export default function DashboardPage() {
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [session, setSession] = useState<LoginResponse | null>(null);
+  // --- Special-access session (scoped login, not a users row) ---
+  // All special-access behaviour is gated behind `isSpecialAccess`, so regular
+  // SUPER_ADMIN / REGION_ADMIN sessions follow exactly the same code paths as before.
+  const specialAccess = session?.user?.specialAccess ?? null;
+  const isSpecialAccess = session?.user?.role === "SPECIAL_ACCESS";
+  const canSeeSection = (key: string): boolean =>
+    !isSpecialAccess || (specialAccess?.sections?.includes(key) ?? false);
   const [regionId, setRegionId] = useState("");
   const [files, setFiles] = useState<Partial<Record<FileField, File[]>>>({});
   const [upload, setUpload] = useState<UploadResponse | null>(null);
@@ -1210,12 +1218,50 @@ export default function DashboardPage() {
     void refreshHealth();
   }, []);
 
+  // Special-access logins load their report from a dedicated, server-filtered endpoint
+  // (region set + warranty/trade applied server-side). No-ops for regular users.
+  useEffect(() => {
+    if (!isSpecialAccess || !session) return;
+    const token = session.token;
+    let cancelled = false;
+
+    async function loadScopedReport() {
+      try {
+        const res = await fetchSpecialAccessReport(token);
+        if (!cancelled) setReport(res.report);
+      } catch (error) {
+        if (!cancelled) console.error("Failed to load special-access report", error);
+      }
+    }
+
+    void loadScopedReport();
+    const timer = setInterval(loadScopedReport, 60000);
+    return () => {
+      cancelled = true;
+      clearInterval(timer);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isSpecialAccess, session?.token]);
+
+  // Keep a special-access user on a section they are actually allowed to see.
+  useEffect(() => {
+    if (!isSpecialAccess) return;
+    const allowed = specialAccess?.sections ?? [];
+    if (allowed.length > 0 && !allowed.includes(workspaceView)) {
+      setWorkspaceView(allowed[0] as typeof workspaceView);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isSpecialAccess, specialAccess, workspaceView]);
+
   function handleSessionExpired() {
     handleLogout();
     setMessage("Session expired, please login again.");
   }
 
   function isCurrentSessionAuthError(error: unknown): boolean {
+    // Special-access sessions legitimately call user-only endpoints that 401; those
+    // must never force a logout. Their scoped endpoints surface real auth failures.
+    if (isSpecialAccess) return false;
     return Boolean(session) && isApiAuthError(error);
   }
 
@@ -1456,9 +1502,14 @@ export default function DashboardPage() {
 
     await runAction(async () => {
       const nextSession = await login(loginUsername, password);
+      // Special-access logins carry their scope on a sibling field; fold it onto the
+      // stored user so the whole session travels together (does not affect regular users).
+      const storedUser = nextSession.specialAccess
+        ? { ...nextSession.user, specialAccess: nextSession.specialAccess }
+        : nextSession.user;
       window.localStorage.setItem("opencall.token", nextSession.token);
-      window.localStorage.setItem("opencall.user", JSON.stringify(nextSession.user));
-      setSession(nextSession);
+      window.localStorage.setItem("opencall.user", JSON.stringify(storedUser));
+      setSession({ ...nextSession, user: storedUser });
       setRegionId(nextSession.user.regionId ?? "");
       setUsername("");
       setPassword("");
@@ -2891,6 +2942,7 @@ export default function DashboardPage() {
         <div className="sidebarMenu">
           <div className="sidebarSection">Dashboards</div>
 
+          {canSeeSection("overview") && (
           <button
             type="button"
             className={`sidebarItem ${workspaceView === "overview" ? "active" : ""}`}
@@ -2900,7 +2952,9 @@ export default function DashboardPage() {
               <span>📊</span> <span className="sidebarText">Overview</span>
             </span>
           </button>
+          )}
 
+          {canSeeSection("rtpl-dashboard") && (
           <button
             type="button"
             className={`sidebarItem ${workspaceView === "rtpl-dashboard" ? "active" : ""}`}
@@ -2910,7 +2964,9 @@ export default function DashboardPage() {
               <span>📈</span> <span className="sidebarText">RTPL Dashboard</span>
             </span>
           </button>
+          )}
 
+          {canSeeSection("rtpl") && (
           <button
             type="button"
             className={`sidebarItem ${workspaceView === "rtpl" ? "active" : ""}`}
@@ -2920,7 +2976,9 @@ export default function DashboardPage() {
               <span>📈</span> <span className="sidebarText">RTPL Houres status</span>
             </span>
           </button>
+          )}
 
+          {canSeeSection("sla-tat") && (
           <button
             type="button"
             className={`sidebarItem ${workspaceView === "sla-tat" ? "active" : ""}`}
@@ -2930,7 +2988,9 @@ export default function DashboardPage() {
               <span>⏰</span> <span className="sidebarText">SLA TaT</span>
             </span>
           </button>
+          )}
 
+          {canSeeSection("pivot") && (
           <button
             type="button"
             className={`sidebarItem ${workspaceView === "pivot" ? "active" : ""}`}
@@ -2940,7 +3000,9 @@ export default function DashboardPage() {
               <span>🧩</span> <span className="sidebarText">RTPL pivot</span>
             </span>
           </button>
+          )}
 
+          {canSeeSection("tn-view-status") && (
           <button
             type="button"
             className={`sidebarItem ${workspaceView === "tn-view-status" ? "active" : ""}`}
@@ -2950,7 +3012,9 @@ export default function DashboardPage() {
               <span>📊</span> <span className="sidebarText">TN VIEW Status</span>
             </span>
           </button>
+          )}
 
+          {canSeeSection("flex") && (
           <button
             type="button"
             className={`sidebarItem ${workspaceView === "flex" ? "active" : ""}`}
@@ -2960,7 +3024,9 @@ export default function DashboardPage() {
               <span>⚡</span> <span className="sidebarText">Flex Dashboard</span>
             </span>
           </button>
+          )}
 
+          {canSeeSection("flex-eod-bod") && (
           <button
             type="button"
             className={`sidebarItem ${workspaceView === "flex-eod-bod" ? "active" : ""}`}
@@ -2970,9 +3036,13 @@ export default function DashboardPage() {
               <span>📈</span> <span className="sidebarText">Flex Eod&Bod</span>
             </span>
           </button>
+          )}
 
-          <div className="sidebarSection">Data & Operations</div>
+          {(!isSpecialAccess || canSeeSection("records") || canSeeSection("productivity")) && (
+            <div className="sidebarSection">Data & Operations</div>
+          )}
 
+          {canSeeSection("records") && (
           <button
             type="button"
             className={`sidebarItem ${workspaceView === "records" ? "active" : ""}`}
@@ -2986,8 +3056,12 @@ export default function DashboardPage() {
               <span className="sidebarBadge">{incompleteCellCount}</span>
             )}
           </button>
+          )}
 
-          {(session.user.role === "SUPER_ADMIN" || (selectedRegion && selectedRegion !== "ALL" && regionKpiMetrics)) && (
+          {((isSpecialAccess && canSeeSection("productivity")) ||
+            (!isSpecialAccess &&
+              (session.user.role === "SUPER_ADMIN" ||
+                (selectedRegion && selectedRegion !== "ALL" && regionKpiMetrics)))) && (
             <button
               type="button"
               className={`sidebarItem ${workspaceView === "productivity" ? "active" : ""}`}

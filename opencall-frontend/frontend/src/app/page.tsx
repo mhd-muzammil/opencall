@@ -2458,8 +2458,24 @@ export default function DashboardPage() {
     [regionScopedActiveRows],
   );
 
+  // Active part cases = active record-table rows whose PART field is non-blank
+  // (same as unchecking (BLANK) in the record table's PART filter).
+  const activePartCaseCount = useMemo(
+    () =>
+      activeRows.filter(
+        (r) => String(r.output["Part"] ?? "").trim() !== "",
+      ).length,
+    [activeRows],
+  );
+
   const overviewMetrics: MetricsGridItem[] = report
     ? [
+      {
+        label: "Active Part Cases",
+        value: String(activePartCaseCount),
+        detail: "Record table — rows with a part",
+        tone: "accent",
+      },
       {
         label: "Actionable & Planned",
         value: "",

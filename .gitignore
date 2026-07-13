@@ -1,3 +1,57 @@
+# dependencies
+node_modules/
+.pnp
+.pnp.js
+
+# npm lockfile — this workspace uses pnpm (pnpm-lock.yaml)
+package-lock.json
+
+# build & compiled output
+.next/
+dist/
+build/
+out/
+*.tsbuildinfo
+
+# test output
+coverage/
+test-results/
+playwright-report/
+blob-report/
+playwright/.cache/
+
+# The backend lives in its own git repository (mhd-muzammil/opencall_BE) and is
+# checked out here for convenience. It must never be committed into this repo.
+open_call_2/
+
+# env files (do not commit secrets)
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+!.env.example
+!.env.production.example
+!**/.env.example
+!**/.env.production.example
+
+# debug & logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+*.log
+
+# IDE & editor
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
 # Word documents (and temp lock files)
 *.docx
 ~$*.docx

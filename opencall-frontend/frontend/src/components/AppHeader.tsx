@@ -133,7 +133,7 @@ export function AppHeader({
 
         {/* Primary Operational Actions */}
         <div className="headerActionsGroup">
-          {session.user.role === "SUPER_ADMIN" && (
+          {(session.user.role === "SUPER_ADMIN" || session.user.role === "REGION_ADMIN") && (
             <button
               className="premiumActionBtn primary"
               type="button"

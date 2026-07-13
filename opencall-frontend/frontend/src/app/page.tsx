@@ -1216,10 +1216,15 @@ export default function DashboardPage() {
 
     if (token && user) {
       try {
+        const parsedUser = JSON.parse(user) as LoginResponse["user"];
         setSession({
           token,
-          user: JSON.parse(user) as LoginResponse["user"],
+          user: parsedUser,
         });
+        // Same as handleLogin: without this a REGION_ADMIN who refreshes the page
+        // uploads/generates with an empty regionId and the history auto-switch
+        // stops matching their sessions.
+        setRegionId(parsedUser.regionId ?? "");
       } catch {
         window.localStorage.removeItem("opencall.token");
         window.localStorage.removeItem("opencall.user");
@@ -3154,7 +3159,7 @@ export default function DashboardPage() {
 
           <div className="sidebarSection">Utilities & System</div>
 
-          {session.user.role === "SUPER_ADMIN" && (
+          {(session.user.role === "SUPER_ADMIN" || session.user.role === "REGION_ADMIN") && (
             <button
               type="button"
               className="sidebarItem"

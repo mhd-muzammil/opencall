@@ -8,6 +8,31 @@ export interface ReportHistoryPanelProps {
   onDelete: (session: ReportHistorySession) => void;
 }
 
+/**
+ * When the file behind a session was uploaded — date plus a 12-hour clock time, e.g.
+ * "13/07/2026, 4:35 PM". Several reports are uploaded per day, so the date alone does
+ * not tell them apart. Sourced from createdAt (the session/upload timestamp); reportDate
+ * is a date-only business date and can never carry a time.
+ */
+export function formatSessionUploadedAt(value: string): string {
+  const uploadedAt = new Date(value);
+  if (Number.isNaN(uploadedAt.getTime())) {
+    return "";
+  }
+
+  const date = uploadedAt.toLocaleDateString();
+  const time = uploadedAt
+    .toLocaleTimeString(undefined, {
+      hour: "numeric",
+      minute: "2-digit",
+      hour12: true,
+    })
+    // Some locales render the meridiem lowercase ("4:35 pm"); always show AM/PM.
+    .replace(/\b(am|pm)\b/i, (meridiem) => meridiem.toUpperCase());
+
+  return `${date}, ${time}`;
+}
+
 function groupSessions(sessions: ReportHistorySession[]) {
   const today = new Date();
   today.setHours(0, 0, 0, 0);
@@ -48,10 +73,11 @@ export function ReportHistoryPanel({ sessions, onOpen, onRename, onDelete }: Rep
     let f = sessions;
     if (search.trim()) {
       const q = search.toLowerCase();
-      f = f.filter(s => 
-        s.title.toLowerCase().includes(q) || 
+      f = f.filter(s =>
+        s.title.toLowerCase().includes(q) ||
         (s.regionId && s.regionId.toLowerCase().includes(q)) ||
-        new Date(s.createdAt).toLocaleDateString().includes(q)
+        // Matches the date as before, and now the time too ("4:35", "pm").
+        formatSessionUploadedAt(s.createdAt).toLowerCase().includes(q)
       );
     }
     if (statusFilter !== "ALL") {
@@ -130,7 +156,7 @@ export function ReportHistoryPanel({ sessions, onOpen, onRename, onDelete }: Rep
                     <span className={`statusBadge ${session.status.toLowerCase()}`}>{session.status}</span>
                   </div>
                   <div className="historyItemMeta">
-                    <span>{new Date(session.createdAt).toLocaleDateString()}</span>
+                    <span>{formatSessionUploadedAt(session.createdAt)}</span>
                     {session.regionId && <span> • Region: {session.regionId.substring(0,8)}</span>}
                     {session.totalRows > 0 && <span> • {session.totalRows} rows</span>}
                   </div>

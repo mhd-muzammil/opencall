@@ -6,7 +6,7 @@ import type {
   RuntimeHealthResponse,
 } from "../lib/apiClient";
 
-export type WorkspaceView = "overview" | "closed-calls" | "records" | "rtpl" | "rtpl-dashboard" | "pivot" | "flex" | "productivity" | "tn-view-status" | "sla-tat" | "flex-eod-bod" | "admin-engineers" | "admin-rtpl-statuses";
+export type WorkspaceView = "overview" | "closed-calls" | "records" | "rtpl" | "rtpl-dashboard" | "pivot" | "flex" | "productivity" | "tn-view-status" | "sla-tat" | "flex-eod-bod" | "admin-engineers" | "admin-rtpl-statuses" | "warranty";
 
 export const HEADER_COMPACT_STORAGE_KEY = "opencall.headerCompact";
 
@@ -84,6 +84,8 @@ export function AppHeader({
         return "Add Engineers";
       case "admin-rtpl-statuses":
         return "RTPL Statuses";
+      case "warranty":
+        return "HP Warranty Lookup";
       default:
         return "Operational Overview";
     }
@@ -113,6 +115,8 @@ export function AppHeader({
         return "Administration / Engineers";
       case "admin-rtpl-statuses":
         return "Administration / RTPL Statuses";
+      case "warranty":
+        return "Data & Operations / Warranty Lookup";
       default:
         return "Dashboards / Overview";
     }

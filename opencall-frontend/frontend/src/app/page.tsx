@@ -135,6 +135,7 @@ import { LoginScreen, SessionLoadingScreen } from "../features/auth/LoginScreen"
 import AdminEngineersPage from "./admin/engineers/page";
 import { getRecordLayout } from "../lib/recordLayoutApiClient";
 import { AdminRtplStatusesManager } from "../components/AdminRtplStatusesManager";
+import { WarrantyLookupManager } from "../components/WarrantyLookupManager";
 import {
   downloadReportAsXlsx,
   downloadReportAsExcel,
@@ -192,6 +193,7 @@ const WORKSPACE_VIEWS = [
   "flex-eod-bod",
   "admin-engineers",
   "admin-rtpl-statuses",
+  "warranty",
 ] as const;
 type WorkspaceView = (typeof WORKSPACE_VIEWS)[number];
 
@@ -3126,6 +3128,18 @@ export default function DashboardPage() {
             </button>
           )}
 
+          {(session.user.role === "SUPER_ADMIN" || session.user.role === "REGION_ADMIN") && (
+            <button
+              type="button"
+              className={`sidebarItem ${workspaceView === "warranty" ? "active" : ""}`}
+              onClick={() => setWorkspaceView("warranty")}
+            >
+              <span className="sidebarIcon">
+                <span>🛡️</span> <span className="sidebarText">Warranty Lookup</span>
+              </span>
+            </button>
+          )}
+
           {session.user.role === "SUPER_ADMIN" && (
             <button
               type="button"
@@ -3236,7 +3250,14 @@ export default function DashboardPage() {
 
           <section className={`workspace ${workspaceView === "records" ? "recordsMode" : "overviewMode"}`}>
             <section className="mainGrid">
-              {report ? (
+              {/* Warranty lookup works straight off an uploaded file — no generated report needed. */}
+              {workspaceView === "warranty" ? (
+                <section className="panel reportPanel">
+                  <WarrantyLookupManager />
+                </section>
+              ) : null}
+
+              {report && workspaceView !== "warranty" ? (
                 <section className="panel reportPanel">
                   <div className="overviewReportContent">
                     {workspaceView === "overview" && (

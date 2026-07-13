@@ -1465,7 +1465,13 @@ export default function DashboardPage() {
         if (isApiAuthError(error)) {
           handleBackgroundError(error);
         } else {
+          // Surfaced, not just logged: a failing backend used to be completely
+          // invisible here — the workspace simply stopped updating, which reads
+          // as "stuck loading". The poll keeps running and self-heals.
           console.error("Background upload check failed:", error);
+          setMessage(
+            "Could not reach the server to check for new uploads. Showing the last loaded report; retrying…",
+          );
         }
       } finally {
         timerId = setTimeout(checkForNewUpload, POLL_MS);
@@ -1658,26 +1664,20 @@ export default function DashboardPage() {
       mockBatches.push({ id: detail.callPlanUploadBatchId, sourceType: "CALL_PLAN", originalFileName: "", status: "PROCESSED", rowCount: 0, errorCount: 0, createdAt: detail.createdAt });
     }
 
-    setUpload({ batches: mockBatches, validations: [], parseSummaries: [] });
-    setPreview(null);
-    setReport(null);
-    setEditingSerialNo(null);
-    setSavingSerialNo(null);
-    setDraftOutput({});
-    setFiles({});
-
     const isRegionAdmin = session.user.role === "REGION_ADMIN";
     const effectiveRegionId = isRegionAdmin
       ? session.user.regionId ?? ""
       : detail.regionId || regionId;
 
-    if (!isRegionAdmin && detail.regionId) setRegionId(detail.regionId);
-    if (detail.reportDate) {
-      setReportDate(detail.reportDate);
-      setRtplAnalyticsDate(detail.reportDate);
-    }
-    window.localStorage.setItem(LAST_HISTORY_SESSION_KEY, detail.id);
-
+    // Fetch phase. Everything is fetched BEFORE any state is touched.
+    //
+    // This used to clear `report`/`preview` up front and only re-populate them
+    // after these awaits. When an await failed (a 500, a CORS/network blip, a
+    // deploy) the function aborted with report === null, which blanks the whole
+    // workspace — and because `report?.reportId` is a dependency of the 15s
+    // background poll, the poll then early-returned forever and never retried.
+    // The result looked exactly like the app hanging on "loading" until a manual
+    // refresh. Failing here now leaves the previous report on screen instead.
     const prev = await previewMatches({
       token: session.token,
       regionId: effectiveRegionId,
@@ -1685,21 +1685,37 @@ export default function DashboardPage() {
       ...(detail.renderwaysUploadBatchId ? { renderwaysUploadBatchId: detail.renderwaysUploadBatchId } : {}),
       ...(detail.callPlanUploadBatchId ? { callPlanUploadBatchId: detail.callPlanUploadBatchId } : {}),
     });
-    setPreview(prev);
 
-    if (detail.status === "COMPLETED") {
-      const historyReportDate = detail.reportDate ?? detail.createdAt.slice(0, 10);
-      const rep = await generateReport({
-        token: session.token,
-        regionId: effectiveRegionId,
-        reportDate: historyReportDate,
-        flexUploadBatchId: detail.flexUploadBatchId,
-        ...(detail.renderwaysUploadBatchId ? { renderwaysUploadBatchId: detail.renderwaysUploadBatchId } : {}),
-        ...(detail.callPlanUploadBatchId ? { callPlanUploadBatchId: detail.callPlanUploadBatchId } : {}),
-      });
-      setReport(rep);
-      window.localStorage.setItem(LAST_HISTORY_SESSION_KEY, rep.sessionId);
+    const rep =
+      detail.status === "COMPLETED"
+        ? await generateReport({
+            token: session.token,
+            regionId: effectiveRegionId,
+            reportDate: detail.reportDate ?? detail.createdAt.slice(0, 10),
+            flexUploadBatchId: detail.flexUploadBatchId,
+            ...(detail.renderwaysUploadBatchId ? { renderwaysUploadBatchId: detail.renderwaysUploadBatchId } : {}),
+            ...(detail.callPlanUploadBatchId ? { callPlanUploadBatchId: detail.callPlanUploadBatchId } : {}),
+          })
+        : null;
+
+    // Commit phase: no awaits past this point, so the workspace can never be left
+    // half-restored. A draft (non-COMPLETED) session still yields report === null,
+    // matching the previous behaviour.
+    setUpload({ batches: mockBatches, validations: [], parseSummaries: [] });
+    setEditingSerialNo(null);
+    setSavingSerialNo(null);
+    setDraftOutput({});
+    setFiles({});
+
+    if (!isRegionAdmin && detail.regionId) setRegionId(detail.regionId);
+    if (detail.reportDate) {
+      setReportDate(detail.reportDate);
+      setRtplAnalyticsDate(detail.reportDate);
     }
+
+    setPreview(prev);
+    setReport(rep);
+    window.localStorage.setItem(LAST_HISTORY_SESSION_KEY, rep?.sessionId ?? detail.id);
 
     if (closeHistoryPanel) {
       setIsHistoryPanelOpen(false);

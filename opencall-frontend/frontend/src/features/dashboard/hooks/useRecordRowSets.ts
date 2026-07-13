@@ -1,7 +1,7 @@
 // Derived record row-set memos extracted from app/page.tsx (Phase 5).
 // useMemo bodies and dependency arrays preserved verbatim — no behavior changes.
 import { useMemo } from "react";
-import { isTodayCallPlanVisibleRow } from "../../../lib/reportDashboardAnalytics";
+import { isRecordsPageVisibleRow } from "../../../lib/reportDashboardAnalytics";
 import type { GeneratedReportResponse } from "../../../lib/apiClient";
 import type { PrintCaseFilter } from "../types";
 import {
@@ -47,9 +47,13 @@ export function useRecordRowSets(params: {
     selectedWoOtcCode,
   } = params;
 
+  // Everything the Records page lists, and the base for every category chip and count
+  // on it. Includes calls that closed on a same-day re-upload: they stay listed until
+  // the next day's first upload, so the table and its chips agree with each other. The
+  // KPI tiles and the backend region breakdown still count them as closed.
   const activeRows = useMemo(() => {
     if (!report) return [];
-    return report.rows.filter(isTodayCallPlanVisibleRow);
+    return report.rows.filter(isRecordsPageVisibleRow);
   }, [report]);
 
   const cissRows = useMemo(() => {

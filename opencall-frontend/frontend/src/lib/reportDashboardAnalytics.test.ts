@@ -7,6 +7,7 @@ import {
   buildRtplOperationalAnalytics,
   buildRtplTimeCards,
   filterRowsByRegion,
+  isRecordsPageVisibleRow,
   isTodayCallPlanVisibleRow,
   reportWithRows,
 } from "./reportDashboardAnalytics";
@@ -39,6 +40,7 @@ function row(
       changeType: null,
       previousTicketMatched: false,
       closedSyntheticRow: false,
+      sameDayClosedRow: false,
     },
     updatedAt: null,
     updatedBy: null,
@@ -210,6 +212,33 @@ describe("reportDashboardAnalytics", () => {
 
     expect(isTodayCallPlanVisibleRow(visibleRow)).toBe(true);
     expect(isTodayCallPlanVisibleRow(requestToCancelRow)).toBe(false);
+  });
+
+  it("keeps a same-day closed row on the Records page but not in the open-call set", () => {
+    const openRow = row(1, { "Ticket ID": "WO-1", "Flex Status": "Open" });
+
+    // Closed by the day's first upload: off the Records page immediately.
+    const closedRow = row(2, { "Ticket ID": "WO-2" });
+    closedRow.carryForward.closedSyntheticRow = true;
+
+    // Closed by a same-day re-upload: closed, but still listed on the Records page.
+    const sameDayClosedRow = row(3, { "Ticket ID": "WO-3" });
+    sameDayClosedRow.carryForward.closedSyntheticRow = true;
+    sameDayClosedRow.carryForward.sameDayClosedRow = true;
+
+    // Request to Cancel still wins over same-day visibility.
+    const cancelledRow = row(4, { "Ticket ID": "WO-4", "Flex Status": "Request to Cancel" });
+    cancelledRow.carryForward.closedSyntheticRow = true;
+    cancelledRow.carryForward.sameDayClosedRow = true;
+
+    expect(isRecordsPageVisibleRow(openRow)).toBe(true);
+    expect(isRecordsPageVisibleRow(closedRow)).toBe(false);
+    expect(isRecordsPageVisibleRow(sameDayClosedRow)).toBe(true);
+    expect(isRecordsPageVisibleRow(cancelledRow)).toBe(false);
+
+    // isTodayCallPlanVisibleRow still means "open" — the export and the parts-count
+    // sync depend on a same-day closed row being excluded here.
+    expect(isTodayCallPlanVisibleRow(sameDayClosedRow)).toBe(false);
   });
 
   it("builds fixed RTPL time cards with carry-forward and checkpoint change details", () => {

@@ -171,6 +171,24 @@ export function isTodayCallPlanVisibleRow(row: ReportRow): boolean {
   );
 }
 
+/**
+ * Rows the Records page lists. This is isTodayCallPlanVisibleRow plus the calls that
+ * closed on a same-day re-upload: they are closed (ledger, closed counts, exports and
+ * the parts sync all treat them as closed) but stay on the Records page so the day's
+ * call plan never loses a row mid-day. The next day's first upload closes them for
+ * good and they drop off here too.
+ *
+ * Deliberately separate from isTodayCallPlanVisibleRow, which still means "open" and
+ * is what the workbook export and the backend parts-count sync key off.
+ */
+export function isRecordsPageVisibleRow(row: ReportRow): boolean {
+  return (
+    (!row.carryForward.closedSyntheticRow ||
+      row.carryForward.sameDayClosedRow === true) &&
+    !hasRequestToCancelFlexStatus(row)
+  );
+}
+
 export function buildOverallWoOtcBreakdown(
   regionBreakdown: GeneratedReportResponse["regionBreakdown"],
 ): WoOtcBreakdownEntry[] {

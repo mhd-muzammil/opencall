@@ -173,6 +173,9 @@ export interface GeneratedReportResponse {
       changeType: "NEW" | "CLOSED" | "CARRIED" | "UPDATED" | "NEW_WORK_ORDER" | null;
       previousTicketMatched: boolean;
       closedSyntheticRow: boolean;
+      // Closed on a same-day re-upload: still listed on the Records page until the
+      // next day's first upload, even though it counts as closed everywhere else.
+      sameDayClosedRow: boolean;
     };
     updatedAt: string | null;
     updatedBy: string | null;

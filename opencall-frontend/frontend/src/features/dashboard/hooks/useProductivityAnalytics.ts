@@ -6,10 +6,19 @@
 // kpiBaseRows lives here (deferred from useKpiMetrics) because tnFilteredRows/
 // eodBodFilteredRows derive from it.
 import { useMemo } from "react";
-import { hasRequestToCancelFlexStatus } from "../../../lib/reportDashboardAnalytics";
+import {
+  hasRequestToCancelFlexStatus,
+  isRecordsPageVisibleRow,
+} from "../../../lib/reportDashboardAnalytics";
 import type { GeneratedReportResponse } from "../../../lib/apiClient";
 import { MANUAL_ENTRY_REQUIRED } from "../constants";
 import { canonicalEngineerName } from "../engineerAliases";
+import {
+  addToProductivityCounts,
+  classifyProductivityStatus,
+  effectiveProductivityStatus,
+  emptyProductivityBucketCounts,
+} from "../utils/engineerProductivity";
 import { ASP_CODE_REGION_MAP } from "@opencall/shared";
 
 export function useProductivityAnalytics(params: {
@@ -219,10 +228,13 @@ export function useProductivityAnalytics(params: {
   const engineerProductivityMetrics = useMemo(() => {
     if (!report) return { list: [], totalAttended: 0, monthsList: [], datesList: [], todayStr: "" };
 
-    // 1. Filter rows by selectedRegion
-    let regionRows = report.rows;
+    // 1. Productivity is a day-by-day view: it reads the same rows the Records
+    // page shows for this report's day (open calls plus today's same-day
+    // closures; older closures and Request-to-Cancel rows are out), then
+    // filters by selectedRegion.
+    let regionRows = report.rows.filter(isRecordsPageVisibleRow);
     if (selectedRegion && selectedRegion !== "ALL") {
-      regionRows = report.rows.filter(r => String(r.output["Work Location"] ?? "").trim().toUpperCase() === selectedRegion.trim().toUpperCase());
+      regionRows = regionRows.filter(r => String(r.output["Work Location"] ?? "").trim().toUpperCase() === selectedRegion.trim().toUpperCase());
     }
 
     // 1b. Deduplicate rows by Ticket ID to prevent duplicate engineer productivity counts
@@ -339,74 +351,76 @@ export function useProductivityAnalytics(params: {
       });
     }
 
-    // 4. Group by unique engineers
-    const active = filteredRowsForProd.filter((r) => !r.carryForward.closedSyntheticRow);
-    const closed = filteredRowsForProd.filter((r) => r.carryForward.closedSyntheticRow);
-
-    // Resolve each raw Engineer value to its canonical name: apply manual
-    // aliases ("Lava Kumar" -> "Lava") then group case-insensitively so pure
-    // casing variants ("sriram"/"Sriram") merge too.
+    // 4. Group by unique engineers. A row counts only when BOTH the engineer
+    // and its effective status (Evening once filled, else Morning) are set;
+    // either one blank and the call is ignored entirely. Each counted call
+    // lands in exactly one bucket; assigned/attended are rolled up from them.
     const engineerName = (r: typeof filteredRowsForProd[number]) =>
       canonicalEngineerName(String(r.output.Engineer ?? ""));
 
-    // Per engineer key (lower-cased canonical name), track how often each
-    // spelling appears so the most common one is displayed.
-    const casingCountsByKey = new Map<string, Map<string, number>>();
-    for (const r of filteredRowsForProd) {
-      const name = engineerName(r);
-      if (!name || name === "Manual Entry Required") continue;
-      const key = name.toLowerCase();
-      let casingCounts = casingCountsByKey.get(key);
-      if (!casingCounts) {
-        casingCounts = new Map();
-        casingCountsByKey.set(key, casingCounts);
-      }
-      casingCounts.set(name, (casingCounts.get(name) ?? 0) + 1);
+    interface EngineerAccumulator {
+      casingCounts: Map<string, number>;
+      regionCode: string;
+      counts: ReturnType<typeof emptyProductivityBucketCounts>;
     }
 
-    const list = Array.from(casingCountsByKey.entries()).map(([engKey, casingCounts]) => {
+    const engineersByKey = new Map<string, EngineerAccumulator>();
+    for (const r of filteredRowsForProd) {
+      // Resolve the raw Engineer value to its canonical name: apply manual
+      // aliases ("Lava Kumar" -> "Lava") then group case-insensitively so pure
+      // casing variants ("sriram"/"Sriram") merge too.
+      const name = engineerName(r);
+      if (!name || name === MANUAL_ENTRY_REQUIRED) continue;
+
+      const bucket = classifyProductivityStatus(effectiveProductivityStatus(r.output));
+      if (!bucket) continue;
+
+      const key = name.toLowerCase();
+      let engineer = engineersByKey.get(key);
+      if (!engineer) {
+        engineer = {
+          casingCounts: new Map(),
+          regionCode: String(r.output["Work Location"] ?? "").trim(),
+          counts: emptyProductivityBucketCounts(),
+        };
+        engineersByKey.set(key, engineer);
+      }
+      engineer.casingCounts.set(name, (engineer.casingCounts.get(name) ?? 0) + 1);
+
+      const ticketId = String(r.output["Ticket ID"] ?? "").trim() || String(r.serialNo);
+      addToProductivityCounts(engineer.counts, bucket, ticketId);
+    }
+
+    const list = Array.from(engineersByKey.values()).map((engineer) => {
       // Most frequent spelling wins; ties keep the first seen (Map is ordered).
       let engName = "";
       let bestCount = -1;
-      for (const [casing, count] of casingCounts) {
+      for (const [casing, count] of engineer.casingCounts) {
         if (count > bestCount) {
           bestCount = count;
           engName = casing;
         }
       }
 
-      const engActive = active.filter(r => engineerName(r).toLowerCase() === engKey);
-      const engClosed = closed.filter(r => engineerName(r).toLowerCase() === engKey);
-
-      const firstRow = filteredRowsForProd.find(r => engineerName(r).toLowerCase() === engKey);
-      const regionCode = firstRow ? String(firstRow.output["Work Location"] ?? "").trim() : "";
+      const regionCode = engineer.regionCode;
       const regionName = ASP_CODE_REGION_MAP[regionCode as keyof typeof ASP_CODE_REGION_MAP] || regionCode || "N/A";
-
-      const countStatus = (items: typeof engActive, keywords: string[]) => {
-        return items.filter(r => {
-          const s = String(r.output["RTPL status"] ?? "").trim().toLowerCase();
-          return keywords.some(kw => s.includes(kw.toLowerCase()));
-        }).length;
-      };
-
-      const closedCount = engClosed.length + countStatus(engActive, ["closed"]);
-      const partOrderedCount = countStatus(engActive, ["part", "additional part", "part order pending"]);
-      const underObservationCount = countStatus(engActive, ["observation", "crt pending", "ct validation"]);
-      const cxRescheduleCount = countStatus(engActive, ["cx", "reschedule", "cust pending", "customer pending"]);
-
-      const attendedCount = closedCount + partOrderedCount + underObservationCount;
-      const assignedCount = attendedCount + cxRescheduleCount;
 
       return {
         name: engName,
         regionCode,
         regionName,
-        assigned: assignedCount,
-        attended: attendedCount,
-        closed: closedCount,
-        partOrdered: partOrderedCount,
-        underObservation: underObservationCount,
-        cxReschedule: cxRescheduleCount,
+        assigned: engineer.counts.assigned,
+        assignedTickets: engineer.counts.assignedTickets,
+        attended: engineer.counts.attended,
+        attendedTickets: engineer.counts.attendedTickets,
+        closed: engineer.counts.closed,
+        closedTickets: engineer.counts.closedTickets,
+        partOrdered: engineer.counts.partOrdered,
+        partOrderedTickets: engineer.counts.partOrderedTickets,
+        underObservation: engineer.counts.underObservation,
+        underObservationTickets: engineer.counts.underObservationTickets,
+        cxReschedule: engineer.counts.cxReschedule,
+        cxRescheduleTickets: engineer.counts.cxRescheduleTickets,
       };
     }).sort((a, b) => b.attended - a.attended || a.name.localeCompare(b.name));
 

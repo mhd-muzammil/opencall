@@ -3,15 +3,15 @@
 // productivity table then rolls buckets up per engineer:
 //
 //   Scheduled / To be Scheduled / Engg Assigned
-//                        -> SCHEDULED         (booked to the engineer, not yet attended)
+//                        -> SCHEDULED         (booked to the engineer; counts nowhere yet)
 //   WO Closed            -> CLOSED
 //   Part Order           -> PART_ORDER
 //   Under Observation    -> UNDER_OBSERVATION
 //   CX Reschedule        -> CX_RESCHEDULE     (customer pushed the visit out)
-//   any other status     -> ATTENDED_OTHER    (a status AFTER the scheduled
-//                                              stage = the engineer worked it)
+//   any other status     -> ATTENDED_OTHER    (in progress; counts nowhere yet)
 //
-//   Assigned = every bucketed call;  Attended = Assigned − SCHEDULED − CX_RESCHEDULE
+//   Attended = CLOSED + PART_ORDER + UNDER_OBSERVATION
+//   Assigned = Attended + CX_RESCHEDULE
 //
 // A call counts only when BOTH the engineer and the status are filled in on the
 // Records page — either one blank (or "Manual Entry Required") and it is ignored.
@@ -165,21 +165,26 @@ export function emptyProductivityBucketCounts(): ProductivityBucketCounts {
 }
 
 /**
- * Add one bucketed call to an engineer's counts. Assigned always increments
- * (it is the engineer's total load); Attended increments for every bucket
- * except still-assigned and customer reschedules.
+ * Add one bucketed call to an engineer's counts. Only concrete outcomes count:
+ *
+ *   Attended = Closed + Part ordered + Under Observation
+ *   Assigned = Attended + CX Reschedule
+ *
+ * Scheduled-stage calls and in-progress statuses (CX Pending, work in
+ * progress, ...) appear in NO column — a call earns productivity only once it
+ * reaches one of the four outcomes.
  */
 export function addToProductivityCounts(
   counts: ProductivityBucketCounts,
   bucket: ProductivityBucket,
   ticketId: string,
 ): void {
-  counts.assigned += 1;
-  counts.assignedTickets.push(ticketId);
-
-  if (bucket === "SCHEDULED") {
+  if (bucket === "SCHEDULED" || bucket === "ATTENDED_OTHER") {
     return;
   }
+
+  counts.assigned += 1;
+  counts.assignedTickets.push(ticketId);
 
   if (bucket === "CX_RESCHEDULE") {
     counts.cxReschedule += 1;

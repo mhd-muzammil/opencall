@@ -150,10 +150,11 @@ describe("wasRowEnteredOnItsDay", () => {
 });
 
 describe("addToProductivityCounts", () => {
-  it("rolls up like the productivity table: Assigned is total, Attended excludes assigned-only and reschedules", () => {
+  it("rolls up: Attended = Closed+Part+UO, Assigned = Attended + CX Reschedule", () => {
     const counts = emptyProductivityBucketCounts();
 
-    // sriram's day: 18 closed, 2 part orders, 2 reschedules, 2 still scheduled.
+    // sriram's day: 18 closed, 2 part orders, 2 reschedules — plus 2 still
+    // scheduled and 1 in-progress status, which must count nowhere.
     for (let i = 0; i < 18; i++) addToProductivityCounts(counts, "CLOSED", `C${i}`);
     addToProductivityCounts(counts, "PART_ORDER", "P1");
     addToProductivityCounts(counts, "PART_ORDER", "P2");
@@ -161,26 +162,31 @@ describe("addToProductivityCounts", () => {
     addToProductivityCounts(counts, "CX_RESCHEDULE", "R2");
     addToProductivityCounts(counts, "SCHEDULED", "A1");
     addToProductivityCounts(counts, "SCHEDULED", "A2");
+    addToProductivityCounts(counts, "ATTENDED_OTHER", "T1");
 
-    expect(counts.assigned).toBe(24);
+    // The original table's arithmetic: 22 | 20 | 18 | 2 | 0 | 2.
+    expect(counts.assigned).toBe(22);
     expect(counts.attended).toBe(20);
     expect(counts.closed).toBe(18);
     expect(counts.partOrdered).toBe(2);
     expect(counts.cxReschedule).toBe(2);
     expect(counts.underObservation).toBe(0);
-    expect(counts.assignedTickets).toHaveLength(24);
+    expect(counts.assignedTickets).toHaveLength(22);
     expect(counts.attendedTickets).toHaveLength(20);
     expect(counts.closedTickets).toContain("C0");
     expect(counts.cxRescheduleTickets).toEqual(["R1", "R2"]);
+    expect(counts.assignedTickets).not.toContain("A1");
+    expect(counts.assignedTickets).not.toContain("T1");
   });
 
-  it("counts attended-other work in Attended but no sub-bucket", () => {
+  it("counts scheduled and in-progress calls in NO column", () => {
     const counts = emptyProductivityBucketCounts();
 
+    addToProductivityCounts(counts, "SCHEDULED", "S1");
     addToProductivityCounts(counts, "ATTENDED_OTHER", "T1");
 
-    expect(counts.assigned).toBe(1);
-    expect(counts.attended).toBe(1);
+    expect(counts.assigned).toBe(0);
+    expect(counts.attended).toBe(0);
     expect(counts.closed).toBe(0);
     expect(counts.partOrdered).toBe(0);
     expect(counts.underObservation).toBe(0);

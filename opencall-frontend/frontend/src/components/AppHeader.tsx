@@ -6,7 +6,7 @@ import type {
   RuntimeHealthResponse,
 } from "../lib/apiClient";
 
-export type WorkspaceView = "overview" | "closed-calls" | "records" | "rtpl" | "rtpl-dashboard" | "pivot" | "flex" | "productivity" | "tn-view-status" | "sla-tat" | "flex-eod-bod" | "admin-engineers" | "admin-rtpl-statuses" | "warranty";
+export type WorkspaceView = "overview" | "closed-calls" | "records" | "record-format" | "rtpl" | "rtpl-dashboard" | "pivot" | "flex" | "productivity" | "tn-view-status" | "sla-tat" | "flex-eod-bod" | "admin-engineers" | "admin-rtpl-statuses" | "warranty";
 
 export const HEADER_COMPACT_STORAGE_KEY = "opencall.headerCompact";
 
@@ -92,10 +92,27 @@ export function AppHeader({
     .map((part) => part.charAt(0) + part.slice(1).toLowerCase())
     .join(" ");
 
+  // Admin Console entry point. Super/region admins are unchanged. A special-access
+  // login only gets one when a console section is actually granted to it — today
+  // that is Record Format, so it lands straight on that page.
+  const adminConsoleHref = ((): string | null => {
+    if (session.user.role === "SUPER_ADMIN") return "/admin/users";
+    if (session.user.role === "REGION_ADMIN") return "/admin/engineers";
+    if (
+      session.user.role === "SPECIAL_ACCESS" &&
+      session.user.specialAccess?.sections?.includes("record-format")
+    ) {
+      return "/admin/record-format";
+    }
+    return null;
+  })();
+
   const getViewTitle = () => {
     switch (workspaceView) {
       case "records":
         return "Records Workspace";
+      case "record-format":
+        return "Record Format";
       case "rtpl":
         return "RTPL Analytics";
       case "rtpl-dashboard":
@@ -127,6 +144,8 @@ export function AppHeader({
     switch (workspaceView) {
       case "records":
         return "Data & Operations / Records";
+      case "record-format":
+        return "Data & Operations / Record Format";
       case "rtpl":
         return "Dashboards / RTPL";
       case "rtpl-dashboard":
@@ -224,8 +243,8 @@ export function AppHeader({
               <span className="profileEmail">{session.user.email}</span>
               <span className="profileRoleBadge">{roleLabel}</span>
             </div>
-            {session.user.role === "SUPER_ADMIN" || session.user.role === "REGION_ADMIN" ? (
-              <a className="profilePopoverItem" href={session.user.role === "SUPER_ADMIN" ? "/admin/users" : "/admin/engineers"}>
+            {adminConsoleHref ? (
+              <a className="profilePopoverItem" href={adminConsoleHref}>
                 Admin Console
               </a>
             ) : null}

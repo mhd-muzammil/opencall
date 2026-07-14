@@ -36,6 +36,8 @@ export function RecordFormatPage({
   catalog,
   extraColumns = [],
   onSaved,
+  save = saveRecordLayout,
+  reset = resetRecordLayout,
 }: Readonly<{
   token: string;
   initialColumns: string[] | null;
@@ -44,6 +46,13 @@ export function RecordFormatPage({
   /** Raw Excel headers (a subset of catalog) — tagged as "Excel field". */
   extraColumns?: string[];
   onSaved: (orderedColumns: string[] | null) => void;
+  /**
+   * Persistence overrides. Default to the regular-user /record-layout endpoints;
+   * special-access logins pass their own scoped endpoints instead (they are not
+   * rows in `users`, so they have a separate layout store).
+   */
+  save?: (token: string, orderedColumns: string[]) => Promise<unknown>;
+  reset?: (token: string) => Promise<unknown>;
 }>) {
   const extraSet = new Set(extraColumns);
   const [items, setItems] = useState<ColumnItem[]>(() => buildInitial(initialColumns, catalog, extraSet));
@@ -76,7 +85,7 @@ export function RecordFormatPage({
     setBusy(true);
     setMessage(null);
     try {
-      await saveRecordLayout(token, visibleColumns);
+      await save(token, visibleColumns);
       onSaved(visibleColumns);
       setMessage({ text: "Saved — your Records page now uses this layout.", tone: "ok" });
     } catch (error) {
@@ -90,7 +99,7 @@ export function RecordFormatPage({
     setBusy(true);
     setMessage(null);
     try {
-      await resetRecordLayout(token);
+      await reset(token);
       onSaved(null);
       setItems(buildInitial(null, catalog, extraSet));
       setMessage({ text: "Reset to the default layout (standard columns, default order).", tone: "ok" });

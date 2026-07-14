@@ -10,6 +10,11 @@ interface NavItem {
   href: string;
   label: string;
   roles: ("SUPER_ADMIN" | "REGION_ADMIN")[];
+  /**
+   * The special-access section key that also unlocks this item. Omitted = the page
+   * is admin-only and a special-access login can never reach it.
+   */
+  specialAccessSection?: string;
 }
 
 const ALL_NAV: NavItem[] = [
@@ -20,8 +25,27 @@ const ALL_NAV: NavItem[] = [
   { href: "/admin/special-access", label: "Special Access", roles: ["SUPER_ADMIN"] },
   { href: "/admin/engineers", label: "Engineers", roles: ["SUPER_ADMIN", "REGION_ADMIN"] },
   { href: "/admin/rtpl-statuses", label: "RTPL statuses", roles: ["SUPER_ADMIN"] },
-  { href: "/admin/record-format", label: "Record Format", roles: ["SUPER_ADMIN", "REGION_ADMIN"] },
+  {
+    href: "/admin/record-format",
+    label: "Record Format",
+    roles: ["SUPER_ADMIN", "REGION_ADMIN"],
+    specialAccessSection: "record-format",
+  },
 ];
+
+/**
+ * Who may open the admin console. Super/region admins as before; a special-access
+ * login only when it has been granted at least one console section.
+ */
+function grantedNav(session: ClientSession): NavItem[] {
+  if (session.user.role === "SPECIAL_ACCESS") {
+    const sections = session.user.specialAccess?.sections ?? [];
+    return ALL_NAV.filter(
+      (item) => item.specialAccessSection && sections.includes(item.specialAccessSection),
+    );
+  }
+  return ALL_NAV.filter((item) => item.roles.some((role) => role === session.user.role));
+}
 
 export default function AdminLayout({ children }: { children: ReactNode }) {
   const router = useRouter();
@@ -38,7 +62,8 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
       router.replace("/");
       return;
     }
-    if (s.user.role !== "SUPER_ADMIN" && s.user.role !== "REGION_ADMIN") {
+    // A special-access login with no granted console section has nothing to see here.
+    if (grantedNav(s).length === 0) {
       router.replace("/");
     }
   }, [router]);
@@ -53,13 +78,14 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
     );
   }
 
-  if (!session || (session.user.role !== "SUPER_ADMIN" && session.user.role !== "REGION_ADMIN")) {
+  if (!session) {
     return null;
   }
 
-  const visibleNav = ALL_NAV.filter((item) =>
-    item.roles.some((role) => role === session.user.role),
-  );
+  const visibleNav = grantedNav(session);
+  if (visibleNav.length === 0) {
+    return null;
+  }
 
   function logout() {
     clearSession();

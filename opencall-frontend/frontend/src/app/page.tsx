@@ -158,7 +158,11 @@ import {
   type RtplTimeCardId,
 } from "../lib/reportDashboardAnalytics";
 import { getLatestCompletedReportSession } from "../lib/reportHistorySelection";
-import { fetchSpecialAccessReport } from "../lib/specialAccessApiClient";
+import {
+  fetchSpecialAccessReport,
+  getSpecialAccessRecordLayout,
+  updateSpecialAccessReportRow,
+} from "../lib/specialAccessApiClient";
 
 // Phase 2: dashboard/analytics types moved to features/dashboard/types.
 
@@ -183,6 +187,9 @@ const WORKSPACE_VIEWS = [
   "overview",
   "closed-calls",
   "records",
+  // Not a workspace view of its own — Record Format lives in the Admin Console.
+  // Kept here only so this union stays in step with AppHeader's WorkspaceView.
+  "record-format",
   "rtpl",
   "rtpl-dashboard",
   "pivot",
@@ -309,6 +316,10 @@ export default function DashboardPage() {
   const isSpecialAccess = session?.user?.role === "SPECIAL_ACCESS";
   const canSeeSection = (key: string): boolean =>
     !isSpecialAccess || (specialAccess?.sections?.includes(key) ?? false);
+  // Regular users are unaffected. A special-access login may only edit report rows
+  // when its permission level is `edit` — the backend enforces this too.
+  const canEditRows =
+    !isSpecialAccess || specialAccess?.permissionLevel === "edit";
   const [regionId, setRegionId] = useState("");
   const [files, setFiles] = useState<Partial<Record<FileField, File[]>>>({});
   const [upload, setUpload] = useState<UploadResponse | null>(null);
@@ -1482,6 +1493,17 @@ export default function DashboardPage() {
     }
   }, [session]);
 
+  // Special-access logins are not rows in `users`, so the user-only /record-layout
+  // endpoint 401s for them. They have their own scoped layout store — read it from
+  // there so the records grid honours the layout they saved in the Admin Console.
+  useEffect(() => {
+    if (!isSpecialAccess || !session) return;
+    getSpecialAccessRecordLayout(session.token)
+      .then((layout) => setRecordLayout(layout?.orderedColumns ?? null))
+      .catch(() => setRecordLayout(null));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isSpecialAccess, session?.token]);
+
   // Keep refs of active state to prevent rebuilding the interval timer on every input/button state change
   const editingSerialNoRef = useRef(editingSerialNo);
   editingSerialNoRef.current = editingSerialNo;
@@ -1859,12 +1881,16 @@ export default function DashboardPage() {
   const canUseBatches = Boolean(batchIds.flexUploadBatchId);
 
   function startEditing(row: GeneratedReportResponse["rows"][number]) {
+    // View-only special-access credentials cannot edit rows (the backend rejects the
+    // save too); never put them into an edit state they cannot commit.
+    if (!canEditRows) return;
     setEditingSerialNo(row.serialNo);
     setDraftOutput({ ...row.output });
     setSaveError(null);
   }
 
   function startModalEditing(row: GeneratedReportResponse["rows"][number]) {
+    if (!canEditRows) return;
     startEditing(row);
     setIsEditModalOpen(true);
   }
@@ -1978,11 +2004,20 @@ export default function DashboardPage() {
         return;
       }
 
-      const persisted = await updateReportRow({
-        token: session.token,
-        rowId: row.id,
-        values,
-      });
+      // Special-access logins are not `users` rows, so PATCH /report-rows/:id (which is
+      // role-gated to SUPER_ADMIN / REGION_ADMIN) 401s for them. They save through their
+      // own endpoint, which re-checks permission level, regions and data scope.
+      const persisted = isSpecialAccess
+        ? await updateSpecialAccessReportRow({
+            token: session.token,
+            rowId: row.id,
+            values,
+          })
+        : await updateReportRow({
+            token: session.token,
+            rowId: row.id,
+            values,
+          });
       const editedApiFields = new Set(Object.keys(values));
 
       setReport((latestReport) => {
@@ -3031,13 +3066,15 @@ export default function DashboardPage() {
                               <circle cx="12" cy="12" r="3" />
                             </svg>
                           </button>
-                          <button
-                            type="button"
-                            className="secondaryButton"
-                            onClick={() => startEditing(row)}
-                          >
-                            Edit
-                          </button>
+                          {canEditRows && (
+                            <button
+                              type="button"
+                              className="secondaryButton"
+                              onClick={() => startEditing(row)}
+                            >
+                              Edit
+                            </button>
+                          )}
                         </div>
                       )}
                     </td>
@@ -3203,7 +3240,10 @@ export default function DashboardPage() {
           </button>
           )}
 
-          {(!isSpecialAccess || canSeeSection("records") || canSeeSection("productivity")) && (
+          {(!isSpecialAccess ||
+            canSeeSection("records") ||
+            canSeeSection("record-format") ||
+            canSeeSection("productivity")) && (
             <div className="sidebarSection">Data & Operations</div>
           )}
 

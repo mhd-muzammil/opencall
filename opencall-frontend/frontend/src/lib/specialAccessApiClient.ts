@@ -1,6 +1,12 @@
 import { WEB_API_BASE_URL } from "./api/webApiClient";
 import { readJson, ApiClientError } from "./api/http";
-import type { ApiErrorBody, GeneratedReportResponse } from "./api/types";
+import type {
+  ApiErrorBody,
+  EditedReportRowResponse,
+  GeneratedReportResponse,
+} from "./api/types";
+import type { RecordColumnCatalog, RecordLayout } from "./recordLayoutApiClient";
+import type { ReportRowPatchValues } from "../features/dashboard/types/dashboard.types";
 
 export type DataScope = "overall" | "warranty" | "trade";
 export type PermissionLevel = "view" | "edit";
@@ -247,4 +253,67 @@ export async function fetchSpecialAccessReport(
     cache: "no-store",
   });
   return readJson<SpecialAccessScopedReport>(response);
+}
+
+// ----------- Record Format (a special-access login's own grid layout) -----------
+// Same shape as the user-only /record-layout endpoints, but scoped to the
+// credential. Only affects that credential's own records grid and Excel export.
+
+const SA_LAYOUT = "/api/v1/special-access/record-layout";
+
+export async function getSpecialAccessRecordColumnsCatalog(
+  token: string,
+): Promise<RecordColumnCatalog> {
+  const response = await fetch(url(`${SA_LAYOUT}/catalog`), {
+    headers: authHeaders(token),
+    cache: "no-store",
+  });
+  return readJson<RecordColumnCatalog>(response);
+}
+
+export async function getSpecialAccessRecordLayout(
+  token: string,
+): Promise<RecordLayout | null> {
+  const response = await fetch(url(SA_LAYOUT), {
+    headers: authHeaders(token),
+    cache: "no-store",
+  });
+  return readJson<RecordLayout | null>(response);
+}
+
+export async function saveSpecialAccessRecordLayout(
+  token: string,
+  orderedColumns: string[],
+): Promise<RecordLayout> {
+  const response = await fetch(url(SA_LAYOUT), {
+    method: "PUT",
+    headers: authHeaders(token),
+    body: JSON.stringify({ orderedColumns }),
+  });
+  return readJson<RecordLayout>(response);
+}
+
+export async function resetSpecialAccessRecordLayout(token: string): Promise<void> {
+  await fetch(url(SA_LAYOUT), { method: "DELETE", headers: authHeaders(token) });
+}
+
+// ---------- Records table "Save Entry" for a special-access login ----------
+// Same payload and response as the user-only PATCH /report-rows/:id. The backend
+// re-checks the credential's permission level, granted regions and data scope, so a
+// view-only or out-of-scope edit is rejected there, not here.
+
+export async function updateSpecialAccessReportRow(input: {
+  token: string;
+  rowId: string;
+  values: ReportRowPatchValues;
+}): Promise<EditedReportRowResponse> {
+  const response = await fetch(
+    url(`/api/v1/special-access/report-rows/${input.rowId}`),
+    {
+      method: "PATCH",
+      headers: authHeaders(input.token),
+      body: JSON.stringify(input.values),
+    },
+  );
+  return readJson<EditedReportRowResponse>(response);
 }

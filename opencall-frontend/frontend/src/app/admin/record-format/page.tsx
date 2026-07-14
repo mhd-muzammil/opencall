@@ -2,8 +2,21 @@
 
 import { useEffect, useState } from "react";
 import { readSession } from "../../../lib/session";
-import { getRecordLayout, getRecordColumnsCatalog } from "../../../lib/recordLayoutApiClient";
+import {
+  getRecordLayout,
+  getRecordColumnsCatalog,
+  saveRecordLayout,
+  resetRecordLayout,
+} from "../../../lib/recordLayoutApiClient";
+import {
+  getSpecialAccessRecordLayout,
+  getSpecialAccessRecordColumnsCatalog,
+  saveSpecialAccessRecordLayout,
+  resetSpecialAccessRecordLayout,
+} from "../../../lib/specialAccessApiClient";
 import { RecordFormatPage } from "../../../features/dashboard/components/RecordFormatPage";
+
+const EMPTY_CATALOG = { standard: [], extra: [], columns: [] };
 
 export default function AdminRecordFormatPage() {
   const [token, setToken] = useState<string | null>(null);
@@ -11,6 +24,9 @@ export default function AdminRecordFormatPage() {
   const [catalog, setCatalog] = useState<string[]>([]);
   const [extraColumns, setExtraColumns] = useState<string[]>([]);
   const [loaded, setLoaded] = useState(false);
+  // Special-access logins are not rows in `users`, so they read/write their layout
+  // through their own scoped endpoints. Regular users keep the original ones.
+  const [isSpecialAccess, setSpecialAccess] = useState(false);
 
   useEffect(() => {
     const session = readSession();
@@ -18,10 +34,18 @@ export default function AdminRecordFormatPage() {
       setLoaded(true);
       return;
     }
+    const special = session.user.role === "SPECIAL_ACCESS";
+    setSpecialAccess(special);
     setToken(session.token);
+
+    const loadLayout = special ? getSpecialAccessRecordLayout : getRecordLayout;
+    const loadCatalog = special
+      ? getSpecialAccessRecordColumnsCatalog
+      : getRecordColumnsCatalog;
+
     Promise.all([
-      getRecordLayout(session.token).catch(() => null),
-      getRecordColumnsCatalog(session.token).catch(() => ({ standard: [], extra: [], columns: [] })),
+      loadLayout(session.token).catch(() => null),
+      loadCatalog(session.token).catch(() => EMPTY_CATALOG),
     ])
       .then(([layout, cat]) => {
         setInitialColumns(layout?.orderedColumns ?? null);
@@ -55,6 +79,8 @@ export default function AdminRecordFormatPage() {
       initialColumns={initialColumns}
       catalog={catalog}
       extraColumns={extraColumns}
+      save={isSpecialAccess ? saveSpecialAccessRecordLayout : saveRecordLayout}
+      reset={isSpecialAccess ? resetSpecialAccessRecordLayout : resetRecordLayout}
       onSaved={() => {}}
     />
   );

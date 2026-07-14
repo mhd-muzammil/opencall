@@ -97,7 +97,7 @@ export interface OpenCallApiClient {
   getEngineersDropdown(token: string, regionId?: string): Promise<{ engineers: DropdownEngineer[] }>;
   getAdminRtplStatuses(token: string, filters?: { category?: string; search?: string; isActive?: boolean }): Promise<{ statuses: RtplStatus[] }>;
   createAdminRtplStatus(token: string, input: { name: string; category?: string | null; sortOrder?: number }): Promise<{ status: RtplStatus }>;
-  updateAdminRtplStatus(token: string, id: string, input: { name?: string; category?: string; sortOrder?: number }): Promise<{ status: RtplStatus }>;
+  updateAdminRtplStatus(token: string, id: string, input: { name?: string; category?: string; sortOrder?: number }): Promise<{ status: RtplStatus; renamedRowValues?: number }>;
   deactivateAdminRtplStatus(token: string, id: string): Promise<{ status: RtplStatus }>;
   reactivateAdminRtplStatus(token: string, id: string): Promise<{ status: RtplStatus }>;
   deleteAdminRtplStatus(token: string, id: string): Promise<{ success: boolean }>;
@@ -403,7 +403,7 @@ export function createOpenCallApiClient({
         body: JSON.stringify(input),
       });
 
-      return readJson<{ status: RtplStatus }>(response);
+      return readJson<{ status: RtplStatus; renamedRowValues?: number }>(response);
     },
 
     async deactivateAdminRtplStatus(token, id) {

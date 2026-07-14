@@ -5716,6 +5716,16 @@ th .colFilterWrap {
   font-weight: 500;
 }
 
+.adminNotice {
+  padding: 12px 16px;
+  border-radius: 8px;
+  background: #f0fdf4;
+  border: 1px solid #bbf7d0;
+  color: #15803d;
+  font-size: 14px;
+  font-weight: 500;
+}
+
 .adminForm {
   display: flex;
   flex-direction: column;

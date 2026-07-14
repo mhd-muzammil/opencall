@@ -44,6 +44,8 @@ export function AdminRtplStatusesManager({ onStatusesChanged }: AdminRtplStatuse
   const [filterActive, setFilterActive] = useState<"" | "active" | "inactive">("");
   const [search, setSearch] = useState("");
   const [error, setError] = useState<string | null>(null);
+  // Success feedback, e.g. how many existing records a rename cascaded into.
+  const [notice, setNotice] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
   // Form state
@@ -128,16 +130,24 @@ export function AdminRtplStatusesManager({ onStatusesChanged }: AdminRtplStatuse
     setFormBusy(true);
     setFormError(null);
     try {
+      setNotice(null);
       if (viewMode === "add") {
         await createAdminRtplStatus(session.token, {
           name: formName.trim(),
           category: formCategory.trim() || "Other",
         });
       } else if (viewMode === "edit" && selected) {
-        await updateAdminRtplStatus(session.token, selected.id, {
+        const result = await updateAdminRtplStatus(session.token, selected.id, {
           name: formName.trim(),
           category: formCategory.trim() || "Other",
         });
+        // A rename rewrites the old value on existing report rows so dashboards
+        // never show two cards for the same status — tell the admin it happened.
+        if (result.renamedRowValues && result.renamedRowValues > 0) {
+          setNotice(
+            `Status renamed to "${result.status.name}" — ${result.renamedRowValues} existing record value(s) updated to match.`,
+          );
+        }
       }
       setViewMode("list");
       await loadData();
@@ -313,6 +323,7 @@ export function AdminRtplStatusesManager({ onStatusesChanged }: AdminRtplStatuse
       </div>
 
       {error && <div className="adminError">{error}</div>}
+      {notice && <div className="adminNotice">{notice}</div>}
       {busy && !statuses && <p className="muted">Loading RTPL statuses…</p>}
 
       {statuses && (

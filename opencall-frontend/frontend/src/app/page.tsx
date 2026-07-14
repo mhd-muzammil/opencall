@@ -2783,7 +2783,16 @@ export default function DashboardPage() {
 
   const renderDetailedRecordsTable = (tableRows: ReportRow[]) => {
     const zone = (
-      <div className={`recordsTableZone ${isRecordsTableMaximized ? "maximized" : ""}`}>
+      <div
+        className={`recordsTableZone ${isRecordsTableMaximized ? "maximized" : ""}`}
+        // Full screen keeps the sidebar: the zone starts at the sidebar's live
+        // width (72px collapsed, user-resized otherwise) and fills the rest.
+        style={
+          isRecordsTableMaximized
+            ? { left: isSidebarCollapsed ? "72px" : `${sidebarWidth}px` }
+            : undefined
+        }
+      >
         {isRecordsTableMaximized ? (
           <div className="recordsTableZoneBar">
             <span className="recordsTableZoneTitle">

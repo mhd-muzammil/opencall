@@ -1892,7 +1892,13 @@ export default function DashboardPage() {
   }
 
   function startModalEditing(row: GeneratedReportResponse["rows"][number]) {
-    if (!canEditRows) return;
+    // The Ticket ID click is the only row action (the Action column is gone):
+    // editors get the Work Order entry modal, view-only special-access logins
+    // get the read-only case drawer instead of a silent no-op.
+    if (!canEditRows) {
+      setCaseDetailRow(row);
+      return;
+    }
     startEditing(row);
     setIsEditModalOpen(true);
   }
@@ -2850,7 +2856,6 @@ export default function DashboardPage() {
                 })}
                 <th>Change</th>
                 <th>Ops</th>
-                <th className="stickyActionColumn">Action</th>
               </tr>
             </thead>
             <tbody>
@@ -3024,61 +3029,6 @@ export default function DashboardPage() {
                           {row.carryForward.manualFieldsMissing.length}
                         </span>
                       ) : null}
-                    </td>
-                    <td className="stickyActionColumn">
-                      {isEditing ? (
-                        <div className="rowActions">
-                          <button
-                            type="button"
-                            disabled={savingSerialNo === row.serialNo}
-                            onClick={() => void saveEditing(row.serialNo)}
-                          >
-                            {savingSerialNo === row.serialNo ? "Saving..." : "Save"}
-                          </button>
-                          <button
-                            type="button"
-                            className="secondaryButton"
-                            disabled={savingSerialNo === row.serialNo}
-                            onClick={cancelEditing}
-                          >
-                            Cancel
-                          </button>
-                        </div>
-                      ) : (
-                        <div className="rowActions">
-                          <button
-                            type="button"
-                            className="secondaryButton caseViewBtn"
-                            title="View case details"
-                            aria-label="View case details"
-                            onClick={() => setCaseDetailRow(row)}
-                          >
-                            <svg
-                              width="16"
-                              height="16"
-                              viewBox="0 0 24 24"
-                              fill="none"
-                              stroke="currentColor"
-                              strokeWidth="2"
-                              strokeLinecap="round"
-                              strokeLinejoin="round"
-                              aria-hidden="true"
-                            >
-                              <path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7Z" />
-                              <circle cx="12" cy="12" r="3" />
-                            </svg>
-                          </button>
-                          {canEditRows && (
-                            <button
-                              type="button"
-                              className="secondaryButton"
-                              onClick={() => startEditing(row)}
-                            >
-                              Edit
-                            </button>
-                          )}
-                        </div>
-                      )}
                     </td>
                   </tr>
                 );

@@ -2,6 +2,7 @@
 
 import { DAILY_CALL_PLAN_COLUMNS, RTPL_STATUS_OPTIONS, ASP_CODE_REGION_MAP, type DailyCallPlanColumn } from "@opencall/shared";
 import { useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { ColumnFilterDropdown } from "../components/ColumnFilterDropdown";
 import { AppHeader } from "../components/AppHeader";
 import { HistoryDrawer } from "../components/HistoryDrawer";
@@ -2781,7 +2782,7 @@ export default function DashboardPage() {
     ];
 
   const renderDetailedRecordsTable = (tableRows: ReportRow[]) => {
-    return (
+    const zone = (
       <div className={`recordsTableZone ${isRecordsTableMaximized ? "maximized" : ""}`}>
         {isRecordsTableMaximized ? (
           <div className="recordsTableZoneBar">
@@ -3038,6 +3039,15 @@ export default function DashboardPage() {
         </div>
       </div>
     );
+
+    // Full screen must escape the records panel: ancestors with backdrop-filter
+    // (the glassy cards) hijack position:fixed, so inset:0 was filling the card
+    // instead of the viewport — visible as wide gaps around the "full screen".
+    // Portaling to <body> makes the viewport the containing block again.
+    if (isRecordsTableMaximized && typeof document !== "undefined") {
+      return createPortal(zone, document.body);
+    }
+    return zone;
   };
 
   return (

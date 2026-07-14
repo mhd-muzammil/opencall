@@ -16,6 +16,24 @@ export function parseHeaderCompactPreference(value: string | null): boolean | nu
   return null;
 }
 
+/**
+ * Close any open <details> popover when the pointer goes down outside it. Native
+ * <details> only toggles via its own <summary>, so without this the profile and
+ * Export menus stay open until the trigger is clicked a second time.
+ * A pointer-down inside the element (including its summary) leaves it alone —
+ * the summary's own click still toggles it closed.
+ */
+export function closeOpenDetailsOnOutsideClick(
+  detailsElements: ReadonlyArray<Pick<HTMLDetailsElement, "open" | "contains"> | null>,
+  target: Node | null,
+): void {
+  for (const details of detailsElements) {
+    if (details?.open && (target === null || !details.contains(target))) {
+      details.open = false;
+    }
+  }
+}
+
 export function AppHeader({
   workspaceView,
   hasReport,
@@ -51,6 +69,20 @@ export function AppHeader({
   onLogout: () => void;
   initialCompact?: boolean;
 }>) {
+  const exportDetailsRef = React.useRef<HTMLDetailsElement | null>(null);
+  const profileDetailsRef = React.useRef<HTMLDetailsElement | null>(null);
+
+  React.useEffect(() => {
+    const handlePointerDown = (event: PointerEvent) => {
+      closeOpenDetailsOnOutsideClick(
+        [exportDetailsRef.current, profileDetailsRef.current],
+        event.target instanceof Node ? event.target : null,
+      );
+    };
+    document.addEventListener("pointerdown", handlePointerDown);
+    return () => document.removeEventListener("pointerdown", handlePointerDown);
+  }, []);
+
   const userDisplayName =
     (session.user.email ? session.user.email.split("@")[0] : null) ||
     session.user.username ||
@@ -149,7 +181,7 @@ export function AppHeader({
           )}
 
           {hasReport && (
-            <details className="exportMenuDetails">
+            <details className="exportMenuDetails" ref={exportDetailsRef}>
               <summary className="premiumActionBtn secondary">
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ marginRight: "4px" }}>
                   <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
@@ -177,7 +209,7 @@ export function AppHeader({
         </div>
 
         {/* User Profile */}
-        <details className="headerProfileDetails">
+        <details className="headerProfileDetails" ref={profileDetailsRef}>
           <summary className="headerProfileTrigger">
             <div className="profileAvatarWrap">
               <img

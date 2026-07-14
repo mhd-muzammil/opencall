@@ -42,9 +42,14 @@ describe("classifyProductivityStatus", () => {
     expect(classifyProductivityStatus("   ")).toBeNull();
   });
 
-  it("maps Engg Assigned to ENG_ASSIGNED", () => {
-    expect(classifyProductivityStatus("Engg Assigned")).toBe("ENG_ASSIGNED");
-    expect(classifyProductivityStatus("eng assigned")).toBe("ENG_ASSIGNED");
+  // The scheduling stage means "booked, not yet attended": Assigned only.
+  // Attended starts at whatever status comes AFTER these.
+  it("maps the scheduling-stage statuses to SCHEDULED", () => {
+    expect(classifyProductivityStatus("Scheduled")).toBe("SCHEDULED");
+    expect(classifyProductivityStatus("To be Scheduled")).toBe("SCHEDULED");
+    expect(classifyProductivityStatus("Engg Assigned")).toBe("SCHEDULED");
+    expect(classifyProductivityStatus("eng assigned")).toBe("SCHEDULED");
+    expect(classifyProductivityStatus("Engg Assignment Pending")).toBe("SCHEDULED");
   });
 
   it("maps WO Closed variants to CLOSED but not other closures", () => {
@@ -68,8 +73,8 @@ describe("classifyProductivityStatus", () => {
     expect(classifyProductivityStatus("under observation")).toBe("UNDER_OBSERVATION");
     expect(classifyProductivityStatus("CX Reschedule")).toBe("CX_RESCHEDULE");
     expect(classifyProductivityStatus("CX Reshedule")).toBe("CX_RESCHEDULE");
-    // "To be Scheduled" is a first-time schedule, not a reschedule.
-    expect(classifyProductivityStatus("To be Scheduled")).toBe("ATTENDED_OTHER");
+    // A reschedule is never confused with the scheduling stage.
+    expect(classifyProductivityStatus("Rescheduled")).toBe("CX_RESCHEDULE");
   });
 
   it("maps every other real status to ATTENDED_OTHER", () => {
@@ -148,14 +153,14 @@ describe("addToProductivityCounts", () => {
   it("rolls up like the productivity table: Assigned is total, Attended excludes assigned-only and reschedules", () => {
     const counts = emptyProductivityBucketCounts();
 
-    // sriram's day: 18 closed, 2 part orders, 2 reschedules, 2 still assigned.
+    // sriram's day: 18 closed, 2 part orders, 2 reschedules, 2 still scheduled.
     for (let i = 0; i < 18; i++) addToProductivityCounts(counts, "CLOSED", `C${i}`);
     addToProductivityCounts(counts, "PART_ORDER", "P1");
     addToProductivityCounts(counts, "PART_ORDER", "P2");
     addToProductivityCounts(counts, "CX_RESCHEDULE", "R1");
     addToProductivityCounts(counts, "CX_RESCHEDULE", "R2");
-    addToProductivityCounts(counts, "ENG_ASSIGNED", "A1");
-    addToProductivityCounts(counts, "ENG_ASSIGNED", "A2");
+    addToProductivityCounts(counts, "SCHEDULED", "A1");
+    addToProductivityCounts(counts, "SCHEDULED", "A2");
 
     expect(counts.assigned).toBe(24);
     expect(counts.attended).toBe(20);

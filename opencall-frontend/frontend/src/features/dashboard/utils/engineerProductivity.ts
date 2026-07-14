@@ -2,21 +2,23 @@
 // the call's CURRENT status today (Evening if filled, else Morning) — the
 // productivity table then rolls buckets up per engineer:
 //
-//   Engg Assigned        -> ENG_ASSIGNED      (assigned, not yet attended)
+//   Scheduled / To be Scheduled / Engg Assigned
+//                        -> SCHEDULED         (booked to the engineer, not yet attended)
 //   WO Closed            -> CLOSED
 //   Part Order           -> PART_ORDER
 //   Under Observation    -> UNDER_OBSERVATION
 //   CX Reschedule        -> CX_RESCHEDULE     (customer pushed the visit out)
-//   any other status     -> ATTENDED_OTHER    (engineer worked it)
+//   any other status     -> ATTENDED_OTHER    (a status AFTER the scheduled
+//                                              stage = the engineer worked it)
 //
-//   Assigned = every bucketed call;  Attended = Assigned − ENG_ASSIGNED − CX_RESCHEDULE
+//   Assigned = every bucketed call;  Attended = Assigned − SCHEDULED − CX_RESCHEDULE
 //
 // A call counts only when BOTH the engineer and the status are filled in on the
 // Records page — either one blank (or "Manual Entry Required") and it is ignored.
 import { MANUAL_ENTRY_REQUIRED } from "../constants";
 
 export type ProductivityBucket =
-  | "ENG_ASSIGNED"
+  | "SCHEDULED"
   | "CLOSED"
   | "PART_ORDER"
   | "UNDER_OBSERVATION"
@@ -93,12 +95,19 @@ export function classifyProductivityStatus(
     return null;
   }
 
+  // The scheduling stage: the call is booked to the engineer but no work has
+  // happened yet — Assigned, not Attended. Attended starts at whatever status
+  // comes AFTER these. Exact matches, so "CX Reschedule" (contains "schedule")
+  // can never land here.
   if (
+    normalized === "scheduled" ||
+    normalized === "to be scheduled" ||
     normalized === "engg assigned" ||
     normalized === "eng assigned" ||
-    normalized === "engineer assigned"
+    normalized === "engineer assigned" ||
+    normalized === "engg assignment pending"
   ) {
-    return "ENG_ASSIGNED";
+    return "SCHEDULED";
   }
 
   // "WO-closed" and manual variants ("WO Closed", "wo close"). Deliberately not
@@ -168,7 +177,7 @@ export function addToProductivityCounts(
   counts.assigned += 1;
   counts.assignedTickets.push(ticketId);
 
-  if (bucket === "ENG_ASSIGNED") {
+  if (bucket === "SCHEDULED") {
     return;
   }
 

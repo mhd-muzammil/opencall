@@ -4,6 +4,7 @@ import {
   classifyProductivityStatus,
   effectiveProductivityStatus,
   emptyProductivityBucketCounts,
+  wasRowEnteredOnItsDay,
 } from "./engineerProductivity";
 
 describe("effectiveProductivityStatus", () => {
@@ -75,6 +76,71 @@ describe("classifyProductivityStatus", () => {
     for (const status of ["Actionable", "CX Pending", "work in progress", "OTP", "Yank"]) {
       expect(classifyProductivityStatus(status)).toBe("ATTENDED_OTHER");
     }
+  });
+});
+
+// A day's productivity counts only what was ENTERED that day. Rows whose
+// engineer+status merely carried forward from the previous report (the
+// "Carried" badge on the Records page) were the previous day's work.
+describe("wasRowEnteredOnItsDay", () => {
+  function row(
+    output: Record<string, string | number>,
+    carriedForwardFields: string[] = [],
+  ) {
+    return { output, carryForward: { carriedForwardFields } };
+  }
+
+  it("counts a row whose engineer was assigned that day", () => {
+    expect(
+      wasRowEnteredOnItsDay(
+        row({ Engineer: "Lava Kumar", "RTPL status": "Scheduled" }, ["rtpl_status"]),
+      ),
+    ).toBe(true);
+  });
+
+  it("counts a row whose Morning status was typed that day", () => {
+    expect(
+      wasRowEnteredOnItsDay(
+        row({ Engineer: "Lava Kumar", "RTPL status": "Scheduled" }, ["engineer"]),
+      ),
+    ).toBe(true);
+  });
+
+  it("counts a fully-carried row once its Evening status is filled", () => {
+    expect(
+      wasRowEnteredOnItsDay(
+        row(
+          {
+            Engineer: "Lava Kumar",
+            "RTPL status": "To be Scheduled",
+            "Evening status": "WO-closed",
+          },
+          ["engineer", "rtpl_status"],
+        ),
+      ),
+    ).toBe(true);
+  });
+
+  it("does NOT count a row whose engineer and status are both carry-forwards", () => {
+    expect(
+      wasRowEnteredOnItsDay(
+        row(
+          { Engineer: "Lava Kumar", "RTPL status": "To be Scheduled" },
+          ["engineer", "rtpl_status"],
+        ),
+      ),
+    ).toBe(false);
+  });
+
+  it("does NOT count carried values whose editable fields are blank", () => {
+    expect(
+      wasRowEnteredOnItsDay(
+        row(
+          { Engineer: "", "RTPL status": "", "Evening status": "" },
+          ["remarks"],
+        ),
+      ),
+    ).toBe(false);
   });
 });
 

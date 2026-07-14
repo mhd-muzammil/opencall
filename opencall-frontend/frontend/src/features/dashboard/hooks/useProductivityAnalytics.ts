@@ -18,6 +18,7 @@ import {
   classifyProductivityStatus,
   effectiveProductivityStatus,
   emptyProductivityBucketCounts,
+  wasRowEnteredOnItsDay,
 } from "../utils/engineerProductivity";
 import { ASP_CODE_REGION_MAP } from "@opencall/shared";
 
@@ -388,6 +389,13 @@ export function useProductivityAnalytics(params: {
     // and its effective status (Evening once filled, else Morning) are set;
     // either one blank and the call is ignored entirely. Each counted call
     // lands in exactly one bucket; assigned/attended are rolled up from them.
+    //
+    // Day views (Today / Specific Date) additionally require the row to have
+    // been ENTERED on that day: engineer+status pairs merely carried forward
+    // from the previous report (the "Carried" badge on the Records page) were
+    // that previous day's work and already counted there.
+    const isDayView =
+      productivityFilterType === "Today" || productivityFilterType === "Specific Date";
     const engineerName = (r: typeof filteredRowsForProd[number]) =>
       canonicalEngineerName(String(r.output.Engineer ?? ""));
 
@@ -404,6 +412,8 @@ export function useProductivityAnalytics(params: {
       // casing variants ("sriram"/"Sriram") merge too.
       const name = engineerName(r);
       if (!name || name === MANUAL_ENTRY_REQUIRED) continue;
+
+      if (isDayView && !wasRowEnteredOnItsDay(r)) continue;
 
       const bucket = classifyProductivityStatus(effectiveProductivityStatus(r.output));
       if (!bucket) continue;

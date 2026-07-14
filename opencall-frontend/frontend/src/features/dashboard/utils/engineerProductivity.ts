@@ -43,6 +43,36 @@ export function effectiveProductivityStatus(
 }
 
 /**
+ * Was this row actually worked ON its report's day, rather than merely riding
+ * along as a carry-forward from the previous day? Only such rows count toward
+ * that day's productivity — an engineer+status pair carried from yesterday was
+ * yesterday's work and already counted there (these are the rows the Records
+ * page marks with the "Carried" badge).
+ *
+ *  - An Evening (EOD) status always belongs to the day: it starts blank each
+ *    morning, so a value means the team entered it that day.
+ *  - The Engineer or Morning status count as that day's entry when they are
+ *    NOT in carriedForwardFields (typed into this report, not inherited).
+ */
+export function wasRowEnteredOnItsDay(row: {
+  output: Record<string, string | number>;
+  carryForward: { carriedForwardFields: readonly string[] };
+}): boolean {
+  if (cleanFieldValue(row.output["Evening status"])) {
+    return true;
+  }
+
+  const carried = row.carryForward.carriedForwardFields;
+  if (cleanFieldValue(row.output["Engineer"]) && !carried.includes("engineer")) {
+    return true;
+  }
+
+  return Boolean(
+    cleanFieldValue(row.output["RTPL status"]) && !carried.includes("rtpl_status"),
+  );
+}
+
+/**
  * Classify a status into its productivity bucket, or null when the status is
  * blank (the row must not count at all). Matching is tolerant of the casing,
  * punctuation and spelling variants that appear in real data ("WO-closed",

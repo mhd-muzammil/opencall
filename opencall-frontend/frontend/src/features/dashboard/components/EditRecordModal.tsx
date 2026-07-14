@@ -5,7 +5,9 @@
 // as props — no duplicate editor state, no new hooks, no saveEditing logic moved.
 // The `isEditModalOpen && editingSerialNo !== null` render guard stays in page.tsx,
 // so editingSerialNo arrives narrowed to a number.
-import type { Dispatch, SetStateAction } from "react";
+// Default React import (not just types): vitest compiles JSX with the classic
+// transform, which needs the React identifier at runtime (same as AppHeader.tsx).
+import React, { type Dispatch, type SetStateAction } from "react";
 import { RTPLStatusDropdown, type StatusGroup } from "../../../components/RTPLStatusDropdown";
 import { MANUAL_ENTRY_REQUIRED } from "../constants";
 import type { DropdownEngineer } from "../../../lib/api/types";
@@ -19,6 +21,7 @@ export function EditRecordModal({
   rtplStatusGroups,
   cancelEditing,
   saveEditing,
+  saveError,
 }: Readonly<{
   editingSerialNo: number;
   savingSerialNo: number | null;
@@ -28,6 +31,10 @@ export function EditRecordModal({
   rtplStatusGroups: readonly StatusGroup[];
   cancelEditing: () => void;
   saveEditing: (serialNo: number) => Promise<void>;
+  // Save failures must render INSIDE the modal: the page-level message banner
+  // sits underneath the overlay, so without this a failed save looks like the
+  // Save button silently did nothing.
+  saveError: string | null;
 }>) {
   return (
     <div className="modalOverlay" onClick={cancelEditing}>
@@ -241,6 +248,12 @@ export function EditRecordModal({
                 />
               </div>
             </div>
+
+            {saveError ? (
+              <div className="alert" role="alert">
+                Save failed: {saveError}
+              </div>
+            ) : null}
 
             <div className="modalActions">
               <button

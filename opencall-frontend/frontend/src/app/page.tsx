@@ -319,6 +319,9 @@ export default function DashboardPage() {
   const [savingSerialNo, setSavingSerialNo] = useState<number | null>(null);
   const [draftOutput, setDraftOutput] = useState<Record<string, string | number>>({});
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
+  // Rendered inside the edit modal: the page-level message banner is hidden
+  // behind the modal overlay, so failures there would look like a dead Save.
+  const [saveError, setSaveError] = useState<string | null>(null);
   const [caseDetailRow, setCaseDetailRow] = useState<ReportRow | null>(null);
   const draftOutputRef = useRef(draftOutput);
   const hasAutoRestoredHistoryRef = useRef(false);
@@ -1766,6 +1769,7 @@ export default function DashboardPage() {
   function startEditing(row: GeneratedReportResponse["rows"][number]) {
     setEditingSerialNo(row.serialNo);
     setDraftOutput({ ...row.output });
+    setSaveError(null);
   }
 
   function startModalEditing(row: GeneratedReportResponse["rows"][number]) {
@@ -1777,6 +1781,7 @@ export default function DashboardPage() {
     setEditingSerialNo(null);
     setDraftOutput({});
     setIsEditModalOpen(false);
+    setSaveError(null);
   }
 
   function patchValue(column: string): string | null {
@@ -1865,11 +1870,13 @@ export default function DashboardPage() {
 
     if (!row.id) {
       setMessage("Save failed: this row has not been persisted yet. Regenerate the report and try again.");
+      setSaveError("This row has not been persisted yet. Regenerate the report and try again.");
       return;
     }
 
     setSavingSerialNo(serialNo);
     setMessage(null);
+    setSaveError(null);
 
     try {
       const values = buildReportRowPatchValues(row);
@@ -1947,7 +1954,9 @@ export default function DashboardPage() {
       }
     } catch (error) {
       setReport(currentReport);
-      setMessage(error instanceof Error ? `Save failed: ${error.message}` : "Save failed");
+      const reason = error instanceof Error ? error.message : "Unknown error";
+      setMessage(`Save failed: ${reason}`);
+      setSaveError(reason);
     } finally {
       setSavingSerialNo(null);
     }
@@ -4017,6 +4026,7 @@ export default function DashboardPage() {
           rtplStatusGroups={rtplStatusGroups}
           cancelEditing={cancelEditing}
           saveEditing={saveEditing}
+          saveError={saveError}
         />
       )}
 

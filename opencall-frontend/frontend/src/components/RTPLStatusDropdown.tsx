@@ -1,6 +1,8 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+// Default React import (not just hooks): vitest compiles JSX with the classic
+// transform, which needs the React identifier at runtime (same as AppHeader.tsx).
+import React, { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { RTPL_STATUS_GROUPS } from "@opencall/shared";
 import type { DropdownRtplStatus } from "../lib/api/types";

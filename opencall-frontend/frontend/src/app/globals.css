@@ -6461,6 +6461,23 @@ th .colFilterWrap {
   transform: rotate(90deg);
 }
 
+.modalHeaderActions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+/* The eye button shares the close button's quiet styling, minus the spin. */
+.modalCloseBtn.caseViewBtn {
+  display: inline-flex;
+  align-items: center;
+}
+
+.modalCloseBtn.caseViewBtn:hover {
+  color: var(--accent);
+  transform: none;
+}
+
 .modalBody {
   padding: 24px;
   overflow-y: auto;
@@ -8046,7 +8063,9 @@ td {
 .caseModalOverlay {
   position: fixed;
   inset: 0;
-  z-index: 70;
+  /* Above the Work Order edit modal (100): the drawer opens from its eye
+     button and must land on top of it. */
+  z-index: 120;
   display: flex;
   align-items: center;
   justify-content: center;

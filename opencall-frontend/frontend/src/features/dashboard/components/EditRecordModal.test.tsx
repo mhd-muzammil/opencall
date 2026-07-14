@@ -17,6 +17,7 @@ function renderModal(
       cancelEditing: vi.fn(),
       saveEditing: vi.fn(),
       saveError: null,
+      onViewDetails: vi.fn(),
       ...overrides,
     }),
   );
@@ -45,5 +46,13 @@ describe("EditRecordModal", () => {
 
     expect(html).toContain("Saving...");
     expect(html).toContain("disabled");
+  });
+
+  // The table's Action column is gone; the case-details eye lives in this
+  // modal's header now.
+  it("renders the view-case-details eye in the header", () => {
+    const html = renderModal();
+
+    expect(html).toContain('aria-label="View case details"');
   });
 });

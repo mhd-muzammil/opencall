@@ -22,6 +22,7 @@ export function EditRecordModal({
   cancelEditing,
   saveEditing,
   saveError,
+  onViewDetails,
 }: Readonly<{
   editingSerialNo: number;
   savingSerialNo: number | null;
@@ -35,6 +36,10 @@ export function EditRecordModal({
   // sits underneath the overlay, so without this a failed save looks like the
   // Save button silently did nothing.
   saveError: string | null;
+  // Opens the read-only case-details drawer (history, timeline, comparisons)
+  // on top of this modal — the eye that used to live in the table's Action
+  // column now lives in this header.
+  onViewDetails: () => void;
 }>) {
   return (
     <div className="modalOverlay" onClick={cancelEditing}>
@@ -46,9 +51,33 @@ export function EditRecordModal({
               Ticket ID: <span className="highlightText">{String(draftOutput["Ticket ID"] ?? "")}</span>
             </h2>
           </div>
-          <button type="button" className="modalCloseBtn" onClick={cancelEditing} title="Close Form">
-            &times;
-          </button>
+          <div className="modalHeaderActions">
+            <button
+              type="button"
+              className="modalCloseBtn caseViewBtn"
+              onClick={onViewDetails}
+              title="View case details"
+              aria-label="View case details"
+            >
+              <svg
+                width="18"
+                height="18"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                aria-hidden="true"
+              >
+                <path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7Z" />
+                <circle cx="12" cy="12" r="3" />
+              </svg>
+            </button>
+            <button type="button" className="modalCloseBtn" onClick={cancelEditing} title="Close Form">
+              &times;
+            </button>
+          </div>
         </div>
 
         <div className="modalBody">

@@ -4127,6 +4127,12 @@ export default function DashboardPage() {
           cancelEditing={cancelEditing}
           saveEditing={saveEditing}
           saveError={saveError}
+          onViewDetails={() => {
+            // The eye in the modal header: open the read-only case drawer on
+            // top of the modal for the row being edited.
+            const row = report?.rows.find((r) => r.serialNo === editingSerialNo);
+            if (row) setCaseDetailRow(row);
+          }}
         />
       )}
 

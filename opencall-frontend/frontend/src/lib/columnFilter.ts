@@ -39,6 +39,18 @@ const FILTER_VALUE_ALIASES = new Map<string, string>([
   ["TO BE SCHEDULE", "TO BE SCHEDULED"],
 ]);
 
+/**
+ * Sentinel used for empty cells in dropdown option lists and filter sets.
+ *
+ * It MUST be a fixed point of `normalizeFilterValue`: selected values are
+ * re-normalized when a filter is applied (`normalizeFilterState` below and
+ * `useColumnFilters.setColumnFilter`), so a sentinel the normalizer rewrites
+ * (e.g. uppercased to "(BLANK)") would never match the rows the dropdown
+ * counted as blank.
+ */
+export const BLANK_FILTER_VALUE = "(blank)";
+const BLANK_FILTER_VALUE_UPPER = BLANK_FILTER_VALUE.toUpperCase();
+
 export function normalizeFilterValue(raw: unknown): string {
   const s = String(raw ?? "")
     .normalize("NFKC")
@@ -47,7 +59,18 @@ export function normalizeFilterValue(raw: unknown): string {
     .replace(/\s+/g, " ")
     .trim();
 
-  const normalized = s === "" ? "(blank)" : s.toUpperCase();
+  if (s === "") {
+    return BLANK_FILTER_VALUE;
+  }
+
+  const normalized = s.toUpperCase();
+
+  // Keep the blank sentinel round-trip stable: normalize("(blank)") must
+  // return "(blank)", not "(BLANK)", or an applied blank filter would never
+  // match blank rows.
+  if (normalized === BLANK_FILTER_VALUE_UPPER) {
+    return BLANK_FILTER_VALUE;
+  }
 
   return FILTER_VALUE_ALIASES.get(normalized) ?? normalized;
 }

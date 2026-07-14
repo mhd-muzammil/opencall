@@ -184,6 +184,80 @@ describe("WIP aging filter helpers", () => {
 });
 
 // ---------------------------------------------------------------------------
+// (blank) bucket — dropdown counts vs Apply matching (Evening status bug)
+// ---------------------------------------------------------------------------
+
+describe("(blank) filter bucket", () => {
+  // "Evening status" can legitimately hold "" (cleared), be missing entirely
+  // (undefined — older rows created before the column existed), or hold the
+  // "Manual Entry Required" placeholder, depending on row age.
+  const rows: { output: Record<string, string | number> }[] = [
+    makeRow({ "Evening status": "" }),
+    makeRow({}), // no "Evening status" key at all → undefined
+    makeRow({ "Evening status": "Manual Entry Required" }),
+    makeRow({ "Evening status": "WO-Closed" }),
+    makeRow({ "Evening status": "CX Pending" }),
+  ];
+
+  it("keeps the blank sentinel stable under re-normalization", () => {
+    const sentinel = normalizeFilterValue("");
+    expect(normalizeFilterValue(sentinel)).toBe(sentinel);
+  });
+
+  it("Apply on ONLY the (blank) option returns exactly the rows the dropdown counted as blank", () => {
+    // 1. The dropdown builds its option list (values + counts)…
+    const options = extractUniqueValues(rows, "Evening status");
+    const blankOption = options.find(
+      (option) => option.value === normalizeFilterValue(""),
+    );
+    expect(blankOption).toEqual({ value: normalizeFilterValue(""), count: 2 });
+
+    // 2. …the user checks only (blank) and hits Apply. The hook
+    //    (useColumnFilters.setColumnFilter) re-normalizes the selected values
+    //    before applyColumnFilters normalizes them again.
+    const applied = new Set(
+      Array.from(new Set([blankOption!.value]), normalizeFilterValue),
+    );
+    const filters: ColumnFilterState = { "Evening status": applied };
+
+    // 3. Counts and matches must agree: the 2 blank rows come back.
+    const result = applyColumnFilters(rows, filters);
+    expect(result).toHaveLength(blankOption!.count);
+    expect(result.map((row) => row.output["Evening status"])).toEqual([
+      "",
+      undefined,
+    ]);
+  });
+
+  it("does NOT treat 'Manual Entry Required' as blank in counting or matching", () => {
+    const options = extractUniqueValues(rows, "Evening status");
+    expect(options.map((option) => option.value)).toContain(
+      "MANUAL ENTRY REQUIRED",
+    );
+
+    const result = applyColumnFilters(rows, {
+      "Evening status": new Set([normalizeFilterValue("")]),
+    });
+    expect(
+      result.some(
+        (row) => row.output["Evening status"] === "Manual Entry Required",
+      ),
+    ).toBe(false);
+  });
+
+  it("rowPassesFilters matches a blank row against a re-normalized blank sentinel", () => {
+    const row = makeRow({ "Evening status": "" });
+    const filters: ColumnFilterState = {
+      "Evening status": new Set([
+        normalizeFilterValue(normalizeFilterValue("")),
+      ]),
+    };
+
+    expect(rowPassesFilters(row, filters)).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------
 // buildUniqueValuesMap
 // ---------------------------------------------------------------------------
 

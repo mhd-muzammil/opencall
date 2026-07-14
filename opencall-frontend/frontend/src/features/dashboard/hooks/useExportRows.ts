@@ -16,11 +16,19 @@ import {
   rowMatchesRecordSearch,
   countManualRequiredCells,
   batchIdBySource,
+  selectRecordSearchBaseRows,
 } from "../utils";
 
 export function useExportRows(params: {
   colFilters: UseColumnFiltersResult<ReportRow>;
   regionFilteredRows: ReportRow[];
+  /**
+   * Base rows used while a records search is active: all Records-page rows
+   * matching the selected region only (no category/OTC scope), so a search can
+   * surface cases outside the active card scope. When the search query is
+   * empty, regionFilteredRows is used and behavior is unchanged.
+   */
+  searchScopeRows: ReportRow[];
   recordsSearchQuery: string;
   wipAgingSort: WipAgingSortDirection | null;
   closedRows: ReportRow[];
@@ -33,6 +41,7 @@ export function useExportRows(params: {
   const {
     colFilters,
     regionFilteredRows,
+    searchScopeRows,
     recordsSearchQuery,
     wipAgingSort,
     closedRows,
@@ -43,9 +52,18 @@ export function useExportRows(params: {
     upload,
   } = params;
 
+  // With no search this is exactly the old behavior (category/OTC/region-scoped
+  // rows through the column filters). While a search is active the base widens
+  // to searchScopeRows so matches outside the active category/OTC scope are
+  // shown; column filters still apply. The search banner's "N of M" denominator
+  // reads columnFilteredRows, so during a search it honestly counts the widened,
+  // column-filtered search base rather than the narrower card scope.
   const columnFilteredRows = useMemo(
-    () => colFilters.filteredRows(regionFilteredRows),
-    [colFilters, regionFilteredRows],
+    () =>
+      colFilters.filteredRows(
+        selectRecordSearchBaseRows(recordsSearchQuery, regionFilteredRows, searchScopeRows),
+      ),
+    [colFilters, recordsSearchQuery, regionFilteredRows, searchScopeRows],
   );
 
   const filteredRows = useMemo(

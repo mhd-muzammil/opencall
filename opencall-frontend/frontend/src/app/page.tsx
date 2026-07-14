@@ -702,6 +702,7 @@ export default function DashboardPage() {
     nonWarrantyRows,
     tableBaseRows,
     regionFilteredRows,
+    searchScopeRows,
   } = useRecordRowSets({
     report,
     showClosedOnly,
@@ -888,6 +889,7 @@ export default function DashboardPage() {
   } = useExportRows({
     colFilters,
     regionFilteredRows,
+    searchScopeRows,
     recordsSearchQuery,
     wipAgingSort,
     closedRows,

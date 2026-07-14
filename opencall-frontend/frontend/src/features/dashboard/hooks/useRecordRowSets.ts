@@ -14,6 +14,7 @@ import {
   isConsumerCase,
   isWarrantyCase,
   isTradeCase,
+  rowMatchesRegionFilter,
 } from "../utils";
 
 export function useRecordRowSets(params: {
@@ -158,9 +159,7 @@ export function useRecordRowSets(params: {
     if (!report) return [];
 
     return tableBaseRows.filter((row) => {
-      const rowRegion = String(row.output["Work Location"] ?? "").trim().toUpperCase();
-      const targetRegion = String(selectedRegion ?? "").trim().toUpperCase();
-      const matchRegion = selectedRegion === "ALL" || !selectedRegion || rowRegion === targetRegion;
+      const matchRegion = rowMatchesRegionFilter(row, selectedRegion);
 
       const rowCode = String(row.output["WO OTC CODE"] ?? "").trim().toUpperCase();
       const targetCode = String(selectedWoOtcCode ?? "").trim().toUpperCase();
@@ -169,6 +168,15 @@ export function useRecordRowSets(params: {
       return matchRegion && matchCode;
     });
   }, [report, selectedRegion, selectedWoOtcCode, tableBaseRows]);
+
+  // Search base: every Records-page row narrowed by the selected region ONLY —
+  // no category chip scope and no WO OTC code filter. When the user types a
+  // search, matching cases must surface even if they fall outside the active
+  // category/OTC scope, while still honoring the region selection.
+  const searchScopeRows = useMemo(() => {
+    if (!report) return [];
+    return activeRows.filter((row) => rowMatchesRegionFilter(row, selectedRegion));
+  }, [activeRows, report, selectedRegion]);
 
   return {
     activeRows,
@@ -185,5 +193,6 @@ export function useRecordRowSets(params: {
     nonWarrantyRows,
     tableBaseRows,
     regionFilteredRows,
+    searchScopeRows,
   };
 }

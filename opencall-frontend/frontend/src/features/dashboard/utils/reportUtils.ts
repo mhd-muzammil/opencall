@@ -100,6 +100,35 @@ export function rowMatchesRecordSearch(row: ReportRow, query: string): boolean {
   return terms.every((term) => searchableText.includes(term));
 }
 
+// Region predicate shared by the scoped records table and the search base.
+// A records search must escape the active category/OTC scope but still respect
+// the selected region, so both row sets need to agree on what "matches the
+// selected region" means. Semantics mirror the original inline check in
+// useRecordRowSets.regionFilteredRows: null/"ALL" match everything.
+export function rowMatchesRegionFilter(
+  row: ReportRow,
+  selectedRegion: string | null,
+): boolean {
+  if (!selectedRegion || selectedRegion === "ALL") {
+    return true;
+  }
+  const rowRegion = String(row.output["Work Location"] ?? "").trim().toUpperCase();
+  const targetRegion = selectedRegion.trim().toUpperCase();
+  return rowRegion === targetRegion;
+}
+
+// Picks the base row set for the records table. With no search the table shows
+// only the scoped rows (category chip + region + WO OTC code). While a search is
+// active the base widens to searchScopeRows (all Records rows matching the region
+// only) so a search can surface cases outside the active category/OTC scope.
+export function selectRecordSearchBaseRows<T>(
+  recordsSearchQuery: string,
+  regionFilteredRows: readonly T[],
+  searchScopeRows: readonly T[],
+): readonly T[] {
+  return recordsSearchQuery.trim() === "" ? regionFilteredRows : searchScopeRows;
+}
+
 export function batchIdBySource(
   batches: readonly UploadBatch[],
   sourceType: SourceKey,

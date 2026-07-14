@@ -439,6 +439,10 @@ export default function DashboardPage() {
   const [selectedProductivityValue, setSelectedProductivityValue] = useState("");
   const [productivityFromDate, setProductivityFromDate] = useState("");
   const [productivityToDate, setProductivityToDate] = useState("");
+  // The selected PAST day's final report for the productivity view ("Specific
+  // Date" is day-by-day: it reads that day's report, not a created-time cohort).
+  const [productivityDayReport, setProductivityDayReport] = useState<GeneratedReportResponse | null>(null);
+  const productivityDayReportCacheRef = useRef(new Map<string, GeneratedReportResponse>());
   const [tnFilterType, setTnFilterType] = useState("Today");
   const [selectedTnValue, setSelectedTnValue] = useState("");
   const [eodBodFilterType, setEodBodFilterType] = useState("Today");
@@ -762,6 +766,19 @@ export default function DashboardPage() {
     closedRegionBreakdown,
   } = useRegionAnalytics({ activeRows, report });
 
+  // Days that actually have a completed report — the productivity "Specific
+  // Date" dropdown offers these (day-by-day flow), not case-creation dates.
+  const historyReportDates = useMemo(() => {
+    const dates = new Set<string>();
+    if (report?.reportDate) dates.add(report.reportDate);
+    for (const s of historySessions) {
+      if (s.status === "COMPLETED" && s.reportDate && s.flexUploadBatchId) {
+        dates.add(s.reportDate);
+      }
+    }
+    return Array.from(dates);
+  }, [report?.reportDate, historySessions]);
+
   // Phase 5: kpiBaseRows/date-scope/productivity memos moved to
   // features/dashboard/hooks/useProductivityAnalytics. (The tn/eodBod/productivity
   // auto-select useEffect blocks remain below in page.tsx and read these values.)
@@ -786,6 +803,8 @@ export default function DashboardPage() {
     selectedProductivityValue,
     productivityFromDate,
     productivityToDate,
+    productivityDayReport,
+    historyReportDates,
   });
 
   useEffect(() => {
@@ -1010,6 +1029,79 @@ export default function DashboardPage() {
       setSelectedProductivityValue("");
     }
   }, [productivityFilterType, engineerProductivityMetrics.datesList, engineerProductivityMetrics.monthsList, selectedProductivityValue]);
+
+  // Day-by-day productivity: "Specific Date" reads that DAY's report. The
+  // current report covers its own day; a past day is served by fetching the
+  // day's final report (its latest completed session) in the background,
+  // cached per date for the rest of this browser session.
+  useEffect(() => {
+    if (
+      !session ||
+      session.user.role === "SPECIAL_ACCESS" ||
+      productivityFilterType !== "Specific Date" ||
+      !selectedProductivityValue
+    ) {
+      setProductivityDayReport(null);
+      return;
+    }
+
+    const parts = selectedProductivityValue.split("-");
+    const iso =
+      parts.length === 3 && parts[2]?.length === 4
+        ? `${parts[2]}-${parts[1]}-${parts[0]}`
+        : selectedProductivityValue;
+
+    if (report?.reportDate === iso) {
+      setProductivityDayReport(null);
+      return;
+    }
+
+    const cached = productivityDayReportCacheRef.current.get(iso);
+    if (cached) {
+      setProductivityDayReport(cached);
+      return;
+    }
+
+    // The day's FINAL report = its most recent completed session.
+    const daySession = historySessions
+      .filter((s) => s.status === "COMPLETED" && s.reportDate === iso && s.flexUploadBatchId)
+      .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())[0];
+    if (!daySession?.flexUploadBatchId) {
+      setProductivityDayReport(null);
+      return;
+    }
+
+    const effectiveRegionId =
+      session.user.role === "REGION_ADMIN"
+        ? session.user.regionId ?? ""
+        : daySession.regionId || regionId;
+
+    let cancelled = false;
+    setProductivityDayReport(null);
+    generateReport({
+      token: session.token,
+      regionId: effectiveRegionId,
+      reportDate: iso,
+      flexUploadBatchId: daySession.flexUploadBatchId,
+      ...(daySession.renderwaysUploadBatchId
+        ? { renderwaysUploadBatchId: daySession.renderwaysUploadBatchId }
+        : {}),
+      ...(daySession.callPlanUploadBatchId
+        ? { callPlanUploadBatchId: daySession.callPlanUploadBatchId }
+        : {}),
+    })
+      .then((dayReport) => {
+        productivityDayReportCacheRef.current.set(iso, dayReport);
+        if (!cancelled) setProductivityDayReport(dayReport);
+      })
+      .catch(() => {
+        // Leave the table empty for the day; the date label still shows which
+        // day was requested.
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [session, productivityFilterType, selectedProductivityValue, report?.reportDate, historySessions, regionId]);
 
 
 

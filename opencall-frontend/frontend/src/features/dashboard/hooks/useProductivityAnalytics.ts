@@ -21,6 +21,15 @@ import {
 } from "../utils/engineerProductivity";
 import { ASP_CODE_REGION_MAP } from "@opencall/shared";
 
+// "DD-MM-YYYY" (dropdown format) -> "YYYY-MM-DD" (report date format).
+function dmyToIso(dmy: string): string {
+  const parts = dmy.split("-");
+  if (parts.length === 3 && parts[2] && parts[2].length === 4) {
+    return `${parts[2]}-${parts[1]}-${parts[0]}`;
+  }
+  return dmy;
+}
+
 export function useProductivityAnalytics(params: {
   report: GeneratedReportResponse | null;
   selectedRegion: string | null;
@@ -33,6 +42,14 @@ export function useProductivityAnalytics(params: {
   selectedProductivityValue: string;
   productivityFromDate?: string;
   productivityToDate?: string;
+  /**
+   * The selected day's final report when "Specific Date" targets a PAST day
+   * (fetched from that day's history session). Null while loading, when the
+   * selected day is the current report's day, or when no report exists for it.
+   */
+  productivityDayReport?: GeneratedReportResponse | null;
+  /** Days that actually have a report (ISO dates) — drives the date dropdown. */
+  historyReportDates?: readonly string[];
 }) {
   const {
     report,
@@ -46,6 +63,8 @@ export function useProductivityAnalytics(params: {
     selectedProductivityValue,
     productivityFromDate = "",
     productivityToDate = "",
+    productivityDayReport = null,
+    historyReportDates = [],
   } = params;
 
   const kpiBaseRows = useMemo(() => {
@@ -228,11 +247,27 @@ export function useProductivityAnalytics(params: {
   const engineerProductivityMetrics = useMemo(() => {
     if (!report) return { list: [], totalAttended: 0, monthsList: [], datesList: [], todayStr: "" };
 
+    // "Specific Date" selects a DAY'S REPORT, not a case-created-time cohort:
+    // the current report when its own day is picked, or the fetched final
+    // report of a past day. While that fetch is in flight (or no report exists
+    // for the day) there is no matching source and the table is empty.
+    const selectedDayIso =
+      productivityFilterType === "Specific Date" && selectedProductivityValue
+        ? dmyToIso(selectedProductivityValue)
+        : null;
+    const sourceReport =
+      selectedDayIso && productivityDayReport?.reportDate === selectedDayIso
+        ? productivityDayReport
+        : report;
+
     // 1. Productivity is a day-by-day view: it reads the same rows the Records
-    // page shows for this report's day (open calls plus today's same-day
-    // closures; older closures and Request-to-Cancel rows are out), then
-    // filters by selectedRegion.
-    let regionRows = report.rows.filter(isRecordsPageVisibleRow);
+    // page shows for that day (open calls plus same-day closures; older
+    // closures and Request-to-Cancel rows are out), then filters by
+    // selectedRegion.
+    let regionRows = sourceReport.rows.filter(isRecordsPageVisibleRow);
+    if (selectedDayIso && sourceReport.reportDate !== selectedDayIso) {
+      regionRows = [];
+    }
     if (selectedRegion && selectedRegion !== "ALL") {
       regionRows = regionRows.filter(r => String(r.output["Work Location"] ?? "").trim().toUpperCase() === selectedRegion.trim().toUpperCase());
     }
@@ -281,32 +316,30 @@ export function useProductivityAnalytics(params: {
     }
 
     const monthsList = Array.from(monthsSet).sort((a, b) => a.localeCompare(b));
-    const datesList = Array.from(datesSet).sort((a, b) => {
-      const parseDMY = (s: string) => {
-        const p = s.split("-");
-        const day = parseInt(p[0] ?? "0", 10);
-        const month = parseInt(p[1] ?? "0", 10) - 1;
-        const year = parseInt(p[2] ?? "0", 10);
-        return new Date(year, month, day).getTime();
-      };
-      return parseDMY(a) - parseDMY(b);
-    });
+    const parseDMY = (s: string) => {
+      const p = s.split("-");
+      const day = parseInt(p[0] ?? "0", 10);
+      const month = parseInt(p[1] ?? "0", 10) - 1;
+      const year = parseInt(p[2] ?? "0", 10);
+      return new Date(year, month, day).getTime();
+    };
+    // The Specific Date dropdown lists days that actually HAVE a report
+    // (day-by-day flow), not case-creation dates. Case-creation dates remain
+    // the fallback when no history has loaded yet.
+    const reportDays = Array.from(
+      new Set(historyReportDates.map((iso) => getFormattedReportDate(iso)).filter(Boolean)),
+    );
+    const datesList = (reportDays.length > 0 ? reportDays : Array.from(datesSet)).sort(
+      (a, b) => parseDMY(a) - parseDMY(b),
+    );
 
-    // 3. Filter rows based on type
+    // 3. Filter rows based on type. "Specific Date" is already day-scoped via
+    // sourceReport above — the day's whole report IS the day's productivity, so
+    // no Case-Created-Time filtering applies to it (an engineer's work today is
+    // mostly on cases created days ago). Month and Range remain created-time
+    // cohort filters.
     let filteredRowsForProd = regionRows;
-    if (productivityFilterType === "Specific Date" && selectedProductivityValue) {
-      filteredRowsForProd = regionRows.filter(r => {
-        const createdTime = String(r.output["Case Created Time"] ?? "").trim();
-        if (createdTime && createdTime !== MANUAL_ENTRY_REQUIRED) {
-          const match = /^(\d{2})[-/](\d{2})[-/](\d{4})/.exec(createdTime);
-          if (match) {
-            const rowDate = `${match[1]}-${match[2]}-${match[3]}`;
-            return rowDate === selectedProductivityValue;
-          }
-        }
-        return false;
-      });
-    } else if (productivityFilterType === "Specific Month" && selectedProductivityValue) {
+    if (productivityFilterType === "Specific Month" && selectedProductivityValue) {
       filteredRowsForProd = regionRows.filter(r => {
         const createdTime = String(r.output["Case Created Time"] ?? "").trim();
         if (createdTime && createdTime !== MANUAL_ENTRY_REQUIRED) {
@@ -434,6 +467,8 @@ export function useProductivityAnalytics(params: {
     selectedProductivityValue,
     productivityFromDate,
     productivityToDate,
+    productivityDayReport,
+    historyReportDates,
   ]);
 
   const productivityDateLabel = useMemo(() => {

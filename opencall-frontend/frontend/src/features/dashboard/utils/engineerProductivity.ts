@@ -3,15 +3,16 @@
 // productivity table then rolls buckets up per engineer:
 //
 //   Scheduled / To be Scheduled / Engg Assigned
-//                        -> SCHEDULED         (booked to the engineer; counts nowhere yet)
+//                        -> SCHEDULED         (booked to the engineer; Assigned only)
 //   WO Closed            -> CLOSED
 //   Part Order           -> PART_ORDER
 //   Under Observation    -> UNDER_OBSERVATION
 //   CX Reschedule        -> CX_RESCHEDULE     (customer pushed the visit out)
-//   any other status     -> ATTENDED_OTHER    (in progress; counts nowhere yet)
+//   any other status     -> ATTENDED_OTHER    (in progress; Assigned only)
 //
+//   Assigned = every counted call (his booked load for the day)
 //   Attended = CLOSED + PART_ORDER + UNDER_OBSERVATION
-//   Assigned = Attended + CX_RESCHEDULE
+//   (end of day, all calls resolved: Assigned = Attended + CX_RESCHEDULE)
 //
 // A call counts only when BOTH the engineer and the status are filled in on the
 // Records page — either one blank (or "Manual Entry Required") and it is ignored.
@@ -165,26 +166,30 @@ export function emptyProductivityBucketCounts(): ProductivityBucketCounts {
 }
 
 /**
- * Add one bucketed call to an engineer's counts. Only concrete outcomes count:
+ * Add one bucketed call to an engineer's counts.
  *
- *   Attended = Closed + Part ordered + Under Observation
- *   Assigned = Attended + CX Reschedule
+ *   Assigned = every counted call — the moment a call is scheduled to the
+ *              engineer it appears here, and it stays as it progresses.
+ *   Attended = Closed + Part ordered + Under Observation (concrete outcomes
+ *              only; scheduled and in-progress statuses are not yet attended).
  *
- * Scheduled-stage calls and in-progress statuses (CX Pending, work in
- * progress, ...) appear in NO column — a call earns productivity only once it
- * reaches one of the four outcomes.
+ * Day flow: in the morning Assigned fills with scheduled calls and Attended is
+ * 0; as the team records outcomes, calls move into Attended and its
+ * sub-columns. At end of day, when nothing is left at the scheduled stage,
+ * Assigned = Attended + CX Reschedule.
  */
 export function addToProductivityCounts(
   counts: ProductivityBucketCounts,
   bucket: ProductivityBucket,
   ticketId: string,
 ): void {
+  counts.assigned += 1;
+  counts.assignedTickets.push(ticketId);
+
+  // Booked or still in progress: assigned, not yet an outcome.
   if (bucket === "SCHEDULED" || bucket === "ATTENDED_OTHER") {
     return;
   }
-
-  counts.assigned += 1;
-  counts.assignedTickets.push(ticketId);
 
   if (bucket === "CX_RESCHEDULE") {
     counts.cxReschedule += 1;

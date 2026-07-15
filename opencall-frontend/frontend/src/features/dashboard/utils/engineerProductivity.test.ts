@@ -150,11 +150,12 @@ describe("wasRowEnteredOnItsDay", () => {
 });
 
 describe("addToProductivityCounts", () => {
-  it("rolls up: Attended = Closed+Part+UO, Assigned = Attended + CX Reschedule", () => {
+  it("rolls up: Assigned = whole load, Attended = Closed+Part+UO", () => {
     const counts = emptyProductivityBucketCounts();
 
-    // sriram's day: 18 closed, 2 part orders, 2 reschedules — plus 2 still
-    // scheduled and 1 in-progress status, which must count nowhere.
+    // sriram mid-day: 18 closed, 2 part orders, 2 reschedules, 2 still
+    // scheduled, 1 in progress -> Assigned counts all 25, Attended only
+    // the 20 concrete outcomes.
     for (let i = 0; i < 18; i++) addToProductivityCounts(counts, "CLOSED", `C${i}`);
     addToProductivityCounts(counts, "PART_ORDER", "P1");
     addToProductivityCounts(counts, "PART_ORDER", "P2");
@@ -164,32 +165,46 @@ describe("addToProductivityCounts", () => {
     addToProductivityCounts(counts, "SCHEDULED", "A2");
     addToProductivityCounts(counts, "ATTENDED_OTHER", "T1");
 
-    // The original table's arithmetic: 22 | 20 | 18 | 2 | 0 | 2.
-    expect(counts.assigned).toBe(22);
+    expect(counts.assigned).toBe(25);
     expect(counts.attended).toBe(20);
     expect(counts.closed).toBe(18);
     expect(counts.partOrdered).toBe(2);
     expect(counts.cxReschedule).toBe(2);
     expect(counts.underObservation).toBe(0);
-    expect(counts.assignedTickets).toHaveLength(22);
+    expect(counts.assignedTickets).toHaveLength(25);
+    expect(counts.assignedTickets).toContain("A1");
+    expect(counts.assignedTickets).toContain("T1");
     expect(counts.attendedTickets).toHaveLength(20);
     expect(counts.closedTickets).toContain("C0");
     expect(counts.cxRescheduleTickets).toEqual(["R1", "R2"]);
-    expect(counts.assignedTickets).not.toContain("A1");
-    expect(counts.assignedTickets).not.toContain("T1");
   });
 
-  it("counts scheduled and in-progress calls in NO column", () => {
+  // The morning state: calls scheduled to the engineer show up in Assigned
+  // immediately, Attended stays 0 until outcomes are recorded.
+  it("counts a freshly scheduled call in Assigned only", () => {
     const counts = emptyProductivityBucketCounts();
 
     addToProductivityCounts(counts, "SCHEDULED", "S1");
     addToProductivityCounts(counts, "ATTENDED_OTHER", "T1");
 
-    expect(counts.assigned).toBe(0);
+    expect(counts.assigned).toBe(2);
     expect(counts.attended).toBe(0);
     expect(counts.closed).toBe(0);
     expect(counts.partOrdered).toBe(0);
     expect(counts.underObservation).toBe(0);
     expect(counts.cxReschedule).toBe(0);
+  });
+
+  // The end-of-day state: everything resolved, the team's equation holds.
+  it("satisfies Assigned = Attended + CX Reschedule once all calls resolve", () => {
+    const counts = emptyProductivityBucketCounts();
+
+    addToProductivityCounts(counts, "CLOSED", "C1");
+    addToProductivityCounts(counts, "PART_ORDER", "P1");
+    addToProductivityCounts(counts, "UNDER_OBSERVATION", "U1");
+    addToProductivityCounts(counts, "CX_RESCHEDULE", "R1");
+
+    expect(counts.assigned).toBe(counts.attended + counts.cxReschedule);
+    expect(counts.attended).toBe(3);
   });
 });

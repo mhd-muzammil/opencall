@@ -409,12 +409,17 @@ export function useProductivityAnalytics(params: {
       const name = engineerName(r);
       if (!name || name === MANUAL_ENTRY_REQUIRED) continue;
 
-      // No status at all -> not part of the day's book of work.
-      if (!effectiveProductivityStatus(r.output)) continue;
+      // Most calls close by DISAPPEARING from the Flex WIP (closed in HP's
+      // system) — the day's same-day-closed rows. Those are the engineer's
+      // completions regardless of what the status columns say. Otherwise the
+      // outcome comes from the Evening entry; no Evening yet -> Assigned only.
+      const isClosedToday = r.carryForward.closedSyntheticRow;
+      if (!isClosedToday && !effectiveProductivityStatus(r.output)) continue;
 
-      // Outcome from Evening only; no Evening entry yet -> Assigned only.
       const evening = eveningOutcomeStatus(r.output);
-      const bucket = (evening ? classifyProductivityStatus(evening) : null) ?? "SCHEDULED";
+      const bucket = isClosedToday
+        ? "CLOSED"
+        : ((evening ? classifyProductivityStatus(evening) : null) ?? "SCHEDULED");
 
       const key = name.toLowerCase();
       let engineer = engineersByKey.get(key);

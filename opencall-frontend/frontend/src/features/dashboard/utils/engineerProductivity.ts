@@ -1,6 +1,7 @@
-// Engineer-productivity status classification. One bucket per call, decided by
-// the call's CURRENT status today (Evening if filled, else Morning) — the
-// productivity table then rolls buckets up per engineer:
+// Engineer-productivity status classification. A call is on the table when it
+// has an engineer and any status (its Assigned load); its OUTCOME bucket comes
+// from the Evening (EOD) column only — Evening resets every morning, so
+// outcomes are today's entries by definition:
 //
 //   Scheduled / To be Scheduled / Engg Assigned
 //                        -> SCHEDULED         (booked to the engineer; Assigned only)
@@ -32,9 +33,9 @@ function cleanFieldValue(value: unknown): string {
 }
 
 /**
- * The status that drives today's productivity: the Evening (EOD) entry once the
- * team fills it, otherwise the Morning (BOD) carry-over. Empty string when the
- * row has no usable status.
+ * Row eligibility: the row belongs on the productivity table when it carries a
+ * status at all (Morning or Evening) — the engineer's book of work for the
+ * day. Empty string when the row has no usable status.
  */
 export function effectiveProductivityStatus(
   output: Record<string, string | number>,
@@ -46,33 +47,17 @@ export function effectiveProductivityStatus(
 }
 
 /**
- * Was this row actually worked ON its report's day, rather than merely riding
- * along as a carry-forward from the previous day? Only such rows count toward
- * that day's productivity — an engineer+status pair carried from yesterday was
- * yesterday's work and already counted there (these are the rows the Records
- * page marks with the "Carried" badge).
- *
- *  - An Evening (EOD) status always belongs to the day: it starts blank each
- *    morning, so a value means the team entered it that day.
- *  - The Engineer or Morning status count as that day's entry when they are
- *    NOT in carriedForwardFields (typed into this report, not inherited).
+ * The status that drives the day's OUTCOMES: the Evening (EOD) column only.
+ * Evening starts blank every morning and survives same-day re-uploads, so a
+ * value in it is that day's entry by definition — Closed/Part/UO/CX counted
+ * from it can never be yesterday's carry-over, and counts never drop after a
+ * mid-day upload. The Morning column (the carried/promoted baseline) only
+ * makes a row eligible for Assigned; it never produces an outcome.
  */
-export function wasRowEnteredOnItsDay(row: {
-  output: Record<string, string | number>;
-  carryForward: { carriedForwardFields: readonly string[] };
-}): boolean {
-  if (cleanFieldValue(row.output["Evening status"])) {
-    return true;
-  }
-
-  const carried = row.carryForward.carriedForwardFields;
-  if (cleanFieldValue(row.output["Engineer"]) && !carried.includes("engineer")) {
-    return true;
-  }
-
-  return Boolean(
-    cleanFieldValue(row.output["RTPL status"]) && !carried.includes("rtpl_status"),
-  );
+export function eveningOutcomeStatus(
+  output: Record<string, string | number>,
+): string {
+  return cleanFieldValue(output["Evening status"]);
 }
 
 /**

@@ -18,7 +18,7 @@ import {
   classifyProductivityStatus,
   effectiveProductivityStatus,
   emptyProductivityBucketCounts,
-  wasRowEnteredOnItsDay,
+  eveningOutcomeStatus,
 } from "../utils/engineerProductivity";
 import { ASP_CODE_REGION_MAP } from "@opencall/shared";
 
@@ -385,17 +385,13 @@ export function useProductivityAnalytics(params: {
       });
     }
 
-    // 4. Group by unique engineers. A row counts only when BOTH the engineer
-    // and its effective status (Evening once filled, else Morning) are set;
-    // either one blank and the call is ignored entirely. Each counted call
-    // lands in exactly one bucket; assigned/attended are rolled up from them.
-    //
-    // Day views (Today / Specific Date) additionally require the row to have
-    // been ENTERED on that day: engineer+status pairs merely carried forward
-    // from the previous report (the "Carried" badge on the Records page) were
-    // that previous day's work and already counted there.
-    const isDayView =
-      productivityFilterType === "Today" || productivityFilterType === "Specific Date";
+    // 4. Group by unique engineers. A row counts when BOTH the engineer and a
+    // status (Morning or Evening) are set — that is the engineer's Assigned
+    // load for the day, carried or fresh, so it is stable across mid-day
+    // re-uploads. The OUTCOME buckets (Closed/Part/UO/CX -> Attended) come
+    // from the Evening column only: Evening resets every morning, so outcomes
+    // are that day's entries by definition and yesterday's carried statuses
+    // can never inflate them.
     const engineerName = (r: typeof filteredRowsForProd[number]) =>
       canonicalEngineerName(String(r.output.Engineer ?? ""));
 
@@ -413,10 +409,12 @@ export function useProductivityAnalytics(params: {
       const name = engineerName(r);
       if (!name || name === MANUAL_ENTRY_REQUIRED) continue;
 
-      if (isDayView && !wasRowEnteredOnItsDay(r)) continue;
+      // No status at all -> not part of the day's book of work.
+      if (!effectiveProductivityStatus(r.output)) continue;
 
-      const bucket = classifyProductivityStatus(effectiveProductivityStatus(r.output));
-      if (!bucket) continue;
+      // Outcome from Evening only; no Evening entry yet -> Assigned only.
+      const evening = eveningOutcomeStatus(r.output);
+      const bucket = (evening ? classifyProductivityStatus(evening) : null) ?? "SCHEDULED";
 
       const key = name.toLowerCase();
       let engineer = engineersByKey.get(key);

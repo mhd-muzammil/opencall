@@ -4,7 +4,7 @@ import {
   classifyProductivityStatus,
   effectiveProductivityStatus,
   emptyProductivityBucketCounts,
-  wasRowEnteredOnItsDay,
+  eveningOutcomeStatus,
 } from "./engineerProductivity";
 
 describe("effectiveProductivityStatus", () => {
@@ -84,68 +84,33 @@ describe("classifyProductivityStatus", () => {
   });
 });
 
-// A day's productivity counts only what was ENTERED that day. Rows whose
-// engineer+status merely carried forward from the previous report (the
-// "Carried" badge on the Records page) were the previous day's work.
-describe("wasRowEnteredOnItsDay", () => {
-  function row(
-    output: Record<string, string | number>,
-    carriedForwardFields: string[] = [],
-  ) {
-    return { output, carryForward: { carriedForwardFields } };
-  }
-
-  it("counts a row whose engineer was assigned that day", () => {
+// Outcomes come from the Evening column ONLY. Evening resets every morning
+// and survives same-day re-uploads, so whatever is in it was entered that day
+// — a carried Morning status can never inflate the outcome counts, and counts
+// never drop after a mid-day upload.
+describe("eveningOutcomeStatus", () => {
+  it("returns the Evening entry", () => {
     expect(
-      wasRowEnteredOnItsDay(
-        row({ Engineer: "Lava Kumar", "RTPL status": "Scheduled" }, ["rtpl_status"]),
-      ),
-    ).toBe(true);
+      eveningOutcomeStatus({
+        "RTPL status": "Scheduled",
+        "Evening status": "WO-closed",
+      }),
+    ).toBe("WO-closed");
   });
 
-  it("counts a row whose Morning status was typed that day", () => {
+  it("returns blank when Evening is not filled — Morning never makes an outcome", () => {
     expect(
-      wasRowEnteredOnItsDay(
-        row({ Engineer: "Lava Kumar", "RTPL status": "Scheduled" }, ["engineer"]),
-      ),
-    ).toBe(true);
+      eveningOutcomeStatus({
+        "RTPL status": "WO-closed",
+        "Evening status": "",
+      }),
+    ).toBe("");
   });
 
-  it("counts a fully-carried row once its Evening status is filled", () => {
+  it("treats Manual Entry Required as blank", () => {
     expect(
-      wasRowEnteredOnItsDay(
-        row(
-          {
-            Engineer: "Lava Kumar",
-            "RTPL status": "To be Scheduled",
-            "Evening status": "WO-closed",
-          },
-          ["engineer", "rtpl_status"],
-        ),
-      ),
-    ).toBe(true);
-  });
-
-  it("does NOT count a row whose engineer and status are both carry-forwards", () => {
-    expect(
-      wasRowEnteredOnItsDay(
-        row(
-          { Engineer: "Lava Kumar", "RTPL status": "To be Scheduled" },
-          ["engineer", "rtpl_status"],
-        ),
-      ),
-    ).toBe(false);
-  });
-
-  it("does NOT count carried values whose editable fields are blank", () => {
-    expect(
-      wasRowEnteredOnItsDay(
-        row(
-          { Engineer: "", "RTPL status": "", "Evening status": "" },
-          ["remarks"],
-        ),
-      ),
-    ).toBe(false);
+      eveningOutcomeStatus({ "Evening status": "Manual Entry Required" }),
+    ).toBe("");
   });
 });
 

@@ -1931,7 +1931,16 @@ export default function DashboardPage() {
       const normalizedCurrent =
         currentValue && currentValue !== MANUAL_ENTRY_REQUIRED ? currentValue : null;
 
-      if (draftValue === null || draftValue === normalizedCurrent) {
+      if (draftValue === normalizedCurrent) {
+        continue;
+      }
+
+      // Cleared back to "Entry"/blank: send an explicit null so the backend
+      // empties the field. Clears used to be dropped from the payload, so an
+      // accidentally assigned engineer (or any set field) could never be
+      // un-set — the old value silently survived the save.
+      if (draftValue === null) {
+        values[apiField as keyof ReportRowPatchValues] = null;
         continue;
       }
 

@@ -69,6 +69,20 @@ export function countManualRequiredCells(rows: readonly ReportRow[]): number {
   }, 0);
 }
 
+/**
+ * Actionable = calls the team can act on right now: status "Scheduled" or
+ * "To Be Scheduled" (exact match, tolerant of casing/punctuation). The single
+ * definition behind the overview KPI tile, the BOD/EOD "Actionable Calls" rows
+ * (in-app and Excel) and the RTPL Hours Status card.
+ */
+export function isActionableStatusValue(status: unknown): boolean {
+  const s = String(status ?? "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim();
+  return s === "scheduled" || s === "to be scheduled";
+}
+
 export function normalizeRecordSearchValue(value: unknown): string {
   return String(value ?? "").trim().toLowerCase();
 }

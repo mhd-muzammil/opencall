@@ -19,15 +19,24 @@ describe("computeOperationalHealth", () => {
     expect(health.aged.threshold).toBe(DEFAULT_AGING_THRESHOLD);
   });
 
-  it("counts actionable calls but excludes customer/pending variants", () => {
+  // Actionable = Scheduled + To Be Scheduled (the team's definition), not the
+  // literal "Actionable" status.
+  it("counts Scheduled and To Be Scheduled calls as actionable", () => {
     const rows = [
-      row({ "RTPL status": "Actionable" }),
-      row({ "RTPL status": "Actionable - Cx Pending" }), // excluded by 'cx'/'pending'
-      row({ "RTPL status": "Assigned" }), // not an actionable keyword
+      row({ "RTPL status": "Scheduled" }),
+      row({ "RTPL status": "To Be Scheduled" }),
+      row({ "RTPL status": "to be scheduled" }), // casing variant
+      row({ "RTPL status": "Actionable" }), // the literal status no longer counts
+      row({ "RTPL status": "SSC Pending" }),
+      row({ "RTPL status": "CX Reschedule" }), // contains "schedule" but is not one
     ];
     const health = computeOperationalHealth(rows);
-    expect(health.actionable.count).toBe(1);
-    expect(health.actionable.values).toEqual(["Actionable"]);
+    expect(health.actionable.count).toBe(3);
+    expect(health.actionable.values).toEqual([
+      "Scheduled",
+      "To Be Scheduled",
+      "to be scheduled",
+    ]);
   });
 
   it("counts planned calls but excludes pending/to-be variants", () => {

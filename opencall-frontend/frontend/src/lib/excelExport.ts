@@ -16,6 +16,7 @@ import {
   isWarrantyCase,
   isPrintCase as isPrintTypeCase,
 } from "../features/dashboard/utils/caseClassification";
+import { isActionableStatusValue } from "../features/dashboard/utils/reportUtils";
 // Runtime `xlsx` (~900KB) is loaded lazily at export time so it stays out of the
 // initial page bundle. Only the type namespace is imported statically (erased at
 // build). Every function that touches the workbook API is async and awaits this.
@@ -624,7 +625,8 @@ export async function downloadRegionSummaryExcel(
     // 2. Salem region KPI summaries
     const openCallsCount = activeRows.length;
     const closedCallsCount = closedRows.length;
-    const actionableCount = activeRows.filter(r => matchStatus(r, ["actionable"], ["customer", "cust", "cx", "delay", "pending"])).length;
+    // Actionable = "Scheduled" + "To Be Scheduled" (shared definition).
+    const actionableCount = activeRows.filter(r => isActionableStatusValue(getRowStatus(r))).length;
     const plannedCount = activeRows.filter(r => matchStatus(r, ["assigned", "scheduled", "onsite"], ["pending", "to be"])).length;
     const enggOnsiteCount = activeRows.filter(r => matchStatus(r, ["assigned", "onsite"], ["pending", "to be"])).length;
     const toBeScheduleCount = activeRows.filter(r => matchStatus(r, ["to be scheduled", "assignment pending", "non avl", "missed to schedule"])).length;

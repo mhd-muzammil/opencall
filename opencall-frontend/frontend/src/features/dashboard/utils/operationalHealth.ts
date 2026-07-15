@@ -2,7 +2,7 @@
 //
 // Replaces the static volume totals (Today/Closed/Duplicates/Manual) with
 // "what needs attention now" signals computed over the open active rows:
-//   - Actionable Now    — calls in an actionable status, ready to dispatch
+//   - Actionable Now    — Scheduled + To Be Scheduled calls, ready to act on
 //   - Aged / At-risk     — calls whose WIP aging has crossed the SLA threshold
 //   - Awaiting Customer  — calls blocked on the customer (not on us)
 //   - Unassigned         — open calls with no engineer assigned yet
@@ -12,12 +12,9 @@
 // values it matched so the cards can filter the records table on click.
 import { MANUAL_ENTRY_REQUIRED } from "../constants";
 import type { ReportRow } from "../types";
-import { parseWipAgingValue } from "./reportUtils";
+import { isActionableStatusValue, parseWipAgingValue } from "./reportUtils";
 
 export const DEFAULT_AGING_THRESHOLD = 10;
-
-const ACTIONABLE_KEYWORDS = ["actionable"];
-const ACTIONABLE_EXCLUDES = ["customer", "cust", "cx", "delay", "pending"];
 const PLANNED_KEYWORDS = ["assigned", "scheduled", "onsite"];
 const PLANNED_EXCLUDES = ["pending", "to be"];
 const PART_PENDING_KEYWORDS = ["Part Pending"];
@@ -100,7 +97,8 @@ export function computeOperationalHealth(
 
   for (const row of activeRows) {
     const status = rtplStatusOf(row);
-    if (statusMatches(status, ACTIONABLE_KEYWORDS, ACTIONABLE_EXCLUDES)) {
+    // Actionable = "Scheduled" + "To Be Scheduled" (see isActionableStatusValue).
+    if (isActionableStatusValue(status)) {
       actionableCount += 1;
       actionableValues.add(status);
     }

@@ -4,7 +4,7 @@
 // modal-opening changes). openRtplCheckpointModal and openRecordsWithFilter are
 // passed in unchanged. These two sections render unconditionally in page.tsx.
 import { useMemo, type Dispatch, type SetStateAction } from "react";
-import { formatNumber, todayIsoDate, isWarrantyCase, isTradeCase } from "../utils";
+import { formatNumber, todayIsoDate, isWarrantyCase, isTradeCase, isActionableStatusValue } from "../utils";
 import type { ReportRow, RtplCaseScope } from "../types";
 import {
   ALL_REGIONS_FILTER,
@@ -57,7 +57,8 @@ function calculateKpiMetricsForCardView(
 
   const getTicketIds = (items: typeof rows) => items.map(r => String(r.output["Ticket ID"] || "").trim());
 
-  const actionableRows = active.filter(r => matchStatus(r, ["actionable"], ["customer", "cust", "cx", "delay", "pending"]));
+  // Actionable = "Scheduled" + "To Be Scheduled" (shared definition).
+  const actionableRows = active.filter(r => isActionableStatusValue(getRowStatus(r)));
   const plannedRows = active.filter(r => matchStatus(r, ["assigned", "scheduled", "onsite"], ["pending", "to be"]));
   const enggOnsiteRows = active.filter(r => matchStatus(r, ["assigned", "onsite"], ["pending", "to be"]));
   const toBeScheduleRows = active.filter(r => matchStatus(r, ["to be scheduled", "assignment pending", "non avl", "missed to schedule"]));
@@ -184,6 +185,20 @@ export function RTPLDashboard({
     () => buildRtplOperationalAnalytics(rtplAnalyticsRows),
     [rtplAnalyticsRows],
   );
+
+  // Actionable = Scheduled + To Be Scheduled, shown as a pinned summary card
+  // ahead of the per-status cards.
+  const actionableMetric = useMemo(() => {
+    const rows = rtplAnalyticsRows.filter((r) =>
+      isActionableStatusValue(String(r.output["RTPL status"] ?? "")),
+    );
+    return {
+      count: rows.length,
+      ticketIds: rows
+        .map((r) => String(r.output["Ticket ID"] ?? "").trim())
+        .filter(Boolean),
+    };
+  }, [rtplAnalyticsRows]);
 
   const compareStatuses = (a: string, b: string): number => {
     const idxA = statusOrderMap.has(a.toLowerCase()) ? statusOrderMap.get(a.toLowerCase())! : 9999;
@@ -423,6 +438,24 @@ export function RTPLDashboard({
 
       {rtplStatusMetrics.length > 0 ? (
         <div className="rtplMetricGrid" style={{ marginBottom: "20px" }}>
+          <button
+            className="rtplMetricCard"
+            type="button"
+            style={{ border: "1.5px solid #4f46e5", background: "#eef2ff" }}
+            onClick={() =>
+              openRecordsWithFilter({
+                region:
+                  selectedRtplRegion === ALL_REGIONS_FILTER
+                    ? null
+                    : selectedRtplRegion,
+                ticketIds: actionableMetric.ticketIds,
+              })
+            }
+            title="Actionable = Scheduled + To Be Scheduled"
+          >
+            <span>Actionable</span>
+            <strong>{actionableMetric.count}</strong>
+          </button>
           {rtplStatusMetrics.map((metric, metricIndex) => (
             <button
               className="rtplMetricCard"

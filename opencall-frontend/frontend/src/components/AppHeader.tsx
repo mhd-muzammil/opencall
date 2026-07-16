@@ -6,7 +6,7 @@ import type {
   RuntimeHealthResponse,
 } from "../lib/apiClient";
 
-export type WorkspaceView = "overview" | "closed-calls" | "records" | "record-format" | "rtpl" | "rtpl-dashboard" | "pivot" | "flex" | "productivity" | "tn-view-status" | "sla-tat" | "flex-eod-bod" | "admin-engineers" | "admin-rtpl-statuses" | "warranty";
+export type WorkspaceView = "overview" | "closed-calls" | "records" | "record-format" | "parts-catalog" | "rtpl" | "rtpl-dashboard" | "pivot" | "flex" | "productivity" | "tn-view-status" | "sla-tat" | "flex-eod-bod" | "admin-engineers" | "admin-rtpl-statuses" | "warranty";
 
 export const HEADER_COMPACT_STORAGE_KEY = "opencall.headerCompact";
 
@@ -113,6 +113,8 @@ export function AppHeader({
         return "Records Workspace";
       case "record-format":
         return "Record Format";
+      case "parts-catalog":
+        return "Parts Catalog";
       case "rtpl":
         return "RTPL Analytics";
       case "rtpl-dashboard":
@@ -146,6 +148,8 @@ export function AppHeader({
         return "Data & Operations / Records";
       case "record-format":
         return "Data & Operations / Record Format";
+      case "parts-catalog":
+        return "Data & Operations / Parts Catalog";
       case "rtpl":
         return "Dashboards / RTPL";
       case "rtpl-dashboard":

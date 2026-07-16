@@ -73,6 +73,7 @@ import {
   DashboardToggles,
   ClosedCallLedger,
   ClosedCallsDashboardView,
+  PartsCatalogPage,
   MatchPreviewSection,
   RTPLTimeModal,
   ProductivityPage,
@@ -191,6 +192,7 @@ const WORKSPACE_VIEWS = [
   // Not a workspace view of its own — Record Format lives in the Admin Console.
   // Kept here only so this union stays in step with AppHeader's WorkspaceView.
   "record-format",
+  "parts-catalog",
   "rtpl",
   "rtpl-dashboard",
   "pivot",
@@ -3246,7 +3248,9 @@ export default function DashboardPage() {
 
           {(canSeeSection("records") ||
             canSeeSection("productivity") ||
-            (!isSpecialAccess && canSeeSection("warranty"))) && (
+            (!isSpecialAccess && canSeeSection("warranty")) ||
+            (session.user.role === "SUPER_ADMIN" && !isSpecialAccess) ||
+            (isSpecialAccess && canSeeSection("parts-catalog"))) && (
             <div className="sidebarSection">Data & Operations</div>
           )}
 
@@ -3264,6 +3268,21 @@ export default function DashboardPage() {
               <span className="sidebarBadge">{incompleteCellCount}</span>
             )}
           </button>
+          )}
+
+          {/* Parts Catalog — SUPER_ADMIN always; a special-access login only when the
+              "parts-catalog" section is granted. Region admins do not see it. */}
+          {((!isSpecialAccess && session.user.role === "SUPER_ADMIN") ||
+            (isSpecialAccess && canSeeSection("parts-catalog"))) && (
+            <button
+              type="button"
+              className={`sidebarItem ${workspaceView === "parts-catalog" ? "active" : ""}`}
+              onClick={() => setWorkspaceView("parts-catalog")}
+            >
+              <span className="sidebarIcon">
+                <span>🔩</span> <span className="sidebarText">Parts Catalog</span>
+              </span>
+            </button>
           )}
 
           {((isSpecialAccess && canSeeSection("productivity")) ||
@@ -3425,7 +3444,19 @@ export default function DashboardPage() {
                 </section>
               ) : null}
 
-              {report && workspaceView !== "warranty" ? (
+              {/* Parts Catalog has its own data (independent of a generated report). */}
+              {workspaceView === "parts-catalog" ? (
+                <section className="panel reportPanel">
+                  <PartsCatalogPage
+                    token={session.token}
+                    canManage={!isSpecialAccess && session.user.role === "SUPER_ADMIN"}
+                  />
+                </section>
+              ) : null}
+
+              {report &&
+              workspaceView !== "warranty" &&
+              workspaceView !== "parts-catalog" ? (
                 <section className="panel reportPanel">
                   <div className="overviewReportContent">
                     {workspaceView === "overview" && (

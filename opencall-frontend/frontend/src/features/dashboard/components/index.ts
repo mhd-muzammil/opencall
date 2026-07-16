@@ -21,6 +21,7 @@ export * from "./SLATatPage";
 export * from "./FlexEodBodPage";
 export * from "./CaseDetailDrawer";
 export * from "./ClosedCallsDashboardView";
+export * from "./PartsCatalogPage";
 
 
 

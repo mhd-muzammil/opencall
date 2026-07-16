@@ -47,40 +47,51 @@ export function LoginScreen({
   onSubmit: (event: React.FormEvent<HTMLFormElement>) => void;
 }>) {
   const [showPassword, setShowPassword] = useState(false);
+  const [helpNote, setHelpNote] = useState<string | null>(null);
 
   return (
-    <main className="loginShell">
-      <section className="loginSplitCard">
-        <header className="loginTopBar">
-          <div className="loginWordmark">
-            <img src={iconImg.src} alt="Renderways" />
-            <span>
-              RENDER<em>WAYS</em>
-            </span>
-          </div>
+    <main className="fezShell">
+      {/* Top-right of the page, outside the panel — as in the reference. */}
+      <div className="fezLang" aria-label="Language">
+        <span className="fezLangFlag">IN</span>
+        English
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+          <path d="m6 9 6 6 6-6" />
+        </svg>
+      </div>
+
+      <section className="fezPanel">
+        {/* White brand bar across the top of the gray panel */}
+        <header className="fezBrandBar">
+          <img src={iconImg.src} alt="" />
+          <span className="fezWordmark">
+            RENDER<em>WAYS</em>
+          </span>
         </header>
 
-        <div className="loginSplitBody">
-          <div className="loginHero">
+        <div className="fezBody">
+          <div className="fezHero">
             <h1>
               Experience the Future of
-              <span> Service Operations</span>
+              <span>Enterprise Productivity</span>
             </h1>
             <p>
-              The Renderways operations platform for field service — call
-              records, RTPL tracking, engineer productivity and reporting,
-              unified through real-time dashboards.
+              An AI-powered enterprise platform for service, workforce, sales,
+              and support operations — unified through automation and
+              real-time intelligence.
             </p>
           </div>
 
-          <div className="loginPanel">
+          {/* Raised white login card overhanging the gray panel */}
+          <div className="fezLoginCard">
             <h2>Login</h2>
 
             {message ? <div className="alert">{message}</div> : null}
+            {helpNote ? <div className="fezHelpNote">{helpNote}</div> : null}
 
-            <form className="loginForm" onSubmit={onSubmit}>
+            <form className="fezForm" onSubmit={onSubmit}>
               <input
-                className="loginInput"
+                className="fezInput"
                 type="text"
                 value={username}
                 onChange={(event) => onUsernameChange(event.target.value)}
@@ -89,9 +100,9 @@ export function LoginScreen({
                 autoComplete="username"
                 autoFocus
               />
-              <div className="passwordInputWrap">
+              <div className="fezPasswordWrap">
                 <input
-                  className="loginInput"
+                  className="fezInput"
                   type={showPassword ? "text" : "password"}
                   value={password}
                   onChange={(event) => onPasswordChange(event.target.value)}
@@ -101,43 +112,58 @@ export function LoginScreen({
                 />
                 <button
                   type="button"
-                  className="passwordToggle"
+                  className="fezEye"
                   onClick={() => setShowPassword((current) => !current)}
                   title={showPassword ? "Hide password" : "Show password"}
                   aria-label={showPassword ? "Hide password" : "Show password"}
                 >
                   {showPassword ? (
-                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                    <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                      <path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7Z" />
+                      <circle cx="12" cy="12" r="3" />
+                    </svg>
+                  ) : (
+                    <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
                       <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94" />
                       <path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19" />
                       <line x1="1" y1="1" x2="23" y2="23" />
-                    </svg>
-                  ) : (
-                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                      <path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7Z" />
-                      <circle cx="12" cy="12" r="3" />
                     </svg>
                   )}
                 </button>
               </div>
               <button
                 type="submit"
-                className="loginSubmit"
+                className="fezSubmit"
                 disabled={isBusy || !username.trim() || !password}
               >
                 {isBusy ? "SIGNING IN..." : "LOG IN"}
               </button>
             </form>
 
-            <p className="loginHelp">
-              Forgot password? Contact your administrator.
-            </p>
+            <div className="fezLinks">
+              <button
+                type="button"
+                className="fezLink"
+                onClick={() =>
+                  setHelpNote("Password resets are handled by your administrator.")
+                }
+              >
+                Forgot Password?
+              </button>
+              <button
+                type="button"
+                className="fezLink"
+                onClick={() =>
+                  setHelpNote(
+                    "Internal platform of Renderways Technologies Private Limited.",
+                  )
+                }
+              >
+                Privacy Policy
+              </button>
+            </div>
           </div>
         </div>
-
-        <footer className="loginFooterNote">
-          © {new Date().getFullYear()} Renderways Technologies Private Limited
-        </footer>
       </section>
     </main>
   );

@@ -18,7 +18,6 @@ import {
   classifyProductivityStatus,
   effectiveProductivityStatus,
   emptyProductivityBucketCounts,
-  eveningOutcomeStatus,
 } from "../utils/engineerProductivity";
 import { ASP_CODE_REGION_MAP } from "@opencall/shared";
 
@@ -412,14 +411,14 @@ export function useProductivityAnalytics(params: {
       // Most calls close by DISAPPEARING from the Flex WIP (closed in HP's
       // system) — the day's same-day-closed rows. Those are the engineer's
       // completions regardless of what the status columns say. Otherwise the
-      // outcome comes from the Evening entry; no Evening yet -> Assigned only.
+      // bucket comes from the Evening status when present, else the Morning.
       const isClosedToday = r.carryForward.closedSyntheticRow;
-      if (!isClosedToday && !effectiveProductivityStatus(r.output)) continue;
+      const status = effectiveProductivityStatus(r.output);
+      if (!isClosedToday && !status) continue;
 
-      const evening = eveningOutcomeStatus(r.output);
       const bucket = isClosedToday
         ? "CLOSED"
-        : ((evening ? classifyProductivityStatus(evening) : null) ?? "SCHEDULED");
+        : (classifyProductivityStatus(status) ?? "SCHEDULED");
 
       const key = name.toLowerCase();
       let engineer = engineersByKey.get(key);
@@ -467,6 +466,8 @@ export function useProductivityAnalytics(params: {
         underObservationTickets: engineer.counts.underObservationTickets,
         cxReschedule: engineer.counts.cxReschedule,
         cxRescheduleTickets: engineer.counts.cxRescheduleTickets,
+        engineerDelay: engineer.counts.engineerDelay,
+        engineerDelayTickets: engineer.counts.engineerDelayTickets,
       };
     }).sort((a, b) => b.attended - a.attended || a.name.localeCompare(b.name));
 

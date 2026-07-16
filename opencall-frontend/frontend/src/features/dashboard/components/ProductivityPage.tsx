@@ -48,6 +48,8 @@ export function ProductivityPage({
       underObservationTickets?: readonly string[];
       cxReschedule: number;
       cxRescheduleTickets?: readonly string[];
+      engineerDelay?: number;
+      engineerDelayTickets?: readonly string[];
     }>;
     totalAttended: number;
     monthsList: string[];
@@ -362,6 +364,7 @@ export function ProductivityPage({
               <td style={{ padding: "10px", border: "1px solid #cbd5e1", textAlign: "center", fontSize: "13px" }}>Part ordered</td>
               <td style={{ padding: "10px", border: "1px solid #cbd5e1", textAlign: "center", fontSize: "13px" }}>Under Observation</td>
               <td style={{ padding: "10px", border: "1px solid #cbd5e1", textAlign: "center", fontSize: "13px" }}>CX Reschedule</td>
+              <td style={{ padding: "10px", border: "1px solid #cbd5e1", textAlign: "center", fontSize: "13px" }}>Engineer Delay</td>
             </tr>
           </thead>
           <tbody>
@@ -402,11 +405,12 @@ export function ProductivityPage({
                   {renderClickableCell(item.partOrdered, item.partOrderedTickets, false, "#92400e")}
                   {renderClickableCell(item.underObservation, item.underObservationTickets, false, "#1e3a8a")}
                   {renderClickableCell(item.cxReschedule, item.cxRescheduleTickets, false, "#701a75")}
+                  {renderClickableCell(item.engineerDelay ?? 0, item.engineerDelayTickets, false, "#9a3412")}
                 </tr>
               ))
             ) : (
               <tr>
-                <td colSpan={showRegionColumn ? 9 : 8} style={{ padding: "24px", border: "1px solid #cbd5e1", textAlign: "center", color: "var(--muted)" }}>
+                <td colSpan={showRegionColumn ? 10 : 9} style={{ padding: "24px", border: "1px solid #cbd5e1", textAlign: "center", color: "var(--muted)" }}>
                   No engineer productivity records found for this period.
                 </td>
               </tr>

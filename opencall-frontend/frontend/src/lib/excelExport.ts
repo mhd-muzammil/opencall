@@ -705,8 +705,8 @@ export async function downloadEngineerProductivityExcel(
 ): Promise<void> {
   const XLSX = await loadXlsx();
   const aoaData = [
-    ["Date " + dateLabel, "", "", "", "", "", "", ""],
-    ["S.No", "Engineer Name", "Assigned", "Attended", "Closed", "Part ordered", "Under Observation", "CX Reschedule"],
+    ["Date " + dateLabel, "", "", "", "", "", "", "", ""],
+    ["S.No", "Engineer Name", "Assigned", "Attended", "Closed", "Part ordered", "Under Observation", "CX Reschedule", "Engineer Delay"],
     ...list.map((item, index) => [
       index + 1,
       item.name,
@@ -716,14 +716,15 @@ export async function downloadEngineerProductivityExcel(
       item.partOrdered ?? 0,
       item.underObservation ?? 0,
       item.cxReschedule ?? 0,
+      item.engineerDelay ?? 0,
     ]),
-    ["Total Attended", "", "", totalAttended, "", "", "", ""],
+    ["Total Attended", "", "", totalAttended, "", "", "", "", ""],
   ];
 
   const ws = XLSX.utils.aoa_to_sheet(aoaData);
 
   ws["!merges"] = [
-    { s: { r: 0, c: 0 }, e: { r: 0, c: 7 } },
+    { s: { r: 0, c: 0 }, e: { r: 0, c: 8 } },
     { s: { r: aoaData.length - 1, c: 0 }, e: { r: aoaData.length - 1, c: 2 } },
   ];
 
@@ -735,6 +736,7 @@ export async function downloadEngineerProductivityExcel(
     { wch: 12 },
     { wch: 15 },
     { wch: 20 },
+    { wch: 15 },
     { wch: 15 },
   ];
 

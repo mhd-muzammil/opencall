@@ -1,22 +1,23 @@
-// Engineer-productivity status classification. A call is on the table when it
-// has an engineer and any status (its Assigned load); its OUTCOME bucket comes
-// from the Evening (EOD) column only — Evening resets every morning, so
-// outcomes are today's entries by definition:
+// Engineer-productivity status classification, per the team's definitions. A
+// call counts when BOTH the engineer and a status are filled in; the bucket
+// comes from the Evening (EOD) status when present, otherwise the Morning:
 //
 //   Scheduled / To be Scheduled / Engg Assigned
-//                        -> SCHEDULED         (booked to the engineer; Assigned only)
-//   WO Closed            -> CLOSED
-//   Part Order           -> PART_ORDER
+//                        -> SCHEDULED         (booked; Assigned only, not yet attended)
+//   Case-Closed / WO Closed (or the call left today's Flex file)
+//                        -> CLOSED
+//   SSC Pending / Part Order / Additional Part
+//                        -> PART_ORDER
 //   Under Observation    -> UNDER_OBSERVATION
-//   CX Reschedule        -> CX_RESCHEDULE     (customer pushed the visit out)
-//   any other status     -> ATTENDED_OTHER    (in progress; Assigned only)
+//   CX Pending / CX Reschedule
+//                        -> CX_RESCHEDULE     (customer pushed the visit out)
+//   Engineer Delay       -> ENGINEER_DELAY    (the engineer slipped the visit)
+//   any other status     -> ATTENDED_OTHER    (worked; a status after Scheduled)
 //
-//   Assigned = every counted call (his booked load for the day)
-//   Attended = CLOSED + PART_ORDER + UNDER_OBSERVATION
-//   (end of day, all calls resolved: Assigned = Attended + CX_RESCHEDULE)
-//
-// A call counts only when BOTH the engineer and the status are filled in on the
-// Records page — either one blank (or "Manual Entry Required") and it is ignored.
+//   Assigned = every counted call (his book of work for the day)
+//   Attended = every status after the Scheduled stage, minus the two
+//              non-attendance outcomes: CX Reschedule and Engineer Delay
+//            = CLOSED + PART_ORDER + UNDER_OBSERVATION + ATTENDED_OTHER
 import { MANUAL_ENTRY_REQUIRED } from "../constants";
 
 export type ProductivityBucket =
@@ -25,6 +26,7 @@ export type ProductivityBucket =
   | "PART_ORDER"
   | "UNDER_OBSERVATION"
   | "CX_RESCHEDULE"
+  | "ENGINEER_DELAY"
   | "ATTENDED_OTHER";
 
 function cleanFieldValue(value: unknown): string {
@@ -33,9 +35,9 @@ function cleanFieldValue(value: unknown): string {
 }
 
 /**
- * Row eligibility: the row belongs on the productivity table when it carries a
- * status at all (Morning or Evening) — the engineer's book of work for the
- * day. Empty string when the row has no usable status.
+ * The status that drives the bucket: the Evening (EOD) entry once the team
+ * fills it, otherwise the Morning (BOD) value. Empty string when the row has
+ * no usable status (such a row is not part of the day's book of work).
  */
 export function effectiveProductivityStatus(
   output: Record<string, string | number>,
@@ -44,20 +46,6 @@ export function effectiveProductivityStatus(
     cleanFieldValue(output["Evening status"]) ||
     cleanFieldValue(output["RTPL status"])
   );
-}
-
-/**
- * The status that drives the day's OUTCOMES: the Evening (EOD) column only.
- * Evening starts blank every morning and survives same-day re-uploads, so a
- * value in it is that day's entry by definition — Closed/Part/UO/CX counted
- * from it can never be yesterday's carry-over, and counts never drop after a
- * mid-day upload. The Morning column (the carried/promoted baseline) only
- * makes a row eligible for Assigned; it never produces an outcome.
- */
-export function eveningOutcomeStatus(
-  output: Record<string, string | number>,
-): string {
-  return cleanFieldValue(output["Evening status"]);
 }
 
 /**
@@ -96,14 +84,20 @@ export function classifyProductivityStatus(
     return "SCHEDULED";
   }
 
-  // "WO-closed" and manual variants ("WO Closed", "wo close"). Deliberately not
+  // "Case-Closed" / "WO-closed" and manual variants. Deliberately not
   // "Closed-cancellation" / "Need to Close": a cancellation or an intent to
   // close is attended work, not a completed close.
-  if (normalized.includes("wo close")) {
+  if (normalized.includes("case close") || normalized.includes("wo close")) {
     return "CLOSED";
   }
 
-  if (normalized.includes("part order") || normalized.includes("additional part")) {
+  // The team logs part waits as "SSC Pending" (incl. "SSC Pending → Part
+  // Pending"); explicit part orders count here too.
+  if (
+    normalized.includes("ssc") ||
+    normalized.includes("part order") ||
+    normalized.includes("additional part")
+  ) {
     return "PART_ORDER";
   }
 
@@ -111,7 +105,18 @@ export function classifyProductivityStatus(
     return "UNDER_OBSERVATION";
   }
 
-  if (normalized.includes("reschedule") || normalized.includes("reshedule")) {
+  // The engineer slipped the visit — its own column, next to CX Reschedule.
+  if (normalized.includes("engineer delay") || normalized.includes("eng delay")) {
+    return "ENGINEER_DELAY";
+  }
+
+  // The customer pushed the visit out: "CX Pending" in this team's vocabulary,
+  // plus explicit reschedules.
+  if (
+    normalized.includes("cx pending") ||
+    normalized.includes("reschedule") ||
+    normalized.includes("reshedule")
+  ) {
     return "CX_RESCHEDULE";
   }
 
@@ -125,12 +130,14 @@ export interface ProductivityBucketCounts {
   partOrdered: number;
   underObservation: number;
   cxReschedule: number;
+  engineerDelay: number;
   assignedTickets: string[];
   attendedTickets: string[];
   closedTickets: string[];
   partOrderedTickets: string[];
   underObservationTickets: string[];
   cxRescheduleTickets: string[];
+  engineerDelayTickets: string[];
 }
 
 export function emptyProductivityBucketCounts(): ProductivityBucketCounts {
@@ -141,12 +148,14 @@ export function emptyProductivityBucketCounts(): ProductivityBucketCounts {
     partOrdered: 0,
     underObservation: 0,
     cxReschedule: 0,
+    engineerDelay: 0,
     assignedTickets: [],
     attendedTickets: [],
     closedTickets: [],
     partOrderedTickets: [],
     underObservationTickets: [],
     cxRescheduleTickets: [],
+    engineerDelayTickets: [],
   };
 }
 
@@ -155,13 +164,14 @@ export function emptyProductivityBucketCounts(): ProductivityBucketCounts {
  *
  *   Assigned = every counted call — the moment a call is scheduled to the
  *              engineer it appears here, and it stays as it progresses.
- *   Attended = Closed + Part ordered + Under Observation (concrete outcomes
- *              only; scheduled and in-progress statuses are not yet attended).
+ *   Attended = every status after the Scheduled stage except the two
+ *              non-attendance outcomes (CX Reschedule, Engineer Delay); the
+ *              Closed / Part ordered / Under Observation columns are its
+ *              named sub-counts.
  *
  * Day flow: in the morning Assigned fills with scheduled calls and Attended is
- * 0; as the team records outcomes, calls move into Attended and its
- * sub-columns. At end of day, when nothing is left at the scheduled stage,
- * Assigned = Attended + CX Reschedule.
+ * 0; as statuses move past Scheduled, calls flow into Attended (or into
+ * CX Reschedule / Engineer Delay when the visit slipped).
  */
 export function addToProductivityCounts(
   counts: ProductivityBucketCounts,
@@ -171,14 +181,20 @@ export function addToProductivityCounts(
   counts.assigned += 1;
   counts.assignedTickets.push(ticketId);
 
-  // Booked or still in progress: assigned, not yet an outcome.
-  if (bucket === "SCHEDULED" || bucket === "ATTENDED_OTHER") {
+  // Booked, nothing happened yet: assigned only.
+  if (bucket === "SCHEDULED") {
     return;
   }
 
   if (bucket === "CX_RESCHEDULE") {
     counts.cxReschedule += 1;
     counts.cxRescheduleTickets.push(ticketId);
+    return;
+  }
+
+  if (bucket === "ENGINEER_DELAY") {
+    counts.engineerDelay += 1;
+    counts.engineerDelayTickets.push(ticketId);
     return;
   }
 

@@ -2219,8 +2219,14 @@ td {
   border-left: 1px solid #cbd5e1;
 }
 
+/* Solid blue header with dark bold letters (ops team request). !important so
+   the frozen S.No / Ticket ID header cells (which carry their own opaque
+   backgrounds for the sticky scroll) go blue with the rest of the row. */
 .recordsTableZone .tableWrap th {
-  border-top: 1px solid #cbd5e1;
+  border-top: 1px solid #0369a1;
+  background: #0ea5e9 !important;
+  color: #0f172a;
+  font-weight: 800;
 }
 
 /* The old faint half-height header separators would double the grid lines. */
@@ -2592,53 +2598,16 @@ th.stickyActionColumn {
   /* Let cell highlights handle indicators */
 }
 
-td.missingCell {
-  background: #fffbeb !important;
-  color: #92400e !important;
-  font-weight: 600;
-  border-left: 3px solid #f59e0b;
-  position: relative;
-}
-
-.recordsMode td.missingCell,
-.recordsMode td.carriedForwardCell,
-.recordsMode td.missingCell.carriedForwardCell {
-  border-left-width: 2px;
-}
-
-td.missingCell::after {
-  content: "";
-  position: absolute;
-  right: 8px;
-  top: 50%;
-  transform: translateY(-50%);
-  font-size: 11px;
-  opacity: 0.6;
-}
-
-@media (hover: hover) {
-  tbody tr:hover td.missingCell {
-    background: #fef3c7 !important;
-  }
-}
-
-td.carriedForwardCell {
-  background: #f0fdf4 !important;
-  color: #166534 !important;
-  font-weight: 500;
-  border-left: 3px solid #10b981;
-}
-
-@media (hover: hover) {
-  tbody tr:hover td.carriedForwardCell {
-    background: #dcfce7 !important;
-  }
-}
-
+/* "Entry" and carried-forward cells render plain white like every other cell —
+   the "Entry" text and the Carried badge are the only indicators (ops team
+   request: no green/orange cell tinting). */
+td.missingCell,
+td.carriedForwardCell,
 td.missingCell.carriedForwardCell {
-  background: #fffbeb !important;
-  color: #92400e !important;
-  border-left: 3px solid #f59e0b;
+  background: #ffffff;
+  color: inherit;
+  font-weight: inherit;
+  border-left: none;
 }
 
 .cellValueWrap {

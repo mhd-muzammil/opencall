@@ -19,6 +19,8 @@ export interface ManagedUser {
   regionId: string | null;
   isActive: boolean;
   mustChangePassword: boolean;
+  // null = all sections (default); a list restricts a REGION_ADMIN. null for SUPER_ADMIN.
+  accessibleSections: string[] | null;
   lastLoginAt: string | null;
   createdAt: string;
   createdBy: string | null;
@@ -91,6 +93,8 @@ export interface CreateAdminUserInput {
   role: UserRole;
   regionId: string | null;
   mustChangePassword?: boolean;
+  // null / omitted = all sections; a list restricts a REGION_ADMIN.
+  accessibleSections?: string[] | null;
 }
 
 export async function createAdminUser(
@@ -150,6 +154,20 @@ export async function reassignAdminUserRegion(
     method: "PATCH",
     headers: authHeaders(token),
     body: JSON.stringify({ regionId }),
+  });
+  return readJson<ManagedUser>(response);
+}
+
+// Sets which operational sections a REGION_ADMIN may see. null = all sections.
+export async function setAdminUserSections(
+  token: string,
+  userId: string,
+  accessibleSections: string[] | null,
+): Promise<ManagedUser> {
+  const response = await fetch(url(`/api/v1/admin/users/${userId}/sections`), {
+    method: "PUT",
+    headers: authHeaders(token),
+    body: JSON.stringify({ accessibleSections }),
   });
   return readJson<ManagedUser>(response);
 }

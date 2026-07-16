@@ -2,6 +2,7 @@
 
 import { useParams, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
+import { USER_SECTIONS } from "../../../../lib/userSections";
 import {
   adminPasswordReset,
   changeAdminUserRole,
@@ -10,12 +11,15 @@ import {
   listAdminRegions,
   reactivateAdminUser,
   reassignAdminUserRegion,
+  setAdminUserSections,
   updateAdminUserProfile,
   type AdminRegion,
   type ManagedUser,
   type UserRole,
 } from "../../../../lib/adminApiClient";
 import { readSession, type ClientSession } from "../../../../lib/session";
+
+const ALL_SECTION_KEYS = USER_SECTIONS.map((s) => s.key);
 
 function formatDate(value: string | null): string {
   if (!value) return "—";
@@ -43,6 +47,10 @@ export default function AdminUserDetailPage() {
   const [reassignRegion, setReassignRegion] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [requirePwChange, setRequirePwChange] = useState(true);
+  // Section access (REGION_ADMIN only). null accessibleSections = all sections on.
+  const [pendingSections, setPendingSections] = useState<Set<string>>(
+    () => new Set(ALL_SECTION_KEYS),
+  );
 
   useEffect(() => {
     setSession(readSession());
@@ -60,6 +68,10 @@ export default function AdminUserDetailPage() {
         setPendingRole(u.role);
         setPendingRegionId(u.regionId ?? "");
         setReassignRegion(u.regionId ?? "");
+        // null = all sections on; otherwise exactly the stored keys.
+        setPendingSections(
+          new Set(u.accessibleSections ?? ALL_SECTION_KEYS),
+        );
       })
       .catch((e) =>
         setError(e instanceof Error ? e.message : "Failed to load user"),
@@ -309,6 +321,75 @@ export default function AdminUserDetailPage() {
               <div className="adminFormActions">
                 <button type="submit" className="btnPrimary" disabled={busy}>
                   Reassign
+                </button>
+              </div>
+            </form>
+          </div>
+        )}
+
+        {user.role === "REGION_ADMIN" && (
+          <div className="panel">
+            <h3>Section access</h3>
+            <p className="muted" style={{ marginBottom: 12 }}>
+              Which operational sections this user sees. Untick to hide a section.
+              All on = full access.
+            </p>
+            <form
+              className="adminForm"
+              onSubmit={(e) => {
+                e.preventDefault();
+                if (pendingSections.size === 0) {
+                  setError("Select at least one section");
+                  return;
+                }
+                // All ticked -> send null ("all sections"), else the exact list.
+                const payload =
+                  pendingSections.size === ALL_SECTION_KEYS.length
+                    ? null
+                    : ALL_SECTION_KEYS.filter((k) => pendingSections.has(k));
+                withGuard(
+                  () => setAdminUserSections(session!.token, user.id, payload),
+                  "Section access updated.",
+                );
+              }}
+            >
+              <div
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: "1fr 1fr",
+                  gap: "6px 16px",
+                  marginBottom: 12,
+                }}
+              >
+                {USER_SECTIONS.map((s) => (
+                  <label
+                    key={s.key}
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 8,
+                      fontWeight: 400,
+                    }}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={pendingSections.has(s.key)}
+                      onChange={(ev) =>
+                        setPendingSections((prev) => {
+                          const next = new Set(prev);
+                          if (ev.target.checked) next.add(s.key);
+                          else next.delete(s.key);
+                          return next;
+                        })
+                      }
+                    />
+                    {s.label}
+                  </label>
+                ))}
+              </div>
+              <div className="adminFormActions">
+                <button type="submit" className="btnPrimary" disabled={busy}>
+                  Save section access
                 </button>
               </div>
             </form>

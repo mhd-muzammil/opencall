@@ -18,6 +18,8 @@ export interface ClientSessionUser {
   role: UserRole | "SPECIAL_ACCESS";
   regionId: string | null;
   mustChangePassword?: boolean;
+  // Operational sections a REGION_ADMIN may see. null/absent = all sections.
+  accessibleSections?: string[] | null;
   // Present only for special-access logins (scoped credentials, not `users` rows).
   specialAccess?: ClientSpecialAccessInfo | null;
 }

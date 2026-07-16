@@ -315,8 +315,17 @@ export default function DashboardPage() {
   // SUPER_ADMIN / REGION_ADMIN sessions follow exactly the same code paths as before.
   const specialAccess = session?.user?.specialAccess ?? null;
   const isSpecialAccess = session?.user?.role === "SPECIAL_ACCESS";
-  const canSeeSection = (key: string): boolean =>
-    !isSpecialAccess || (specialAccess?.sections?.includes(key) ?? false);
+  // A REGION_ADMIN may be scoped to a subset of sections from the Admin Console.
+  // `null`/absent = all sections (the default). SUPER_ADMIN and special-access are
+  // never restricted by this — special access has its own `sections` grant below.
+  const userSections = session?.user?.accessibleSections ?? null;
+  const canSeeSection = (key: string): boolean => {
+    if (isSpecialAccess) {
+      return specialAccess?.sections?.includes(key) ?? false;
+    }
+    // Regular users: unrestricted unless this REGION_ADMIN has a section list.
+    return userSections === null || userSections.includes(key);
+  };
   // Regular users are unaffected. A special-access login may only edit report rows
   // when its permission level is `edit` — the backend enforces this too.
   const canEditRows =
@@ -1378,6 +1387,21 @@ export default function DashboardPage() {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isSpecialAccess, specialAccess, workspaceView]);
+
+  // Same guard for a REGION_ADMIN scoped to a subset of sections: if their current
+  // (or restored) view is one they can no longer see, drop them to their first
+  // allowed section. Only ever fires for a restricted REGION_ADMIN — an unrestricted
+  // user (userSections === null) and SUPER_ADMIN are untouched. Admin-embedded views
+  // (add-engineers, rtpl-statuses) are role-based, not section-gated, so they're kept.
+  useEffect(() => {
+    if (isSpecialAccess || userSections === null) return;
+    const roleViews = ["admin-engineers", "admin-rtpl-statuses"];
+    if (roleViews.includes(workspaceView)) return;
+    if (!userSections.includes(workspaceView)) {
+      setWorkspaceView((userSections[0] ?? "overview") as typeof workspaceView);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isSpecialAccess, userSections, workspaceView]);
 
   function handleSessionExpired() {
     handleLogout();
@@ -3220,10 +3244,9 @@ export default function DashboardPage() {
           </button>
           )}
 
-          {(!isSpecialAccess ||
-            canSeeSection("records") ||
-            canSeeSection("record-format") ||
-            canSeeSection("productivity")) && (
+          {(canSeeSection("records") ||
+            canSeeSection("productivity") ||
+            (!isSpecialAccess && canSeeSection("warranty"))) && (
             <div className="sidebarSection">Data & Operations</div>
           )}
 
@@ -3245,6 +3268,7 @@ export default function DashboardPage() {
 
           {((isSpecialAccess && canSeeSection("productivity")) ||
             (!isSpecialAccess &&
+              canSeeSection("productivity") &&
               (session.user.role === "SUPER_ADMIN" ||
                 (selectedRegion && selectedRegion !== "ALL" && regionKpiMetrics)))) && (
             <button
@@ -3270,17 +3294,19 @@ export default function DashboardPage() {
             </button>
           )}
 
-          {(session.user.role === "SUPER_ADMIN" || session.user.role === "REGION_ADMIN") && (
-            <button
-              type="button"
-              className={`sidebarItem ${workspaceView === "warranty" ? "active" : ""}`}
-              onClick={() => setWorkspaceView("warranty")}
-            >
-              <span className="sidebarIcon">
-                <span>🛡️</span> <span className="sidebarText">Warranty Lookup</span>
-              </span>
-            </button>
-          )}
+          {(session.user.role === "SUPER_ADMIN" ||
+            session.user.role === "REGION_ADMIN") &&
+            canSeeSection("warranty") && (
+              <button
+                type="button"
+                className={`sidebarItem ${workspaceView === "warranty" ? "active" : ""}`}
+                onClick={() => setWorkspaceView("warranty")}
+              >
+                <span className="sidebarIcon">
+                  <span>🛡️</span> <span className="sidebarText">Warranty Lookup</span>
+                </span>
+              </button>
+            )}
 
           {session.user.role === "SUPER_ADMIN" && (
             <button
@@ -3762,6 +3788,22 @@ export default function DashboardPage() {
                         setSelectedRegion={setSelectedRegion}
                         openRecordsWithFilter={openRecordsWithFilter}
                         onOpenCaseDetail={(row) => setCaseDetailRow(row)}
+                        closureImportToken={
+                          !isSpecialAccess &&
+                          (session.user.role === "SUPER_ADMIN" ||
+                            session.user.role === "REGION_ADMIN")
+                            ? session.token
+                            : null
+                        }
+                        onClosureDatesImported={() => void handleRefreshWorkspace()}
+                        feedbackToken={
+                          // Regular admins, or a special-access credential with edit
+                          // permission, may capture customer feedback.
+                          !isSpecialAccess ||
+                          specialAccess?.permissionLevel === "edit"
+                            ? session.token
+                            : null
+                        }
                       />
                     )}
 

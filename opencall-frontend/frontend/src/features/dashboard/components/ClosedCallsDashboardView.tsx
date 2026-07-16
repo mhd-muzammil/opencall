@@ -1,8 +1,13 @@
 import React, { useMemo, useState } from "react";
+import { createPortal } from "react-dom";
 import * as XLSX from "xlsx";
 import { ASP_CODE_REGION_MAP } from "@opencall/shared";
 import type { ReportRow } from "../types";
 import { formatNumber } from "../utils";
+import {
+  CALL_STATUS_OPTIONS,
+  CUSTOMER_FEEDBACK_OPTIONS,
+} from "../../../lib/customerFeedbackApiClient";
 
 function getRowAspCode(output: Record<string, unknown> = {}): string {
   return String(
@@ -32,6 +37,14 @@ export interface ClosedCallsDashboardViewProps {
   setSelectedRegion: (region: string | null) => void;
   openRecordsWithFilter: (filter: { region?: string | null; closedOnly?: boolean; ticketIds?: string[] }) => void;
   onOpenCaseDetail?: (row: ReportRow) => void;
+  // Session token + a callback fired after a successful closure-date import, so the
+  // parent can refresh the report and pull in the new Case Closed Date values. When
+  // absent, the "Import Closure Dates" button is hidden (e.g. view-only sessions).
+  closureImportToken?: string | null;
+  onClosureDatesImported?: () => void;
+  // Token used to save Customer Feedback. When absent, the Feedback button is hidden
+  // (view-only sessions). A successful save fires onClosureDatesImported to refresh.
+  feedbackToken?: string | null;
 }
 
 export function ClosedCallsDashboardView({
@@ -42,8 +55,84 @@ export function ClosedCallsDashboardView({
   setSelectedRegion,
   openRecordsWithFilter,
   onOpenCaseDetail,
+  closureImportToken,
+  onClosureDatesImported,
+  feedbackToken,
 }: Readonly<ClosedCallsDashboardViewProps>) {
   const [searchQuery, setSearchQuery] = useState("");
+  const [importing, setImporting] = useState(false);
+  const [importMessage, setImportMessage] = useState<string | null>(null);
+  const closureFileInputRef = React.useRef<HTMLInputElement | null>(null);
+
+  // Customer feedback modal state. `feedbackRow` is the row currently being edited.
+  const [feedbackRow, setFeedbackRow] = useState<ReportRow | null>(null);
+  const [fbCallStatus, setFbCallStatus] = useState("");
+  const [fbFeedback, setFbFeedback] = useState("");
+  const [fbRemarks, setFbRemarks] = useState("");
+  const [fbSaving, setFbSaving] = useState(false);
+  const [fbError, setFbError] = useState<string | null>(null);
+
+  function openFeedback(row: ReportRow) {
+    const out = (row.output ?? {}) as Record<string, unknown>;
+    const existing = out["Customer Feedback"] as
+      | { callStatus?: string; feedback?: string; remarks?: string }
+      | undefined;
+    setFeedbackRow(row);
+    setFbCallStatus(String(existing?.callStatus ?? ""));
+    setFbFeedback(String(existing?.feedback ?? ""));
+    setFbRemarks(String(existing?.remarks ?? ""));
+    setFbError(null);
+  }
+
+  async function saveFeedback() {
+    if (!feedbackRow || !feedbackToken) return;
+    if (!fbCallStatus && !fbFeedback) {
+      setFbError("Pick a call status or a feedback value.");
+      return;
+    }
+    const out = (feedbackRow.output ?? {}) as Record<string, unknown>;
+    setFbSaving(true);
+    setFbError(null);
+    try {
+      const { saveCustomerFeedback } = await import(
+        "../../../lib/customerFeedbackApiClient"
+      );
+      await saveCustomerFeedback(feedbackToken, {
+        woId: String(out["Ticket ID"] ?? out["WO ID"] ?? ""),
+        caseId: String(out["Case ID"] ?? ""),
+        callStatus: fbCallStatus,
+        feedback: fbFeedback,
+        remarks: fbRemarks.trim(),
+      });
+      setFeedbackRow(null);
+      onClosureDatesImported?.(); // refresh the report so Customer Status updates
+    } catch (error) {
+      setFbError(error instanceof Error ? error.message : "Save failed");
+    } finally {
+      setFbSaving(false);
+    }
+  }
+
+  async function handleClosureFile(file: File | null) {
+    if (!file || !closureImportToken) return;
+    setImporting(true);
+    setImportMessage(null);
+    try {
+      const { importClosureDates } = await import("../../../lib/closureDateApiClient");
+      const result = await importClosureDates(closureImportToken, file);
+      setImportMessage(
+        `Imported ${result.imported} closure dates (skipped ${result.skippedNoDate} without a date).`,
+      );
+      onClosureDatesImported?.();
+    } catch (error) {
+      setImportMessage(
+        `Import failed: ${error instanceof Error ? error.message : "unknown error"}`,
+      );
+    } finally {
+      setImporting(false);
+      if (closureFileInputRef.current) closureFileInputRef.current.value = "";
+    }
+  }
 
   // Total active WIP count across all regions
   const totalActiveWipCount = useMemo(() => {
@@ -470,22 +559,60 @@ export function ClosedCallsDashboardView({
             </p>
           </div>
 
-          {/* Search Box */}
-          <div style={{ width: "320px", maxWidth: "100%" }}>
-            <input
-              type="search"
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Search Ticket ID, WO, ASP, Engineer, Status..."
-              style={{
-                width: "100%",
-                padding: "8px 14px",
-                fontSize: "13px",
-                borderRadius: "8px",
-                border: "1px solid var(--border-color, #d1d5db)",
-                background: "var(--input-bg, #f9fafb)",
-              }}
-            />
+          <div style={{ display: "flex", alignItems: "center", gap: "10px", flexWrap: "wrap" }}>
+            {/* Import Closure Dates (matches by WO ID / Case ID from the Flex Closure ASP Report) */}
+            {closureImportToken && (
+              <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: "4px" }}>
+                <input
+                  ref={closureFileInputRef}
+                  type="file"
+                  accept=".xls,.xlsx"
+                  style={{ display: "none" }}
+                  onChange={(e) => void handleClosureFile(e.target.files?.[0] ?? null)}
+                />
+                <button
+                  type="button"
+                  disabled={importing}
+                  onClick={() => closureFileInputRef.current?.click()}
+                  style={{
+                    padding: "8px 14px",
+                    fontSize: "13px",
+                    fontWeight: 600,
+                    borderRadius: "8px",
+                    border: "1px solid #c7d2fe",
+                    background: importing ? "#eef2ff" : "#4f46e5",
+                    color: importing ? "#6366f1" : "#ffffff",
+                    cursor: importing ? "default" : "pointer",
+                    whiteSpace: "nowrap",
+                  }}
+                >
+                  {importing ? "Importing…" : "⬆ Import Closure Dates"}
+                </button>
+                {importMessage && (
+                  <span style={{ fontSize: "11px", color: "#6b7280", maxWidth: "260px", textAlign: "right" }}>
+                    {importMessage}
+                  </span>
+                )}
+              </div>
+            )}
+
+            {/* Search Box */}
+            <div style={{ width: "320px", maxWidth: "100%" }}>
+              <input
+                type="search"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder="Search Ticket ID, WO, ASP, Engineer, Status..."
+                style={{
+                  width: "100%",
+                  padding: "8px 14px",
+                  fontSize: "13px",
+                  borderRadius: "8px",
+                  border: "1px solid var(--border-color, #d1d5db)",
+                  background: "var(--input-bg, #f9fafb)",
+                }}
+              />
+            </div>
           </div>
         </div>
 
@@ -500,6 +627,14 @@ export function ClosedCallsDashboardView({
                 <th style={{ padding: "10px 14px", fontWeight: "700" }}>WO OTC Code</th>
                 <th style={{ padding: "10px 14px", fontWeight: "700" }}>Engineer</th>
                 <th style={{ padding: "10px 14px", fontWeight: "700" }}>Customer / Segment</th>
+                <th style={{ padding: "10px 14px", fontWeight: "700" }}>Customer Name</th>
+                <th style={{ padding: "10px 14px", fontWeight: "700" }}>Customer Mail</th>
+                <th style={{ padding: "10px 14px", fontWeight: "700" }}>Contact</th>
+                <th style={{ padding: "10px 14px", fontWeight: "700" }}>WIP Aging</th>
+                <th style={{ padding: "10px 14px", fontWeight: "700" }}>Case Created Time</th>
+                <th style={{ padding: "10px 14px", fontWeight: "700" }}>Case Closed Date</th>
+                <th style={{ padding: "10px 14px", fontWeight: "700" }}>Customer Status</th>
+                <th style={{ padding: "10px 14px", fontWeight: "700", textAlign: "center" }}>Customer Feedback</th>
                 <th style={{ padding: "10px 14px", fontWeight: "700" }}>RTPL Status</th>
                 <th style={{ padding: "10px 14px", fontWeight: "700", textAlign: "center" }}>Action</th>
               </tr>
@@ -507,14 +642,14 @@ export function ClosedCallsDashboardView({
             <tbody>
               {filteredClosedRows.length === 0 ? (
                 <tr>
-                  <td colSpan={8} style={{ padding: "32px 14px", textAlign: "center", color: "#6b7280" }}>
+                  <td colSpan={16} style={{ padding: "32px 14px", textAlign: "center", color: "#6b7280" }}>
                     {searchQuery.trim()
                       ? `No closed call records matching "${searchQuery}"`
                       : "No closed call records available for the selected filter."}
                   </td>
                 </tr>
               ) : (
-                filteredClosedRows.slice(0, 100).map((row, idx) => {
+                filteredClosedRows.map((row, idx) => {
                   const out = (row.output ?? {}) as Record<string, unknown>;
                   const ticketId = String(out["Ticket ID"] ?? "-");
                   const rowAsp = getRowAspCode(out);
@@ -530,6 +665,13 @@ export function ClosedCallsDashboardView({
                   const contact = String(out["Contact"] ?? "-");
                   const customerMail = String(out["Customer Mail"] ?? "-");
                   const accountName = String(out["Account Name"] ?? "-");
+                  const wipAging = String(out["WIP aging"] ?? out["WIP Aging"] ?? "-");
+                  const caseCreatedTime = String(out["Case Created Time"] ?? "-");
+                  // Closure date comes from the imported Closure-Date Excel (matched by
+                  // WO ID / Case ID), not a calculation. "-" until an import supplies it.
+                  const caseClosedDate = String(out["Case Closed Date"] ?? "-");
+                  // Customer Status is derived server-side from saved customer feedback.
+                  const customerStatus = String(out["Customer Status"] ?? "-");
 
                   return (
                     <tr
@@ -574,6 +716,50 @@ export function ClosedCallsDashboardView({
                             <span>• Mail: {customerMail}</span>
                           )}
                         </div>
+                      </td>
+                      <td style={{ padding: "10px 14px", fontWeight: "500", color: "#374151" }}>
+                        {customer}
+                      </td>
+                      <td style={{ padding: "10px 14px", color: "#374151" }}>
+                        {customerMail}
+                      </td>
+                      <td style={{ padding: "10px 14px", color: "#374151" }}>
+                        {contact}
+                      </td>
+                      <td style={{ padding: "10px 14px", color: "#374151", whiteSpace: "nowrap" }}>
+                        {wipAging !== "-" ? `${wipAging} days` : "-"}
+                      </td>
+                      <td style={{ padding: "10px 14px", color: "#374151", whiteSpace: "nowrap" }}>
+                        {caseCreatedTime}
+                      </td>
+                      <td style={{ padding: "10px 14px", color: "#374151", whiteSpace: "nowrap" }}>
+                        {caseClosedDate}
+                      </td>
+                      <td style={{ padding: "10px 14px", color: "#374151", maxWidth: "220px" }}>
+                        {customerStatus}
+                      </td>
+                      <td style={{ padding: "10px 14px", textAlign: "center" }}>
+                        {feedbackToken ? (
+                          <button
+                            type="button"
+                            onClick={() => openFeedback(row)}
+                            style={{
+                              padding: "5px 10px",
+                              fontSize: "12px",
+                              fontWeight: 600,
+                              borderRadius: "6px",
+                              border: "1px solid #c7d2fe",
+                              background: "#eef2ff",
+                              color: "#4f46e5",
+                              cursor: "pointer",
+                              whiteSpace: "nowrap",
+                            }}
+                          >
+                            {customerStatus !== "-" ? "Edit feedback" : "+ Feedback"}
+                          </button>
+                        ) : (
+                          <span style={{ color: "#9ca3af", fontSize: "12px" }}>—</span>
+                        )}
                       </td>
                       <td style={{ padding: "10px 14px" }}>
                         <span
@@ -622,19 +808,178 @@ export function ClosedCallsDashboardView({
           </table>
         </div>
 
-        {filteredClosedRows.length > 100 && (
+        {filteredClosedRows.length > 0 && (
           <div style={{ marginTop: "12px", textAlign: "center", fontSize: "12px", color: "#6b7280" }}>
-            Showing top 100 closed call records in preview.{" "}
+            Showing all {filteredClosedRows.length} closed call records.{" "}
             <button
               type="button"
               onClick={() => openRecordsWithFilter({ region: selectedRegion, closedOnly: true })}
               style={{ color: "#2563eb", fontWeight: "600", background: "none", border: "none", cursor: "pointer", textDecoration: "underline" }}
             >
-              Open full interactive table ({filteredClosedRows.length} rows)
+              Open full interactive table
             </button>
           </div>
         )}
       </div>
+
+      {/* Customer Feedback modal — portaled to <body> so an ancestor with
+          backdrop-filter (the glassy cards) cannot hijack its position:fixed. */}
+      {feedbackRow &&
+        typeof document !== "undefined" &&
+        createPortal(
+        <div
+          onClick={() => !fbSaving && setFeedbackRow(null)}
+          style={{
+            position: "fixed",
+            inset: 0,
+            background: "rgba(15,23,42,0.45)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            zIndex: 1000,
+            padding: "16px",
+          }}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              background: "var(--card-bg, #ffffff)",
+              borderRadius: "12px",
+              padding: "24px",
+              width: "440px",
+              maxWidth: "100%",
+              boxShadow: "0 20px 40px rgba(0,0,0,0.2)",
+            }}
+          >
+            <h3 style={{ margin: "0 0 4px 0", fontSize: "17px", fontWeight: 700 }}>
+              Customer Feedback
+            </h3>
+            <p style={{ margin: "0 0 18px 0", fontSize: "12px", color: "#6b7280" }}>
+              {String(
+                (feedbackRow.output as Record<string, unknown>)["Ticket ID"] ?? "",
+              )}
+            </p>
+
+            {(() => {
+              const selectStyle: React.CSSProperties = {
+                width: "100%",
+                padding: "9px 12px",
+                fontSize: "13px",
+                borderRadius: "8px",
+                border: "1px solid #d1d5db",
+                background: "var(--input-bg, #f9fafb)",
+                fontFamily: "inherit",
+                color: "#111827",
+              };
+              return (
+                <>
+                  <div style={{ marginBottom: "16px" }}>
+                    <label style={{ display: "block", fontSize: "13px", fontWeight: 600, marginBottom: "8px" }}>
+                      Call Status
+                    </label>
+                    <select
+                      value={fbCallStatus}
+                      onChange={(e) => setFbCallStatus(e.target.value)}
+                      style={selectStyle}
+                    >
+                      <option value="">Select call status…</option>
+                      {CALL_STATUS_OPTIONS.map((opt) => (
+                        <option key={opt} value={opt}>
+                          {opt}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div style={{ marginBottom: "16px" }}>
+                    <label style={{ display: "block", fontSize: "13px", fontWeight: 600, marginBottom: "8px" }}>
+                      Customer Feedback
+                    </label>
+                    <select
+                      value={fbFeedback}
+                      onChange={(e) => setFbFeedback(e.target.value)}
+                      style={selectStyle}
+                    >
+                      <option value="">Select feedback…</option>
+                      {CUSTOMER_FEEDBACK_OPTIONS.map((opt) => (
+                        <option key={opt} value={opt}>
+                          {opt}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                </>
+              );
+            })()}
+
+            <div style={{ marginBottom: "18px" }}>
+              <label style={{ display: "block", fontSize: "13px", fontWeight: 600, marginBottom: "8px" }}>
+                Remarks <span style={{ color: "#9ca3af", fontWeight: 400 }}>(optional)</span>
+              </label>
+              <textarea
+                value={fbRemarks}
+                onChange={(e) => setFbRemarks(e.target.value)}
+                rows={3}
+                placeholder="Any extra notes…"
+                style={{
+                  width: "100%",
+                  padding: "10px 12px",
+                  fontSize: "13px",
+                  borderRadius: "8px",
+                  border: "1px solid #d1d5db",
+                  background: "var(--input-bg, #f9fafb)",
+                  resize: "vertical",
+                  fontFamily: "inherit",
+                }}
+              />
+            </div>
+
+            {fbError && (
+              <div style={{ color: "#dc2626", fontSize: "12px", marginBottom: "12px" }}>
+                {fbError}
+              </div>
+            )}
+
+            <div style={{ display: "flex", justifyContent: "flex-end", gap: "10px" }}>
+              <button
+                type="button"
+                onClick={() => setFeedbackRow(null)}
+                disabled={fbSaving}
+                style={{
+                  padding: "9px 16px",
+                  fontSize: "13px",
+                  fontWeight: 600,
+                  borderRadius: "8px",
+                  border: "1px solid #d1d5db",
+                  background: "#ffffff",
+                  color: "#374151",
+                  cursor: "pointer",
+                }}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => void saveFeedback()}
+                disabled={fbSaving}
+                style={{
+                  padding: "9px 16px",
+                  fontSize: "13px",
+                  fontWeight: 600,
+                  borderRadius: "8px",
+                  border: "none",
+                  background: fbSaving ? "#a5b4fc" : "#4f46e5",
+                  color: "#ffffff",
+                  cursor: fbSaving ? "default" : "pointer",
+                }}
+              >
+                {fbSaving ? "Saving…" : "Save feedback"}
+              </button>
+            </div>
+          </div>
+        </div>,
+          document.body,
+        )}
     </div>
   );
 }

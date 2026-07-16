@@ -27,6 +27,8 @@ export interface LoginResponse {
     regionId: string | null;
     region_id: string | null;
     mustChangePassword: boolean;
+    // Operational sections a REGION_ADMIN may see. null/absent = all sections.
+    accessibleSections?: string[] | null;
     // Attached client-side (from the sibling below) for special-access logins.
     specialAccess?: SpecialAccessSessionInfo | null;
   };

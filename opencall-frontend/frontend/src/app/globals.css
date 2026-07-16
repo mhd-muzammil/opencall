@@ -8589,3 +8589,17 @@ td {
   background: #fef2f2;
   border-color: var(--danger);
 }
+
+/* Records grid: one row colour (no zebra striping) and darker cell text, per
+   the ops team. Appended last so it outranks the equal-specificity zebra
+   rules on the frozen S.No / Ticket ID columns above. Hover highlight stays. */
+.recordsTableZone .tableWrap td {
+  color: #0f172a;
+  font-weight: 600;
+}
+
+.recordsTableZone .tableWrap tbody tr:nth-child(even) td,
+.recordsTableZone .tableWrap tbody tr:nth-child(even) td:first-child,
+.recordsTableZone .tableWrap tbody tr:nth-child(even) td:nth-child(2) {
+  background: #ffffff;
+}

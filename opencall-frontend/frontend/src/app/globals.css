@@ -2203,6 +2203,31 @@ td {
   padding: 7px 8px;
 }
 
+/* Excel-style grid on the records table: a visible line between EVERY cell,
+   vertical and horizontal, like a spreadsheet. Scoped via recordsTableZone —
+   the wrapper that travels with the table into the Full Record portal — so
+   the grid holds in both normal and full-screen views while the dashboard
+   tables keep their lighter row-separator look. */
+.recordsTableZone .tableWrap th,
+.recordsTableZone .tableWrap td {
+  border-right: 1px solid #cbd5e1;
+  border-bottom: 1px solid #cbd5e1;
+}
+
+.recordsTableZone .tableWrap th:first-child,
+.recordsTableZone .tableWrap td:first-child {
+  border-left: 1px solid #cbd5e1;
+}
+
+.recordsTableZone .tableWrap th {
+  border-top: 1px solid #cbd5e1;
+}
+
+/* The old faint half-height header separators would double the grid lines. */
+.recordsTableZone .tableWrap th:not(:last-child)::after {
+  display: none;
+}
+
 .recordsMode .reportColumn {
   max-width: 180px;
 }

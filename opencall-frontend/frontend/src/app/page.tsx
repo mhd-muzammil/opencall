@@ -74,6 +74,7 @@ import {
   ClosedCallLedger,
   ClosedCallsDashboardView,
   PartsCatalogPage,
+  QuotationsPage,
   MatchPreviewSection,
   RTPLTimeModal,
   ProductivityPage,
@@ -193,6 +194,7 @@ const WORKSPACE_VIEWS = [
   // Kept here only so this union stays in step with AppHeader's WorkspaceView.
   "record-format",
   "parts-catalog",
+  "quotations",
   "rtpl",
   "rtpl-dashboard",
   "pivot",
@@ -3250,7 +3252,7 @@ export default function DashboardPage() {
             canSeeSection("productivity") ||
             (!isSpecialAccess && canSeeSection("warranty")) ||
             (session.user.role === "SUPER_ADMIN" && !isSpecialAccess) ||
-            (isSpecialAccess && canSeeSection("parts-catalog"))) && (
+            (isSpecialAccess && (canSeeSection("parts-catalog") || canSeeSection("quotations")))) && (
             <div className="sidebarSection">Data & Operations</div>
           )}
 
@@ -3281,6 +3283,21 @@ export default function DashboardPage() {
             >
               <span className="sidebarIcon">
                 <span>🔩</span> <span className="sidebarText">Parts Catalog</span>
+              </span>
+            </button>
+          )}
+
+          {/* Quotations — SUPER_ADMIN always; a special-access login only when the
+              "quotations" section is granted. Region admins do not see it. */}
+          {((!isSpecialAccess && session.user.role === "SUPER_ADMIN") ||
+            (isSpecialAccess && canSeeSection("quotations"))) && (
+            <button
+              type="button"
+              className={`sidebarItem ${workspaceView === "quotations" ? "active" : ""}`}
+              onClick={() => setWorkspaceView("quotations")}
+            >
+              <span className="sidebarIcon">
+                <span>📄</span> <span className="sidebarText">Quotations</span>
               </span>
             </button>
           )}
@@ -3454,9 +3471,17 @@ export default function DashboardPage() {
                 </section>
               ) : null}
 
+              {/* Quotations — its own data (independent of a generated report). */}
+              {workspaceView === "quotations" ? (
+                <section className="panel reportPanel">
+                  <QuotationsPage token={session.token} />
+                </section>
+              ) : null}
+
               {report &&
               workspaceView !== "warranty" &&
-              workspaceView !== "parts-catalog" ? (
+              workspaceView !== "parts-catalog" &&
+              workspaceView !== "quotations" ? (
                 <section className="panel reportPanel">
                   <div className="overviewReportContent">
                     {workspaceView === "overview" && (

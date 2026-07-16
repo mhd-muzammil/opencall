@@ -22,6 +22,7 @@ export * from "./FlexEodBodPage";
 export * from "./CaseDetailDrawer";
 export * from "./ClosedCallsDashboardView";
 export * from "./PartsCatalogPage";
+export * from "./QuotationsPage";
 
 
 

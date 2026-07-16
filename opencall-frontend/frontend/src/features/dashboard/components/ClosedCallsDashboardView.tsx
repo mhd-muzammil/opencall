@@ -60,6 +60,10 @@ export function ClosedCallsDashboardView({
   feedbackToken,
 }: Readonly<ClosedCallsDashboardViewProps>) {
   const [searchQuery, setSearchQuery] = useState("");
+  // Case Closed Date range filter (YYYY-MM-DD from the date inputs). When either bound
+  // is set, rows without a Case Closed Date, or outside the range, are hidden.
+  const [closedFrom, setClosedFrom] = useState("");
+  const [closedTo, setClosedTo] = useState("");
   const [importing, setImporting] = useState(false);
   const [importMessage, setImportMessage] = useState<string | null>(null);
   const closureFileInputRef = React.useRef<HTMLInputElement | null>(null);
@@ -140,8 +144,9 @@ export function ClosedCallsDashboardView({
   }, [closedRegionBreakdown]);
 
   // Total calls (Closed + Active WIP)
+  // Closed count that the cards reflect — the date-filtered count when a range is set,
+  // otherwise the full total. Defined below `dateFilterActive`/`filteredClosedRows`.
   const totalCallsCount = overallClosedCount + totalActiveWipCount;
-  const closedPercentage = totalCallsCount > 0 ? ((overallClosedCount / totalCallsCount) * 100).toFixed(1) : "0.0";
 
   // Filtered closed rows based on selected region and search query
   const filteredClosedRows = useMemo(() => {
@@ -158,6 +163,17 @@ export function ClosedCallsDashboardView({
         if (!matchesAsp && !matchesName) {
           return false;
         }
+      }
+
+      // Case Closed Date range filter. The value is DD-MM-YYYY; convert to YYYY-MM-DD
+      // for a lexical comparison against the (already YYYY-MM-DD) date-input bounds.
+      if (closedFrom || closedTo) {
+        const raw = String(output["Case Closed Date"] ?? "").trim();
+        const dmy = /^(\d{2})-(\d{2})-(\d{4})$/.exec(raw);
+        if (!dmy) return false; // no closed date → excluded once a bound is set
+        const iso = `${dmy[3]}-${dmy[2]}-${dmy[1]}`;
+        if (closedFrom && iso < closedFrom) return false;
+        if (closedTo && iso > closedTo) return false;
       }
 
       // Search query filter
@@ -189,13 +205,58 @@ export function ClosedCallsDashboardView({
         accountName.includes(query)
       );
     });
-  }, [closedRows, selectedRegion, searchQuery]);
+  }, [closedRows, selectedRegion, searchQuery, closedFrom, closedTo]);
+
+  const dateInputStyle: React.CSSProperties = {
+    padding: "7px 10px",
+    fontSize: "13px",
+    borderRadius: "8px",
+    border: "1px solid var(--border-color, #d1d5db)",
+    background: "var(--input-bg, #f9fafb)",
+  };
+
+  // Closed share % — uses the date-filtered closed count when a range is applied.
+  const shareClosed =
+    closedFrom || closedTo ? filteredClosedRows.length : overallClosedCount;
+  const closedPercentage =
+    totalCallsCount > 0 ? ((shareClosed / totalCallsCount) * 100).toFixed(1) : "0.0";
+
+  // When a Closed Date range is applied, the counts follow what the table shows
+  // (filteredClosedRows), so the stat cards + region cards move with the filter.
+  const dateFilterActive = Boolean(closedFrom || closedTo);
+
+  // Per-region closed count for the active Closed Date range (ignores the region
+  // selection so every region card still shows its own date-filtered number). Only
+  // computed while a range is set; otherwise the cards use the full breakdown counts.
+  const dateFilteredCountByAsp = useMemo(() => {
+    const counts = new Map<string, number>();
+    if (!dateFilterActive) return counts;
+    for (const row of closedRows) {
+      const output = (row.output ?? {}) as Record<string, unknown>;
+      const raw = String(output["Case Closed Date"] ?? "").trim();
+      const dmy = /^(\d{2})-(\d{2})-(\d{4})$/.exec(raw);
+      if (!dmy) continue;
+      const iso = `${dmy[3]}-${dmy[2]}-${dmy[1]}`;
+      if (closedFrom && iso < closedFrom) continue;
+      if (closedTo && iso > closedTo) continue;
+      const asp = getRowAspCode(output);
+      counts.set(asp, (counts.get(asp) ?? 0) + 1);
+    }
+    return counts;
+  }, [closedRows, dateFilterActive, closedFrom, closedTo]);
+
+  // Total across all regions for the active range (the ALL card's number).
+  const dateFilteredTotal = useMemo(() => {
+    let sum = 0;
+    for (const v of dateFilteredCountByAsp.values()) sum += v;
+    return sum;
+  }, [dateFilteredCountByAsp]);
 
   // Regional stats for active selection
   const activeRegionStats = useMemo(() => {
     if (!selectedRegion || selectedRegion === "ALL") {
       return {
-        closed: overallClosedCount,
+        closed: dateFilterActive ? filteredClosedRows.length : overallClosedCount,
         wip: totalActiveWipCount,
         label: "All Operational Regions",
       };
@@ -205,11 +266,16 @@ export function ClosedCallsDashboardView({
       (item) => item.aspCode.toUpperCase() === targetUpper || item.regionName.toUpperCase() === targetUpper
     );
     return {
-      closed: match ? match.closedCount : filteredClosedRows.length,
+      // Date filter always narrows to the visible rows; otherwise use the region total.
+      closed: dateFilterActive
+        ? filteredClosedRows.length
+        : match
+          ? match.closedCount
+          : filteredClosedRows.length,
       wip: match ? match.activeCount : 0,
       label: match ? `${match.regionName} (${match.aspCode})` : selectedRegion,
     };
-  }, [selectedRegion, overallClosedCount, totalActiveWipCount, closedRegionBreakdown, filteredClosedRows.length]);
+  }, [selectedRegion, overallClosedCount, totalActiveWipCount, closedRegionBreakdown, filteredClosedRows.length, dateFilterActive]);
 
   // Handle Exporting Closed Calls to Excel
   const handleExportClosedCalls = () => {
@@ -268,7 +334,7 @@ export function ClosedCallsDashboardView({
                 border: "1px solid #10b98130",
               }}
             >
-              ✓ {formatNumber(overallClosedCount)} Total Closed
+              ✓ {formatNumber(dateFilterActive ? dateFilteredTotal : overallClosedCount)} Total Closed
             </span>
           </div>
           <h2 style={{ fontSize: "22px", fontWeight: "800", color: "var(--heading-color, #111827)", margin: "6px 0 2px 0" }}>
@@ -343,6 +409,37 @@ export function ClosedCallsDashboardView({
           >
             📋 Open Records Table
           </button>
+
+          {/* Closed Date range filter — drives the cards, region cards AND the table */}
+          <div style={{ display: "flex", alignItems: "flex-end", gap: "8px", flexWrap: "wrap" }}>
+            <div style={{ display: "flex", flexDirection: "column" }}>
+              <label style={{ fontSize: "10px", fontWeight: 600, color: "#6b7280", marginBottom: "3px" }}>Closed from</label>
+              <input type="date" value={closedFrom} onChange={(e) => setClosedFrom(e.target.value)} style={dateInputStyle} />
+            </div>
+            <div style={{ display: "flex", flexDirection: "column" }}>
+              <label style={{ fontSize: "10px", fontWeight: 600, color: "#6b7280", marginBottom: "3px" }}>Closed to</label>
+              <input type="date" value={closedTo} onChange={(e) => setClosedTo(e.target.value)} style={dateInputStyle} />
+            </div>
+            {(closedFrom || closedTo) && (
+              <button
+                type="button"
+                onClick={() => { setClosedFrom(""); setClosedTo(""); }}
+                style={{
+                  padding: "8px 12px",
+                  fontSize: "12px",
+                  fontWeight: 600,
+                  borderRadius: "8px",
+                  border: "1px solid #d1d5db",
+                  background: "#f9fafb",
+                  color: "#374151",
+                  cursor: "pointer",
+                  whiteSpace: "nowrap",
+                }}
+              >
+                Clear dates
+              </button>
+            )}
+          </div>
         </div>
       </div>
 
@@ -490,7 +587,7 @@ export function ClosedCallsDashboardView({
               ALL REGIONS
             </div>
             <div style={{ fontSize: "22px", fontWeight: "800", color: "#10b981", margin: "4px 0" }}>
-              {formatNumber(overallClosedCount)}
+              {formatNumber(dateFilterActive ? dateFilteredTotal : overallClosedCount)}
             </div>
             <div style={{ fontSize: "11px", color: "#6b7280" }}>
               {formatNumber(totalActiveWipCount)} active WIP
@@ -518,7 +615,11 @@ export function ClosedCallsDashboardView({
                   {entry.regionName}
                 </div>
                 <div style={{ fontSize: "20px", fontWeight: "800", color: isSelected ? "#2563eb" : "#10b981", margin: "4px 0" }}>
-                  {formatNumber(entry.closedCount)}
+                  {formatNumber(
+                    dateFilterActive
+                      ? dateFilteredCountByAsp.get(entry.aspCode) ?? 0
+                      : entry.closedCount,
+                  )}
                 </div>
                 <div style={{ fontSize: "11px", color: "#6b7280" }}>
                   {entry.aspCode} | {formatNumber(entry.activeCount)} WIP

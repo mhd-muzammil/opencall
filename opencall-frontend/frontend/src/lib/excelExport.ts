@@ -530,6 +530,16 @@ export async function downloadRegionSummaryExcel(
     return matchesKeyword && !matchesExclude;
   };
 
+  // Present = the engineer has at least one "Scheduled" call under their name
+  // that day; an engineer with no scheduled assignment is absent.
+  const presentsCount = getUniqueEngineers(
+    activeRows.filter(
+      (r) =>
+        getRowStatus(r).toLowerCase().replace(/[^a-z0-9]+/g, " ").trim() ===
+        "scheduled",
+    ),
+  ).length;
+
   const parseWipAgingValue = (value: unknown): number | null => {
     const parsed = Number(String(value ?? "").trim());
     return Number.isFinite(parsed) ? parsed : null;
@@ -650,7 +660,7 @@ export async function downloadRegionSummaryExcel(
       [reportDate, "", regionName],
       ["S.No", "Description", "Count"],
       [1, "Engineer Count", engineerCount],
-      [2, "No.of Engg Presents", engineerCount],
+      [2, "No.of Engg Presents", presentsCount],
       [3, "Open Calls", openCallsCount],
       [4, "Actionable Calls", actionableCount || 0],
       [5, "Planned Calls", plannedCount || 0],

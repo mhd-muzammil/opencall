@@ -43,6 +43,14 @@ function calculateKpiMetricsForCardView(
     return (rowStatusMap[ticketId] ?? "").trim();
   };
 
+  // Present = the engineer has at least one "Scheduled" call under their name
+  // that day; an engineer with no scheduled assignment is absent. So Presents
+  // counts unique engineers over the Scheduled rows, not all engineers.
+  const isScheduledStatus = (r: typeof rows[number]): boolean =>
+    getRowStatus(r).toLowerCase().replace(/[^a-z0-9]+/g, " ").trim() === "scheduled";
+  const scheduledRows = active.filter(isScheduledStatus);
+  const presentEngineers = getUniqueEngineers(scheduledRows);
+
   const matchStatus = (
     r: typeof rows[number],
     keywords: string[],
@@ -80,7 +88,7 @@ function calculateKpiMetricsForCardView(
 
   return {
     engineerCount,
-    enggPresents: engineerCount,
+    enggPresents: presentEngineers.length,
     openCalls: active.length,
     actionable: actionableRows.length,
     planned: plannedRows.length,
@@ -100,7 +108,7 @@ function calculateKpiMetricsForCardView(
 
     tickets: {
       engineerCount: getTicketIds(active),
-      enggPresents: getTicketIds(active),
+      enggPresents: getTicketIds(scheduledRows),
       openCalls: getTicketIds(active),
       actionable: getTicketIds(actionableRows),
       planned: getTicketIds(plannedRows),

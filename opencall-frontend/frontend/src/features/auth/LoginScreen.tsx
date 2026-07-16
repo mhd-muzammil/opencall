@@ -1,5 +1,8 @@
-import { useState } from "react";
 import iconImg from "../../app/icon.png";
+import {
+  AnimatedForm,
+  TechOrbitDisplay,
+} from "../../components/ui/animated-login";
 import type {
   DatabaseHealthResponse,
   RuntimeHealthResponse,
@@ -27,6 +30,72 @@ export function SessionLoadingScreen() {
   );
 }
 
+// Renderways logo chips orbiting the brand text (the orbit container must be
+// given a small fixed size or it fills the panel).
+const LogoChip = ({ pad = 6 }: { pad?: number }) => (
+  <span
+    className="flex items-center justify-center w-full h-full rounded-xl bg-white shadow-lg"
+    style={{ padding: pad }}
+  >
+    <img
+      src={iconImg.src}
+      alt=""
+      style={{ width: "100%", height: "100%", objectFit: "contain" }}
+    />
+  </span>
+);
+
+const ORBITING_ICONS = [
+  {
+    className: "size-[40px] border-none bg-transparent",
+    radius: 100,
+    duration: 18,
+    component: () => <LogoChip pad={5} />,
+  },
+  {
+    className: "size-[40px] border-none bg-transparent",
+    radius: 100,
+    duration: 18,
+    delay: 9,
+    component: () => <LogoChip pad={5} />,
+  },
+  {
+    className: "size-[48px] border-none bg-transparent",
+    radius: 175,
+    duration: 26,
+    reverse: true,
+    component: () => <LogoChip />,
+  },
+  {
+    className: "size-[48px] border-none bg-transparent",
+    radius: 175,
+    duration: 26,
+    delay: 13,
+    reverse: true,
+    component: () => <LogoChip />,
+  },
+  {
+    className: "size-[56px] border-none bg-transparent",
+    radius: 250,
+    duration: 34,
+    component: () => <LogoChip pad={7} />,
+  },
+  {
+    className: "size-[48px] border-none bg-transparent",
+    radius: 250,
+    duration: 34,
+    delay: 17,
+    component: () => <LogoChip />,
+  },
+  {
+    className: "size-[48px] border-none bg-transparent",
+    radius: 250,
+    duration: 34,
+    delay: 28,
+    component: () => <LogoChip />,
+  },
+];
+
 export function LoginScreen({
   username,
   password,
@@ -46,99 +115,44 @@ export function LoginScreen({
   onPasswordChange: (password: string) => void;
   onSubmit: (event: React.FormEvent<HTMLFormElement>) => void;
 }>) {
-  const [showPassword, setShowPassword] = useState(false);
-
   return (
-    <main className="loginShell">
-      <section className="loginSplitCard">
-        <header className="loginTopBar">
-          <div className="loginWordmark">
-            <img src={iconImg.src} alt="Renderways" />
-            <span>
-              RENDER<em>WAYS</em>
-            </span>
-          </div>
-        </header>
-
-        <div className="loginSplitBody">
-          <div className="loginHero">
-            <h1>
-              Experience the Future of
-              <span> Service Operations</span>
-            </h1>
-            <p>
-              The Renderways operations platform for field service — call
-              records, RTPL tracking, engineer productivity and reporting,
-              unified through real-time dashboards.
-            </p>
-          </div>
-
-          <div className="loginPanel">
-            <h2>Login</h2>
-
-            {message ? <div className="alert">{message}</div> : null}
-
-            <form className="loginForm" onSubmit={onSubmit}>
-              <input
-                className="loginInput"
-                type="text"
-                value={username}
-                onChange={(event) => onUsernameChange(event.target.value)}
-                placeholder="Username or email"
-                aria-label="Username"
-                autoComplete="username"
-                autoFocus
-              />
-              <div className="passwordInputWrap">
-                <input
-                  className="loginInput"
-                  type={showPassword ? "text" : "password"}
-                  value={password}
-                  onChange={(event) => onPasswordChange(event.target.value)}
-                  placeholder="Password"
-                  aria-label="Password"
-                  autoComplete="current-password"
-                />
-                <button
-                  type="button"
-                  className="passwordToggle"
-                  onClick={() => setShowPassword((current) => !current)}
-                  title={showPassword ? "Hide password" : "Show password"}
-                  aria-label={showPassword ? "Hide password" : "Show password"}
-                >
-                  {showPassword ? (
-                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                      <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94" />
-                      <path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19" />
-                      <line x1="1" y1="1" x2="23" y2="23" />
-                    </svg>
-                  ) : (
-                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                      <path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7Z" />
-                      <circle cx="12" cy="12" r="3" />
-                    </svg>
-                  )}
-                </button>
-              </div>
-              <button
-                type="submit"
-                className="loginSubmit"
-                disabled={isBusy || !username.trim() || !password}
-              >
-                {isBusy ? "SIGNING IN..." : "LOG IN"}
-              </button>
-            </form>
-
-            <p className="loginHelp">
-              Forgot password? Contact your administrator.
-            </p>
-          </div>
-        </div>
-
-        <footer className="loginFooterNote">
+    <main className="dark flex h-dvh w-full bg-[#060b18] text-white">
+      {/* Left: orbiting brand display (large screens only), like the demo */}
+      <div className="hidden lg:flex w-1/2 relative items-center justify-center bg-[#0a1226]">
+        <TechOrbitDisplay iconsArray={ORBITING_ICONS} text="RENDERWAYS" />
+        <p className="absolute bottom-7 left-0 right-0 text-center text-xs font-semibold text-slate-500">
           © {new Date().getFullYear()} Renderways Technologies Private Limited
-        </footer>
-      </section>
+        </p>
+      </div>
+
+      {/* Right: animated dark form */}
+      <div className="w-full lg:w-1/2 h-full flex flex-col justify-center items-center max-lg:px-[10%] bg-[#060b18]">
+        <AnimatedForm
+          header="Welcome back"
+          subHeader="Sign in to your Renderways account"
+          fields={[
+            {
+              label: "Username",
+              required: true,
+              type: "text",
+              placeholder: "Enter your username or email",
+              onChange: (event) => onUsernameChange(event.target.value),
+            },
+            {
+              label: "Password",
+              required: true,
+              type: "password",
+              placeholder: "Enter your password",
+              onChange: (event) => onPasswordChange(event.target.value),
+            },
+          ]}
+          submitButton="Sign in"
+          submittingButton="Signing in..."
+          isSubmitting={isBusy}
+          errorField={message ?? undefined}
+          onSubmit={onSubmit}
+        />
+      </div>
     </main>
   );
 }

@@ -1,5 +1,53 @@
 @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&display=swap');
 
+/* Tailwind v4: theme + utilities ONLY. Preflight is intentionally not
+   imported — its global resets would fight the app's hand-written CSS. The
+   utility classes exist solely for the animated login components. */
+@import "tailwindcss/theme.css" layer(theme);
+/* Utilities imported UNLAYERED on purpose: the app's hand-written global rules
+   (e.g. `button { background: var(--accent) }`) are unlayered, and unlayered
+   CSS always beats layered CSS — utilities must compete on specificity or the
+   animated login renders half-styled. Preflight stays out either way. */
+@import "tailwindcss/utilities.css";
+
+/* Class-driven dark mode: the animated login forces its dark look by putting
+   `dark` on its root, independent of the OS colour scheme. */
+@custom-variant dark (&:where(.dark, .dark *));
+
+/* Tokens + keyframes the animated login kit expects (BoxReveal sweep colour,
+   magicui orbit/ripple animations). */
+:root {
+  --skeleton: #4f46e5;
+  --foreground: #0f172a;
+}
+
+@keyframes orbit {
+  0% {
+    transform: rotate(0deg) translateY(calc(var(--radius) * 1px)) rotate(0deg);
+  }
+  100% {
+    transform: rotate(360deg) translateY(calc(var(--radius) * 1px)) rotate(-360deg);
+  }
+}
+
+.animate-orbit {
+  animation: orbit calc(var(--duration) * 1s) linear infinite;
+}
+
+@keyframes ripple {
+  0%, 100% {
+    transform: translate(-50%, -50%) scale(1);
+  }
+  50% {
+    transform: translate(-50%, -50%) scale(0.9);
+  }
+}
+
+.animate-ripple {
+  animation: ripple 3400ms ease infinite;
+}
+
+
 :root {
   color-scheme: light;
   --background: #f8fafc;

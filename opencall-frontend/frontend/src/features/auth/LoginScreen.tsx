@@ -49,7 +49,7 @@ export function LoginScreen({
   const [showPassword, setShowPassword] = useState(false);
 
   return (
-    <main className="loginShell">
+    <main className="loginShell loginShellFull">
       <section className="loginSplitCard">
         <header className="loginTopBar">
           <div className="loginWordmark">

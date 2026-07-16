@@ -8605,15 +8605,18 @@ td {
 }
 
 /* ── Login: split hero + panel layout (Renderways) ─────────────────────────── */
+/* Full-bleed: the login IS the page — no floating card, no outer margins. */
+.loginShell.loginShellFull {
+  padding: 0;
+  place-items: stretch;
+}
+
 .loginSplitCard {
   display: flex;
   flex-direction: column;
-  width: min(1180px, 100%);
-  border: 1px solid var(--border);
-  border-radius: 14px;
+  width: 100%;
+  min-height: 100vh;
   background: #fbfcfe;
-  box-shadow: 0 30px 80px rgba(15, 23, 42, 0.1);
-  overflow: hidden;
 }
 
 .loginTopBar {
@@ -8653,7 +8656,9 @@ td {
   grid-template-columns: 1.35fr 1fr;
   gap: 40px;
   align-items: center;
-  padding: 56px 48px 64px;
+  align-content: center;
+  padding: 48px clamp(32px, 7vw, 120px);
+  flex: 1;
 }
 
 .loginHero h1 {
@@ -8724,6 +8729,9 @@ td {
   padding-right: 44px;
 }
 
+/* Every property the global `button` rule sets (indigo background, white text,
+   min-height, padding) is explicitly neutralised here, or the eye renders as a
+   filled square with an invisible icon. Plain black icon, no box. */
 .passwordToggle {
   position: absolute;
   right: 6px;
@@ -8734,16 +8742,19 @@ td {
   justify-content: center;
   width: 34px;
   height: 34px;
+  min-height: 0;
+  padding: 0;
   border: none;
   border-radius: 6px;
-  background: transparent;
-  color: #64748b;
+  background: transparent !important;
+  box-shadow: none;
+  color: #0f172a !important;
   cursor: pointer;
 }
 
 .passwordToggle:hover {
-  color: var(--accent);
-  background: rgba(79, 70, 229, 0.08);
+  color: #000000 !important;
+  background: rgba(15, 23, 42, 0.06) !important;
 }
 
 .loginSubmit {

@@ -3056,6 +3056,31 @@ export default function DashboardPage() {
                                 >
                                   {String(value ?? "")}
                                 </button>
+                              ) : column === "Part" ? (
+                                // The backend joins the received (RCV_SPARE) part
+                                // descriptions with " / " and appends a muted
+                                // in-transit / awaiting marker. Split the marker
+                                // out so it renders as a muted secondary hint.
+                                (() => {
+                                  const partText = String(value ?? "");
+                                  const [mainRaw, transit] = partText.split("  ⏳ ");
+                                  const main = mainRaw ?? "";
+                                  const isAwaiting = main === "Awaiting parts";
+                                  return (
+                                    <span>
+                                      {main ? (
+                                        <span style={isAwaiting ? { opacity: 0.6, fontStyle: "italic" } : undefined}>
+                                          {main}
+                                        </span>
+                                      ) : null}
+                                      {transit ? (
+                                        <span style={{ opacity: 0.6, marginLeft: main ? 6 : 0, whiteSpace: "nowrap" }}>
+                                          ⏳ {transit}
+                                        </span>
+                                      ) : null}
+                                    </span>
+                                  );
+                                })()
                               ) : (
                                 <span>
                                   {value === MANUAL_ENTRY_REQUIRED

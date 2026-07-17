@@ -60,6 +60,9 @@ export function RTPLStatusDropdown({ value, onChange, manualEntryRequiredLabel, 
   const baseGroups: readonly StatusGroup[] = groups && groups.length > 0 ? groups : RTPL_STATUS_GROUPS;
   const flatOptions = baseGroups.flatMap((g) => g.options);
   const [isOpen, setIsOpen] = useState(false);
+  // Custom Manual Entry mode: the trigger becomes a blank text input the user
+  // types their own status into (nothing is pre-filled).
+  const [isCustomEditing, setIsCustomEditing] = useState(false);
   const triggerRef = useRef<HTMLButtonElement>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
   const [coords, setCoords] = useState({ top: 0, left: 0 });
@@ -102,7 +105,14 @@ export function RTPLStatusDropdown({ value, onChange, manualEntryRequiredLabel, 
         key={option}
         type="button"
         onClick={() => {
-          onChange(option);
+          if (option === "Custom") {
+            // Blank slate — the user types the custom status themselves; the
+            // literal word "Custom" is never written into the field.
+            onChange("");
+            setIsCustomEditing(true);
+          } else {
+            onChange(option);
+          }
           setIsOpen(false);
         }}
         style={{
@@ -133,7 +143,7 @@ export function RTPLStatusDropdown({ value, onChange, manualEntryRequiredLabel, 
 
   const getDisplayValue = () => {
     if (!value) return manualEntryRequiredLabel;
-    if (isCustom) return "Custom";
+    // Custom statuses show their actual text, not the word "Custom".
     return value;
   };
 
@@ -146,6 +156,38 @@ export function RTPLStatusDropdown({ value, onChange, manualEntryRequiredLabel, 
       )
     : [...baseGroups, { group: "Other", options: ["Custom"] }];
   const [leftColumnGroups, rightColumnGroups] = splitStatusGroupsForColumns(statusGroups);
+
+  if (isCustomEditing) {
+    return (
+      <input
+        type="text"
+        className="cellInput"
+        autoFocus
+        value={value}
+        placeholder="Type custom status..."
+        style={{
+          width: "100%",
+          backgroundColor: "#fff",
+          color: "var(--text)",
+          border: "1px solid #ddd",
+          padding: "4px 8px",
+          borderRadius: "4px",
+          minHeight: "28px",
+          fontSize: "13px"
+        }}
+        onChange={(e) => onChange(e.target.value)}
+        onBlur={() => setIsCustomEditing(false)}
+        onKeyDown={(e) => {
+          if (e.key === "Enter" || e.key === "Escape") {
+            // Don't submit the surrounding form / close the surrounding modal.
+            e.preventDefault();
+            e.stopPropagation();
+            setIsCustomEditing(false);
+          }
+        }}
+      />
+    );
+  }
 
   return (
     <>

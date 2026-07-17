@@ -23,6 +23,17 @@ import { isActionableStatusValue } from "../features/dashboard/utils/reportUtils
 import type * as XLSXNS from "xlsx";
 const loadXlsx = (): Promise<typeof import("xlsx")> => import("xlsx");
 
+// `exceljs` is only needed by the styled records-view export (SheetJS CE cannot
+// write cell fills/fonts). Loaded lazily for the same bundle-size reason; the
+// CJS module surfaces under `.default` depending on the bundler interop.
+import type * as ExcelJSNS from "exceljs";
+const loadExcelJs = async (): Promise<typeof ExcelJSNS> => {
+  const mod = (await import("exceljs")) as typeof ExcelJSNS & {
+    default?: typeof ExcelJSNS;
+  };
+  return mod.default ?? mod;
+};
+
 // A call is treated as "closed" when its (current or previous) RTPL status reads
 // as closed — WO Closed, Physically Closed, Partner Complete, etc.
 const CLOSED_STATUS_KEYS = [
@@ -450,6 +461,96 @@ export async function downloadReportAsXlsx(
     );
     await downloadDataSheetsWorkbook(openCallAoa, closedCallsAoa, filename);
   }
+}
+
+// ——— Records-view (WYSIWYG) export ——————————————————————————————————————————
+// Exports the records table exactly as the employee is viewing it: their column
+// layout/order (hidden columns removed), their filtered/searched/sorted rows,
+// and the on-screen grid styling — solid blue header (#0ea5e9) with dark bold
+// text, slate gridlines, frozen header row and an Excel autofilter (mirroring
+// the sticky header + per-column filters in the app).
+const RECORDS_HEADER_FILL_ARGB = "FF0EA5E9";
+const RECORDS_HEADER_FONT_ARGB = "FF0F172A";
+const RECORDS_GRID_BORDER_ARGB = "FFCBD5E1";
+export const RECORDS_VIEW_SHEET = "Records";
+
+export async function buildRecordsViewWorkbook(
+  report: GeneratedReportResponse,
+  columns: readonly string[] = STANDARD_EXPORT_COLUMNS,
+): Promise<ExcelJSNS.Workbook> {
+  const ExcelJS = await loadExcelJs();
+  const headers = columns.map((c) => EXPORT_HEADER_LABEL[c] ?? c);
+  const snoIndex = columns.indexOf("S.no");
+  const body = report.rows.map((row, index) =>
+    withSequentialSerial(mapRowToStandardExport(row, columns), index, snoIndex),
+  );
+
+  const workbook = new ExcelJS.Workbook();
+  const sheet = workbook.addWorksheet(RECORDS_VIEW_SHEET, {
+    views: [{ state: "frozen", ySplit: 1 }],
+  });
+  sheet.addRow([...headers]);
+  for (const cells of body) {
+    sheet.addRow(cells);
+  }
+
+  const gridBorderSide: ExcelJSNS.Border = {
+    style: "thin",
+    color: { argb: RECORDS_GRID_BORDER_ARGB },
+  };
+  const gridBorder: Partial<ExcelJSNS.Borders> = {
+    top: gridBorderSide,
+    left: gridBorderSide,
+    bottom: gridBorderSide,
+    right: gridBorderSide,
+  };
+  sheet.eachRow((row) => {
+    row.eachCell({ includeEmpty: true }, (cell) => {
+      cell.border = gridBorder;
+    });
+  });
+
+  const headerRow = sheet.getRow(1);
+  headerRow.height = 26;
+  headerRow.eachCell({ includeEmpty: true }, (cell) => {
+    cell.fill = {
+      type: "pattern",
+      pattern: "solid",
+      fgColor: { argb: RECORDS_HEADER_FILL_ARGB },
+    };
+    cell.font = { bold: true, color: { argb: RECORDS_HEADER_FONT_ARGB }, size: 11 };
+    cell.alignment = { vertical: "middle" };
+  });
+
+  // Width each column to its longest value (clamped) so the sheet opens
+  // readable without a manual column resize.
+  columns.forEach((_, index) => {
+    let maxLen = String(headers[index] ?? "").length;
+    for (const cells of body) {
+      const len = String(cells[index] ?? "").length;
+      if (len > maxLen) {
+        maxLen = len;
+      }
+    }
+    sheet.getColumn(index + 1).width = Math.min(Math.max(maxLen + 3, 9), 44);
+  });
+
+  sheet.autoFilter = {
+    from: { row: 1, column: 1 },
+    to: { row: 1, column: Math.max(columns.length, 1) },
+  };
+
+  return workbook;
+}
+
+export async function downloadRecordsViewXlsx(
+  report: GeneratedReportResponse,
+  columns: readonly string[] = STANDARD_EXPORT_COLUMNS,
+): Promise<void> {
+  const workbook = await buildRecordsViewWorkbook(report, columns);
+  const buffer = await workbook.xlsx.writeBuffer();
+  const date = report.reportDate || new Date().toISOString().split("T")[0];
+  triggerDownload(new Uint8Array(buffer), `Records_${date}.xlsx`, XLSX_MIME);
 }
 
 export async function downloadRegionSummaryExcel(

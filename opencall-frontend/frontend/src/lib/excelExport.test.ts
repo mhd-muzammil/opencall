@@ -3,10 +3,12 @@ import { describe, expect, it } from "vitest";
 import type { GeneratedReportResponse } from "./apiClient";
 import {
   buildPivotMatrix,
+  buildRecordsViewWorkbook,
   buildReportExportMatrix,
   buildWorkbookExportMatrices,
   EXPORT_METADATA_COLUMNS,
   pivotFilterLabel,
+  RECORDS_VIEW_SHEET,
   STANDARD_EXPORT_COLUMNS,
 } from "./excelExport";
 import { buildRtplWipAgingPivot } from "../features/dashboard/utils";
@@ -321,5 +323,73 @@ describe("pivotFilterLabel", () => {
     expect(pivotFilterLabel([rowWith("")], "WO OTC CODE")).toBe("(All)");
     expect(pivotFilterLabel([rowWith("01-Trade"), rowWith("01-Trade")], "WO OTC CODE")).toBe("01-Trade");
     expect(pivotFilterLabel([rowWith("01-Trade"), rowWith("05F-Print")], "WO OTC CODE")).toBe("(Multiple Items)");
+  });
+});
+
+describe("buildRecordsViewWorkbook", () => {
+  // The view export mirrors the on-screen records table: the employee's own
+  // column layout/order, sequential S.no, and the grid's blue header styling.
+  const viewColumns = ["S.no", "Ticket ID", "RTPL status", "Engineer"];
+
+  it("exports exactly the given columns in order, with on-screen header labels", async () => {
+    const workbook = await buildRecordsViewWorkbook(reportFixture(), viewColumns);
+    const sheet = workbook.getWorksheet(RECORDS_VIEW_SHEET);
+    if (!sheet) throw new Error("Records sheet missing");
+
+    const headerValues = [1, 2, 3, 4].map((c) => sheet.getRow(1).getCell(c).value);
+    expect(headerValues).toEqual(["S.no", "Ticket ID", "Morning status", "Engineer"]);
+    // No extra columns beyond the visible layout.
+    expect(sheet.getRow(1).cellCount).toBe(viewColumns.length);
+
+    // Sequential serials matching the on-screen numbering; values follow the
+    // standard export mapping (closed rows surface previous statuses).
+    expect(sheet.getRow(2).getCell(1).value).toBe(1);
+    expect(sheet.getRow(2).getCell(2).value).toBe("WO-123");
+    expect(sheet.getRow(2).getCell(4).value).toBe("Priya");
+    expect(sheet.getRow(3).getCell(1).value).toBe(2);
+    expect(sheet.getRow(3).getCell(3).value).toBe("Pending");
+  });
+
+  it("styles the header like the records grid: solid blue fill, dark bold font", async () => {
+    const workbook = await buildRecordsViewWorkbook(reportFixture(), viewColumns);
+    const sheet = workbook.getWorksheet(RECORDS_VIEW_SHEET);
+    if (!sheet) throw new Error("Records sheet missing");
+
+    const headerCell = sheet.getRow(1).getCell(1);
+    const fill = headerCell.fill as { type: string; pattern: string; fgColor?: { argb?: string } };
+    expect(fill.type).toBe("pattern");
+    expect(fill.pattern).toBe("solid");
+    expect(fill.fgColor?.argb).toBe("FF0EA5E9");
+    expect(headerCell.font?.bold).toBe(true);
+    expect(headerCell.font?.color?.argb).toBe("FF0F172A");
+
+    // Gridline borders on body cells, like the on-screen table.
+    const bodyCell = sheet.getRow(2).getCell(2);
+    expect(bodyCell.border?.top?.style).toBe("thin");
+    expect(bodyCell.border?.top?.color?.argb).toBe("FFCBD5E1");
+  });
+
+  it("freezes the header row and applies an autofilter across the visible columns", async () => {
+    const workbook = await buildRecordsViewWorkbook(reportFixture(), viewColumns);
+    const sheet = workbook.getWorksheet(RECORDS_VIEW_SHEET);
+    if (!sheet) throw new Error("Records sheet missing");
+
+    expect(sheet.views[0]).toMatchObject({ state: "frozen", ySplit: 1 });
+    expect(sheet.autoFilter).toMatchObject({
+      from: { row: 1, column: 1 },
+      to: { row: 1, column: viewColumns.length },
+    });
+  });
+
+  it("round-trips through xlsx serialization (valid workbook bytes)", async () => {
+    const workbook = await buildRecordsViewWorkbook(reportFixture(), viewColumns);
+    const bytes = await workbook.xlsx.writeBuffer();
+    expect(bytes.byteLength).toBeGreaterThan(500);
+
+    const ExcelJS = (await import("exceljs")).default ?? (await import("exceljs"));
+    const reread = new ExcelJS.Workbook();
+    await reread.xlsx.load(bytes as ArrayBuffer);
+    const sheet = reread.getWorksheet(RECORDS_VIEW_SHEET);
+    expect(sheet?.getRow(2).getCell(2).value).toBe("WO-123");
   });
 });

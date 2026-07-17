@@ -142,6 +142,7 @@ import { WarrantyLookupManager } from "../components/WarrantyLookupManager";
 import {
   downloadReportAsXlsx,
   downloadReportAsExcel,
+  downloadRecordsViewXlsx,
   downloadRegionSummaryExcel,
   downloadEngineerProductivityExcel,
 } from "../lib/excelExport";
@@ -2296,6 +2297,34 @@ export default function DashboardPage() {
     download(exportRows ? reportWithRows(report, rowsToExport) : report);
   }
 
+  // WYSIWYG records export: exactly the rows and columns currently on screen —
+  // the user's column layout/order minus hidden columns, the active card scope,
+  // column filters, search, and WIP-aging sort — styled like the grid (blue
+  // header). filteredRows is the same array the records table renders.
+  function exportRecordsView() {
+    if (!report) {
+      return;
+    }
+
+    if (filteredRows.length === 0) {
+      setMessage("Export skipped: the active filters do not contain any records.");
+      return;
+    }
+
+    const incompleteCellCount = countManualRequiredCells(filteredRows);
+    if (
+      incompleteCellCount > 0 &&
+      !window.confirm(
+        `${incompleteCellCount} field(s) still require manual entry in this export. Export anyway?`,
+      )
+    ) {
+      setMessage("Export paused: complete highlighted manual-entry fields first.");
+      return;
+    }
+
+    void downloadRecordsViewXlsx(reportWithRows(report, filteredRows), visibleColumns);
+  }
+
   function openRecordsWithFilter({
     region,
     woOtcCode,
@@ -3420,7 +3449,7 @@ export default function DashboardPage() {
           onOpenUpload={() => setIsUploadDrawerOpen(true)}
           onOpenHistory={() => setIsHistoryPanelOpen(true)}
           onGenerateReport={() => void handleGenerate()}
-          onExportXlsx={() => exportReport(downloadReportAsXlsx)}
+          onExportXlsx={exportRecordsView}
           onExportCsv={() => exportReport((r) => downloadReportAsExcel(r, visibleColumns))}
           onLogout={handleLogout}
         />
@@ -4001,9 +4030,15 @@ export default function DashboardPage() {
                         <div className="downloadActionGroup">
                           <button
                             className="downloadBtn excelBtn"
-                            onClick={() => exportReport(downloadReportAsXlsx)}
+                            onClick={exportRecordsView}
                           >
                             Download Excel (.xlsx)
+                          </button>
+                          <button
+                            className="downloadBtn excelBtn"
+                            onClick={() => exportReport(downloadReportAsXlsx)}
+                          >
+                            Pivot Workbook (.xlsx)
                           </button>
                           <button
                             className="downloadBtn csvBtn"

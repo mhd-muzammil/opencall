@@ -139,7 +139,18 @@ function makeTemplate(): Uint8Array {
     `<?xml version="1.0"?><worksheet ${ns}><sheetData><row r="1"><c r="A1" t="inlineStr"><is><t>${label}</t></is></c></row></sheetData></worksheet>`;
 
   return zipSync({
-    "[Content_Types].xml": strToU8('<?xml version="1.0"?><Types/>'),
+    "[Content_Types].xml": strToU8(
+      '<?xml version="1.0"?><Types><Default Extension="xml" ContentType="application/xml"/></Types>',
+    ),
+    "xl/styles.xml": strToU8(
+      `<?xml version="1.0"?><styleSheet ${ns}>` +
+        `<fonts count="1"><font><sz val="11"/><name val="Calibri"/></font></fonts>` +
+        `<fills count="2"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill></fills>` +
+        `<borders count="1"><border><left/><right/><top/><bottom/><diagonal/></border></borders>` +
+        `<cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs>` +
+        `<cellXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/></cellXfs>` +
+        `</styleSheet>`,
+    ),
     "xl/workbook.xml": strToU8(
       `<?xml version="1.0"?><workbook ${ns}><sheets>` +
         `<sheet name="Sheet1" sheetId="1" r:id="rId1"/>` +
@@ -214,6 +225,55 @@ describe("buildPivotWorkbookBytes", () => {
     expect(() => buildPivotWorkbookBytes(broken, { sourceAoa })).toThrow(
       /Invalid pivot template/,
     );
+  });
+
+  it("adds a styled Records sheet as a new tab without touching existing sheets", () => {
+    const out = buildPivotWorkbookBytes(makeTemplate(), {
+      sourceAoa,
+      openAoa,
+      closedAoa,
+      records: {
+        name: "Records",
+        aoa: [
+          ["S.no", "Ticket ID", "Morning status"],
+          [1, "WO-1", "Scheduled"],
+          [2, "WO-2", ""],
+        ],
+        widths: [9, 14, 16],
+      },
+    });
+    const files = unzipSync(out);
+
+    // Registered everywhere Excel requires: part, content type, rel, sheet list.
+    const workbook = strFromU8(files["xl/workbook.xml"]!);
+    const rels = strFromU8(files["xl/_rels/workbook.xml.rels"]!);
+    const contentTypes = strFromU8(files["[Content_Types].xml"]!);
+    expect(workbook).toContain('<sheet name="Records" sheetId="5" r:id="rId5"/>');
+    expect(rels).toContain('Id="rId5"');
+    expect(rels).toContain('Target="worksheets/sheet5.xml"');
+    expect(contentTypes).toContain('PartName="/xl/worksheets/sheet5.xml"');
+
+    // The sheet mirrors the on-screen grid: styled header + body cells (even
+    // blank ones, so borders render), frozen header, autofilter, widths.
+    const records = strFromU8(files["xl/worksheets/sheet5.xml"]!);
+    expect(records).toContain('state="frozen"');
+    expect(records).toContain('<autoFilter ref="A1:C1"/>');
+    expect(records).toContain('<col min="2" max="2" width="14" customWidth="1"/>');
+    expect(records).toContain("Morning status");
+    expect(records).toMatch(/<c r="A1" s="\d+" t="inlineStr">/);
+    expect(records).toMatch(/<c r="C3" s="\d+"\/>/);
+
+    // Grid styles appended to styles.xml, existing records untouched.
+    const styles = strFromU8(files["xl/styles.xml"]!);
+    expect(styles).toContain('rgb="FF0EA5E9"');
+    expect(styles).toContain('rgb="FFCBD5E1"');
+    expect(styles).toContain('<fills count="3"');
+    expect(styles).toContain('<cellXfs count="3"');
+    expect(styles).toContain('patternType="gray125"');
+
+    // Everything else still behaves as before.
+    expect(strFromU8(files["xl/worksheets/sheet2.xml"]!)).toContain("PIVOT-KEEP-ME");
+    expect(strFromU8(files["xl/worksheets/sheet1.xml"]!)).toContain("WO-1");
   });
 });
 

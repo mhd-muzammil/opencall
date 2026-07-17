@@ -263,10 +263,16 @@ export function EditRecordModal({
               {/* RCA */}
               <div className="formField fullWidth">
                 <label htmlFor="modal-rca">RCA (Root Cause Analysis)</label>
+                {/* The "Manual Entry Required" sentinel renders as an empty box;
+                    the stored value only changes if the user actually types. */}
                 <textarea
                   id="modal-rca"
                   className="modalTextarea"
-                  value={String(draftOutput["RCA"] ?? "")}
+                  value={
+                    draftOutput["RCA"] === MANUAL_ENTRY_REQUIRED
+                      ? ""
+                      : String(draftOutput["RCA"] ?? "")
+                  }
                   onChange={(event) =>
                     setDraftOutput((current) => ({
                       ...current,
@@ -286,19 +292,19 @@ export function EditRecordModal({
 
             <div className="modalActions">
               <button
+                type="submit"
+                className="saveBtn"
+                disabled={savingSerialNo === editingSerialNo}
+              >
+                {savingSerialNo === editingSerialNo ? "Saving..." : "Save Entry"}
+              </button>
+              <button
                 type="button"
                 className="secondaryButton"
                 disabled={savingSerialNo === editingSerialNo}
                 onClick={cancelEditing}
               >
                 Cancel
-              </button>
-              <button
-                type="submit"
-                className="saveBtn"
-                disabled={savingSerialNo === editingSerialNo}
-              >
-                {savingSerialNo === editingSerialNo ? "Saving..." : "Save Entry"}
               </button>
             </div>
           </form>

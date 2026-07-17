@@ -332,7 +332,7 @@ describe("buildRecordsViewWorkbook", () => {
   const viewColumns = ["S.no", "Ticket ID", "RTPL status", "Engineer"];
 
   it("exports exactly the given columns in order, with on-screen header labels", async () => {
-    const workbook = await buildRecordsViewWorkbook(reportFixture(), viewColumns);
+    const workbook = await buildRecordsViewWorkbook(reportFixture().rows, viewColumns);
     const sheet = workbook.getWorksheet(RECORDS_VIEW_SHEET);
     if (!sheet) throw new Error("Records sheet missing");
 
@@ -351,7 +351,7 @@ describe("buildRecordsViewWorkbook", () => {
   });
 
   it("styles the header like the records grid: solid blue fill, dark bold font", async () => {
-    const workbook = await buildRecordsViewWorkbook(reportFixture(), viewColumns);
+    const workbook = await buildRecordsViewWorkbook(reportFixture().rows, viewColumns);
     const sheet = workbook.getWorksheet(RECORDS_VIEW_SHEET);
     if (!sheet) throw new Error("Records sheet missing");
 
@@ -370,7 +370,7 @@ describe("buildRecordsViewWorkbook", () => {
   });
 
   it("freezes the header row and applies an autofilter across the visible columns", async () => {
-    const workbook = await buildRecordsViewWorkbook(reportFixture(), viewColumns);
+    const workbook = await buildRecordsViewWorkbook(reportFixture().rows, viewColumns);
     const sheet = workbook.getWorksheet(RECORDS_VIEW_SHEET);
     if (!sheet) throw new Error("Records sheet missing");
 
@@ -382,7 +382,7 @@ describe("buildRecordsViewWorkbook", () => {
   });
 
   it("round-trips through xlsx serialization (valid workbook bytes)", async () => {
-    const workbook = await buildRecordsViewWorkbook(reportFixture(), viewColumns);
+    const workbook = await buildRecordsViewWorkbook(reportFixture().rows, viewColumns);
     const bytes = await workbook.xlsx.writeBuffer();
     expect(bytes.byteLength).toBeGreaterThan(500);
 

@@ -436,8 +436,14 @@ async function downloadDataSheetsWorkbook(
 // + WO OTC CODE). The PivotTable lives in a prebuilt template; here we inject
 // today's open calls as its data source (and as the verbatim "Today Open Call"
 // / "Today Closed Calls" sheets) and let Excel rebuild the cache on open.
+//
+// When `view` is given, a styled "Records" sheet is added to the same workbook:
+// the records table exactly as the employee sees it (their column layout and
+// filtered/sorted rows), with the on-screen blue header — one file carrying
+// both the working view and the exact old pivot.
 export async function downloadReportAsXlsx(
   report: GeneratedReportResponse,
+  view?: RecordsViewInput,
 ): Promise<void> {
   const { openRows, closedRows } = splitWorkbookRows(report);
   const openCallAoa = buildReportExportMatrixForRows(openRows);
@@ -448,10 +454,20 @@ export async function downloadReportAsXlsx(
 
   try {
     const templateBytes = await fetchPivotTemplate();
+    const recordsView = view ? buildRecordsViewMatrix(view.rows, view.columns) : null;
     const workbookBytes = buildPivotWorkbookBytes(templateBytes, {
       sourceAoa: openCallAoa,
       openAoa: openCallAoa,
       closedAoa: closedCallsAoa,
+      ...(recordsView
+        ? {
+            records: {
+              name: RECORDS_VIEW_SHEET,
+              aoa: recordsView.aoa,
+              widths: recordsView.widths,
+            },
+          }
+        : {}),
     });
     triggerDownload(workbookBytes, filename, XLSX_MIME);
   } catch (error) {
@@ -459,7 +475,11 @@ export async function downloadReportAsXlsx(
       `Native PivotTable template (${PIVOT_TEMPLATE_URL}) unavailable; exporting data sheets only.`,
       error,
     );
-    await downloadDataSheetsWorkbook(openCallAoa, closedCallsAoa, filename);
+    if (view) {
+      await downloadRecordsFallbackWorkbook(view, openCallAoa, closedCallsAoa, filename);
+    } else {
+      await downloadDataSheetsWorkbook(openCallAoa, closedCallsAoa, filename);
+    }
   }
 }
 
@@ -474,16 +494,45 @@ const RECORDS_HEADER_FONT_ARGB = "FF0F172A";
 const RECORDS_GRID_BORDER_ARGB = "FFCBD5E1";
 export const RECORDS_VIEW_SHEET = "Records";
 
+type ReportRows = GeneratedReportResponse["rows"];
+
+// The rows + columns the employee is actually looking at on the records page.
+export interface RecordsViewInput {
+  rows: ReportRows;
+  columns: readonly string[];
+}
+
+// Header + body matrix of the on-screen view (sequential S.no, "Morning
+// status" relabel, "Entry" placeholders), plus content-fitted column widths.
+export function buildRecordsViewMatrix(
+  rows: ReportRows,
+  columns: readonly string[],
+): { aoa: ExportCellValue[][]; widths: number[] } {
+  const headers: ExportCellValue[] = columns.map((c) => EXPORT_HEADER_LABEL[c] ?? c);
+  const snoIndex = columns.indexOf("S.no");
+  const body = rows.map((row, index) =>
+    withSequentialSerial(mapRowToStandardExport(row, columns), index, snoIndex),
+  );
+  const widths = columns.map((_, index) => {
+    let maxLen = String(headers[index] ?? "").length;
+    for (const cells of body) {
+      const len = String(cells[index] ?? "").length;
+      if (len > maxLen) {
+        maxLen = len;
+      }
+    }
+    return Math.min(Math.max(maxLen + 3, 9), 44);
+  });
+  return { aoa: [headers, ...body], widths };
+}
+
 export async function buildRecordsViewWorkbook(
-  report: GeneratedReportResponse,
+  rows: ReportRows,
   columns: readonly string[] = STANDARD_EXPORT_COLUMNS,
 ): Promise<ExcelJSNS.Workbook> {
   const ExcelJS = await loadExcelJs();
-  const headers = columns.map((c) => EXPORT_HEADER_LABEL[c] ?? c);
-  const snoIndex = columns.indexOf("S.no");
-  const body = report.rows.map((row, index) =>
-    withSequentialSerial(mapRowToStandardExport(row, columns), index, snoIndex),
-  );
+  const { aoa, widths } = buildRecordsViewMatrix(rows, columns);
+  const [headers = [], ...body] = aoa;
 
   const workbook = new ExcelJS.Workbook();
   const sheet = workbook.addWorksheet(RECORDS_VIEW_SHEET, {
@@ -524,15 +573,8 @@ export async function buildRecordsViewWorkbook(
 
   // Width each column to its longest value (clamped) so the sheet opens
   // readable without a manual column resize.
-  columns.forEach((_, index) => {
-    let maxLen = String(headers[index] ?? "").length;
-    for (const cells of body) {
-      const len = String(cells[index] ?? "").length;
-      if (len > maxLen) {
-        maxLen = len;
-      }
-    }
-    sheet.getColumn(index + 1).width = Math.min(Math.max(maxLen + 3, 9), 44);
+  widths.forEach((width, index) => {
+    sheet.getColumn(index + 1).width = width;
   });
 
   sheet.autoFilter = {
@@ -543,14 +585,26 @@ export async function buildRecordsViewWorkbook(
   return workbook;
 }
 
-export async function downloadRecordsViewXlsx(
-  report: GeneratedReportResponse,
-  columns: readonly string[] = STANDARD_EXPORT_COLUMNS,
+// Fallback for the merged export when the pivot template can't be fetched: the
+// styled Records sheet plus plain Open/Closed data sheets (no native pivot).
+async function downloadRecordsFallbackWorkbook(
+  view: RecordsViewInput,
+  openAoa: ExportCellValue[][],
+  closedAoa: ExportCellValue[][],
+  filename: string,
 ): Promise<void> {
-  const workbook = await buildRecordsViewWorkbook(report, columns);
+  const workbook = await buildRecordsViewWorkbook(view.rows, view.columns);
+  for (const [name, aoa] of [
+    [OPEN_CALL_SHEET, openAoa],
+    [CLOSED_CALLS_SHEET, closedAoa],
+  ] as const) {
+    const sheet = workbook.addWorksheet(name);
+    for (const cells of aoa) {
+      sheet.addRow([...cells]);
+    }
+  }
   const buffer = await workbook.xlsx.writeBuffer();
-  const date = report.reportDate || new Date().toISOString().split("T")[0];
-  triggerDownload(new Uint8Array(buffer), `Records_${date}.xlsx`, XLSX_MIME);
+  triggerDownload(new Uint8Array(buffer), filename, XLSX_MIME);
 }
 
 export async function downloadRegionSummaryExcel(

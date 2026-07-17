@@ -66,18 +66,24 @@ export function escapeXml(value: string): string {
     .replace(/'/g, "&apos;");
 }
 
-function cellXml(ref: string, value: PivotCellValue): string {
+function cellXml(ref: string, value: PivotCellValue, styleId?: number): string {
+  const s = styleId === undefined ? "" : ` s="${styleId}"`;
   if (value === "" || value === null || value === undefined) {
-    return "";
+    // A styled empty cell still needs to exist so its borders/fill render.
+    return styleId === undefined ? "" : `<c r="${ref}"${s}/>`;
   }
   if (typeof value === "number") {
-    return Number.isFinite(value) ? `<c r="${ref}"><v>${value}</v></c>` : "";
+    return Number.isFinite(value)
+      ? `<c r="${ref}"${s}><v>${value}</v></c>`
+      : styleId === undefined
+        ? ""
+        : `<c r="${ref}"${s}/>`;
   }
   if (typeof value === "boolean") {
-    return `<c r="${ref}" t="b"><v>${value ? 1 : 0}</v></c>`;
+    return `<c r="${ref}"${s} t="b"><v>${value ? 1 : 0}</v></c>`;
   }
   // Inline strings keep us from having to touch the shared-strings table.
-  return `<c r="${ref}" t="inlineStr"><is><t xml:space="preserve">${escapeXml(value)}</t></is></c>`;
+  return `<c r="${ref}"${s} t="inlineStr"><is><t xml:space="preserve">${escapeXml(value)}</t></is></c>`;
 }
 
 // Render a full worksheet part (`<worksheet>...`) from an array-of-arrays.
@@ -122,6 +128,209 @@ export function buildSheetXml(aoa: PivotAoa): string {
     `<sheetData>${body}</sheetData>` +
     ignoredErrors +
     `</worksheet>`
+  );
+}
+
+// ——— Styled records sheet (WYSIWYG view inside the pivot workbook) ————————
+// Colors mirror the on-screen records grid: solid blue header with dark bold
+// text, slate gridline borders.
+const RECORDS_HEADER_FILL_RGB = "FF0EA5E9";
+const RECORDS_HEADER_FONT_RGB = "FF0F172A";
+const RECORDS_GRID_BORDER_RGB = "FFCBD5E1";
+
+export interface StyledSheetOptions {
+  headerXf: number;
+  bodyXf: number;
+  widths: readonly number[];
+}
+
+// Render a fully-styled worksheet part: every cell in the used range is written
+// (so borders show on blanks), the header row is frozen, and an autofilter
+// spans the header — mirroring the app's sticky header + per-column filters.
+export function buildStyledSheetXml(aoa: PivotAoa, opts: StyledSheetOptions): string {
+  const rowCount = aoa.length;
+  const colCount = aoa.reduce((max, row) => Math.max(max, row.length), 0);
+  const usedRange = rangeRef(rowCount, colCount);
+
+  const cols = opts.widths
+    .slice(0, colCount)
+    .map(
+      (width, i) =>
+        `<col min="${i + 1}" max="${i + 1}" width="${width}" customWidth="1"/>`,
+    )
+    .join("");
+
+  let body = "";
+  for (let r = 0; r < rowCount; r += 1) {
+    const row = aoa[r] ?? [];
+    const styleId = r === 0 ? opts.headerXf : opts.bodyXf;
+    let cells = "";
+    for (let c = 0; c < colCount; c += 1) {
+      cells += cellXml(`${columnLetter(c)}${r + 1}`, row[c] ?? "", styleId);
+    }
+    const heightAttr = r === 0 ? ` ht="24" customHeight="1"` : "";
+    body += `<row r="${r + 1}"${heightAttr}>${cells}</row>`;
+  }
+
+  const headerRange = `A1:${columnLetter(Math.max(colCount - 1, 0))}1`;
+  const ignoredErrors =
+    rowCount >= 1 && colCount >= 1
+      ? `<ignoredErrors><ignoredError sqref="${usedRange}" numberStoredAsText="1"/></ignoredErrors>`
+      : "";
+
+  return (
+    `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>` +
+    `<worksheet xmlns="${SHEET_NS}" xmlns:r="${REL_NS}">` +
+    `<dimension ref="${usedRange}"/>` +
+    `<sheetViews><sheetView workbookViewId="0">` +
+    `<pane ySplit="1" topLeftCell="A2" activePane="bottomLeft" state="frozen"/>` +
+    `</sheetView></sheetViews>` +
+    `<sheetFormatPr defaultRowHeight="15"/>` +
+    (cols ? `<cols>${cols}</cols>` : "") +
+    `<sheetData>${body}</sheetData>` +
+    `<autoFilter ref="${headerRange}"/>` +
+    ignoredErrors +
+    `</worksheet>`
+  );
+}
+
+// Append the records-grid font/fill/border and two cell formats (header, body)
+// to the template's styles.xml, returning the new cellXf indices. Existing
+// style records are untouched, so every other sheet keeps its formatting.
+export function appendRecordsStyles(stylesXml: string): {
+  xml: string;
+  headerXf: number;
+  bodyXf: number;
+} {
+  const append = (
+    xml: string,
+    tag: string,
+    inner: string,
+    added: number,
+  ): { xml: string; firstIndex: number } => {
+    const countRe = new RegExp(`<${tag} count="(\\d+)"`, "i");
+    const match = xml.match(countRe);
+    if (!match?.[1]) {
+      throw new Error(`Pivot template styles.xml is missing <${tag} count>.`);
+    }
+    const count = Number(match[1]);
+    let out = xml.replace(countRe, `<${tag} count="${count + added}"`);
+    out = out.replace(new RegExp(`</${tag}>`, "i"), `${inner}</${tag}>`);
+    return { xml: out, firstIndex: count };
+  };
+
+  const font = append(
+    stylesXml,
+    "fonts",
+    `<font><b/><sz val="11"/><color rgb="${RECORDS_HEADER_FONT_RGB}"/><name val="Calibri"/></font>`,
+    1,
+  );
+  const fill = append(
+    font.xml,
+    "fills",
+    `<fill><patternFill patternType="solid"><fgColor rgb="${RECORDS_HEADER_FILL_RGB}"/><bgColor indexed="64"/></patternFill></fill>`,
+    1,
+  );
+  const border = append(
+    fill.xml,
+    "borders",
+    `<border><left style="thin"><color rgb="${RECORDS_GRID_BORDER_RGB}"/></left>` +
+      `<right style="thin"><color rgb="${RECORDS_GRID_BORDER_RGB}"/></right>` +
+      `<top style="thin"><color rgb="${RECORDS_GRID_BORDER_RGB}"/></top>` +
+      `<bottom style="thin"><color rgb="${RECORDS_GRID_BORDER_RGB}"/></bottom>` +
+      `<diagonal/></border>`,
+    1,
+  );
+  const xfs = append(
+    border.xml,
+    "cellXfs",
+    `<xf numFmtId="0" fontId="${font.firstIndex}" fillId="${fill.firstIndex}" borderId="${border.firstIndex}" xfId="0" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment vertical="center"/></xf>` +
+      `<xf numFmtId="0" fontId="0" fillId="0" borderId="${border.firstIndex}" xfId="0" applyBorder="1"/>`,
+    2,
+  );
+
+  return { xml: xfs.xml, headerXf: xfs.firstIndex, bodyXf: xfs.firstIndex + 1 };
+}
+
+const CONTENT_TYPES_PART = "[Content_Types].xml";
+const STYLES_PART = "xl/styles.xml";
+const WORKSHEET_CONTENT_TYPE =
+  "application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml";
+
+// Register a brand-new worksheet part in the workbook: ZIP part, content-type
+// override, workbook relationship, and the <sheet> entry (appended last, so
+// existing sheet indices — and anything referencing them — are unchanged).
+export function addWorksheetPart(
+  files: Unzipped,
+  sheetName: string,
+  sheetXml: string,
+): void {
+  const decoder = new TextDecoder();
+  const encoder = new TextEncoder();
+
+  const workbookXml = decoder.decode(files[WORKBOOK_PART] ?? new Uint8Array());
+  const relsXml = decoder.decode(files[WORKBOOK_RELS_PART] ?? new Uint8Array());
+  const contentTypesXml = decoder.decode(files[CONTENT_TYPES_PART] ?? new Uint8Array());
+  if (!workbookXml || !relsXml || !contentTypesXml) {
+    throw new Error("Invalid workbook: missing workbook.xml, rels, or content types.");
+  }
+
+  // Fresh part path / relationship id / sheetId, all past the existing maxima.
+  let partNo = 1;
+  while (files[`xl/worksheets/sheet${partNo}.xml`]) {
+    partNo += 1;
+  }
+  const partPath = `xl/worksheets/sheet${partNo}.xml`;
+
+  let maxRid = 0;
+  for (const match of relsXml.matchAll(/\bId="rId(\d+)"/gi)) {
+    maxRid = Math.max(maxRid, Number(match[1]));
+  }
+  const rid = `rId${maxRid + 1}`;
+
+  let maxSheetId = 0;
+  for (const match of workbookXml.matchAll(/\bsheetId="(\d+)"/gi)) {
+    maxSheetId = Math.max(maxSheetId, Number(match[1]));
+  }
+
+  // Every insertion must land — a silent no-op would produce a workbook Excel
+  // rejects. Throwing here lets the exporter fall back to a plain workbook.
+  const replaceOnce = (
+    xml: string,
+    re: RegExp,
+    replacement: string,
+    what: string,
+  ): string => {
+    if (!re.test(xml)) {
+      throw new Error(`Invalid workbook: missing ${what}.`);
+    }
+    return xml.replace(re, replacement);
+  };
+
+  files[partPath] = encoder.encode(sheetXml);
+  files[CONTENT_TYPES_PART] = encoder.encode(
+    replaceOnce(
+      contentTypesXml,
+      /<\/Types>/i,
+      `<Override PartName="/${partPath}" ContentType="${WORKSHEET_CONTENT_TYPE}"/></Types>`,
+      "</Types> in [Content_Types].xml",
+    ),
+  );
+  files[WORKBOOK_RELS_PART] = encoder.encode(
+    replaceOnce(
+      relsXml,
+      /<\/Relationships>/i,
+      `<Relationship Id="${rid}" Type="${REL_NS}/worksheet" Target="worksheets/sheet${partNo}.xml"/></Relationships>`,
+      "</Relationships> in workbook rels",
+    ),
+  );
+  files[WORKBOOK_PART] = encoder.encode(
+    replaceOnce(
+      workbookXml,
+      /<\/(\w+:)?sheets>/i,
+      `<sheet name="${escapeXml(sheetName)}" sheetId="${maxSheetId + 1}" r:id="${rid}"/></$1sheets>`,
+      "</sheets> in workbook.xml",
+    ),
   );
 }
 
@@ -207,6 +416,13 @@ export interface PivotWorkbookInput {
   // Optional verbatim data sheets, written only if the template contains them.
   openAoa?: PivotAoa;
   closedAoa?: PivotAoa;
+  // Optional styled records-view sheet (the user's on-screen table), added as a
+  // new tab so the template's own sheets — pivot included — are untouched.
+  records?: {
+    name: string;
+    aoa: PivotAoa;
+    widths: readonly number[];
+  };
 }
 
 function findCacheDefinitionPath(files: Unzipped): string | undefined {
@@ -283,6 +499,30 @@ export function buildPivotWorkbookBytes(
   // 3. Verbatim data sheets (only when the template carries them).
   writeSheet(OPEN_CALL_SHEET, input.openAoa);
   writeSheet(CLOSED_CALLS_SHEET, input.closedAoa);
+
+  // 4. Styled records-view sheet: register the grid styles in styles.xml, then
+  //    add (or overwrite) the sheet. Existing style records keep their indices,
+  //    so no other sheet's formatting moves.
+  if (input.records) {
+    const stylesBytes = files[STYLES_PART];
+    if (!stylesBytes) {
+      throw new Error("Invalid pivot template: missing xl/styles.xml.");
+    }
+    const styles = appendRecordsStyles(decoder.decode(stylesBytes));
+    files[STYLES_PART] = encoder.encode(styles.xml);
+
+    const sheetXml = buildStyledSheetXml(input.records.aoa, {
+      headerXf: styles.headerXf,
+      bodyXf: styles.bodyXf,
+      widths: input.records.widths,
+    });
+    const existingPath = sheetPaths.get(input.records.name);
+    if (existingPath) {
+      files[existingPath] = encoder.encode(sheetXml);
+    } else {
+      addWorksheetPart(files, input.records.name, sheetXml);
+    }
+  }
 
   return zipSync(files, { level: 6 });
 }

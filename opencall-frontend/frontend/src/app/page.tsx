@@ -2971,48 +2971,6 @@ export default function DashboardPage() {
       >
         {isRecordsTableMaximized ? (
           <div className="recordsTableZoneBar" style={{ flexWrap: "wrap", gap: "10px" }}>
-            {/* One-click segment chips: each sets the Segment column filter to
-                that single value (click again to clear). The Segment column's
-                own dropdown still allows multi-select on top. */}
-            <div className="regionFilterTabs" aria-label="Records segment filter" style={{ margin: 0 }}>
-              {(() => {
-                const segmentFilter = colFilters.filters["Segment"];
-                const activeSegment =
-                  segmentFilter && segmentFilter.size === 1
-                    ? Array.from(segmentFilter)[0]
-                    : null;
-                const segmentEntries = (
-                  colFilters.uniqueValuesMap.get("Segment") ?? []
-                ).filter((entry) => entry.value.toLowerCase() !== "(blank)");
-
-                return (
-                  <>
-                    <button
-                      type="button"
-                      className={`regionFilterTab ${!colFilters.isColumnFiltered("Segment") ? "active" : ""}`}
-                      onClick={() => colFilters.selectAll("Segment")}
-                    >
-                      All
-                    </button>
-                    {segmentEntries.map((entry) => (
-                      <button
-                        key={entry.value}
-                        type="button"
-                        className={`regionFilterTab ${activeSegment === entry.value ? "active" : ""}`}
-                        title={`Show only ${entry.value} records`}
-                        onClick={() =>
-                          activeSegment === entry.value
-                            ? colFilters.selectAll("Segment")
-                            : colFilters.setColumnFilter("Segment", new Set([entry.value]))
-                        }
-                      >
-                        {entry.value} <strong>{entry.count}</strong>
-                      </button>
-                    ))}
-                  </>
-                );
-              })()}
-            </div>
             <div className="recordsSearchBar recordsTableZoneSearch">
               <input
                 type="search"

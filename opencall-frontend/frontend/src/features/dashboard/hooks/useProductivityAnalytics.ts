@@ -10,16 +10,15 @@ import {
   hasRequestToCancelFlexStatus,
   isRecordsPageVisibleRow,
 } from "../../../lib/reportDashboardAnalytics";
-import type { GeneratedReportResponse } from "../../../lib/apiClient";
+import type {
+  GeneratedReportResponse,
+  RegionEodStateResponse,
+} from "../../../lib/apiClient";
 import { MANUAL_ENTRY_REQUIRED } from "../constants";
-import { canonicalEngineerName } from "../engineerAliases";
 import {
-  addToProductivityCounts,
-  classifyProductivityStatus,
-  effectiveProductivityStatus,
-  emptyProductivityBucketCounts,
+  computeEngineerProductivity,
+  mergeEngineerProductivityResults,
 } from "../utils/engineerProductivity";
-import { ASP_CODE_REGION_MAP } from "@opencall/shared";
 
 // "DD-MM-YYYY" (dropdown format) -> "YYYY-MM-DD" (report date format).
 function dmyToIso(dmy: string): string {
@@ -50,6 +49,12 @@ export function useProductivityAnalytics(params: {
   productivityDayReport?: GeneratedReportResponse | null;
   /** Days that actually have a report (ISO dates) — drives the date dropdown. */
   historyReportDates?: readonly string[];
+  /**
+   * Per-region Final-EOD state for the day on display. A CLOSED region renders
+   * from its frozen snapshot; the other regions stay live. Null while loading
+   * or when no day-scoped view is active.
+   */
+  eodState?: RegionEodStateResponse | null;
 }) {
   const {
     report,
@@ -65,6 +70,7 @@ export function useProductivityAnalytics(params: {
     productivityToDate = "",
     productivityDayReport = null,
     historyReportDates = [],
+    eodState = null,
   } = params;
 
   const kpiBaseRows = useMemo(() => {
@@ -384,94 +390,61 @@ export function useProductivityAnalytics(params: {
       });
     }
 
-    // 4. Group by unique engineers. A row counts when BOTH the engineer and a
-    // status (Morning or Evening) are set — that is the engineer's Assigned
-    // load for the day, carried or fresh, so it is stable across mid-day
-    // re-uploads. The OUTCOME buckets (Closed/Part/UO/CX -> Attended) come
-    // from the Evening column only: Evening resets every morning, so outcomes
-    // are that day's entries by definition and yesterday's carried statuses
-    // can never inflate them.
-    const engineerName = (r: typeof filteredRowsForProd[number]) =>
-      canonicalEngineerName(String(r.output.Engineer ?? ""));
+    // 4. Compute per-engineer buckets via the shared day-scoped calculation —
+    // the SAME function the backend Final-EOD freeze runs, so live and frozen
+    // numbers can never diverge. Assigned = the day's plan (still-Scheduled
+    // with an engineer + worked today); outcomes come from the Evening (today)
+    // status or a same-day closure ONLY — the carried Morning status never
+    // feeds an outcome, so stale carried statuses can't inflate Attended.
+    //
+    // Per-region Final EOD overlay: a CLOSED region renders from its frozen
+    // snapshot and its live rows are excluded, so edits made after the close
+    // no longer move that region's day. Other regions stay live. The overlay
+    // only applies when the EOD state is for the day on display and the view
+    // is day-scoped (Month/Range cohorts span many days).
+    const overlayActive =
+      !!eodState &&
+      eodState.workingDate === sourceReport.reportDate &&
+      productivityFilterType !== "Specific Month" &&
+      productivityFilterType !== "Date Range";
 
-    interface EngineerAccumulator {
-      casingCounts: Map<string, number>;
-      regionCode: string;
-      counts: ReturnType<typeof emptyProductivityBucketCounts>;
-    }
+    const frozenRegions = overlayActive && eodState
+      ? eodState.regions.filter(
+          (region) => region.status === "CLOSED" && region.snapshot !== null,
+        )
+      : [];
+    const frozenAspCodes = new Set(
+      frozenRegions.map((region) => region.regionCode.trim().toUpperCase()),
+    );
 
-    const engineersByKey = new Map<string, EngineerAccumulator>();
-    for (const r of filteredRowsForProd) {
-      // Resolve the raw Engineer value to its canonical name: apply manual
-      // aliases ("Lava Kumar" -> "Lava") then group case-insensitively so pure
-      // casing variants ("sriram"/"Sriram") merge too.
-      const name = engineerName(r);
-      if (!name || name === MANUAL_ENTRY_REQUIRED) continue;
+    const liveRows = frozenAspCodes.size
+      ? filteredRowsForProd.filter(
+          (row) =>
+            !frozenAspCodes.has(
+              String(row.output["Work Location"] ?? "").trim().toUpperCase(),
+            ),
+        )
+      : filteredRowsForProd;
 
-      // Most calls close by DISAPPEARING from the Flex WIP (closed in HP's
-      // system) — the day's same-day-closed rows. Those are the engineer's
-      // completions regardless of what the status columns say. Otherwise the
-      // bucket comes from the Evening status when present, else the Morning.
-      const isClosedToday = r.carryForward.closedSyntheticRow;
-      const status = effectiveProductivityStatus(r.output);
-      if (!isClosedToday && !status) continue;
+    const liveResult = computeEngineerProductivity(liveRows);
 
-      const bucket = isClosedToday
-        ? "CLOSED"
-        : (classifyProductivityStatus(status) ?? "SCHEDULED");
+    // Frozen snapshots respect the region filter the live rows already had.
+    const targetRegion =
+      selectedRegion && selectedRegion !== "ALL"
+        ? selectedRegion.trim().toUpperCase()
+        : null;
+    const snapshotResults = frozenRegions
+      .filter(
+        (region) =>
+          !targetRegion ||
+          region.regionCode.trim().toUpperCase() === targetRegion,
+      )
+      .flatMap((region) => (region.snapshot ? [region.snapshot] : []));
 
-      const key = name.toLowerCase();
-      let engineer = engineersByKey.get(key);
-      if (!engineer) {
-        engineer = {
-          casingCounts: new Map(),
-          regionCode: String(r.output["Work Location"] ?? "").trim(),
-          counts: emptyProductivityBucketCounts(),
-        };
-        engineersByKey.set(key, engineer);
-      }
-      engineer.casingCounts.set(name, (engineer.casingCounts.get(name) ?? 0) + 1);
-
-      const ticketId = String(r.output["Ticket ID"] ?? "").trim() || String(r.serialNo);
-      addToProductivityCounts(engineer.counts, bucket, ticketId);
-    }
-
-    const list = Array.from(engineersByKey.values()).map((engineer) => {
-      // Most frequent spelling wins; ties keep the first seen (Map is ordered).
-      let engName = "";
-      let bestCount = -1;
-      for (const [casing, count] of engineer.casingCounts) {
-        if (count > bestCount) {
-          bestCount = count;
-          engName = casing;
-        }
-      }
-
-      const regionCode = engineer.regionCode;
-      const regionName = ASP_CODE_REGION_MAP[regionCode as keyof typeof ASP_CODE_REGION_MAP] || regionCode || "N/A";
-
-      return {
-        name: engName,
-        regionCode,
-        regionName,
-        assigned: engineer.counts.assigned,
-        assignedTickets: engineer.counts.assignedTickets,
-        attended: engineer.counts.attended,
-        attendedTickets: engineer.counts.attendedTickets,
-        closed: engineer.counts.closed,
-        closedTickets: engineer.counts.closedTickets,
-        partOrdered: engineer.counts.partOrdered,
-        partOrderedTickets: engineer.counts.partOrderedTickets,
-        underObservation: engineer.counts.underObservation,
-        underObservationTickets: engineer.counts.underObservationTickets,
-        cxReschedule: engineer.counts.cxReschedule,
-        cxRescheduleTickets: engineer.counts.cxRescheduleTickets,
-        engineerDelay: engineer.counts.engineerDelay,
-        engineerDelayTickets: engineer.counts.engineerDelayTickets,
-      };
-    }).sort((a, b) => b.attended - a.attended || a.name.localeCompare(b.name));
-
-    const totalAttended = list.reduce((sum, item) => sum + item.attended, 0);
+    const { list, totalAttended } = mergeEngineerProductivityResults([
+      liveResult,
+      ...snapshotResults,
+    ]);
 
     return { list, totalAttended, monthsList, datesList, todayStr };
   }, [
@@ -483,6 +456,7 @@ export function useProductivityAnalytics(params: {
     productivityToDate,
     productivityDayReport,
     historyReportDates,
+    eodState,
   ]);
 
   const productivityDateLabel = useMemo(() => {

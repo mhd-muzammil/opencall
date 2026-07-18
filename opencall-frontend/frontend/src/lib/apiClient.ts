@@ -1,10 +1,15 @@
 export type {
   ApiErrorBody,
+  CloseRegionEodResponse,
   DatabaseHealthResponse,
   EditedReportRowResponse,
   GeneratedReportResponse,
   LoginResponse,
   MatchPreviewResponse,
+  RegionEodStateEntry,
+  RegionEodStateResponse,
+  RegionEodStatus,
+  ReopenRegionEodResponse,
   ReportHistorySession,
   ReportRow,
   RtplStatusChange,
@@ -56,3 +61,6 @@ export const deactivateAdminRtplStatus = webApiClient.deactivateAdminRtplStatus;
 export const reactivateAdminRtplStatus = webApiClient.reactivateAdminRtplStatus;
 export const deleteAdminRtplStatus = webApiClient.deleteAdminRtplStatus;
 export const getRtplStatusesDropdown = webApiClient.getRtplStatusesDropdown;
+export const getRegionEodState = webApiClient.getRegionEodState;
+export const closeRegionEod = webApiClient.closeRegionEod;
+export const reopenRegionEod = webApiClient.reopenRegionEod;

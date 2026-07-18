@@ -19,6 +19,11 @@ export function ProductivityPage({
   regionsList,
   isSuperAdmin,
   openRecordsWithFilter,
+  eodRegions = [],
+  eodWorkingDate = null,
+  eodBusyRegionId = null,
+  onCloseRegionEod,
+  onReopenRegionEod,
 }: Readonly<{
   selectedRegion: string | null;
   setSelectedRegion: Dispatch<SetStateAction<string | null>>;
@@ -58,6 +63,21 @@ export function ProductivityPage({
   productivityDateLabel: string;
   regionsList: Array<{ aspCode: string; regionName: string; count: number }>;
   isSuperAdmin: boolean;
+  /** Per-region Final-EOD chips for the day on display (empty = hide the bar). */
+  eodRegions?: ReadonlyArray<{
+    regionId: string;
+    regionCode: string;
+    regionName: string;
+    status: "OPEN" | "CLOSED";
+    closedAt: string | null;
+    closedBy: string | null;
+    canClose: boolean;
+    canReopen: boolean;
+  }>;
+  eodWorkingDate?: string | null;
+  eodBusyRegionId?: string | null;
+  onCloseRegionEod?: (regionId: string, regionName: string) => void;
+  onReopenRegionEod?: (regionId: string, regionName: string) => void;
   openRecordsWithFilter: (args: Readonly<{
     region?: string | null;
     woOtcCode?: string | null;
@@ -109,6 +129,21 @@ export function ProductivityPage({
   }, [filteredList]);
 
   const showRegionColumn = !selectedRegion || selectedRegion === "ALL";
+
+  // The Final-EOD bar only makes sense on a day-scoped view (Today / Specific
+  // Date / All History of the current report) — Month and Range cohorts span
+  // many days and have no single day boundary.
+  const showEodBar =
+    eodRegions.length > 0 &&
+    productivityFilterType !== "Specific Month" &&
+    productivityFilterType !== "Date Range";
+
+  const formatClosedAt = (closedAt: string | null): string => {
+    if (!closedAt) return "";
+    const parsed = new Date(closedAt);
+    if (Number.isNaN(parsed.getTime())) return closedAt;
+    return parsed.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  };
 
   const renderClickableCell = (
     count: number,
@@ -292,6 +327,106 @@ export function ProductivityPage({
           </button>
         </div>
       </div>
+
+      {/* Per-region Final EOD day boundary */}
+      {showEodBar && (
+        <div style={{
+          display: "flex",
+          flexWrap: "wrap",
+          gap: "10px",
+          alignItems: "center",
+          padding: "12px 14px",
+          background: "#f8fafc",
+          border: "1px solid var(--border)",
+          borderRadius: "12px"
+        }}>
+          <span style={{ fontSize: "12px", fontWeight: "700", color: "#475569", textTransform: "uppercase", letterSpacing: "0.5px" }}>
+            🔒 Region Day Status{eodWorkingDate ? ` (${eodWorkingDate})` : ""}:
+          </span>
+          {eodRegions.map((region) => {
+            const isClosed = region.status === "CLOSED";
+            const isBusy = eodBusyRegionId === region.regionId;
+            return (
+              <div
+                key={region.regionId}
+                style={{
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: "8px",
+                  padding: "6px 10px",
+                  borderRadius: "999px",
+                  border: `1px solid ${isClosed ? "#fecaca" : "#bbf7d0"}`,
+                  background: isClosed ? "#fef2f2" : "#f0fdf4",
+                  fontSize: "12px",
+                  fontWeight: "600",
+                  color: isClosed ? "#991b1b" : "#166534",
+                }}
+                title={
+                  isClosed
+                    ? `Frozen — edits after the close count toward ${region.regionName}'s next working day`
+                    : `${region.regionName} is live; Final EOD freezes today's numbers`
+                }
+              >
+                <span>{region.regionName}</span>
+                <span style={{
+                  padding: "1px 8px",
+                  borderRadius: "999px",
+                  background: isClosed ? "#dc2626" : "#16a34a",
+                  color: "#ffffff",
+                  fontSize: "10px",
+                  fontWeight: "800",
+                  letterSpacing: "0.5px",
+                }}>
+                  {isClosed ? "CLOSED" : "LIVE"}
+                </span>
+                {isClosed && (
+                  <span style={{ fontWeight: "500", color: "#7f1d1d" }}>
+                    Closed{region.closedAt ? ` at ${formatClosedAt(region.closedAt)}` : ""}{region.closedBy ? ` by ${region.closedBy}` : ""}
+                  </span>
+                )}
+                {!isClosed && region.canClose && onCloseRegionEod && (
+                  <button
+                    type="button"
+                    disabled={isBusy}
+                    onClick={() => onCloseRegionEod(region.regionId, region.regionName)}
+                    style={{
+                      border: "none",
+                      borderRadius: "6px",
+                      padding: "3px 10px",
+                      background: isBusy ? "#94a3b8" : "linear-gradient(135deg, #dc2626, #b91c1c)",
+                      color: "#ffffff",
+                      fontSize: "11px",
+                      fontWeight: "700",
+                      cursor: isBusy ? "wait" : "pointer",
+                    }}
+                  >
+                    {isBusy ? "Closing…" : "Final EOD"}
+                  </button>
+                )}
+                {isClosed && region.canReopen && onReopenRegionEod && (
+                  <button
+                    type="button"
+                    disabled={isBusy}
+                    onClick={() => onReopenRegionEod(region.regionId, region.regionName)}
+                    style={{
+                      border: "1px solid #cbd5e1",
+                      borderRadius: "6px",
+                      padding: "3px 10px",
+                      background: isBusy ? "#94a3b8" : "#ffffff",
+                      color: "#334155",
+                      fontSize: "11px",
+                      fontWeight: "700",
+                      cursor: isBusy ? "wait" : "pointer",
+                    }}
+                  >
+                    {isBusy ? "Reopening…" : "Reopen"}
+                  </button>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
 
       {/* KPI Stats Cards */}
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: "16px" }}>

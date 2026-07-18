@@ -310,3 +310,39 @@ export interface DropdownRtplStatus {
   category: string;
 }
 
+
+// ---- Per-region Final-EOD day boundary (engineer productivity) ----
+
+export type {
+  EngineerProductivityResult,
+  RegionEodStateEntry,
+  RegionEodStateResponse,
+  RegionEodStatus,
+} from "@opencall/shared";
+
+import type {
+  EngineerProductivityResult as EodProductivityResult,
+  RegionEodStatus as EodStatus,
+} from "@opencall/shared";
+
+export interface RegionEodStateRecord {
+  id: string;
+  regionId: string;
+  workingDate: string;
+  status: EodStatus;
+  closedAt: string | null;
+  closedBy: string | null;
+  closedByDisplay: string | null;
+}
+
+export interface CloseRegionEodResponse {
+  state: RegionEodStateRecord;
+  snapshot: EodProductivityResult;
+  /** false when the region-day was already closed (idempotent no-op). */
+  frozenNow: boolean;
+}
+
+export interface ReopenRegionEodResponse {
+  state: RegionEodStateRecord | null;
+  reopened: boolean;
+}

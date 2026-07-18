@@ -1,7 +1,7 @@
 "use client";
 
 import { DAILY_CALL_PLAN_COLUMNS, RTPL_STATUS_OPTIONS, ASP_CODE_REGION_MAP, type DailyCallPlanColumn } from "@opencall/shared";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { ColumnFilterDropdown } from "../components/ColumnFilterDropdown";
 import { AppHeader } from "../components/AppHeader";
@@ -131,6 +131,10 @@ import {
   deleteReportRow,
   getEngineersDropdown,
   getRtplStatusesDropdown,
+  getRegionEodState,
+  closeRegionEod,
+  reopenRegionEod,
+  type RegionEodStateResponse,
   isApiAuthError,
 } from "../lib/apiClient";
 import type { DropdownEngineer } from "../lib/api/types";
@@ -468,6 +472,11 @@ export default function DashboardPage() {
   // Date" is day-by-day: it reads that day's report, not a created-time cohort).
   const [productivityDayReport, setProductivityDayReport] = useState<GeneratedReportResponse | null>(null);
   const productivityDayReportCacheRef = useRef(new Map<string, GeneratedReportResponse>());
+  // Per-region Final-EOD state for the productivity day on display; closed
+  // regions render from their frozen snapshot instead of the live rows.
+  const [productivityEodState, setProductivityEodState] =
+    useState<RegionEodStateResponse | null>(null);
+  const [eodBusyRegionId, setEodBusyRegionId] = useState<string | null>(null);
   const [tnFilterType, setTnFilterType] = useState("Today");
   const [selectedTnValue, setSelectedTnValue] = useState("");
   const [eodBodFilterType, setEodBodFilterType] = useState("Today");
@@ -831,6 +840,7 @@ export default function DashboardPage() {
     productivityToDate,
     productivityDayReport,
     historyReportDates,
+    eodState: productivityEodState,
   });
 
   useEffect(() => {
@@ -1129,6 +1139,103 @@ export default function DashboardPage() {
       cancelled = true;
     };
   }, [session, productivityFilterType, selectedProductivityValue, report?.reportDate, historySessions, regionId]);
+
+  // ---- Per-region Final-EOD day boundary (engineer productivity) ----
+  // The day whose EOD state the productivity view needs: the selected past day
+  // in "Specific Date" mode, otherwise the current report's day.
+  const productivityEodDateIso = useMemo(() => {
+    if (productivityFilterType === "Specific Date" && selectedProductivityValue) {
+      const parts = selectedProductivityValue.split("-");
+      return parts.length === 3 && parts[2]?.length === 4
+        ? `${parts[2]}-${parts[1]}-${parts[0]}`
+        : selectedProductivityValue;
+    }
+    return report?.reportDate ?? null;
+  }, [productivityFilterType, selectedProductivityValue, report?.reportDate]);
+
+  const refreshProductivityEodState = useCallback(async () => {
+    if (!session || session.user.role === "SPECIAL_ACCESS" || !productivityEodDateIso) {
+      setProductivityEodState(null);
+      return;
+    }
+    try {
+      setProductivityEodState(
+        await getRegionEodState(session.token, productivityEodDateIso),
+      );
+    } catch {
+      // No EOD state (e.g. endpoint unavailable): the view stays fully live.
+      setProductivityEodState(null);
+    }
+  }, [session, productivityEodDateIso]);
+
+  useEffect(() => {
+    void refreshProductivityEodState();
+  }, [refreshProductivityEodState]);
+
+  const handleCloseRegionEod = useCallback(
+    async (eodRegionId: string, regionName: string) => {
+      if (!session || !productivityEodDateIso) return;
+      const confirmed = window.confirm(
+        `Final EOD for ${regionName}?\n\nThis freezes the region's productivity for ${productivityEodDateIso}. Later assignments/edits count toward the next working day.`,
+      );
+      if (!confirmed) return;
+
+      setEodBusyRegionId(eodRegionId);
+      try {
+        await closeRegionEod(session.token, eodRegionId, productivityEodDateIso);
+        await refreshProductivityEodState();
+      } catch (error) {
+        handleBackgroundError(error);
+      } finally {
+        setEodBusyRegionId(null);
+      }
+    },
+    [session, productivityEodDateIso, refreshProductivityEodState],
+  );
+
+  const handleReopenRegionEod = useCallback(
+    async (eodRegionId: string, regionName: string) => {
+      if (!session || !productivityEodDateIso) return;
+      const confirmed = window.confirm(
+        `Reopen the closed day for ${regionName}?\n\nThe frozen snapshot is discarded and the region goes live again for ${productivityEodDateIso}.`,
+      );
+      if (!confirmed) return;
+
+      setEodBusyRegionId(eodRegionId);
+      try {
+        await reopenRegionEod(session.token, eodRegionId, productivityEodDateIso);
+        await refreshProductivityEodState();
+      } catch (error) {
+        handleBackgroundError(error);
+      } finally {
+        setEodBusyRegionId(null);
+      }
+    },
+    [session, productivityEodDateIso, refreshProductivityEodState],
+  );
+
+  // Chip/button model for the ProductivityPage EOD bar. A REGION_ADMIN may
+  // Final-EOD their own region only (the backend enforces this regardless);
+  // reopen is SUPER_ADMIN only.
+  const productivityEodRegions = useMemo(() => {
+    if (!session || session.user.role === "SPECIAL_ACCESS" || !productivityEodState) {
+      return [];
+    }
+    const isSuperAdminUser = session.user.role === "SUPER_ADMIN";
+    const userRegionId = session.user.regionId ?? session.user.region_id;
+    return productivityEodState.regions.map((region) => ({
+      regionId: region.regionId,
+      regionCode: region.regionCode,
+      regionName: region.regionName,
+      status: region.status,
+      closedAt: region.closedAt,
+      closedBy: region.closedBy,
+      canClose:
+        region.status === "OPEN" &&
+        (isSuperAdminUser || userRegionId === region.regionId),
+      canReopen: region.status === "CLOSED" && isSuperAdminUser,
+    }));
+  }, [session, productivityEodState]);
 
 
 
@@ -1833,13 +1940,23 @@ export default function DashboardPage() {
     // background poll, the poll then early-returned forever and never retried.
     // The result looked exactly like the app hanging on "loading" until a manual
     // refresh. Failing here now leaves the previous report on screen instead.
-    const prev = await previewMatches({
-      token: session.token,
-      regionId: effectiveRegionId,
-      flexUploadBatchId: detail.flexUploadBatchId,
-      ...(detail.renderwaysUploadBatchId ? { renderwaysUploadBatchId: detail.renderwaysUploadBatchId } : {}),
-      ...(detail.callPlanUploadBatchId ? { callPlanUploadBatchId: detail.callPlanUploadBatchId } : {}),
-    });
+    // The match preview is auxiliary (the Match Preview panel). If it fails —
+    // e.g. a permission/scope error on another region's batches — the restore
+    // must still proceed: the report fetched next is the workspace, and it is
+    // already region-filtered server-side. Aborting here used to blank the
+    // whole workspace behind a red banner.
+    let prev: MatchPreviewResponse | null = null;
+    try {
+      prev = await previewMatches({
+        token: session.token,
+        regionId: effectiveRegionId,
+        flexUploadBatchId: detail.flexUploadBatchId,
+        ...(detail.renderwaysUploadBatchId ? { renderwaysUploadBatchId: detail.renderwaysUploadBatchId } : {}),
+        ...(detail.callPlanUploadBatchId ? { callPlanUploadBatchId: detail.callPlanUploadBatchId } : {}),
+      });
+    } catch {
+      prev = null;
+    }
 
     const rep =
       detail.status === "COMPLETED"
@@ -3867,6 +3984,11 @@ export default function DashboardPage() {
                         regionsList={report?.regionBreakdown ?? []}
                         isSuperAdmin={session?.user?.role === "SUPER_ADMIN"}
                         openRecordsWithFilter={openRecordsWithFilter}
+                        eodRegions={productivityEodRegions}
+                        eodWorkingDate={productivityEodDateIso}
+                        eodBusyRegionId={eodBusyRegionId}
+                        onCloseRegionEod={handleCloseRegionEod}
+                        onReopenRegionEod={handleReopenRegionEod}
                       />
                     )}
 

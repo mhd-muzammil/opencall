@@ -2,38 +2,42 @@ import { describe, expect, it } from "vitest";
 import {
   addToProductivityCounts,
   classifyProductivityStatus,
-  effectiveProductivityStatus,
+  computeEngineerProductivity,
   emptyProductivityBucketCounts,
+  mergeEngineerProductivityResults,
+  resolveDayScopedProductivityBucket,
+  type ProductivityReportRow,
 } from "./engineerProductivity";
 
-describe("effectiveProductivityStatus", () => {
-  it("prefers the Evening status once it is filled", () => {
-    expect(
-      effectiveProductivityStatus({
-        "RTPL status": "Scheduled",
-        "Evening status": "Case-Closed",
-      }),
-    ).toBe("Case-Closed");
-  });
+let nextSerial = 1;
 
-  it("falls back to the Morning status while Evening is blank", () => {
-    expect(
-      effectiveProductivityStatus({
-        "RTPL status": "SSC Pending",
-        "Evening status": "",
-      }),
-    ).toBe("SSC Pending");
-  });
-
-  it("treats Manual Entry Required as blank", () => {
-    expect(
-      effectiveProductivityStatus({
-        "RTPL status": "Manual Entry Required",
-        "Evening status": "",
-      }),
-    ).toBe("");
-  });
-});
+function row(input: {
+  ticketId?: string;
+  engineer?: string;
+  morning?: string;
+  evening?: string;
+  workLocation?: string;
+  flexStatus?: string;
+  closedSyntheticRow?: boolean;
+  sameDayClosedRow?: boolean;
+}): ProductivityReportRow {
+  return {
+    serialNo: nextSerial++,
+    output: {
+      "Ticket ID": input.ticketId ?? `T${nextSerial}`,
+      Engineer: input.engineer ?? "Sriram",
+      "RTPL status": input.morning ?? "",
+      "Evening status": input.evening ?? "",
+      "Work Location": input.workLocation ?? "ASPS01461",
+      "Flex Status": input.flexStatus ?? "Open",
+    },
+    carryForward: {
+      closedSyntheticRow: input.closedSyntheticRow ?? false,
+      sameDayClosedRow: input.sameDayClosedRow ?? false,
+    },
+    comparison: null,
+  };
+}
 
 describe("classifyProductivityStatus", () => {
   it("returns null for a blank status — the row must not count", () => {
@@ -88,12 +92,214 @@ describe("classifyProductivityStatus", () => {
   });
 });
 
+// The split-status rule: Morning decides plan membership, Evening (or a
+// same-day close) decides the outcome. Morning NEVER feeds an outcome.
+describe("resolveDayScopedProductivityBucket", () => {
+  it("keeps a carried-Scheduled call in the plan (Assigned, not worked)", () => {
+    expect(
+      resolveDayScopedProductivityBucket(row({ morning: "Scheduled" })),
+    ).toBe("SCHEDULED");
+    expect(
+      resolveDayScopedProductivityBucket(row({ morning: "Engg Assigned" })),
+    ).toBe("SCHEDULED");
+  });
+
+  it("excludes untouched carried backlog (non-scheduling Morning, blank Evening)", () => {
+    expect(
+      resolveDayScopedProductivityBucket(row({ morning: "Part Order Pending" })),
+    ).toBeNull();
+    expect(
+      resolveDayScopedProductivityBucket(row({ morning: "Under Observation" })),
+    ).toBeNull();
+  });
+
+  it("regression: carried Morning 'SSC Pending' with blank Evening is NOT Part-ordered", () => {
+    // The old effectiveProductivityStatus fell back to Morning, so a call
+    // carried from days ago counted as Part-ordered → Attended today.
+    expect(
+      resolveDayScopedProductivityBucket(row({ morning: "SSC Pending" })),
+    ).toBeNull();
+  });
+
+  it("buckets today's Evening outcome regardless of the Morning status", () => {
+    expect(
+      resolveDayScopedProductivityBucket(
+        row({ morning: "SSC Pending", evening: "Case-Closed" }),
+      ),
+    ).toBe("CLOSED");
+    expect(
+      resolveDayScopedProductivityBucket(
+        row({ morning: "Scheduled", evening: "CX Pending" }),
+      ),
+    ).toBe("CX_RESCHEDULE");
+    expect(
+      resolveDayScopedProductivityBucket(
+        row({ morning: "", evening: "Engineer Delay" }),
+      ),
+    ).toBe("ENGINEER_DELAY");
+  });
+
+  it("treats a same-day closure as CLOSED whatever the columns say", () => {
+    expect(
+      resolveDayScopedProductivityBucket(
+        row({ morning: "SSC Pending", sameDayClosedRow: true, closedSyntheticRow: true }),
+      ),
+    ).toBe("CLOSED");
+  });
+
+  it("treats Manual Entry Required as blank", () => {
+    expect(
+      resolveDayScopedProductivityBucket(
+        row({ morning: "Manual Entry Required", evening: "Manual Entry Required" }),
+      ),
+    ).toBeNull();
+  });
+});
+
+describe("computeEngineerProductivity — day-scoped Assigned/Attended", () => {
+  it("counts a carried-Scheduled call (engineer set, untouched today) as Assigned, not Attended", () => {
+    const result = computeEngineerProductivity([
+      row({ ticketId: "W1", engineer: "Kumar", morning: "Scheduled" }),
+    ]);
+
+    expect(result.list).toHaveLength(1);
+    expect(result.list[0]?.assigned).toBe(1);
+    expect(result.list[0]?.attended).toBe(0);
+    expect(result.totalAttended).toBe(0);
+  });
+
+  it("excludes a carried Part-Ordered call with no today Evening and no close", () => {
+    const result = computeEngineerProductivity([
+      row({ ticketId: "W2", engineer: "Kumar", morning: "SSC Pending" }),
+    ]);
+
+    expect(result.list).toHaveLength(0);
+    expect(result.totalAttended).toBe(0);
+  });
+
+  it("moves a scheduled call to Assigned+Attended+Closed once Evening=Closed today", () => {
+    const scheduled = computeEngineerProductivity([
+      row({ ticketId: "W3", engineer: "Kumar", morning: "Scheduled" }),
+    ]);
+    expect(scheduled.list[0]?.assigned).toBe(1);
+    expect(scheduled.list[0]?.attended).toBe(0);
+
+    const closed = computeEngineerProductivity([
+      row({ ticketId: "W3", engineer: "Kumar", morning: "Scheduled", evening: "Case-Closed" }),
+    ]);
+    expect(closed.list[0]?.assigned).toBe(1);
+    expect(closed.list[0]?.attended).toBe(1);
+    expect(closed.list[0]?.closed).toBe(1);
+    expect(closed.list[0]?.closedTickets).toEqual(["W3"]);
+  });
+
+  it("counts CX Reschedule and Engineer Delay today as Assigned but not Attended", () => {
+    const result = computeEngineerProductivity([
+      row({ ticketId: "W4", engineer: "Kumar", morning: "Scheduled", evening: "CX Reschedule" }),
+      row({ ticketId: "W5", engineer: "Kumar", morning: "Scheduled", evening: "Engineer Delay" }),
+    ]);
+
+    expect(result.list[0]?.assigned).toBe(2);
+    expect(result.list[0]?.attended).toBe(0);
+    expect(result.list[0]?.cxReschedule).toBe(1);
+    expect(result.list[0]?.engineerDelay).toBe(1);
+  });
+
+  it("the 18→8 case: 8 planned/worked + 10 untouched backlog rows → Assigned = 8", () => {
+    const rows = [
+      // The day's plan: 3 still scheduled, 3 worked to an outcome, 2 closed today.
+      row({ ticketId: "P1", engineer: "Ravi", morning: "Scheduled" }),
+      row({ ticketId: "P2", engineer: "Ravi", morning: "To be Scheduled" }),
+      row({ ticketId: "P3", engineer: "Ravi", morning: "Engg Assigned" }),
+      row({ ticketId: "P4", engineer: "Ravi", morning: "Scheduled", evening: "SSC Pending" }),
+      row({ ticketId: "P5", engineer: "Ravi", morning: "SSC Pending", evening: "Under Observation" }),
+      row({ ticketId: "P6", engineer: "Ravi", morning: "Scheduled", evening: "CX Pending" }),
+      row({ ticketId: "P7", engineer: "Ravi", sameDayClosedRow: true, closedSyntheticRow: true }),
+      row({ ticketId: "P8", engineer: "Ravi", morning: "Scheduled", evening: "Case-Closed" }),
+      // Carried-open backlog nobody touched today: excluded from Assigned.
+      ...Array.from({ length: 6 }, (_, i) =>
+        row({ ticketId: `B${i}`, engineer: "Ravi", morning: "SSC Pending" }),
+      ),
+      ...Array.from({ length: 4 }, (_, i) =>
+        row({ ticketId: `U${i}`, engineer: "Ravi", morning: "Under Observation" }),
+      ),
+    ];
+
+    const result = computeEngineerProductivity(rows);
+    expect(result.list).toHaveLength(1);
+    const ravi = result.list[0];
+    expect(ravi?.assigned).toBe(8);
+    // Attended = SSC(P4) + UO(P5) + closed(P7, P8) — CX Pending (P6) is out.
+    expect(ravi?.attended).toBe(4);
+    expect(ravi?.closed).toBe(2);
+    expect(ravi?.partOrdered).toBe(1);
+    expect(ravi?.underObservation).toBe(1);
+    expect(ravi?.cxReschedule).toBe(1);
+  });
+
+  it("requires an engineer for plan membership", () => {
+    const result = computeEngineerProductivity([
+      row({ ticketId: "W6", engineer: "", morning: "Scheduled" }),
+      row({ ticketId: "W7", engineer: "Manual Entry Required", morning: "Scheduled" }),
+    ]);
+    expect(result.list).toHaveLength(0);
+  });
+
+  it("filters by region ASP codes and skips Request-to-Cancel + stale closed rows", () => {
+    const result = computeEngineerProductivity(
+      [
+        row({ ticketId: "R1", engineer: "Vel", morning: "Scheduled", workLocation: "ASPS01463" }),
+        row({ ticketId: "R2", engineer: "Che", morning: "Scheduled", workLocation: "ASPS01461" }),
+        row({ ticketId: "R3", engineer: "Vel", morning: "Scheduled", workLocation: "ASPS01463", flexStatus: "Request to Cancel" }),
+        // Closed by a previous day's upload: not on the Records page, not counted.
+        row({ ticketId: "R4", engineer: "Vel", workLocation: "ASPS01463", closedSyntheticRow: true }),
+      ],
+      { regionAspCodes: ["ASPS01463"] },
+    );
+
+    expect(result.list).toHaveLength(1);
+    expect(result.list[0]?.name).toBe("Vel");
+    expect(result.list[0]?.assigned).toBe(1);
+    expect(result.list[0]?.regionName).toBe("VELLORE");
+  });
+
+  it("dedupes by Ticket ID and merges engineer casing/alias variants", () => {
+    const result = computeEngineerProductivity([
+      row({ ticketId: "D1", engineer: "Lava Kumar", morning: "Scheduled" }),
+      row({ ticketId: "D1", engineer: "Lava Kumar", morning: "Scheduled" }),
+      row({ ticketId: "D2", engineer: "lava", morning: "Scheduled", evening: "Case-Closed" }),
+    ]);
+
+    expect(result.list).toHaveLength(1);
+    expect(result.list[0]?.name).toBe("Lava");
+    expect(result.list[0]?.assigned).toBe(2);
+    expect(result.list[0]?.closed).toBe(1);
+  });
+});
+
+describe("mergeEngineerProductivityResults", () => {
+  it("merges live and frozen lists, summing counts per engineer", () => {
+    const live = computeEngineerProductivity([
+      row({ ticketId: "L1", engineer: "Kumar", morning: "Scheduled" }),
+    ]);
+    const frozen = computeEngineerProductivity([
+      row({ ticketId: "F1", engineer: "Kumar", morning: "Scheduled", evening: "Case-Closed" }),
+      row({ ticketId: "F2", engineer: "Anand", morning: "Scheduled" }),
+    ]);
+
+    const merged = mergeEngineerProductivityResults([live, frozen]);
+    expect(merged.list).toHaveLength(2);
+    const kumar = merged.list.find((entry) => entry.name === "Kumar");
+    expect(kumar?.assigned).toBe(2);
+    expect(kumar?.attended).toBe(1);
+    expect(merged.totalAttended).toBe(1);
+  });
+});
+
 describe("addToProductivityCounts", () => {
-  it("rolls up: Assigned = whole load, Attended = every post-scheduled status except CX/Delay", () => {
+  it("rolls up: Assigned = whole plan, Attended = every post-scheduled status except CX/Delay", () => {
     const counts = emptyProductivityBucketCounts();
 
-    // Mid-day: 18 closed, 2 SSC/part, 1 worked-other, 2 CX pending, 1 engineer
-    // delay, 2 still scheduled.
     for (let i = 0; i < 18; i++) addToProductivityCounts(counts, "CLOSED", `C${i}`);
     addToProductivityCounts(counts, "PART_ORDER", "P1");
     addToProductivityCounts(counts, "PART_ORDER", "P2");
@@ -118,20 +324,7 @@ describe("addToProductivityCounts", () => {
     expect(counts.engineerDelayTickets).toEqual(["D1"]);
   });
 
-  // The morning state: scheduled calls fill Assigned, nothing else moves.
-  it("counts a freshly scheduled call in Assigned only", () => {
-    const counts = emptyProductivityBucketCounts();
-
-    addToProductivityCounts(counts, "SCHEDULED", "S1");
-
-    expect(counts.assigned).toBe(1);
-    expect(counts.attended).toBe(0);
-    expect(counts.closed).toBe(0);
-    expect(counts.cxReschedule).toBe(0);
-    expect(counts.engineerDelay).toBe(0);
-  });
-
-  // End of day, nothing left scheduled: the load splits exactly into
+  // End of day, nothing left scheduled: the plan splits exactly into
   // Attended + CX Reschedule + Engineer Delay.
   it("satisfies Assigned = Attended + CX + Engineer Delay once all calls move", () => {
     const counts = emptyProductivityBucketCounts();

@@ -1,10 +1,13 @@
 import { readJson } from "./http";
 import type {
+  CloseRegionEodResponse,
   DatabaseHealthResponse,
   EditedReportRowResponse,
   GeneratedReportResponse,
   LoginResponse,
   MatchPreviewResponse,
+  RegionEodStateResponse,
+  ReopenRegionEodResponse,
   ReportHistorySession,
   RtplStatusChange,
   RuntimeHealthResponse,
@@ -102,6 +105,9 @@ export interface OpenCallApiClient {
   reactivateAdminRtplStatus(token: string, id: string): Promise<{ status: RtplStatus }>;
   deleteAdminRtplStatus(token: string, id: string): Promise<{ success: boolean }>;
   getRtplStatusesDropdown(token: string): Promise<{ statuses: DropdownRtplStatus[] }>;
+  getRegionEodState(token: string, workingDate: string): Promise<RegionEodStateResponse>;
+  closeRegionEod(token: string, regionId: string, workingDate: string): Promise<CloseRegionEodResponse>;
+  reopenRegionEod(token: string, regionId: string, workingDate: string): Promise<ReopenRegionEodResponse>;
 }
 
 function authHeaders(token: string): Record<string, string> {
@@ -261,6 +267,35 @@ export function createOpenCallApiClient({
       });
 
       return readJson<{ success: boolean }>(response);
+    },
+
+    async getRegionEodState(token, workingDate) {
+      const response = await fetchImpl(url(`/api/v1/reports/${workingDate}/eod-state`), {
+        headers: authHeaders(token),
+        cache: "no-store",
+      });
+
+      return readJson<RegionEodStateResponse>(response);
+    },
+
+    async closeRegionEod(token, regionId, workingDate) {
+      const response = await fetchImpl(url(`/api/v1/regions/${regionId}/eod/close`), {
+        method: "POST",
+        headers: jsonAuthHeaders(token),
+        body: JSON.stringify({ workingDate }),
+      });
+
+      return readJson<CloseRegionEodResponse>(response);
+    },
+
+    async reopenRegionEod(token, regionId, workingDate) {
+      const response = await fetchImpl(url(`/api/v1/regions/${regionId}/eod/reopen`), {
+        method: "POST",
+        headers: jsonAuthHeaders(token),
+        body: JSON.stringify({ workingDate }),
+      });
+
+      return readJson<ReopenRegionEodResponse>(response);
     },
 
     async getReportHistory(token) {

@@ -2970,31 +2970,64 @@ export default function DashboardPage() {
         }
       >
         {isRecordsTableMaximized ? (
-          <div className="recordsTableZoneBar">
-            <span className="recordsTableZoneTitle">
-              Records — Full Screen
-              <span className="recordsTableZoneCount">
-                {tableRows.length} rows
+          <>
+            <div className="recordsTableZoneBar">
+              <span className="recordsTableZoneTitle">
+                Records — Full Screen
+                <span className="recordsTableZoneCount">
+                  {tableRows.length} rows
+                </span>
               </span>
-            </span>
-            <div className="recordsSearchBar recordsTableZoneSearch">
-              <input
-                type="search"
-                value={recordsSearchQuery}
-                aria-label="Search records"
-                placeholder="Search WO, case ID, trade..."
-                onChange={(event) => setRecordsSearchQuery(event.target.value)}
-              />
+              <div className="recordsSearchBar recordsTableZoneSearch">
+                <input
+                  type="search"
+                  value={recordsSearchQuery}
+                  aria-label="Search records"
+                  placeholder="Search WO, case ID, trade..."
+                  onChange={(event) => setRecordsSearchQuery(event.target.value)}
+                />
+              </div>
+              <button
+                type="button"
+                className="secondaryButton"
+                onClick={() => setIsRecordsTableMaximized(false)}
+                title="Exit full screen (Esc)"
+              >
+                ✕ Exit Full Screen
+              </button>
             </div>
-            <button
-              type="button"
-              className="secondaryButton"
-              onClick={() => setIsRecordsTableMaximized(false)}
-              title="Exit full screen (Esc)"
-            >
-              ✕ Exit Full Screen
-            </button>
-          </div>
+            {/* The same active-filter / active-search banners the normal view
+                shows — full screen must keep the "Clear All Filters" escape
+                hatch, or a filtered table can't be un-filtered from here. */}
+            {colFilters.activeFilterCount > 0 && (
+              <div className="colFilterSummary">
+                <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
+                  <path d="M1 2h14l-5.5 6.5V14l-3-1.5V8.5L1 2z" fill="currentColor" />
+                </svg>
+                <span>
+                  {colFilters.activeFilterCount} column filter{colFilters.activeFilterCount > 1 ? "s" : ""} active
+                  {" · "}
+                  {filteredRows.length} of {regionFilteredRows.length} rows shown
+                </span>
+                <button type="button" onClick={colFilters.resetAll}>Clear All Filters</button>
+              </div>
+            )}
+            {recordsSearchQuery && (
+              <div className="colFilterSummary">
+                <span>
+                  Search "{recordsSearchQuery}" active
+                  {" - "}
+                  {filteredRows.length} of {columnFilteredRows.length} rows shown
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setRecordsSearchQuery("")}
+                >
+                  Clear Search
+                </button>
+              </div>
+            )}
+          </>
         ) : null}
         <div
           className="tableScrollTop"

@@ -4167,6 +4167,10 @@ export default function DashboardPage() {
                         </div>
                       </div>
                       <div className="downloadActions recordsToolbar">
+                        {/* Download Excel / Download CSV / View Engineer Productivity
+                            hidden per employee request (2026-07): exports run from the
+                            header Export button, productivity from the sidebar. Kept
+                            commented for easy restore.
                         <div className="downloadActionGroup">
                           <button
                             className="downloadBtn excelBtn"
@@ -4191,6 +4195,7 @@ export default function DashboardPage() {
                             </button>
                           )}
                         </div>
+                        */}
                         <div className="recordsToolbarRight">
                           <div className="recordsSearchBar">
                             <input

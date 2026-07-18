@@ -28,8 +28,9 @@ export default function AdminEngineersPage() {
   const [filterRegion, setFilterRegion] = useState<string>("");
   const [filterActive, setFilterActive] = useState<"" | "active" | "inactive">("");
   // Count-card filter: "" = all, "hp" = only engineers with an HP ID, "vendor" = only
-  // engineers with a Vendor ID. Applied on top of the region/status/search filters.
-  const [idFilter, setIdFilter] = useState<"" | "hp" | "vendor">("");
+  // engineers with a Vendor ID, "no-hp" = engineers with no HP ID. Applied on top of the
+  // region/status/search filters.
+  const [idFilter, setIdFilter] = useState<"" | "hp" | "vendor" | "no-hp">("");
   const [search, setSearch] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -118,11 +119,24 @@ export default function AdminEngineersPage() {
     () => baseFiltered.filter((e) => (e.vendorId ?? "").trim() !== "").length,
     [baseFiltered],
   );
+  // "Without HP ID": engineers missing an HP ID AND without a Vendor ID either — anyone
+  // who has a Vendor ID is excluded from this count.
+  const noHpIdCount = useMemo(
+    () =>
+      baseFiltered.filter(
+        (e) => (e.hpId ?? "").trim() === "" && (e.vendorId ?? "").trim() === "",
+      ).length,
+    [baseFiltered],
+  );
 
   // The rows the table actually shows: baseFiltered plus the active count-card filter.
   const filtered = useMemo(() => {
     if (idFilter === "hp") return baseFiltered.filter((e) => (e.hpId ?? "").trim() !== "");
     if (idFilter === "vendor") return baseFiltered.filter((e) => (e.vendorId ?? "").trim() !== "");
+    if (idFilter === "no-hp")
+      return baseFiltered.filter(
+        (e) => (e.hpId ?? "").trim() === "" && (e.vendorId ?? "").trim() === "",
+      );
     return baseFiltered;
   }, [baseFiltered, idFilter]);
 
@@ -393,6 +407,7 @@ export default function AdminEngineersPage() {
           {[
             { key: "" as const, label: "Total Engineers", value: baseFiltered.length, color: "#4f46e5" },
             { key: "hp" as const, label: "With HP ID", value: hpIdCount, color: "#059669" },
+            { key: "no-hp" as const, label: "Without HP ID", value: noHpIdCount, color: "#dc2626" },
             { key: "vendor" as const, label: "With Vendor ID", value: vendorIdCount, color: "#d97706" },
           ].map((card) => {
             const active = idFilter === card.key;
@@ -440,6 +455,7 @@ export default function AdminEngineersPage() {
           <table className="adminTable">
             <thead>
               <tr>
+                <th>S.No</th>
                 <th>Name</th>
                 <th>RTPL ID</th>
                 <th>Region</th>
@@ -454,15 +470,16 @@ export default function AdminEngineersPage() {
             <tbody>
               {filtered.length === 0 && (
                 <tr>
-                  <td colSpan={9} className="muted" style={{ textAlign: "center", padding: 24 }}>
+                  <td colSpan={10} className="muted" style={{ textAlign: "center", padding: 24 }}>
                     No engineers match the current filters.
                   </td>
                 </tr>
               )}
-              {filtered.map((e) => {
+              {filtered.map((e, index) => {
                 const region = regionLookup.get(e.regionId);
                 return (
                   <tr key={e.id}>
+                    <td>{index + 1}</td>
                     <td>
                       <strong>{e.engineerName}</strong>
                     </td>

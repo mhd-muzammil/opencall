@@ -93,8 +93,8 @@ export interface OpenCallApiClient {
   duplicateReportHistory(token: string, id: string): Promise<{ id: string; title: string }>;
   deleteReportHistory(token: string, id: string): Promise<{ success: boolean }>;
   getAdminEngineers(token: string, filters: { regionId?: string; search?: string; isActive?: boolean; limit?: number; offset?: number }): Promise<ListEngineersResult>;
-  createAdminEngineer(token: string, input: { engineerName: string; engineerCode?: string | null; regionId: string; email?: string | null; phone?: string | null }): Promise<{ engineer: Engineer }>;
-  updateAdminEngineer(token: string, id: string, input: { engineerName?: string; engineerCode?: string | null; regionId?: string; email?: string | null; phone?: string | null }): Promise<{ engineer: Engineer }>;
+  createAdminEngineer(token: string, input: { engineerName: string; engineerCode?: string | null; regionId: string; email?: string | null; phone?: string | null; hpId?: string; vendorId?: string }): Promise<{ engineer: Engineer }>;
+  updateAdminEngineer(token: string, id: string, input: { engineerName?: string; engineerCode?: string | null; regionId?: string; email?: string | null; phone?: string | null; hpId?: string; vendorId?: string }): Promise<{ engineer: Engineer }>;
   deactivateAdminEngineer(token: string, id: string): Promise<{ engineer: Engineer }>;
   reactivateAdminEngineer(token: string, id: string): Promise<{ engineer: Engineer }>;
   getEngineersDropdown(token: string, regionId?: string): Promise<{ engineers: DropdownEngineer[] }>;

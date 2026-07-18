@@ -27,6 +27,9 @@ export default function AdminEngineersPage() {
   const [regions, setRegions] = useState<AdminRegion[]>([]);
   const [filterRegion, setFilterRegion] = useState<string>("");
   const [filterActive, setFilterActive] = useState<"" | "active" | "inactive">("");
+  // Count-card filter: "" = all, "hp" = only engineers with an HP ID, "vendor" = only
+  // engineers with a Vendor ID. Applied on top of the region/status/search filters.
+  const [idFilter, setIdFilter] = useState<"" | "hp" | "vendor">("");
   const [search, setSearch] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -39,6 +42,8 @@ export default function AdminEngineersPage() {
   const [formRegion, setFormRegion] = useState("");
   const [formEmail, setFormEmail] = useState("");
   const [formPhone, setFormPhone] = useState("");
+  const [formHpId, setFormHpId] = useState("");
+  const [formVendorId, setFormVendorId] = useState("");
   const [formBusy, setFormBusy] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
 
@@ -83,7 +88,10 @@ export default function AdminEngineersPage() {
 
   const activeRegions = regions.filter((r) => r.isActive);
 
-  const filtered = useMemo(() => {
+  // Engineers matching the region / status / search filters, BEFORE the count-card
+  // (HP/Vendor) filter. The count cards summarise this set so their numbers stay in
+  // step with the region/status filter the user has applied.
+  const baseFiltered = useMemo(() => {
     if (!engineers) return [];
     return engineers.filter((e) => {
       if (filterRegion && e.regionId !== filterRegion) return false;
@@ -102,6 +110,22 @@ export default function AdminEngineersPage() {
     });
   }, [engineers, filterRegion, filterActive, search]);
 
+  const hpIdCount = useMemo(
+    () => baseFiltered.filter((e) => (e.hpId ?? "").trim() !== "").length,
+    [baseFiltered],
+  );
+  const vendorIdCount = useMemo(
+    () => baseFiltered.filter((e) => (e.vendorId ?? "").trim() !== "").length,
+    [baseFiltered],
+  );
+
+  // The rows the table actually shows: baseFiltered plus the active count-card filter.
+  const filtered = useMemo(() => {
+    if (idFilter === "hp") return baseFiltered.filter((e) => (e.hpId ?? "").trim() !== "");
+    if (idFilter === "vendor") return baseFiltered.filter((e) => (e.vendorId ?? "").trim() !== "");
+    return baseFiltered;
+  }, [baseFiltered, idFilter]);
+
   const openAddForm = () => {
     setSelectedEngineer(null);
     setFormName("");
@@ -109,6 +133,8 @@ export default function AdminEngineersPage() {
     setFormRegion(session?.user.role === "REGION_ADMIN" ? session.user.regionId || "" : "");
     setFormEmail("");
     setFormPhone("");
+    setFormHpId("");
+    setFormVendorId("");
     setFormError(null);
     setViewMode("add");
   };
@@ -120,6 +146,8 @@ export default function AdminEngineersPage() {
     setFormRegion(e.regionId);
     setFormEmail(e.email || "");
     setFormPhone(e.phone || "");
+    setFormHpId(e.hpId || "");
+    setFormVendorId(e.vendorId || "");
     setFormError(null);
     setViewMode("edit");
   };
@@ -143,6 +171,8 @@ export default function AdminEngineersPage() {
           regionId: formRegion,
           email: formEmail.trim() || null,
           phone: formPhone.trim() || null,
+          hpId: formHpId.trim(),
+          vendorId: formVendorId.trim(),
         });
       } else if (viewMode === "edit" && selectedEngineer) {
         await updateAdminEngineer(session.token, selectedEngineer.id, {
@@ -151,6 +181,8 @@ export default function AdminEngineersPage() {
           regionId: formRegion,
           email: formEmail.trim() || null,
           phone: formPhone.trim() || null,
+          hpId: formHpId.trim(),
+          vendorId: formVendorId.trim(),
         });
       }
       setViewMode("list");
@@ -204,11 +236,11 @@ export default function AdminEngineersPage() {
           </label>
 
           <label className="adminField">
-            <span>Code</span>
+            <span>RTPL ID</span>
             <input
               value={formCode}
               onChange={(e) => setFormCode(e.target.value)}
-              placeholder="Optional engineer code"
+              placeholder="Optional RTPL ID"
               autoComplete="off"
             />
           </label>
@@ -248,6 +280,28 @@ export default function AdminEngineersPage() {
               value={formPhone}
               onChange={(e) => setFormPhone(e.target.value)}
               placeholder="Optional phone number"
+              autoComplete="off"
+            />
+          </label>
+
+          <label className="adminField">
+            <span>HP ID</span>
+            <input
+              type="text"
+              value={formHpId}
+              onChange={(e) => setFormHpId(e.target.value)}
+              placeholder="Optional HP ID"
+              autoComplete="off"
+            />
+          </label>
+
+          <label className="adminField">
+            <span>Vendor ID</span>
+            <input
+              type="text"
+              value={formVendorId}
+              onChange={(e) => setFormVendorId(e.target.value)}
+              placeholder="Optional Vendor ID"
               autoComplete="off"
             />
           </label>
@@ -294,7 +348,7 @@ export default function AdminEngineersPage() {
             type="search"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            placeholder="Name or Code..."
+            placeholder="Name or RTPL ID..."
           />
         </label>
         {session?.user.role === "SUPER_ADMIN" && (
@@ -326,6 +380,58 @@ export default function AdminEngineersPage() {
         </label>
       </div>
 
+      {/* Clickable count cards — each filters the table to that set. */}
+      {engineers && (
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: "repeat(auto-fit, minmax(190px, 1fr))",
+            gap: "14px",
+            marginBottom: "18px",
+          }}
+        >
+          {[
+            { key: "" as const, label: "Total Engineers", value: baseFiltered.length, color: "#4f46e5" },
+            { key: "hp" as const, label: "With HP ID", value: hpIdCount, color: "#059669" },
+            { key: "vendor" as const, label: "With Vendor ID", value: vendorIdCount, color: "#d97706" },
+          ].map((card) => {
+            const active = idFilter === card.key;
+            return (
+              <button
+                key={card.label}
+                type="button"
+                onClick={() => setIdFilter(card.key)}
+                style={{
+                  textAlign: "left",
+                  padding: "16px 18px",
+                  borderRadius: "12px",
+                  border: active ? `2px solid ${card.color}` : "1px solid var(--border-color, #e5e7eb)",
+                  background: active ? `${card.color}12` : "var(--card-bg, #ffffff)",
+                  cursor: "pointer",
+                  transition: "all 0.15s ease",
+                }}
+              >
+                <div style={{ fontSize: "11px", fontWeight: 700, color: "#6b7280", textTransform: "uppercase", letterSpacing: "0.5px" }}>
+                  {card.label}
+                </div>
+                <div style={{ fontSize: "28px", fontWeight: 900, color: card.color, marginTop: "4px" }}>
+                  {card.value}
+                </div>
+                <div style={{ fontSize: "11px", color: "#9ca3af", marginTop: "2px" }}>
+                  {card.key === ""
+                    ? active
+                      ? "Showing all"
+                      : "Click to show all"
+                    : active
+                      ? "Filtering — click a card to change"
+                      : "Click to filter"}
+                </div>
+              </button>
+            );
+          })}
+        </div>
+      )}
+
       {error && <div className="adminError">{error}</div>}
       {busy && !engineers && <p className="muted">Loading engineers…</p>}
 
@@ -335,9 +441,11 @@ export default function AdminEngineersPage() {
             <thead>
               <tr>
                 <th>Name</th>
-                <th>Code</th>
+                <th>RTPL ID</th>
                 <th>Region</th>
                 <th>Email</th>
+                <th>HP ID</th>
+                <th>Vendor ID</th>
                 <th>Status</th>
                 <th>Created</th>
                 <th></th>
@@ -346,7 +454,7 @@ export default function AdminEngineersPage() {
             <tbody>
               {filtered.length === 0 && (
                 <tr>
-                  <td colSpan={7} className="muted" style={{ textAlign: "center", padding: 24 }}>
+                  <td colSpan={9} className="muted" style={{ textAlign: "center", padding: 24 }}>
                     No engineers match the current filters.
                   </td>
                 </tr>
@@ -361,6 +469,8 @@ export default function AdminEngineersPage() {
                     <td>{e.engineerCode || "—"}</td>
                     <td>{region ? `${region.name}` : "—"}</td>
                     <td>{e.email || "—"}</td>
+                    <td>{e.hpId || "—"}</td>
+                    <td>{e.vendorId || "—"}</td>
                     <td>
                       <span className={`adminTag ${e.isActive ? "good" : "bad"}`}>
                         {e.isActive ? "Active" : "Inactive"}

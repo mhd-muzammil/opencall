@@ -274,6 +274,8 @@ export interface Engineer {
   regionId: string;
   email: string | null;
   phone: string | null;
+  hpId: string;
+  vendorId: string;
   isActive: boolean;
   createdBy: string | null;
   updatedBy: string | null;

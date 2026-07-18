@@ -2262,6 +2262,15 @@ td {
   border-bottom: 1px solid #cbd5e1;
 }
 
+/* Excel-grade scrolling: the global th/td background/color transition is a
+   style-recalc tax on every one of the records grid's ~35k cells (hover moves
+   during scroll re-trigger transition machinery across whole rows). Excel
+   doesn't animate cell hovers; neither does this grid. */
+.recordsTableZone .tableWrap th,
+.recordsTableZone .tableWrap td {
+  transition: none;
+}
+
 .recordsTableZone .tableWrap th:first-child,
 .recordsTableZone .tableWrap td:first-child {
   border-left: 1px solid #cbd5e1;

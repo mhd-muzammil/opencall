@@ -10,6 +10,8 @@ import { MetricsGrid, type MetricsGridItem } from "../components/MetricsGrid";
 import { StatusPill } from "../components/StatusPill";
 import { UploadDrawer } from "../components/UploadDrawer";
 import { RTPLStatusDropdown, buildStatusGroups, type StatusGroup } from "../components/RTPLStatusDropdown";
+import { DebouncedSearchInput } from "../components/DebouncedSearchInput";
+import { VirtualTbody } from "../components/VirtualTbody";
 import { useColumnFilters } from "../lib/useColumnFilters";
 import {
   MANUAL_ENTRY_REQUIRED,
@@ -2868,6 +2870,10 @@ export default function DashboardPage() {
   }
 
   // Two-way scrollLeft sync between the top proxy scrollbar and the table. The
+  // Records rows are a uniform 39px tall (fixed table layout + nowrap cells);
+  // VirtualTbody uses this for its spacer geometry.
+  const RECORDS_ROW_PX = 39;
+
   // equality check terminates the feedback loop: once the paired element is set
   // to this element's scrollLeft, its own onScroll sees the values already match
   // and stops — no boolean flag needed (robust to coalesced scroll events).
@@ -2972,12 +2978,12 @@ export default function DashboardPage() {
         {isRecordsTableMaximized ? (
           <div className="recordsTableZoneBar" style={{ flexWrap: "wrap", gap: "10px" }}>
             <div className="recordsSearchBar recordsTableZoneSearch">
-              <input
+              <DebouncedSearchInput
                 type="search"
                 value={recordsSearchQuery}
                 aria-label="Search records"
                 placeholder="Search WO, case ID, trade..."
-                onChange={(event) => setRecordsSearchQuery(event.target.value)}
+                onDebouncedChange={setRecordsSearchQuery}
               />
             </div>
             {/* Single escape hatch next to the search: clears every column
@@ -3054,8 +3060,13 @@ export default function DashboardPage() {
                 <th>Ops</th>
               </tr>
             </thead>
-            <tbody>
-              {tableRows.map((row, visibleIndex) => {
+            <VirtualTbody
+              rows={tableRows}
+              rowPx={RECORDS_ROW_PX}
+              scrollRef={recordsTableWrapRef}
+              attachKey={isRecordsTableMaximized}
+              colSpan={visibleColumns.length + 2}
+              renderRow={(row, visibleIndex) => {
                 const isEditing = editingSerialNo === row.serialNo;
                 const visibleSerialNo = visibleIndex + 1;
 
@@ -3253,8 +3264,8 @@ export default function DashboardPage() {
                     </td>
                   </tr>
                 );
-              })}
-            </tbody>
+              }}
+            />
           </table>
         </div>
       </div>
@@ -4208,13 +4219,13 @@ export default function DashboardPage() {
                         */}
                         <div className="recordsToolbarRight">
                           <div className="recordsSearchBar">
-                            <input
+                            <DebouncedSearchInput
                               id="records-search"
                               type="search"
                               value={recordsSearchQuery}
                               aria-label="Search records"
                               placeholder="Search WO, case ID, trade..."
-                              onChange={(event) => setRecordsSearchQuery(event.target.value)}
+                              onDebouncedChange={setRecordsSearchQuery}
                             />
                           </div>
                           <div className="columnsMenu" ref={columnsMenuRef}>

@@ -2970,64 +2970,83 @@ export default function DashboardPage() {
         }
       >
         {isRecordsTableMaximized ? (
-          <>
-            <div className="recordsTableZoneBar">
-              <span className="recordsTableZoneTitle">
-                Records — Full Screen
-                <span className="recordsTableZoneCount">
-                  {tableRows.length} rows
-                </span>
-              </span>
-              <div className="recordsSearchBar recordsTableZoneSearch">
-                <input
-                  type="search"
-                  value={recordsSearchQuery}
-                  aria-label="Search records"
-                  placeholder="Search WO, case ID, trade..."
-                  onChange={(event) => setRecordsSearchQuery(event.target.value)}
-                />
-              </div>
+          <div className="recordsTableZoneBar" style={{ flexWrap: "wrap", gap: "10px" }}>
+            {/* One-click segment chips: each sets the Segment column filter to
+                that single value (click again to clear). The Segment column's
+                own dropdown still allows multi-select on top. */}
+            <div className="regionFilterTabs" aria-label="Records segment filter" style={{ margin: 0 }}>
+              {(() => {
+                const segmentFilter = colFilters.filters["Segment"];
+                const activeSegment =
+                  segmentFilter && segmentFilter.size === 1
+                    ? Array.from(segmentFilter)[0]
+                    : null;
+                const segmentEntries = (
+                  colFilters.uniqueValuesMap.get("Segment") ?? []
+                ).filter((entry) => entry.value.toLowerCase() !== "(blank)");
+
+                return (
+                  <>
+                    <button
+                      type="button"
+                      className={`regionFilterTab ${!colFilters.isColumnFiltered("Segment") ? "active" : ""}`}
+                      onClick={() => colFilters.selectAll("Segment")}
+                    >
+                      All
+                    </button>
+                    {segmentEntries.map((entry) => (
+                      <button
+                        key={entry.value}
+                        type="button"
+                        className={`regionFilterTab ${activeSegment === entry.value ? "active" : ""}`}
+                        title={`Show only ${entry.value} records`}
+                        onClick={() =>
+                          activeSegment === entry.value
+                            ? colFilters.selectAll("Segment")
+                            : colFilters.setColumnFilter("Segment", new Set([entry.value]))
+                        }
+                      >
+                        {entry.value} <strong>{entry.count}</strong>
+                      </button>
+                    ))}
+                  </>
+                );
+              })()}
+            </div>
+            <div className="recordsSearchBar recordsTableZoneSearch">
+              <input
+                type="search"
+                value={recordsSearchQuery}
+                aria-label="Search records"
+                placeholder="Search WO, case ID, trade..."
+                onChange={(event) => setRecordsSearchQuery(event.target.value)}
+              />
+            </div>
+            {/* Single escape hatch next to the search: clears every column
+                filter AND the search in one click. Only shown while something
+                is actually filtering the table. */}
+            {(colFilters.activeFilterCount > 0 || recordsSearchQuery.trim() !== "") && (
               <button
                 type="button"
                 className="secondaryButton"
-                onClick={() => setIsRecordsTableMaximized(false)}
-                title="Exit full screen (Esc)"
+                title={`${filteredRows.length} of ${regionFilteredRows.length} rows shown`}
+                onClick={() => {
+                  colFilters.resetAll();
+                  setRecordsSearchQuery("");
+                }}
               >
-                ✕ Exit Full Screen
+                Clear All Filters
               </button>
-            </div>
-            {/* The same active-filter / active-search banners the normal view
-                shows — full screen must keep the "Clear All Filters" escape
-                hatch, or a filtered table can't be un-filtered from here. */}
-            {colFilters.activeFilterCount > 0 && (
-              <div className="colFilterSummary">
-                <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
-                  <path d="M1 2h14l-5.5 6.5V14l-3-1.5V8.5L1 2z" fill="currentColor" />
-                </svg>
-                <span>
-                  {colFilters.activeFilterCount} column filter{colFilters.activeFilterCount > 1 ? "s" : ""} active
-                  {" · "}
-                  {filteredRows.length} of {regionFilteredRows.length} rows shown
-                </span>
-                <button type="button" onClick={colFilters.resetAll}>Clear All Filters</button>
-              </div>
             )}
-            {recordsSearchQuery && (
-              <div className="colFilterSummary">
-                <span>
-                  Search "{recordsSearchQuery}" active
-                  {" - "}
-                  {filteredRows.length} of {columnFilteredRows.length} rows shown
-                </span>
-                <button
-                  type="button"
-                  onClick={() => setRecordsSearchQuery("")}
-                >
-                  Clear Search
-                </button>
-              </div>
-            )}
-          </>
+            <button
+              type="button"
+              className="secondaryButton"
+              onClick={() => setIsRecordsTableMaximized(false)}
+              title="Exit full screen (Esc)"
+            >
+              ✕ Exit Full Screen
+            </button>
+          </div>
         ) : null}
         <div
           className="tableScrollTop"

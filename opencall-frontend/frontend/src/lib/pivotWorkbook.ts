@@ -334,6 +334,35 @@ export function addWorksheetPart(
   );
 }
 
+// Hide a worksheet by name (state="hidden" on its <sheet> entry) and point the
+// active tab back at the first sheet, since Excel refuses to open a workbook
+// whose active tab is hidden. The sheet itself — and anything reading from it,
+// like the PivotTable cache — keeps working; only its tab disappears.
+export function hideSheetInWorkbookXml(
+  workbookXml: string,
+  sheetName: string,
+): string {
+  const escapedName = sheetName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const sheetTagRe = new RegExp(
+    `<sheet\\b([^>]*\\bname="${escapedName}"[^>]*?)(/?)>`,
+    "i",
+  );
+  let out = workbookXml.replace(sheetTagRe, (_match, attrs: string, selfClose: string) => {
+    const nextAttrs = /\bstate="/i.test(attrs)
+      ? attrs.replace(/\bstate="[^"]*"/i, 'state="hidden"')
+      : `${attrs} state="hidden"`;
+    return `<sheet${nextAttrs}${selfClose}>`;
+  });
+
+  // The template keeps the (now hidden) data sheet active; retarget tab 0.
+  out = out.replace(/<workbookView\b[^>]*>/i, (tag) =>
+    /\bactiveTab="/i.test(tag)
+      ? tag.replace(/\bactiveTab="[^"]*"/i, 'activeTab="0"')
+      : tag,
+  );
+  return out;
+}
+
 // Map each worksheet's display name to the ZIP path of its part, by joining
 // workbook.xml's <sheet r:id=...> entries to the workbook relationships.
 export function parseSheetPathMap(
@@ -423,6 +452,10 @@ export interface PivotWorkbookInput {
     aoa: PivotAoa;
     widths: readonly number[];
   };
+  // Hide the pivot's data-source sheet so the workbook opens with just the
+  // Pivot (+ Records) tabs. The sheet still exists — deleting it would break
+  // the PivotTable's refresh-on-open — it just carries no visible tab.
+  hideSourceSheet?: boolean;
 }
 
 function findCacheDefinitionPath(files: Unzipped): string | undefined {
@@ -521,6 +554,18 @@ export function buildPivotWorkbookBytes(
       files[existingPath] = encoder.encode(sheetXml);
     } else {
       addWorksheetPart(files, input.records.name, sheetXml);
+    }
+  }
+
+  // 5. Hide the pivot's data-source tab (after any sheet additions, so the
+  //    workbook.xml edits compose). Skipped when the source sheet was never
+  //    found — hiding nothing is better than corrupting the workbook.
+  if (input.hideSourceSheet && sourceSheetName && sheetPaths.has(sourceSheetName)) {
+    const workbookXmlBytes = files[WORKBOOK_PART];
+    if (workbookXmlBytes) {
+      files[WORKBOOK_PART] = encoder.encode(
+        hideSheetInWorkbookXml(decoder.decode(workbookXmlBytes), sourceSheetName),
+      );
     }
   }
 

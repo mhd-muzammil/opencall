@@ -8,6 +8,7 @@ import {
   buildSheetXml,
   columnLetter,
   escapeXml,
+  hideSheetInWorkbookXml,
   parseSheetPathMap,
   rangeRef,
   readCacheSource,
@@ -130,6 +131,39 @@ describe("updateCacheDefinition", () => {
   });
 });
 
+describe("hideSheetInWorkbookXml", () => {
+  const workbookXml =
+    '<workbook><bookViews><workbookView xWindow="0" activeTab="1"/></bookViews>' +
+    '<sheets><sheet name="Pivot" sheetId="2" r:id="rId1"/>' +
+    '<sheet name="Open Call" sheetId="1" r:id="rId2"/></sheets></workbook>';
+
+  it("marks the named sheet hidden and retargets the active tab to 0", () => {
+    const out = hideSheetInWorkbookXml(workbookXml, "Open Call");
+    expect(out).toContain(
+      '<sheet name="Open Call" sheetId="1" r:id="rId2" state="hidden"/>',
+    );
+    // The Pivot sheet is untouched and the workbook opens on a visible tab.
+    expect(out).toContain('<sheet name="Pivot" sheetId="2" r:id="rId1"/>');
+    expect(out).toContain('activeTab="0"');
+    expect(out).not.toContain('activeTab="1"');
+  });
+
+  it("replaces an existing state attribute instead of doubling it", () => {
+    const visible = workbookXml.replace(
+      'name="Open Call" sheetId="1"',
+      'name="Open Call" state="visible" sheetId="1"',
+    );
+    const out = hideSheetInWorkbookXml(visible, "Open Call");
+    expect(out).toContain('state="hidden"');
+    expect(out).not.toContain('state="visible"');
+  });
+
+  it("leaves the sheet list unchanged when the name is absent", () => {
+    const out = hideSheetInWorkbookXml(workbookXml, "Nope");
+    expect(out).not.toContain('state="hidden"');
+  });
+});
+
 // A minimal but structurally faithful pivot template: Sheet1 (source) + Pivot +
 // the two data sheets, plus a pivot cache definition pointing at Sheet1.
 function makeTemplate(): Uint8Array {
@@ -225,6 +259,33 @@ describe("buildPivotWorkbookBytes", () => {
     expect(() => buildPivotWorkbookBytes(broken, { sourceAoa })).toThrow(
       /Invalid pivot template/,
     );
+  });
+
+  it("hideSourceSheet hides the pivot's data-source tab (sheet stays present)", () => {
+    const out = buildPivotWorkbookBytes(makeTemplate(), {
+      sourceAoa,
+      records: {
+        name: "Records",
+        aoa: [["Ticket ID"], ["WO-1"]],
+        widths: [14],
+      },
+      hideSourceSheet: true,
+    });
+    const files = unzipSync(out);
+    const workbook = strFromU8(files["xl/workbook.xml"]!);
+
+    // The source tab is hidden; the sheet part still exists with the data (the
+    // PivotTable refreshes from it on open), and every other tab stays visible.
+    expect(workbook).toMatch(/<sheet name="Sheet1"[^>]*state="hidden"/);
+    expect(workbook).toMatch(/<sheet name="Pivot"(?![^>]*state="hidden")/);
+    expect(workbook).toMatch(/<sheet name="Records"(?![^>]*state="hidden")/);
+    expect(strFromU8(files["xl/worksheets/sheet1.xml"]!)).toContain("WO-1");
+  });
+
+  it("without hideSourceSheet every tab stays visible (regression)", () => {
+    const out = buildPivotWorkbookBytes(makeTemplate(), { sourceAoa });
+    const workbook = strFromU8(unzipSync(out)["xl/workbook.xml"]!);
+    expect(workbook).not.toContain('state="hidden"');
   });
 
   it("adds a styled Records sheet as a new tab without touching existing sheets", () => {
@@ -359,6 +420,39 @@ describe("buildPivotWorkbookBytes against the real pivot-template.xlsx", () => {
       const source = strFromU8(out[sourcePath]!);
       expect(source).toContain("WO-TEST-8");
       expect(source).toContain("Actionable");
+    },
+  );
+
+  // The exact configuration downloadReportAsXlsx ships: Records appended and
+  // the source tab hidden — the file must open with two visible tabs only.
+  it.skipIf(!hasTemplate)(
+    "production shape: Pivot + Records visible, source tab hidden",
+    () => {
+      const templateBytes = new Uint8Array(readFileSync(templatePath));
+      const header: string[] = [...DAILY_CALL_PLAN_COLUMNS];
+      const sourceAoa = [header, header.map(() => "x")];
+
+      const out = unzipSync(
+        buildPivotWorkbookBytes(templateBytes, {
+          sourceAoa,
+          openAoa: sourceAoa,
+          closedAoa: [["Ticket ID"]],
+          records: {
+            name: "Records",
+            aoa: sourceAoa,
+            widths: header.map(() => 12),
+          },
+          hideSourceSheet: true,
+        }),
+      );
+
+      const workbook = strFromU8(out["xl/workbook.xml"]!);
+      expect(workbook).toMatch(/<sheet name="Pivot"(?![^>]*state="hidden")/);
+      expect(workbook).toMatch(/<sheet name="Open Call"[^>]*state="hidden"/);
+      expect(workbook).toMatch(/<sheet name="Records"(?![^>]*state="hidden")/);
+      // Excel refuses a workbook whose active tab is hidden; it must be 0 now
+      // (the template ships with activeTab="1" — the Open Call sheet).
+      expect(workbook).toContain('activeTab="0"');
     },
   );
 });

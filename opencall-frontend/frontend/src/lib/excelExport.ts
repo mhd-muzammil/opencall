@@ -536,6 +536,10 @@ export async function downloadReportAsXlsx(
             },
           }
         : {}),
+      // The file opens with exactly two tabs — Pivot and Records. The pivot's
+      // data-source sheet stays in the workbook (the PivotTable refreshes from
+      // it on open) but its tab is hidden.
+      hideSourceSheet: true,
     });
     triggerDownload(workbookBytes, filename, XLSX_MIME);
   } catch (error) {
@@ -544,7 +548,7 @@ export async function downloadReportAsXlsx(
       error,
     );
     if (view) {
-      await downloadRecordsFallbackWorkbook(view, openCallAoa, closedCallsAoa, filename);
+      await downloadRecordsFallbackWorkbook(view, filename);
     } else {
       await downloadDataSheetsWorkbook(openCallAoa, closedCallsAoa, filename);
     }
@@ -653,24 +657,15 @@ export async function buildRecordsViewWorkbook(
   return workbook;
 }
 
-// Fallback for the merged export when the pivot template can't be fetched: the
-// styled Records sheet plus plain Open/Closed data sheets (no native pivot).
+// Fallback for the merged export when the pivot template can't be fetched:
+// just the styled Records sheet — no pivot is possible without the template,
+// and the export must never carry extra data tabs (the file is Pivot + Records
+// only by spec).
 async function downloadRecordsFallbackWorkbook(
   view: RecordsViewInput,
-  openAoa: ExportCellValue[][],
-  closedAoa: ExportCellValue[][],
   filename: string,
 ): Promise<void> {
   const workbook = await buildRecordsViewWorkbook(view.rows, view.columns);
-  for (const [name, aoa] of [
-    [OPEN_CALL_SHEET, openAoa],
-    [CLOSED_CALLS_SHEET, closedAoa],
-  ] as const) {
-    const sheet = workbook.addWorksheet(name);
-    for (const cells of aoa) {
-      sheet.addRow([...cells]);
-    }
-  }
   const buffer = await workbook.xlsx.writeBuffer();
   triggerDownload(new Uint8Array(buffer), filename, XLSX_MIME);
 }

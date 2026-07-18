@@ -393,3 +393,134 @@ describe("buildRecordsViewWorkbook", () => {
     expect(sheet?.getRow(2).getCell(2).value).toBe("WO-123");
   });
 });
+
+// ——— OCR export filename (company / region / BOD-EOD / date) ————————————————
+import {
+  buildOcrExportFilename,
+  formatOcrExportDate,
+  formatOcrRegionName,
+  isEveningStatusComplete,
+} from "./excelExport";
+
+function namedRow(
+  overrides: Partial<Record<string, string | number>>,
+  carry: Partial<GeneratedReportResponse["rows"][number]["carryForward"]> = {},
+): GeneratedReportResponse["rows"][number] {
+  return {
+    id: null,
+    serialNo: 1,
+    output: outputRow(overrides),
+    comparison: null,
+    carryForward: {
+      carriedForwardFields: [],
+      manualFieldsCompleted: true,
+      manualFieldsMissing: [],
+      changeType: null,
+      previousTicketMatched: true,
+      closedSyntheticRow: false,
+      sameDayClosedRow: false,
+      ...carry,
+    },
+    updatedAt: null,
+    updatedBy: null,
+    rowEditable: true,
+    carryForwardSource: "PREVIOUS_FINAL_REPORT",
+  };
+}
+
+describe("formatOcrExportDate", () => {
+  it("renders a report date as D-MonthName", () => {
+    expect(formatOcrExportDate("2026-07-15")).toBe("15-July");
+    expect(formatOcrExportDate("2026-01-01")).toBe("1-January");
+    expect(formatOcrExportDate("2026-12-31")).toBe("31-December");
+  });
+
+  it("passes an unparseable date through unchanged", () => {
+    expect(formatOcrExportDate("not-a-date")).toBe("not-a-date");
+  });
+});
+
+describe("formatOcrRegionName", () => {
+  it("title-cases the region map's uppercase names", () => {
+    expect(formatOcrRegionName("CHENNAI")).toBe("Chennai");
+    expect(formatOcrRegionName("vellore")).toBe("Vellore");
+    expect(formatOcrRegionName("  KANCHIPURAM ")).toBe("Kanchipuram");
+  });
+});
+
+describe("isEveningStatusComplete", () => {
+  it("is complete when every open call has a filled Evening status", () => {
+    const rows = [
+      namedRow({ "Evening status": "Case-Closed" }),
+      namedRow({ "Evening status": "SSC Pending" }),
+    ];
+    expect(isEveningStatusComplete(rows)).toBe(true);
+  });
+
+  it("one blank or placeholder Evening status keeps the day at BOD", () => {
+    expect(
+      isEveningStatusComplete([
+        namedRow({ "Evening status": "Case-Closed" }),
+        namedRow({ "Evening status": "" }),
+      ]),
+    ).toBe(false);
+    expect(
+      isEveningStatusComplete([
+        namedRow({ "Evening status": "Manual Entry Required" }),
+      ]),
+    ).toBe(false);
+  });
+
+  it("closed rows do not gate completeness; no open rows is never EOD", () => {
+    expect(
+      isEveningStatusComplete([
+        namedRow({ "Evening status": "Case-Closed" }),
+        // A closed synthetic row with no Evening entry must not block EOD.
+        namedRow({ "Evening status": "" }, { closedSyntheticRow: true }),
+      ]),
+    ).toBe(true);
+    expect(isEveningStatusComplete([])).toBe(false);
+    expect(
+      isEveningStatusComplete([
+        namedRow({ "Evening status": "" }, { closedSyntheticRow: true }),
+      ]),
+    ).toBe(false);
+  });
+});
+
+describe("buildOcrExportFilename", () => {
+  function reportWith(
+    rows: GeneratedReportResponse["rows"],
+    reportDate = "2026-07-15",
+  ): GeneratedReportResponse {
+    return { ...reportFixture(), reportDate, rows };
+  }
+
+  it("SUPER_ADMIN (no region): company + BOD while Evening entries are missing", () => {
+    const report = reportWith([namedRow({ "Evening status": "" })]);
+    expect(buildOcrExportFilename(report, null)).toBe(
+      "Renderways_Technology_Pvt_Ltd_OCR_BOD_15-July.xlsx",
+    );
+  });
+
+  it("SUPER_ADMIN: flips to EOD once every open call's Evening status is filled", () => {
+    const report = reportWith([
+      namedRow({ "Evening status": "Case-Closed" }),
+      namedRow({ "Evening status": "Under Observation" }),
+    ]);
+    expect(buildOcrExportFilename(report, null)).toBe(
+      "Renderways_Technology_Pvt_Ltd_OCR_EOD_15-July.xlsx",
+    );
+  });
+
+  it("REGION_ADMIN: company-Region with the region title-cased", () => {
+    const report = reportWith([namedRow({ "Evening status": "" })]);
+    expect(buildOcrExportFilename(report, "CHENNAI")).toBe(
+      "Renderways_Technology_Pvt_Ltd-Chennai_OCR_BOD_15-July.xlsx",
+    );
+    const eodReport = reportWith([namedRow({ "Evening status": "Case-Closed" })]);
+    expect(buildOcrExportFilename(eodReport, "VELLORE")).toBe(
+      "Renderways_Technology_Pvt_Ltd-Vellore_OCR_EOD_15-July.xlsx",
+    );
+  });
+});

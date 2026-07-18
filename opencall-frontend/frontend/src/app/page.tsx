@@ -2413,13 +2413,25 @@ export default function DashboardPage() {
     download(exportRows ? reportWithRows(report, rowsToExport) : report);
   }
 
-  // One workbook, one button: the exact old pivot export (native PivotTable +
-  // Today Open Call / Today Closed Calls) plus a styled "Records" sheet showing
-  // the table exactly as the employee sees it — their column layout/order,
-  // filters, search, and sort, with the on-screen blue header.
+  // One workbook, one button: the exact old pivot export (native PivotTable)
+  // plus a styled "Records" sheet showing the table exactly as the employee
+  // sees it — their column layout/order, filters, search, and sort, with the
+  // on-screen blue header.
+  //
+  // Filename: Renderways_Technology_Pvt_Ltd[-Region]_OCR_BOD|EOD_15-July.xlsx.
+  // A REGION_ADMIN export carries their region name; EOD only once every open
+  // call's Evening status is filled (see buildOcrExportFilename).
   function exportRecordsExcel() {
+    const exportRegionName =
+      session?.user?.role === "REGION_ADMIN"
+        ? report?.regionBreakdown?.[0]?.regionName ?? null
+        : null;
     exportReport((r) =>
-      void downloadReportAsXlsx(r, { rows: filteredRows, columns: visibleColumns }),
+      void downloadReportAsXlsx(
+        r,
+        { rows: filteredRows, columns: visibleColumns },
+        { regionName: exportRegionName },
+      ),
     );
   }
 

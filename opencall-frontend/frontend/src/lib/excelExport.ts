@@ -384,6 +384,74 @@ export function downloadReportAsExcel(
 const XLSX_MIME =
   "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
 
+// ——— OCR export filename ————————————————————————————————————————————————————
+// The workbook export is named for the company and the day's phase:
+//   Renderways_Technology_Pvt_Ltd_OCR_BOD_15-July.xlsx          (SUPER_ADMIN)
+//   Renderways_Technology_Pvt_Ltd-Chennai_OCR_EOD_15-July.xlsx  (REGION_ADMIN)
+// EOD only when the employees have filled the Evening status on EVERY open
+// call in the export — one missing entry keeps it a BOD file.
+const EXPORT_COMPANY_NAME = "Renderways_Technology_Pvt_Ltd";
+
+const EXPORT_MONTH_NAMES = [
+  "January", "February", "March", "April", "May", "June",
+  "July", "August", "September", "October", "November", "December",
+] as const;
+
+/** "2026-07-15" -> "15-July"; an unparseable date passes through unchanged. */
+export function formatOcrExportDate(reportDate: string): string {
+  const parsed = new Date(`${reportDate}T00:00:00`);
+  if (Number.isNaN(parsed.getTime())) {
+    return reportDate;
+  }
+  return `${parsed.getDate()}-${EXPORT_MONTH_NAMES[parsed.getMonth()]}`;
+}
+
+/** "VELLORE" / "vellore" -> "Vellore" (each word title-cased). */
+export function formatOcrRegionName(regionName: string): string {
+  return regionName
+    .trim()
+    .split(/\s+/)
+    .map((word) => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
+    .join(" ");
+}
+
+/**
+ * EOD when every OPEN call in the export carries a filled Evening status —
+ * closed rows (already done) and Request-to-Cancel rows don't gate it. With no
+ * open rows at all the day never reaches EOD via this export (stays BOD).
+ */
+export function isEveningStatusComplete(
+  rows: readonly GeneratedReportResponse["rows"][number][],
+): boolean {
+  const openRows = rows.filter(
+    (row) =>
+      !row.carryForward.closedSyntheticRow && !hasRequestToCancelFlexStatus(row),
+  );
+  if (openRows.length === 0) {
+    return false;
+  }
+  return openRows.every((row) => {
+    const value = String(row.output["Evening status"] ?? "").trim();
+    return value !== "" && value !== MANUAL_ENTRY_REQUIRED;
+  });
+}
+
+/**
+ * The exported workbook's filename. `regionName` is set for a REGION_ADMIN
+ * export (adds "-Chennai" after the company) and null/absent for SUPER_ADMIN.
+ */
+export function buildOcrExportFilename(
+  report: GeneratedReportResponse,
+  regionName?: string | null,
+): string {
+  const company = regionName?.trim()
+    ? `${EXPORT_COMPANY_NAME}-${formatOcrRegionName(regionName)}`
+    : EXPORT_COMPANY_NAME;
+  const phase = isEveningStatusComplete(report.rows) ? "EOD" : "BOD";
+  const date = report.reportDate || new Date().toISOString().split("T")[0];
+  return `${company}_OCR_${phase}_${formatOcrExportDate(date ?? "")}.xlsx`;
+}
+
 async function fetchPivotTemplate(
   url: string = PIVOT_TEMPLATE_URL,
 ): Promise<Uint8Array> {
@@ -444,13 +512,13 @@ async function downloadDataSheetsWorkbook(
 export async function downloadReportAsXlsx(
   report: GeneratedReportResponse,
   view?: RecordsViewInput,
+  naming?: { regionName?: string | null },
 ): Promise<void> {
   const { openRows, closedRows } = splitWorkbookRows(report);
   const openCallAoa = buildReportExportMatrixForRows(openRows);
   const closedCallsAoa = buildReportExportMatrixForRows(closedRows);
 
-  const date = report.reportDate || new Date().toISOString().split("T")[0];
-  const filename = `Daily_Call_Plan_${date}.xlsx`;
+  const filename = buildOcrExportFilename(report, naming?.regionName ?? null);
 
   try {
     const templateBytes = await fetchPivotTemplate();

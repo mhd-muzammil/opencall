@@ -1,6 +1,6 @@
 "use client";
 
-import { DAILY_CALL_PLAN_COLUMNS, RTPL_STATUS_OPTIONS, ASP_CODE_REGION_MAP, type DailyCallPlanColumn } from "@opencall/shared";
+import { DAILY_CALL_PLAN_COLUMNS, RTPL_STATUS_OPTIONS, ASP_CODE_REGION_MAP, isScheduledStatus, type DailyCallPlanColumn } from "@opencall/shared";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { ColumnFilterDropdown } from "../components/ColumnFilterDropdown";
@@ -2172,6 +2172,25 @@ export default function DashboardPage() {
       if (Object.keys(values).length === 0) {
         cancelEditing();
         return;
+      }
+
+      // Feature A — scheduling requires an engineer. Mirror of the server guard
+      // so the user gets instant feedback and we don't fire a doomed PATCH. The
+      // server re-enforces this (special-access / direct-API saves bypass here).
+      const settingScheduled =
+        isScheduledStatus(values.rtpl_status ?? undefined) ||
+        isScheduledStatus(values.evening_rtpl_status ?? undefined);
+      if (settingScheduled) {
+        const effectiveEngineer = (
+          "engineer" in values
+            ? values.engineer ?? ""
+            : String(row.output["Engineer"] ?? "")
+        ).trim();
+        if (!effectiveEngineer || effectiveEngineer === MANUAL_ENTRY_REQUIRED) {
+          setSaveError("You must assign an engineer before scheduling.");
+          setSavingSerialNo(null);
+          return;
+        }
       }
 
       // Special-access logins are not `users` rows, so PATCH /report-rows/:id (which is

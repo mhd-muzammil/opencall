@@ -51,12 +51,14 @@ describe("normalizeFilterValue", () => {
     expect(normalizeFilterValue("Visit Quote\u200b To\u200e Customer\ufeff")).toBe("VISIT QUOTE TO CUSTOMER");
   });
 
-  it("maps known business aliases to one filter value", () => {
-    expect(normalizeFilterValue("SSC Pending")).toBe("PART PENDING");
-    expect(normalizeFilterValue("SSC Pending -> Part Pending")).toBe("PART PENDING");
-    expect(normalizeFilterValue("SSC Pending \u2192 Part Pending")).toBe("PART PENDING");
+  it("merges spelling-only aliases but keeps distinct statuses distinct", () => {
     expect(normalizeFilterValue("To be schedule")).toBe("TO BE SCHEDULED");
     expect(normalizeFilterValue("to be scheduled")).toBe("TO BE SCHEDULED");
+    // Regression (prod 2026-07-20): "SSC Pending" and "Part Pending" are
+    // separate statuses \u2014 the filter must list them separately, exactly as
+    // the cells display them.
+    expect(normalizeFilterValue("SSC Pending")).toBe("SSC PENDING");
+    expect(normalizeFilterValue("Part Pending")).toBe("PART PENDING");
   });
 
   it("returns (blank) for empty/null/undefined", () => {
@@ -115,18 +117,21 @@ describe("extractUniqueValues", () => {
     ]);
   });
 
-  it("groups known status aliases into one dropdown option", () => {
+  it("keeps SSC Pending and Part Pending as separate dropdown options", () => {
+    // Regression (prod 2026-07-20): an old alias grouped SSC Pending under
+    // PART PENDING, so a row edited to "SSC Pending" still showed up in the
+    // filter as "PART PENDING". The dropdown must mirror the cells.
     const rows = [
       makeRow({ "RTPL status": "SSC Pending" }),
-      makeRow({ "RTPL status": "SSC Pending -> Part Pending" }),
-      makeRow({ "RTPL status": "SSC Pending \u2192 Part Pending" }),
+      makeRow({ "RTPL status": "ssc pending" }),
       makeRow({ "RTPL status": "Part Pending" }),
       makeRow({ "RTPL status": "To be schedule" }),
       makeRow({ "RTPL status": "to be scheduled" }),
     ];
 
     expect(extractUniqueValues(rows, "RTPL status")).toEqual([
-      { value: "PART PENDING", count: 4 },
+      { value: "PART PENDING", count: 1 },
+      { value: "SSC PENDING", count: 2 },
       { value: "TO BE SCHEDULED", count: 2 },
     ]);
   });

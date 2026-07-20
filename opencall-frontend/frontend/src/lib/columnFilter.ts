@@ -32,10 +32,13 @@ export type FilterableColumn = (typeof FILTERABLE_COLUMNS)[number];
 // ---------------------------------------------------------------------------
 
 /** Normalise a cell value to a stable string for comparison / display. */
+// Spelling-only aliases. Filtering is otherwise WYSIWYG \u2014 the dropdown lists
+// exactly the values the cells display, like Excel's filter. "SSC Pending"
+// used to be aliased to "PART PENDING" here, which made the dropdown claim
+// "PART PENDING (21)" for rows visibly showing "SSC Pending" after the team
+// split the two statuses (prod bug, 2026-07-20). Distinct statuses must stay
+// distinct filter values; only same-word typos may be merged.
 const FILTER_VALUE_ALIASES = new Map<string, string>([
-  ["SSC PENDING", "PART PENDING"],
-  ["SSC PENDING -> PART PENDING", "PART PENDING"],
-  ["SSC PENDING \u2192 PART PENDING", "PART PENDING"],
   ["TO BE SCHEDULE", "TO BE SCHEDULED"],
 ]);
 

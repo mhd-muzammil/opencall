@@ -12,6 +12,11 @@ import { UploadDrawer } from "../components/UploadDrawer";
 import { RTPLStatusDropdown, buildStatusGroups, type StatusGroup } from "../components/RTPLStatusDropdown";
 import { DebouncedSearchInput } from "../components/DebouncedSearchInput";
 import { VirtualTbody } from "../components/VirtualTbody";
+import {
+  LayoutGrid, FolderCheck, LineChart, Activity, Timer, Layers, Map as MapIcon, Zap, TrendingUp,
+  Table, Wrench, FileText, Users, UserPlus, ShieldCheck, Tag, Upload, ScrollText,
+  RefreshCw, LogOut,
+} from "lucide-react";
 import { useColumnFilters } from "../lib/useColumnFilters";
 import {
   MANUAL_ENTRY_REQUIRED,
@@ -3329,7 +3334,7 @@ export default function DashboardPage() {
             onClick={() => setWorkspaceView("overview")}
           >
             <span className="sidebarIcon">
-              <span>📊</span> <span className="sidebarText">Overview</span>
+              <LayoutGrid size={18} strokeWidth={2} /> <span className="sidebarText">Overview</span>
             </span>
           </button>
           )}
@@ -3341,10 +3346,10 @@ export default function DashboardPage() {
             onClick={() => setWorkspaceView("closed-calls")}
           >
             <span className="sidebarIcon">
-              <span>📁</span> <span className="sidebarText">Closed Calls</span>
+              <FolderCheck size={18} strokeWidth={2} /> <span className="sidebarText">Closed Calls</span>
             </span>
             {overallClosedCount > 0 && (
-              <span className="sidebarBadge" style={{ background: "#10b981" }}>{overallClosedCount}</span>
+              <span className="sidebarBadge" style={{ background: "#dcfce7", color: "#15803d" }}>{overallClosedCount}</span>
             )}
           </button>
           )}
@@ -3356,7 +3361,7 @@ export default function DashboardPage() {
             onClick={() => setWorkspaceView("rtpl-dashboard")}
           >
             <span className="sidebarIcon">
-              <span>📈</span> <span className="sidebarText">RTPL Dashboard</span>
+              <LineChart size={18} strokeWidth={2} /> <span className="sidebarText">RTPL Dashboard</span>
             </span>
           </button>
           )}
@@ -3368,7 +3373,7 @@ export default function DashboardPage() {
             onClick={() => setWorkspaceView("rtpl")}
           >
             <span className="sidebarIcon">
-              <span>📈</span> <span className="sidebarText">RTPL Houres status</span>
+              <Activity size={18} strokeWidth={2} /> <span className="sidebarText">BOD & EOD Status</span>
             </span>
           </button>
           )}
@@ -3380,7 +3385,7 @@ export default function DashboardPage() {
             onClick={() => setWorkspaceView("sla-tat")}
           >
             <span className="sidebarIcon">
-              <span>⏰</span> <span className="sidebarText">SLA TaT</span>
+              <Timer size={18} strokeWidth={2} /> <span className="sidebarText">SLA TaT</span>
             </span>
           </button>
           )}
@@ -3392,7 +3397,7 @@ export default function DashboardPage() {
             onClick={() => setWorkspaceView("pivot")}
           >
             <span className="sidebarIcon">
-              <span>🧩</span> <span className="sidebarText">RTPL pivot</span>
+              <Layers size={18} strokeWidth={2} /> <span className="sidebarText">RTPL pivot</span>
             </span>
           </button>
           )}
@@ -3404,7 +3409,7 @@ export default function DashboardPage() {
             onClick={() => setWorkspaceView("tn-view-status")}
           >
             <span className="sidebarIcon">
-              <span>📊</span> <span className="sidebarText">TN VIEW Status</span>
+              <MapIcon size={18} strokeWidth={2} /> <span className="sidebarText">TN VIEW Status</span>
             </span>
           </button>
           )}
@@ -3416,7 +3421,7 @@ export default function DashboardPage() {
             onClick={() => setWorkspaceView("flex")}
           >
             <span className="sidebarIcon">
-              <span>⚡</span> <span className="sidebarText">Flex Dashboard</span>
+              <Zap size={18} strokeWidth={2} /> <span className="sidebarText">Flex Dashboard</span>
             </span>
           </button>
           )}
@@ -3428,7 +3433,7 @@ export default function DashboardPage() {
             onClick={() => setWorkspaceView("flex-eod-bod")}
           >
             <span className="sidebarIcon">
-              <span>📈</span> <span className="sidebarText">Flex Eod&Bod</span>
+              <TrendingUp size={18} strokeWidth={2} /> <span className="sidebarText">Flex EOD & BOD</span>
             </span>
           </button>
           )}
@@ -3449,7 +3454,7 @@ export default function DashboardPage() {
             onClick={() => setWorkspaceView("records")}
           >
             <span className="sidebarIcon">
-              <span>📋</span> <span className="sidebarText">Records Table</span>
+              <Table size={18} strokeWidth={2} /> <span className="sidebarText">Open Call Report</span>
             </span>
             {report && incompleteCellCount > 0 && (
               <span className="sidebarBadge">{incompleteCellCount}</span>
@@ -3467,7 +3472,7 @@ export default function DashboardPage() {
               onClick={() => setWorkspaceView("parts-catalog")}
             >
               <span className="sidebarIcon">
-                <span>🔩</span> <span className="sidebarText">Parts Catalog</span>
+                <Wrench size={18} strokeWidth={2} /> <span className="sidebarText">Parts Catalog</span>
               </span>
             </button>
           )}
@@ -3482,7 +3487,7 @@ export default function DashboardPage() {
               onClick={() => setWorkspaceView("quotations")}
             >
               <span className="sidebarIcon">
-                <span>📄</span> <span className="sidebarText">Quotations</span>
+                <FileText size={18} strokeWidth={2} /> <span className="sidebarText">Quotations</span>
               </span>
             </button>
           )}
@@ -3498,7 +3503,7 @@ export default function DashboardPage() {
               onClick={() => setWorkspaceView("productivity")}
             >
               <span className="sidebarIcon">
-                <span>👥</span> <span className="sidebarText">Engineer Productivity</span>
+                <Users size={18} strokeWidth={2} /> <span className="sidebarText">Engineer Productivity</span>
               </span>
             </button>
           )}
@@ -3510,7 +3515,7 @@ export default function DashboardPage() {
               onClick={() => setWorkspaceView("admin-engineers")}
             >
               <span className="sidebarIcon">
-                <span>👤</span> <span className="sidebarText">Add Engineers</span>
+                <UserPlus size={18} strokeWidth={2} /> <span className="sidebarText">Add Engineers</span>
               </span>
             </button>
           )}
@@ -3524,7 +3529,7 @@ export default function DashboardPage() {
                 onClick={() => setWorkspaceView("warranty")}
               >
                 <span className="sidebarIcon">
-                  <span>🛡️</span> <span className="sidebarText">Warranty Lookup</span>
+                  <ShieldCheck size={18} strokeWidth={2} /> <span className="sidebarText">Warranty Lookup</span>
                 </span>
               </button>
             )}
@@ -3536,7 +3541,7 @@ export default function DashboardPage() {
               onClick={() => setWorkspaceView("admin-rtpl-statuses")}
             >
               <span className="sidebarIcon">
-                <span>🏷️</span> <span className="sidebarText">RTPL Statuses</span>
+                <Tag size={18} strokeWidth={2} /> <span className="sidebarText">RTPL Statuses</span>
               </span>
             </button>
           )}
@@ -3550,7 +3555,7 @@ export default function DashboardPage() {
               onClick={() => setIsUploadDrawerOpen(true)}
             >
               <span className="sidebarIcon">
-                <span>📤</span> <span className="sidebarText">Upload Files</span>
+                <Upload size={18} strokeWidth={2} /> <span className="sidebarText">Upload Files</span>
               </span>
             </button>
           )}
@@ -3561,7 +3566,7 @@ export default function DashboardPage() {
             onClick={() => setIsHistoryPanelOpen(true)}
           >
             <span className="sidebarIcon">
-              <span>📜</span> <span className="sidebarText">History Logs</span>
+              <ScrollText size={18} strokeWidth={2} /> <span className="sidebarText">History Logs</span>
             </span>
           </button>
 
@@ -3572,7 +3577,7 @@ export default function DashboardPage() {
             disabled={isBusy}
           >
             <span className="sidebarIcon">
-              <span>🔄</span> <span className="sidebarText">Refresh Workspace</span>
+              <RefreshCw size={18} strokeWidth={2} /> <span className="sidebarText">Refresh Workspace</span>
             </span>
           </button>
 
@@ -3582,10 +3587,9 @@ export default function DashboardPage() {
             type="button"
             className="sidebarItem danger"
             onClick={handleLogout}
-            style={{ color: "#f87171" }}
           >
             <span className="sidebarIcon">
-              <span>🚪</span> <span className="sidebarText">Log Out</span>
+              <LogOut size={18} strokeWidth={2} /> <span className="sidebarText">Log Out</span>
             </span>
           </button>
         </div>

@@ -16,6 +16,7 @@ export * from "./RegionBreakdown";
 export * from "./EditRecordModal";
 export * from "./OverviewCharts";
 export * from "./ProductivityPage";
+export * from "./RegionDayStatusBar";
 export * from "./TNViewStatusPage";
 export * from "./SLATatPage";
 export * from "./FlexEodBodPage";

@@ -85,6 +85,8 @@ import {
   MatchPreviewSection,
   RTPLTimeModal,
   ProductivityPage,
+  RegionDayStatusBar,
+  RegionEodQuickAction,
   RTPLDashboard,
   FlexDashboard,
   CaseTypeCards,
@@ -146,6 +148,7 @@ import {
 } from "../lib/apiClient";
 import type { DropdownEngineer } from "../lib/api/types";
 import { LoginScreen, SessionLoadingScreen } from "../features/auth/LoginScreen";
+import { BusyOverlay } from "../components/ui/BoxesLoader";
 import AdminEngineersPage from "./admin/engineers/page";
 import { getRecordLayout } from "../lib/recordLayoutApiClient";
 import { AdminRtplStatusesManager } from "../components/AdminRtplStatusesManager";
@@ -1221,7 +1224,7 @@ export default function DashboardPage() {
     [session, productivityEodDateIso, refreshProductivityEodState],
   );
 
-  // Chip/button model for the ProductivityPage EOD bar. A REGION_ADMIN may
+  // Chip/button model for the Records-page EOD bar. A REGION_ADMIN may
   // Final-EOD their own region only (the backend enforces this regardless);
   // reopen is SUPER_ADMIN only.
   const productivityEodRegions = useMemo(() => {
@@ -1243,6 +1246,19 @@ export default function DashboardPage() {
       canReopen: region.status === "CLOSED" && isSuperAdminUser,
     }));
   }, [session, productivityEodState]);
+
+  // A REGION_ADMIN sees only their own region's Final-EOD control (a compact
+  // button in the records toolbar); the multi-region chip bar is SUPER_ADMIN's.
+  const ownRegionEod = useMemo(() => {
+    if (!session || session.user.role !== "REGION_ADMIN") {
+      return null;
+    }
+    const userRegionId = session.user.regionId ?? session.user.region_id;
+    return (
+      productivityEodRegions.find((region) => region.regionId === userRegionId) ??
+      null
+    );
+  }, [session, productivityEodRegions]);
 
 
 
@@ -4040,11 +4056,6 @@ export default function DashboardPage() {
                         regionsList={report?.regionBreakdown ?? []}
                         isSuperAdmin={session?.user?.role === "SUPER_ADMIN"}
                         openRecordsWithFilter={openRecordsWithFilter}
-                        eodRegions={productivityEodRegions}
-                        eodWorkingDate={productivityEodDateIso}
-                        eodBusyRegionId={eodBusyRegionId}
-                        onCloseRegionEod={handleCloseRegionEod}
-                        onReopenRegionEod={handleReopenRegionEod}
                       />
                     )}
 
@@ -4116,6 +4127,19 @@ export default function DashboardPage() {
                         onDownloadBodEod={handleDownloadBodEod}
                         hideTimeCards={true}
                       />
+                      {/* Per-region Final EOD: closing a region's day freezes
+                          these records, so the control belongs with them. The
+                          all-regions bar is SUPER_ADMIN-only; a REGION_ADMIN
+                          gets a compact own-region button in the toolbar below. */}
+                      {session?.user?.role === "SUPER_ADMIN" && (
+                        <RegionDayStatusBar
+                          regions={productivityEodRegions}
+                          workingDate={productivityEodDateIso}
+                          busyRegionId={eodBusyRegionId}
+                          onCloseRegionEod={handleCloseRegionEod}
+                          onReopenRegionEod={handleReopenRegionEod}
+                        />
+                      )}
                       <div className="recordsScopeRow">
                         {/* Active category breakdown grid layout */}
                         <div className="recordsScopeCard">
@@ -4341,6 +4365,13 @@ export default function DashboardPage() {
                           >
                             Back to Dashboard
                           </button>
+                          {ownRegionEod && (
+                            <RegionEodQuickAction
+                              region={ownRegionEod}
+                              busy={eodBusyRegionId === ownRegionEod.regionId}
+                              onCloseRegionEod={handleCloseRegionEod}
+                            />
+                          )}
                         </div>
                       </div>
 
@@ -4445,6 +4476,10 @@ export default function DashboardPage() {
           </section>
         </div>
       </main>
+
+      {/* Full-screen loader for long operations (generate/upload/preview).
+          Fades in only after ~250ms of busy, so quick actions never flash it. */}
+      {isBusy && <BusyOverlay />}
 
       {/* 3. Super Admin Engineer Productivity Dashboard Page */}
       {/* Replaced with direct panel rendering under workspaceView === "productivity" */}

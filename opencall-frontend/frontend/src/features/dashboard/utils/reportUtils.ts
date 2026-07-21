@@ -83,6 +83,49 @@ export function isActionableStatusValue(status: unknown): boolean {
   return s === "scheduled" || s === "to be scheduled";
 }
 
+function normalizeStatusValue(status: unknown): string {
+  return String(status ?? "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim();
+}
+
+/**
+ * Planned = the day's booked visits: status "Scheduled" or an
+ * engineer-assigned variant (exact match). Deliberately NOT "To be Scheduled"
+ * (that's its own row/bucket) and NOT onsite (see isOnsiteStatusValue).
+ * Single definition behind the BOD/EOD and TN VIEW "Planned Calls" rows.
+ */
+export function isPlannedStatusValue(status: unknown): boolean {
+  const s = normalizeStatusValue(status);
+  return (
+    s === "scheduled" ||
+    s === "engg assigned" ||
+    s === "eng assigned" ||
+    s === "engineer assigned"
+  );
+}
+
+/**
+ * Engg onsite = the engineer is physically at the customer: any status
+ * containing "onsite". Assigned/scheduled no longer count here — a booking is
+ * Planned, not onsite.
+ */
+export function isOnsiteStatusValue(status: unknown): boolean {
+  return normalizeStatusValue(status).includes("onsite");
+}
+
+/**
+ * Closed = an explicit closure status ("Case-Closed" / "WO Closed" and manual
+ * variants). Matches the shared engineer-productivity CLOSED vocabulary.
+ * Deliberately not "Closed-cancellation" / "Need to Close" — an intent to
+ * close is not a completed close.
+ */
+export function isCaseClosedStatusValue(status: unknown): boolean {
+  const s = normalizeStatusValue(status);
+  return s.includes("case close") || s.includes("wo close");
+}
+
 export function normalizeRecordSearchValue(value: unknown): string {
   return String(value ?? "").trim().toLowerCase();
 }

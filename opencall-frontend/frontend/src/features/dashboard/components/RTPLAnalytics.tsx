@@ -4,7 +4,16 @@
 // modal-opening changes). openRtplCheckpointModal and openRecordsWithFilter are
 // passed in unchanged. These two sections render unconditionally in page.tsx.
 import { useMemo, type Dispatch, type SetStateAction } from "react";
-import { formatNumber, todayIsoDate, isWarrantyCase, isTradeCase, isActionableStatusValue } from "../utils";
+import {
+  formatNumber,
+  todayIsoDate,
+  isWarrantyCase,
+  isTradeCase,
+  isActionableStatusValue,
+  isPlannedStatusValue,
+  isOnsiteStatusValue,
+  isCaseClosedStatusValue,
+} from "../utils";
 import type { ReportRow, RtplCaseScope } from "../types";
 import {
   ALL_REGIONS_FILTER,
@@ -67,8 +76,9 @@ function calculateKpiMetricsForCardView(
 
   // Actionable = "Scheduled" + "To Be Scheduled" (shared definition).
   const actionableRows = active.filter(r => isActionableStatusValue(getRowStatus(r)));
-  const plannedRows = active.filter(r => matchStatus(r, ["assigned", "scheduled", "onsite"], ["pending", "to be"]));
-  const enggOnsiteRows = active.filter(r => matchStatus(r, ["assigned", "onsite"], ["pending", "to be"]));
+  // Planned = Scheduled + Engineer Assigned (exact); onsite is its own bucket.
+  const plannedRows = active.filter(r => isPlannedStatusValue(getRowStatus(r)));
+  const enggOnsiteRows = active.filter(r => isOnsiteStatusValue(getRowStatus(r)));
   const toBeScheduleRows = active.filter(r => matchStatus(r, ["to be scheduled", "assignment pending", "non avl", "missed to schedule"]));
   const cxRescheduleRows = active.filter(r => matchStatus(r, ["cx pending", "reschedule", "cx", "cust delay", "customer delay", "customer pending"]));
   const sscPendingRows = active.filter(r => matchStatus(r, ["ssc pending", "ssc"]));
@@ -86,13 +96,20 @@ function calculateKpiMetricsForCardView(
   const closedCancelledRows = closed.filter((r) => matchStatus(r, ["cancel"]));
   const newCallsRows = active.filter((r) => r.comparison?.changeType === "NEW");
 
+  // Closed Calls = an explicit "Case-Closed" status in this column, plus rows
+  // that closed by vanishing from the day's Flex file (closed synthetic rows).
+  const caseClosedRows = [
+    ...active.filter((r) => isCaseClosedStatusValue(getRowStatus(r))),
+    ...closed,
+  ];
+
   return {
     engineerCount,
     enggPresents: presentEngineers.length,
     openCalls: active.length,
     actionable: actionableRows.length,
     planned: plannedRows.length,
-    closedCalls: closed.length,
+    closedCalls: caseClosedRows.length,
     enggOnsite: enggOnsiteRows.length,
     toBeSchedule: toBeScheduleRows.length,
     cxReschedule: cxRescheduleRows.length,
@@ -112,7 +129,7 @@ function calculateKpiMetricsForCardView(
       openCalls: getTicketIds(active),
       actionable: getTicketIds(actionableRows),
       planned: getTicketIds(plannedRows),
-      closedCalls: getTicketIds(closed),
+      closedCalls: getTicketIds(caseClosedRows),
       enggOnsite: getTicketIds(enggOnsiteRows),
       toBeSchedule: getTicketIds(toBeScheduleRows),
       cxReschedule: getTicketIds(cxRescheduleRows),
@@ -347,8 +364,32 @@ export function RTPLDashboard({
       eodStatusMap[r.ticketId] = r.eodStatus;
     });
 
-    const bodKpiMetrics = calculateKpiMetricsForCardView(rtplAnalyticsRows, bodStatusMap, true);
-    const eodKpiMetrics = calculateKpiMetricsForCardView(rtplAnalyticsRows, eodStatusMap, false);
+    // Attended = a planned case (Morning Scheduled / Engineer Assigned) whose
+    // status has since moved on: the Evening entry exists and is no longer a
+    // planning status. An Evening set back to Scheduled/Assigned is still just
+    // booked, not attended. Needs both columns, so it lives here rather than
+    // in calculateKpiMetricsForCardView.
+    const attendedRows = rowsWithStatuses.filter(
+      (r) =>
+        isPlannedStatusValue(r.bodStatus) &&
+        r.eodStatus !== "" &&
+        !isPlannedStatusValue(r.eodStatus),
+    );
+    const attendedTicketIds = attendedRows.map((r) => r.ticketId);
+
+    const bodBase = calculateKpiMetricsForCardView(rtplAnalyticsRows, bodStatusMap, true);
+    const eodBase = calculateKpiMetricsForCardView(rtplAnalyticsRows, eodStatusMap, false);
+    // Attended is an EOD-only outcome; the BOD side stays empty by definition.
+    const bodKpiMetrics = {
+      ...bodBase,
+      attended: 0,
+      tickets: { ...bodBase.tickets, attended: [] as string[] },
+    };
+    const eodKpiMetrics = {
+      ...eodBase,
+      attended: attendedRows.length,
+      tickets: { ...eodBase.tickets, attended: attendedTicketIds },
+    };
 
     return {
       card,
@@ -535,7 +576,7 @@ export function RTPLDashboard({
                     { id: 3, desc: "Open Calls", key: "openCalls" },
                     { id: 4, desc: "Actionable Calls", key: "actionable" },
                     { id: 5, desc: "Planned Calls", key: "planned" },
-                    { id: 6, desc: "Attended", key: "planned", isEodOnly: true },
+                    { id: 6, desc: "Attended", key: "attended", isEodOnly: true },
                     { id: 7, desc: "Closed Calls", key: "closedCalls", isEodOnly: true, alert: true },
                     { id: 8, desc: "Engg onsite", key: "enggOnsite" },
                     { id: 9, desc: "To be schedule", key: "toBeSchedule" },

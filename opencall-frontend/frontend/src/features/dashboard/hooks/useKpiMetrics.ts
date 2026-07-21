@@ -9,7 +9,15 @@
 import { useMemo } from "react";
 import type { GeneratedReportResponse } from "../../../lib/apiClient";
 import type { ReportRow } from "../types";
-import { isWarrantyCase, isPrintCase, isTradeCase, countManualRequiredCells } from "../utils";
+import {
+  isWarrantyCase,
+  isPrintCase,
+  isTradeCase,
+  countManualRequiredCells,
+  isPlannedStatusValue,
+  isOnsiteStatusValue,
+  isCaseClosedStatusValue,
+} from "../utils";
 
 export function useKpiMetrics(params: {
   report: GeneratedReportResponse | null;
@@ -73,8 +81,22 @@ export function useKpiMetrics(params: {
     };
 
     const actionable = active.filter(r => matchStatus(r, ["actionable"], ["customer", "cust", "cx", "delay", "pending"])).length;
-    const planned = active.filter(r => matchStatus(r, ["assigned", "scheduled", "onsite"], ["pending", "to be"])).length;
-    const enggOnsite = active.filter(r => matchStatus(r, ["assigned", "onsite"], ["pending", "to be"])).length;
+    // Planned = Scheduled + Engineer Assigned (exact); onsite is its own bucket.
+    const planned = active.filter(r => isPlannedStatusValue(getRowStatus(r))).length;
+    const enggOnsite = active.filter(r => isOnsiteStatusValue(getRowStatus(r))).length;
+    // Attended = a planned (Morning Scheduled/Engg Assigned) case whose Evening
+    // status exists and has moved past the planning stage. Cross-column by
+    // nature, so it reads Morning/Evening directly regardless of view mode.
+    const attended = active.filter((r) => {
+      const morning = String(r.output["RTPL status"] ?? "").trim();
+      const evening = String(r.output["Evening status"] ?? "").trim();
+      return (
+        isPlannedStatusValue(morning) &&
+        evening !== "" &&
+        evening.toLowerCase() !== "manual entry required" &&
+        !isPlannedStatusValue(evening)
+      );
+    }).length;
     const toBeSchedule = active.filter(r => matchStatus(r, ["to be scheduled", "assignment pending", "non avl", "missed to schedule"])).length;
     const cxReschedule = active.filter(r => matchStatus(r, ["cx pending", "reschedule", "cx", "cust delay", "customer delay", "customer pending"])).length;
     const sscPending = active.filter(r => matchStatus(r, ["ssc pending", "ssc"])).length;
@@ -90,13 +112,20 @@ export function useKpiMetrics(params: {
 
     const closedCancelled = closed.filter((r) => matchStatus(r, ["cancel"])).length;
 
+    // Closed Calls = an explicit "Case-Closed" status, plus rows that closed
+    // by vanishing from the day's Flex file (closed synthetic rows).
+    const caseClosed =
+      active.filter((r) => isCaseClosedStatusValue(getRowStatus(r))).length +
+      closed.length;
+
     return {
       engineerCount,
       enggPresents: engineerCount,
       openCalls: active.length,
       actionable,
       planned,
-      closedCalls: closed.length,
+      attended,
+      closedCalls: caseClosed,
       enggOnsite,
       toBeSchedule,
       cxReschedule,

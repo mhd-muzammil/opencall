@@ -39,6 +39,7 @@ export function TNViewStatusPage({
     openCalls: number;
     actionable: number;
     planned: number;
+    attended: number;
     closedCalls: number;
     enggOnsite: number;
     toBeSchedule: number;
@@ -218,7 +219,7 @@ export function TNViewStatusPage({
                   { id: 3, desc: "Open Calls", val: regionKpiMetrics.openCalls },
                   { id: 4, desc: "Actionable Calls", val: regionKpiMetrics.actionable },
                   { id: 5, desc: "Planned Calls", val: regionKpiMetrics.planned },
-                  { id: 6, desc: "Attended", val: regionKpiMetrics.planned },
+                  { id: 6, desc: "Attended", val: regionKpiMetrics.attended },
                   { id: 7, desc: "Closed Calls", val: regionKpiMetrics.closedCalls, alert: true },
                   { id: 8, desc: "Engg onsite", val: regionKpiMetrics.enggOnsite },
                   { id: 9, desc: "To be schedule", val: regionKpiMetrics.toBeSchedule },

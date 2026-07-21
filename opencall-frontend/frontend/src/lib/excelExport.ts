@@ -16,7 +16,12 @@ import {
   isWarrantyCase,
   isPrintCase as isPrintTypeCase,
 } from "../features/dashboard/utils/caseClassification";
-import { isActionableStatusValue } from "../features/dashboard/utils/reportUtils";
+import {
+  isActionableStatusValue,
+  isPlannedStatusValue,
+  isOnsiteStatusValue,
+  isCaseClosedStatusValue,
+} from "../features/dashboard/utils/reportUtils";
 // Runtime `xlsx` (~900KB) is loaded lazily at export time so it stays out of the
 // initial page bundle. Only the type namespace is imported statically (erased at
 // build). Every function that touches the workbook API is async and awaits this.
@@ -852,11 +857,28 @@ export async function downloadRegionSummaryExcel(
   } else {
     // 2. Salem region KPI summaries
     const openCallsCount = activeRows.length;
-    const closedCallsCount = closedRows.length;
     // Actionable = "Scheduled" + "To Be Scheduled" (shared definition).
     const actionableCount = activeRows.filter(r => isActionableStatusValue(getRowStatus(r))).length;
-    const plannedCount = activeRows.filter(r => matchStatus(r, ["assigned", "scheduled", "onsite"], ["pending", "to be"])).length;
-    const enggOnsiteCount = activeRows.filter(r => matchStatus(r, ["assigned", "onsite"], ["pending", "to be"])).length;
+    // Planned = Scheduled + Engineer Assigned (exact); onsite is its own bucket.
+    const plannedCount = activeRows.filter(r => isPlannedStatusValue(getRowStatus(r))).length;
+    const enggOnsiteCount = activeRows.filter(r => isOnsiteStatusValue(getRowStatus(r))).length;
+    // Attended = a planned (Morning Scheduled/Engg Assigned) case whose Evening
+    // status exists and has moved past the planning stage — cross-column, so it
+    // reads Morning/Evening directly (mirrors the on-screen BOD & EOD table).
+    const attendedCount = activeRows.filter((r) => {
+      const morning = String(r.output["RTPL status"] ?? "").trim();
+      const evening = String(r.output["Evening status"] ?? "").trim();
+      return (
+        isPlannedStatusValue(morning) &&
+        evening !== "" &&
+        evening.toLowerCase() !== "manual entry required" &&
+        !isPlannedStatusValue(evening)
+      );
+    }).length;
+    // Closed Calls = explicit "Case-Closed" statuses plus closed-by-vanishing rows.
+    const caseClosedCount =
+      activeRows.filter((r) => isCaseClosedStatusValue(getRowStatus(r))).length +
+      closedRows.length;
     const toBeScheduleCount = activeRows.filter(r => matchStatus(r, ["to be scheduled", "assignment pending", "non avl", "missed to schedule"])).length;
     const cxRescheduleCount = activeRows.filter(r => matchStatus(r, ["cx pending", "reschedule", "cx", "cust delay", "customer delay", "customer pending"])).length;
     const sscPendingCount = activeRows.filter(r => matchStatus(r, ["ssc pending", "ssc"])).length;
@@ -882,8 +904,8 @@ export async function downloadRegionSummaryExcel(
       [3, "Open Calls", openCallsCount],
       [4, "Actionable Calls", actionableCount || 0],
       [5, "Planned Calls", plannedCount || 0],
-      [6, "Attended", plannedCount || 0],
-      [7, "Closed Calls", closedCallsCount || 0],
+      [6, "Attended", isBod ? 0 : attendedCount || 0],
+      [7, "Closed Calls", caseClosedCount || 0],
       [8, "Engg onsite", enggOnsiteCount || 0],
       [9, "To be schedule", toBeScheduleCount || 0],
       [10, "CX Reschedule Calls", cxRescheduleCount || 0],

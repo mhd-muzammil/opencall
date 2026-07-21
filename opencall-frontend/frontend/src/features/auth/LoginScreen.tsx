@@ -3,6 +3,7 @@ import {
   AnimatedForm,
   TechOrbitDisplay,
 } from "../../components/ui/animated-login";
+import { BoxesLoader } from "../../components/ui/BoxesLoader";
 import type {
   DatabaseHealthResponse,
   RuntimeHealthResponse,
@@ -11,7 +12,25 @@ import type {
 export function SessionLoadingScreen() {
   return (
     <main className="loginShell">
-      <section className="loginCard loading">
+      <section
+        className="loginCard loading"
+        style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "8px" }}
+      >
+        {/* Solid white, clipped stage: the loader's roll-in masks are white,
+            so the translucent loginCard would show seams without this. */}
+        <div
+          style={{
+            width: "100%",
+            display: "flex",
+            justifyContent: "center",
+            background: "#ffffff",
+            borderRadius: "16px",
+            overflow: "hidden",
+            padding: "16px 0 8px",
+          }}
+        >
+          <BoxesLoader />
+        </div>
         <div className="brandBlock">
           <div className="brandMark" aria-hidden="true">
             <img

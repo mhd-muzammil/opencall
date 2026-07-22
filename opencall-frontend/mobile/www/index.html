@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>OpenCall</title>
+    <style>
+      /* Offline fallback only. The app normally loads the deployed /m route; this shows
+         when the device has no connection on launch. */
+      html, body { height: 100%; margin: 0; }
+      body {
+        display: grid;
+        place-items: center;
+        text-align: center;
+        padding: 28px;
+        font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+        background: #f5f6f8;
+        color: #101828;
+      }
+      @media (prefers-color-scheme: dark) {
+        body { background: #0f1115; color: #e8eaee; }
+      }
+      .mark {
+        width: 56px; height: 56px; border-radius: 16px;
+        background: #4f46e5; color: #fff;
+        display: grid; place-items: center;
+        font-size: 25px; font-weight: 800;
+        margin: 0 auto 18px;
+      }
+      h1 { font-size: 19px; margin: 0 0 6px; }
+      p { font-size: 14px; color: #667085; margin: 0; max-width: 260px; }
+    </style>
+  </head>
+  <body>
+    <div>
+      <div class="mark">R</div>
+      <h1>You're offline</h1>
+      <p>OpenCall needs a connection. Reconnect and reopen the app.</p>
+    </div>
+  </body>
+</html>

@@ -1,0 +1,13 @@
+{
+  "appId": "in.renderways.opencall",
+  "appName": "OpenCall",
+  "webDir": "www",
+  "server": {
+    "url": "https://analysisreport.systimus.in/m",
+    "cleartext": false,
+    "androidScheme": "https"
+  },
+  "android": {
+    "webContentsDebuggingEnabled": false
+  }
+}

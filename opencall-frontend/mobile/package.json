@@ -1,0 +1,20 @@
+{
+  "name": "opencall-mobile",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Android shell for the OpenCall web app. Loads the deployed /m mobile UI, so a web deploy updates the app with no reinstall.",
+  "scripts": {
+    "sync": "cap sync android",
+    "open": "cap open android",
+    "apk:debug": "cd android && gradlew.bat assembleDebug",
+    "apk:release": "cd android && gradlew.bat assembleRelease"
+  },
+  "dependencies": {
+    "@capacitor/android": "^8.4.2",
+    "@capacitor/cli": "^8.4.2",
+    "@capacitor/core": "^8.4.2"
+  },
+  "devDependencies": {
+    "typescript": "^7.0.2"
+  }
+}

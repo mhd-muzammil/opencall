@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">OpenCall</string>
+    <string name="title_activity_main">OpenCall</string>
+    <string name="package_name">in.renderways.opencall</string>
+    <string name="custom_url_scheme">in.renderways.opencall</string>
+</resources>

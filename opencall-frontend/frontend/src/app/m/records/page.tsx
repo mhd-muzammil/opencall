@@ -37,7 +37,12 @@ export default function MobileRecordsPage() {
             <div className="mMuted">Loading records…</div>
           </div>
         ) : (
-          <CaseList rows={rows} emptyText="No active records in the latest report." />
+          <CaseList
+            rows={rows}
+            emptyText="No active records in the latest report."
+            session={session}
+            onSaved={reload}
+          />
         )}
       </main>
     </>

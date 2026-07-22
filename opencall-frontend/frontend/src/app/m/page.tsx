@@ -13,14 +13,25 @@ interface Tile {
   icon: string;
   section?: string;
   superAdminOnly?: boolean;
+  /** SUPER_ADMIN always; a special-access login only when the section is granted. */
+  superAdminOrSection?: string;
 }
 
+/**
+ * The most-used destinations. Everything else — the remaining dashboards, Warranty
+ * Lookup, Engineers — lives on /m/more so this grid stays one thumb-scroll.
+ */
 const TILES: Tile[] = [
+  { href: "/m/overview", label: "Overview", icon: "📊", section: "overview" },
   { href: "/m/records", label: "Records", icon: "📋", section: "records" },
   { href: "/m/closed", label: "Closed Calls", icon: "📁", section: "closed-calls" },
-  { href: "/m/engineers", label: "Engineers", icon: "👷" },
-  { href: "/m/parts", label: "Parts Catalog", icon: "🔩", superAdminOnly: true },
-  { href: "/m/quotations", label: "Quotations", icon: "📄", superAdminOnly: true },
+  { href: "/m/rtpl", label: "RTPL Dashboard", icon: "📈", section: "rtpl-dashboard" },
+  { href: "/m/rtpl-hours", label: "RTPL Hours", icon: "⏱️", section: "rtpl" },
+  { href: "/m/sla", label: "SLA TaT", icon: "🎯", section: "sla-tat" },
+  { href: "/m/flex-eod-bod", label: "Flex EOD/BOD", icon: "🌗", section: "flex-eod-bod" },
+  { href: "/m/productivity", label: "Productivity", icon: "🏅", section: "productivity" },
+  { href: "/m/quotations", label: "Quotations", icon: "📄", superAdminOrSection: "quotations" },
+  { href: "/m/parts", label: "Parts Catalog", icon: "🔩", superAdminOrSection: "parts-catalog" },
   { href: "/m/more", label: "More", icon: "⋯" },
 ];
 
@@ -41,8 +52,11 @@ export default function MobileHomePage() {
     "there";
 
   const tiles = TILES.filter((t) => {
-    if (t.superAdminOnly) {
-      return isSuperAdminSession(session) || canSeeMobileSection(session, t.href.slice(3));
+    if (t.superAdminOnly) return isSuperAdminSession(session);
+    if (t.superAdminOrSection) {
+      return (
+        isSuperAdminSession(session) || canSeeMobileSection(session, t.superAdminOrSection)
+      );
     }
     return !t.section || canSeeMobileSection(session, t.section);
   });

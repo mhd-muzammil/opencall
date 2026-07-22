@@ -207,7 +207,8 @@
 /* --------------------------------------------------------------- controls */
 
 .mField { display: block; margin-bottom: 12px; }
-.mField > span {
+.mField > span,
+.mLabel {
   display: block;
   font-size: 12px;
   font-weight: 650;
@@ -247,6 +248,33 @@
   background: transparent;
   color: var(--m-text);
   border: 1px solid var(--m-border);
+}
+
+/* Segmented control — a pill of 2-3 mutually exclusive filters. */
+.mSegment {
+  display: flex;
+  gap: 3px;
+  padding: 3px;
+  border-radius: 12px;
+  background: var(--m-border);
+}
+.mSegment__btn {
+  flex: 1;
+  min-height: 38px;
+  border: none;
+  border-radius: 9px;
+  background: transparent;
+  color: var(--m-muted);
+  font-family: inherit;
+  font-size: 12.5px;
+  font-weight: 700;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.mSegment__btn.is-active {
+  background: var(--m-surface);
+  color: var(--m-text);
+  box-shadow: 0 1px 3px rgb(0 0 0 / 0.12);
 }
 
 .mSearch {
@@ -331,6 +359,48 @@
   margin: 6px auto 12px;
 }
 .mSheet__title { font-size: 16px; font-weight: 750; margin-bottom: 12px; }
+
+/* ----------------------------------------------------- printable sheets */
+
+/* Hosts an A4 document (quotation) on a phone: chrome on top, the sheet scaled
+   to fit underneath. Printing strips the chrome and the scale — see @media print. */
+.mPrintOverlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  background: #f1f5f9;
+  display: flex;
+  flex-direction: column;
+}
+.mPrintOverlay__chrome {
+  display: flex;
+  gap: 8px;
+  padding: calc(10px + env(safe-area-inset-top)) 12px 10px;
+  background: var(--m-surface);
+  border-bottom: 1px solid var(--m-border);
+}
+.mPrintOverlay__scroll {
+  flex: 1;
+  overflow: auto;
+  padding: 8px;
+  -webkit-overflow-scrolling: touch;
+}
+
+@media print {
+  /* Only the document goes on paper. */
+  body.mPrinting .mApp,
+  body.mPrinting .mPrintOverlay__chrome { display: none !important; }
+  body.mPrinting .mPrintOverlay {
+    position: static;
+    background: #fff;
+  }
+  body.mPrinting .mPrintOverlay__scroll { overflow: visible; padding: 0; }
+  body.mPrinting .mPrintOverlay__scale {
+    transform: none !important;
+    width: auto !important;
+  }
+  @page { size: A4; margin: 0; }
+}
 
 /* ------------------------------------------------------------ utilities */
 

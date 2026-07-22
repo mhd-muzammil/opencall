@@ -16,29 +16,61 @@ interface Item {
   label: string;
   icon: string;
   hint?: string;
+  /** Operational section key from USER_SECTIONS — gates visibility exactly like the web. */
   section?: string;
   superAdminOnly?: boolean;
-  external?: boolean;
+  /**
+   * Sections the desktop shows to a SUPER_ADMIN always, and to a special-access login
+   * only when that section is granted. Region admins never see them.
+   */
+  superAdminOrSection?: string;
+  group: string;
 }
 
 const ITEMS: Item[] = [
-  { href: "/m/records", label: "Records", icon: "📋", section: "records" },
-  { href: "/m/closed", label: "Closed Calls", icon: "📁", section: "closed-calls" },
-  { href: "/m/engineers", label: "Engineers", icon: "👷" },
-  { href: "/", label: "Overview", icon: "📊", hint: "Full workspace", section: "overview", external: true },
-  { href: "/", label: "RTPL Dashboard", icon: "📈", hint: "Full workspace", section: "rtpl-dashboard", external: true },
-  { href: "/", label: "Flex Dashboard", icon: "⚡", hint: "Full workspace", section: "flex", external: true },
-  { href: "/", label: "Parts Catalog", icon: "🔩", hint: "Full workspace", superAdminOnly: true, external: true },
-  { href: "/", label: "Quotations", icon: "📄", hint: "Full workspace", superAdminOnly: true, external: true },
+  // Dashboards — every one of these has a native mobile screen.
+  { href: "/m/overview", label: "Overview", icon: "📊", section: "overview", group: "Dashboards" },
+  { href: "/m/rtpl", label: "RTPL Dashboard", icon: "📈", section: "rtpl-dashboard", group: "Dashboards" },
+  { href: "/m/rtpl-hours", label: "RTPL Hours Status", icon: "⏱️", section: "rtpl", group: "Dashboards" },
+  { href: "/m/sla", label: "SLA TaT", icon: "🎯", section: "sla-tat", group: "Dashboards" },
+  { href: "/m/pivot", label: "RTPL Pivot", icon: "🧮", section: "pivot", group: "Dashboards" },
+  { href: "/m/tn", label: "TN View Status", icon: "🗺️", section: "tn-view-status", group: "Dashboards" },
+  { href: "/m/flex", label: "Flex Dashboard", icon: "⚡", section: "flex", group: "Dashboards" },
+  { href: "/m/flex-eod-bod", label: "Flex EOD & BOD", icon: "🌗", section: "flex-eod-bod", group: "Dashboards" },
+  { href: "/m/productivity", label: "Engineer Productivity", icon: "🏅", section: "productivity", group: "Dashboards" },
+
+  // Data & operations
+  { href: "/m/records", label: "Records Table", icon: "📋", section: "records", group: "Data & Operations" },
+  { href: "/m/closed", label: "Closed Calls", icon: "📁", section: "closed-calls", group: "Data & Operations" },
+  { href: "/m/warranty", label: "Warranty Lookup", icon: "🛡️", section: "warranty", group: "Data & Operations" },
+  { href: "/m/parts", label: "Parts Catalog", icon: "🔩", superAdminOrSection: "parts-catalog", group: "Data & Operations" },
+  { href: "/m/quotations", label: "Quotations", icon: "📄", superAdminOrSection: "quotations", group: "Data & Operations" },
+
+  // Admin
+  { href: "/m/engineers", label: "Engineers", icon: "👷", group: "Admin" },
 ];
+
+const GROUP_ORDER = ["Dashboards", "Data & Operations", "Admin"] as const;
 
 export default function MobileMorePage() {
   const { session, signOut } = useMobileSession();
 
   const items = ITEMS.filter((i) => {
     if (i.superAdminOnly) return isSuperAdminSession(session);
+    if (i.superAdminOrSection) {
+      return (
+        isSuperAdminSession(session) || canSeeMobileSection(session, i.superAdminOrSection)
+      );
+    }
+    // Special-access logins never reach Warranty Lookup — the backend rejects their token.
+    if (i.section === "warranty" && session?.user.role === "SPECIAL_ACCESS") return false;
     return !i.section || canSeeMobileSection(session, i.section);
   });
+
+  const groups = GROUP_ORDER.map((name) => ({
+    name,
+    items: items.filter((i) => i.group === name),
+  })).filter((g) => g.items.length > 0);
 
   const user = session?.user;
   const displayName =
@@ -76,27 +108,31 @@ export default function MobileMorePage() {
           </div>
         </div>
 
-        <div className="mSectionTitle">Sections</div>
-        <div className="mList">
-          {items.map((item) => (
-            <Link
-              key={`${item.href}-${item.label}`}
-              href={item.href}
-              className="mRow"
-              style={{ textDecoration: "none" }}
-            >
-              <div className="mRow__top">
-                <span className="mRow__title">
-                  <span style={{ marginRight: 8 }} aria-hidden="true">{item.icon}</span>
-                  {item.label}
-                </span>
-                <span className="mMuted" style={{ fontSize: 12 }}>
-                  {item.hint ?? "›"}
-                </span>
-              </div>
-            </Link>
-          ))}
-        </div>
+        {groups.map((group) => (
+          <div key={group.name}>
+            <div className="mSectionTitle">{group.name}</div>
+            <div className="mList">
+              {group.items.map((item) => (
+                <Link
+                  key={`${item.href}-${item.label}`}
+                  href={item.href}
+                  className="mRow"
+                  style={{ textDecoration: "none" }}
+                >
+                  <div className="mRow__top">
+                    <span className="mRow__title">
+                      <span style={{ marginRight: 8 }} aria-hidden="true">{item.icon}</span>
+                      {item.label}
+                    </span>
+                    <span className="mMuted" style={{ fontSize: 12 }}>
+                      {item.hint ?? "›"}
+                    </span>
+                  </div>
+                </Link>
+              ))}
+            </div>
+          </div>
+        ))}
 
         <div className="mSectionTitle">Account</div>
         <div className="mList">

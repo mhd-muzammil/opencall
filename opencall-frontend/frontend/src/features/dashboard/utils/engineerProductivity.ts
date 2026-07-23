@@ -4,10 +4,12 @@
 // re-exports; no behavior fork.
 //
 // Day-scoped model (see the shared module for the full story):
-//   Assigned = the day's PLAN: still-Scheduled calls (with an engineer) plus
-//              calls actually worked today. Untouched carried backlog is out.
+//   Assigned = the day's PLAN: calls whose Morning status is EXACTLY
+//              "Scheduled" with an engineer set — the booked set. Pre-booking
+//              states (To be Scheduled / Engg Assigned) and carried backlog
+//              (worked today or not) are out.
 //   Attended = outcomes from the Evening (today) status or a same-day closure
-//              ONLY — the carried Morning status never feeds an outcome.
+//              ONLY — and only for calls in the plan.
 export {
   addToProductivityCounts,
   canonicalEngineerName,

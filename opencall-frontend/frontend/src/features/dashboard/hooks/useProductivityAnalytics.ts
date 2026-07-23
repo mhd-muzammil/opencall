@@ -14,6 +14,7 @@ import type {
   GeneratedReportResponse,
   RegionEodStateResponse,
 } from "../../../lib/apiClient";
+import { aspCodesForRegionIdentity } from "@opencall/shared";
 import { MANUAL_ENTRY_REQUIRED } from "../constants";
 import {
   computeEngineerProductivity,
@@ -413,8 +414,13 @@ export function useProductivityAnalytics(params: {
           (region) => region.status === "CLOSED" && region.snapshot !== null,
         )
       : [];
+    // Rows carry ASP work-location codes ("ASPS01511") while EOD entries carry
+    // region codes ("HOS") — translate via the shared mapping, or the exclusion
+    // never matches and a closed region is counted TWICE (frozen + live).
     const frozenAspCodes = new Set(
-      frozenRegions.map((region) => region.regionCode.trim().toUpperCase()),
+      frozenRegions.flatMap((region) => [
+        ...aspCodesForRegionIdentity(region.regionCode, region.regionName),
+      ]),
     );
 
     const liveRows = frozenAspCodes.size

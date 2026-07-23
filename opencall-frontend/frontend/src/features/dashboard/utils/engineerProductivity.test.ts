@@ -92,8 +92,9 @@ describe("classifyProductivityStatus", () => {
   });
 });
 
-// The split-status rule: Morning decides plan membership, Evening (or a
-// same-day close) decides the outcome. Morning NEVER feeds an outcome.
+// The Scheduled-gate rule: only calls whose Morning status is a scheduling
+// status are in the day's plan; for those, Evening (or a same-day close)
+// decides the outcome. Unplanned work never counts — anywhere.
 describe("resolveDayScopedProductivityBucket", () => {
   it("keeps a carried-Scheduled call in the plan (Assigned, not worked)", () => {
     expect(
@@ -121,10 +122,10 @@ describe("resolveDayScopedProductivityBucket", () => {
     ).toBeNull();
   });
 
-  it("buckets today's Evening outcome regardless of the Morning status", () => {
+  it("buckets today's Evening outcome for planned (Scheduled-morning) calls", () => {
     expect(
       resolveDayScopedProductivityBucket(
-        row({ morning: "SSC Pending", evening: "Case-Closed" }),
+        row({ morning: "Scheduled", evening: "Case-Closed" }),
       ),
     ).toBe("CLOSED");
     expect(
@@ -134,17 +135,43 @@ describe("resolveDayScopedProductivityBucket", () => {
     ).toBe("CX_RESCHEDULE");
     expect(
       resolveDayScopedProductivityBucket(
-        row({ morning: "", evening: "Engineer Delay" }),
+        row({ morning: "Engg Assigned", evening: "Engineer Delay" }),
       ),
     ).toBe("ENGINEER_DELAY");
   });
 
-  it("treats a same-day closure as CLOSED whatever the columns say", () => {
+  it("excludes unplanned work: an Evening entry on a never-Scheduled call never counts", () => {
+    expect(
+      resolveDayScopedProductivityBucket(
+        row({ morning: "SSC Pending", evening: "Case-Closed" }),
+      ),
+    ).toBeNull();
+    expect(
+      resolveDayScopedProductivityBucket(
+        row({ morning: "", evening: "Engineer Delay" }),
+      ),
+    ).toBeNull();
+    expect(
+      resolveDayScopedProductivityBucket(
+        row({ morning: "Customer Pending", evening: "Customer Pending" }),
+      ),
+    ).toBeNull();
+  });
+
+  it("counts a same-day closure as CLOSED when the call was booked (Scheduled)", () => {
+    expect(
+      resolveDayScopedProductivityBucket(
+        row({ morning: "Scheduled", sameDayClosedRow: true, closedSyntheticRow: true }),
+      ),
+    ).toBe("CLOSED");
+  });
+
+  it("excludes a same-day closure on a call that was never booked", () => {
     expect(
       resolveDayScopedProductivityBucket(
         row({ morning: "SSC Pending", sameDayClosedRow: true, closedSyntheticRow: true }),
       ),
-    ).toBe("CLOSED");
+    ).toBeNull();
   });
 
   it("treats Manual Entry Required as blank", () => {
@@ -205,36 +232,40 @@ describe("computeEngineerProductivity — day-scoped Assigned/Attended", () => {
     expect(result.list[0]?.engineerDelay).toBe(1);
   });
 
-  it("the 18→8 case: 8 planned/worked + 10 untouched backlog rows → Assigned = 8", () => {
+  it("the 18→9 case: Assigned = the booked calls only; worked backlog stays out", () => {
     const rows = [
-      // The day's plan: 3 still scheduled, 3 worked to an outcome, 2 closed today.
+      // The day's plan: 9 booked calls, in various stages by evening.
       row({ ticketId: "P1", engineer: "Ravi", morning: "Scheduled" }),
       row({ ticketId: "P2", engineer: "Ravi", morning: "To be Scheduled" }),
       row({ ticketId: "P3", engineer: "Ravi", morning: "Engg Assigned" }),
       row({ ticketId: "P4", engineer: "Ravi", morning: "Scheduled", evening: "SSC Pending" }),
-      row({ ticketId: "P5", engineer: "Ravi", morning: "SSC Pending", evening: "Under Observation" }),
+      row({ ticketId: "P5", engineer: "Ravi", morning: "Scheduled", evening: "Under Observation" }),
       row({ ticketId: "P6", engineer: "Ravi", morning: "Scheduled", evening: "CX Pending" }),
-      row({ ticketId: "P7", engineer: "Ravi", sameDayClosedRow: true, closedSyntheticRow: true }),
+      row({ ticketId: "P7", engineer: "Ravi", morning: "Scheduled", sameDayClosedRow: true, closedSyntheticRow: true }),
       row({ ticketId: "P8", engineer: "Ravi", morning: "Scheduled", evening: "Case-Closed" }),
-      // Carried-open backlog nobody touched today: excluded from Assigned.
-      ...Array.from({ length: 6 }, (_, i) =>
-        row({ ticketId: `B${i}`, engineer: "Ravi", morning: "SSC Pending" }),
-      ),
+      row({ ticketId: "P9", engineer: "Ravi", morning: "Scheduled", evening: "Engineer Delay" }),
+      // Carried backlog — untouched OR worked today — is not part of the plan.
       ...Array.from({ length: 4 }, (_, i) =>
-        row({ ticketId: `U${i}`, engineer: "Ravi", morning: "Under Observation" }),
+        row({ ticketId: `B${i}`, engineer: "Ravi", morning: "SSC Pending", evening: "SSC Pending" }),
       ),
+      ...Array.from({ length: 3 }, (_, i) =>
+        row({ ticketId: `C${i}`, engineer: "Ravi", morning: "Customer Pending", evening: "Customer Pending" }),
+      ),
+      row({ ticketId: "U0", engineer: "Ravi", morning: "under observation", evening: "under observation" }),
+      row({ ticketId: "U1", engineer: "Ravi", morning: "Under Observation" }),
     ];
 
     const result = computeEngineerProductivity(rows);
     expect(result.list).toHaveLength(1);
     const ravi = result.list[0];
-    expect(ravi?.assigned).toBe(8);
-    // Attended = SSC(P4) + UO(P5) + closed(P7, P8) — CX Pending (P6) is out.
+    expect(ravi?.assigned).toBe(9);
+    // Attended = SSC(P4) + UO(P5) + closed(P7, P8) — CX (P6) / Delay (P9) are out.
     expect(ravi?.attended).toBe(4);
     expect(ravi?.closed).toBe(2);
     expect(ravi?.partOrdered).toBe(1);
     expect(ravi?.underObservation).toBe(1);
     expect(ravi?.cxReschedule).toBe(1);
+    expect(ravi?.engineerDelay).toBe(1);
   });
 
   it("requires an engineer for plan membership", () => {

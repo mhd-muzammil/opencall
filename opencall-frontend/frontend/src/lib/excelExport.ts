@@ -954,6 +954,8 @@ export async function downloadEngineerProductivityExcel(
   totalAttended: number,
 ): Promise<void> {
   const XLSX = await loadXlsx();
+  const sum = (key: string) =>
+    list.reduce((acc, item) => acc + (Number(item[key]) || 0), 0);
   const aoaData = [
     ["Date " + dateLabel, "", "", "", "", "", "", "", ""],
     ["S.No", "Engineer Name", "Assigned", "Attended", "Closed", "Part ordered", "Under Observation", "CX Reschedule", "Engineer Delay"],
@@ -968,14 +970,24 @@ export async function downloadEngineerProductivityExcel(
       item.cxReschedule ?? 0,
       item.engineerDelay ?? 0,
     ]),
-    ["Total Attended", "", "", totalAttended, "", "", "", "", ""],
+    [
+      "Total",
+      "",
+      sum("assigned"),
+      totalAttended,
+      sum("closed"),
+      sum("partOrdered"),
+      sum("underObservation"),
+      sum("cxReschedule"),
+      sum("engineerDelay"),
+    ],
   ];
 
   const ws = XLSX.utils.aoa_to_sheet(aoaData);
 
   ws["!merges"] = [
     { s: { r: 0, c: 0 }, e: { r: 0, c: 8 } },
-    { s: { r: aoaData.length - 1, c: 0 }, e: { r: aoaData.length - 1, c: 2 } },
+    { s: { r: aoaData.length - 1, c: 0 }, e: { r: aoaData.length - 1, c: 1 } },
   ];
 
   ws["!cols"] = [

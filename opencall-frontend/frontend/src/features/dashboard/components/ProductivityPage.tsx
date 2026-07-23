@@ -99,13 +99,42 @@ export function ProductivityPage({
       : "0.0";
   }, [filteredTotalAttended, filteredActiveEngineers]);
 
-  const allAttendedTickets = useMemo(() => {
-    return filteredList.reduce<string[]>((acc, item) => {
-      if (item.attendedTickets) {
-        acc.push(...item.attendedTickets);
-      }
+  // Column totals for the footer row. Each keeps its own pooled ticket list so
+  // the total cell drills into every underlying record, just like a body cell.
+  const columnTotals = useMemo(() => {
+    const empty = {
+      assigned: 0,
+      attended: 0,
+      closed: 0,
+      partOrdered: 0,
+      underObservation: 0,
+      cxReschedule: 0,
+      engineerDelay: 0,
+      assignedTickets: [] as string[],
+      attendedTickets: [] as string[],
+      closedTickets: [] as string[],
+      partOrderedTickets: [] as string[],
+      underObservationTickets: [] as string[],
+      cxRescheduleTickets: [] as string[],
+      engineerDelayTickets: [] as string[],
+    };
+    return filteredList.reduce((acc, item) => {
+      acc.assigned += item.assigned;
+      acc.attended += item.attended;
+      acc.closed += item.closed;
+      acc.partOrdered += item.partOrdered ?? 0;
+      acc.underObservation += item.underObservation ?? 0;
+      acc.cxReschedule += item.cxReschedule ?? 0;
+      acc.engineerDelay += item.engineerDelay ?? 0;
+      if (item.assignedTickets) acc.assignedTickets.push(...item.assignedTickets);
+      if (item.attendedTickets) acc.attendedTickets.push(...item.attendedTickets);
+      if (item.closedTickets) acc.closedTickets.push(...item.closedTickets);
+      if (item.partOrderedTickets) acc.partOrderedTickets.push(...item.partOrderedTickets);
+      if (item.underObservationTickets) acc.underObservationTickets.push(...item.underObservationTickets);
+      if (item.cxRescheduleTickets) acc.cxRescheduleTickets.push(...item.cxRescheduleTickets);
+      if (item.engineerDelayTickets) acc.engineerDelayTickets.push(...item.engineerDelayTickets);
       return acc;
-    }, []);
+    }, empty);
   }, [filteredList]);
 
   const showRegionColumn = !selectedRegion || selectedRegion === "ALL";
@@ -144,6 +173,43 @@ export function ProductivityPage({
         title={hasTickets ? `Click to view all ${count} records` : undefined}
       >
         {displayVal}
+      </td>
+    );
+  };
+
+  // A footer total cell: the sum for one column, drilling into the pooled
+  // tickets of every engineer for that column. Emphasised (bold + tinted) so
+  // the totals row reads as a summary, not another engineer.
+  const renderTotalCell = (
+    count: number,
+    ticketIds: readonly string[],
+    color: string = "#0f172a",
+  ) => {
+    const hasTickets = ticketIds.length > 0;
+    return (
+      <td
+        style={{
+          padding: "12px",
+          border: "1px solid #cbd5e1",
+          textAlign: "center",
+          fontWeight: "bold",
+          color,
+          background: "#fef3c7",
+          cursor: hasTickets ? "pointer" : "default",
+          textDecoration: hasTickets ? "underline" : "none",
+          userSelect: "none",
+        }}
+        onClick={() => {
+          if (hasTickets) {
+            openRecordsWithFilter({
+              region: selectedRegion === "ALL" ? null : selectedRegion,
+              ticketIds,
+            });
+          }
+        }}
+        title={hasTickets ? `Click to view all ${count} records` : undefined}
+      >
+        {count === 0 ? "" : count}
       </td>
     );
   };
@@ -416,32 +482,20 @@ export function ProductivityPage({
               </tr>
             )}
             {filteredList.length > 0 && (
-              <tr style={{ background: "#f8fafc", fontWeight: "bold" }}>
-                <td colSpan={showRegionColumn ? 4 : 3} style={{ padding: "12px", border: "1px solid #cbd5e1", textAlign: "right", color: "#334155" }}>Total Attended</td>
+              <tr style={{ background: "#fffbeb", fontWeight: "bold" }}>
                 <td
-                  style={{
-                    padding: "12px",
-                    border: "1px solid #cbd5e1",
-                    textAlign: "center",
-                    background: "#fed7aa",
-                    color: "#7c2d12",
-                    fontWeight: "bold",
-                    textDecoration: allAttendedTickets.length > 0 ? "underline" : "none",
-                    cursor: allAttendedTickets.length > 0 ? "pointer" : "default",
-                  }}
-                  onClick={() => {
-                    if (allAttendedTickets.length > 0) {
-                      openRecordsWithFilter({
-                        region: selectedRegion === "ALL" ? null : selectedRegion,
-                        ticketIds: allAttendedTickets,
-                      });
-                    }
-                  }}
-                  title={allAttendedTickets.length > 0 ? `Click to view all ${filteredTotalAttended} attended records` : undefined}
+                  colSpan={showRegionColumn ? 3 : 2}
+                  style={{ padding: "12px", border: "1px solid #cbd5e1", textAlign: "right", color: "#334155" }}
                 >
-                  {filteredTotalAttended}
+                  Total ({filteredActiveEngineers} {filteredActiveEngineers === 1 ? "engineer" : "engineers"})
                 </td>
-                <td colSpan={showRegionColumn ? 5 : 4} style={{ border: "1px solid #cbd5e1", background: "transparent" }}></td>
+                {renderTotalCell(columnTotals.assigned, columnTotals.assignedTickets, "#334155")}
+                {renderTotalCell(columnTotals.attended, columnTotals.attendedTickets, "#0f172a")}
+                {renderTotalCell(columnTotals.closed, columnTotals.closedTickets, "#166534")}
+                {renderTotalCell(columnTotals.partOrdered, columnTotals.partOrderedTickets, "#92400e")}
+                {renderTotalCell(columnTotals.underObservation, columnTotals.underObservationTickets, "#1e3a8a")}
+                {renderTotalCell(columnTotals.cxReschedule, columnTotals.cxRescheduleTickets, "#701a75")}
+                {renderTotalCell(columnTotals.engineerDelay, columnTotals.engineerDelayTickets, "#9a3412")}
               </tr>
             )}
           </tbody>

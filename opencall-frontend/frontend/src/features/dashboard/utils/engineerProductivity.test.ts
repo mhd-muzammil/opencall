@@ -101,8 +101,20 @@ describe("resolveDayScopedProductivityBucket", () => {
       resolveDayScopedProductivityBucket(row({ morning: "Scheduled" })),
     ).toBe("SCHEDULED");
     expect(
-      resolveDayScopedProductivityBucket(row({ morning: "Engg Assigned" })),
+      resolveDayScopedProductivityBucket(row({ morning: " scheduled " })),
     ).toBe("SCHEDULED");
+  });
+
+  it("excludes pre-booking states: only the exact 'Scheduled' status is the plan", () => {
+    expect(
+      resolveDayScopedProductivityBucket(row({ morning: "To be Scheduled" })),
+    ).toBeNull();
+    expect(
+      resolveDayScopedProductivityBucket(row({ morning: "Engg Assigned" })),
+    ).toBeNull();
+    expect(
+      resolveDayScopedProductivityBucket(row({ morning: "Engg Assignment Pending" })),
+    ).toBeNull();
   });
 
   it("excludes untouched carried backlog (non-scheduling Morning, blank Evening)", () => {
@@ -135,9 +147,15 @@ describe("resolveDayScopedProductivityBucket", () => {
     ).toBe("CX_RESCHEDULE");
     expect(
       resolveDayScopedProductivityBucket(
-        row({ morning: "Engg Assigned", evening: "Engineer Delay" }),
+        row({ morning: "Scheduled", evening: "Engineer Delay" }),
       ),
     ).toBe("ENGINEER_DELAY");
+    // An Evening set back to a booking-stage status: still booked, not worked.
+    expect(
+      resolveDayScopedProductivityBucket(
+        row({ morning: "Scheduled", evening: "To be Scheduled" }),
+      ),
+    ).toBe("SCHEDULED");
   });
 
   it("excludes unplanned work: an Evening entry on a never-Scheduled call never counts", () => {
@@ -232,18 +250,19 @@ describe("computeEngineerProductivity — day-scoped Assigned/Attended", () => {
     expect(result.list[0]?.engineerDelay).toBe(1);
   });
 
-  it("the 18→9 case: Assigned = the booked calls only; worked backlog stays out", () => {
+  it("Assigned = strictly-booked calls only; pre-booking states and worked backlog stay out", () => {
     const rows = [
-      // The day's plan: 9 booked calls, in various stages by evening.
+      // The day's plan: 7 booked (exact "Scheduled") calls, in various stages.
       row({ ticketId: "P1", engineer: "Ravi", morning: "Scheduled" }),
-      row({ ticketId: "P2", engineer: "Ravi", morning: "To be Scheduled" }),
-      row({ ticketId: "P3", engineer: "Ravi", morning: "Engg Assigned" }),
       row({ ticketId: "P4", engineer: "Ravi", morning: "Scheduled", evening: "SSC Pending" }),
       row({ ticketId: "P5", engineer: "Ravi", morning: "Scheduled", evening: "Under Observation" }),
       row({ ticketId: "P6", engineer: "Ravi", morning: "Scheduled", evening: "CX Pending" }),
       row({ ticketId: "P7", engineer: "Ravi", morning: "Scheduled", sameDayClosedRow: true, closedSyntheticRow: true }),
       row({ ticketId: "P8", engineer: "Ravi", morning: "Scheduled", evening: "Case-Closed" }),
       row({ ticketId: "P9", engineer: "Ravi", morning: "Scheduled", evening: "Engineer Delay" }),
+      // Pre-booking states: not yet the day's plan.
+      row({ ticketId: "T1", engineer: "Ravi", morning: "To be Scheduled" }),
+      row({ ticketId: "T2", engineer: "Ravi", morning: "Engg Assigned" }),
       // Carried backlog — untouched OR worked today — is not part of the plan.
       ...Array.from({ length: 4 }, (_, i) =>
         row({ ticketId: `B${i}`, engineer: "Ravi", morning: "SSC Pending", evening: "SSC Pending" }),
@@ -258,7 +277,7 @@ describe("computeEngineerProductivity — day-scoped Assigned/Attended", () => {
     const result = computeEngineerProductivity(rows);
     expect(result.list).toHaveLength(1);
     const ravi = result.list[0];
-    expect(ravi?.assigned).toBe(9);
+    expect(ravi?.assigned).toBe(7);
     // Attended = SSC(P4) + UO(P5) + closed(P7, P8) — CX (P6) / Delay (P9) are out.
     expect(ravi?.attended).toBe(4);
     expect(ravi?.closed).toBe(2);

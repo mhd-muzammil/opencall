@@ -4084,6 +4084,10 @@ export default function DashboardPage() {
                             ? session.token
                             : null
                         }
+                        // Read-only token for the closure-import / raw-data counts shown
+                        // on the region cards. Every principal that can see this view
+                        // can see those numbers.
+                        summaryToken={session.token}
                       />
                     )}
 

@@ -24,6 +24,127 @@ function getRowRegionName(aspCode: string): string {
   return ASP_CODE_REGION_MAP[aspCode as keyof typeof ASP_CODE_REGION_MAP] || aspCode;
 }
 
+const MONTH_NAMES = [
+  "Jan", "Feb", "Mar", "Apr", "May", "Jun",
+  "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
+];
+
+/** "2026-06" -> "Jun 2026". */
+function formatMonthKey(key: string): string {
+  const match = /^(\d{4})-(\d{2})$/.exec(key);
+  if (!match) return key;
+  const monthIndex = Number(match[2]) - 1;
+  return `${MONTH_NAMES[monthIndex] ?? match[2]} ${match[1]}`;
+}
+
+/** "2026-06-05" -> "05-06-2026". */
+function formatDateKey(key: string): string {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(key);
+  return match ? `${match[3]}-${match[2]}-${match[1]}` : key;
+}
+
+/** Human label for a from/to range: "05-06-2026 → 20-08-2026", "onwards", "up to", etc. */
+function formatRangeLabel(
+  lo: string,
+  hi: string,
+  fmt: (v: string) => string,
+  allLabel: string,
+): string {
+  if (!lo && !hi) return allLabel;
+  if (lo && hi) return lo === hi ? fmt(lo) : `${fmt(lo)} → ${fmt(hi)}`;
+  return lo ? `${fmt(lo)} onwards` : `up to ${fmt(hi)}`;
+}
+
+/**
+ * The two imported comparison counts shown under a region card's own closed count:
+ *
+ *   Closure import — rows in the last Flex Closure ASP Report import that trace back to
+ *                    this ASP (that report has no region column, so the server resolves
+ *                    it from the report rows / raw data)
+ *   Raw data       — rows in the last Flex RAW export import whose Call Status is closed
+ *
+ * Each line only renders once its source has actually been imported, so a card looks
+ * exactly as it always did until there is something to compare against. The two numbers
+ * cover different periods from the live closed count and from each other — they are a
+ * reconciliation aid, not a total.
+ */
+function ComparisonCounts({
+  closureCount,
+  rawCount,
+  closureHint,
+  onDrill,
+}: Readonly<{
+  closureCount: number | null;
+  rawCount: number | null;
+  closureHint?: string | null;
+  /** Opens the record list for that source; only wired when the count is clickable. */
+  onDrill?: (kind: "closure" | "raw") => void;
+}>) {
+  if (closureCount === null && rawCount === null) return null;
+
+  const line = (
+    label: string,
+    count: number,
+    color: string,
+    kind: "closure" | "raw",
+  ) => {
+    const clickable = Boolean(onDrill) && count > 0;
+    return (
+      <button
+        type="button"
+        disabled={!clickable}
+        onClick={(e) => {
+          // The card itself is clickable (region filter) — don't also select the region.
+          e.stopPropagation();
+          onDrill?.(kind);
+        }}
+        title={clickable ? "View records" : undefined}
+        style={{
+          width: "100%",
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "baseline",
+          gap: "8px",
+          fontSize: "11px",
+          lineHeight: 1.7,
+          padding: 0,
+          border: "none",
+          background: "none",
+          font: "inherit",
+          textAlign: "left",
+          cursor: clickable ? "pointer" : "default",
+        }}
+      >
+        <span style={{ color: "#6b7280", display: "flex", alignItems: "center", gap: "4px" }}>
+          {label}
+          {clickable && <span style={{ fontSize: "9px", opacity: 0.7 }}>▸</span>}
+        </span>
+        <span style={{ fontWeight: 700, color, textDecoration: clickable ? "underline dotted" : "none", textUnderlineOffset: "2px" }}>
+          {formatNumber(count)}
+        </span>
+      </button>
+    );
+  };
+
+  return (
+    <div
+      style={{
+        marginTop: "8px",
+        paddingTop: "8px",
+        borderTop: "1px dashed var(--border-color, #e5e7eb)",
+      }}
+    >
+      {closureCount !== null && line("Closure import", closureCount, "#7c3aed", "closure")}
+      {rawCount !== null && line("Raw data closed", rawCount, "#ea580c", "raw")}
+      {closureHint && (
+        <div style={{ fontSize: "10px", color: "#9ca3af", marginTop: "2px" }}>
+          {closureHint}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export interface ClosedCallsDashboardViewProps {
   overallClosedCount: number;
   closedRegionBreakdown: Array<{
@@ -45,6 +166,10 @@ export interface ClosedCallsDashboardViewProps {
   // Token used to save Customer Feedback. When absent, the Feedback button is hidden
   // (view-only sessions). A successful save fires onClosureDatesImported to refresh.
   feedbackToken?: string | null;
+  // Read-only token used to fetch the two comparison counts shown under each region
+  // card (imported closure dates, imported Flex raw data). When absent those lines are
+  // simply not rendered — the existing closed count is unaffected either way.
+  summaryToken?: string | null;
 }
 
 export function ClosedCallsDashboardView({
@@ -58,6 +183,7 @@ export function ClosedCallsDashboardView({
   closureImportToken,
   onClosureDatesImported,
   feedbackToken,
+  summaryToken,
 }: Readonly<ClosedCallsDashboardViewProps>) {
   const [searchQuery, setSearchQuery] = useState("");
   // Case Closed Date range filter (YYYY-MM-DD from the date inputs). When either bound
@@ -67,6 +193,167 @@ export function ClosedCallsDashboardView({
   const [importing, setImporting] = useState(false);
   const [importMessage, setImportMessage] = useState<string | null>(null);
   const closureFileInputRef = React.useRef<HTMLInputElement | null>(null);
+
+  // The two comparison sources shown under each region card. Both are independent of the
+  // live closed count: they come from their own import/sync and only ever ADD lines to a
+  // card — a failed fetch leaves the card exactly as it was before. The full per-ASP /
+  // per-month payload is kept so the month dropdown can rescope the cards with no refetch.
+  const [closureSummary, setClosureSummary] = useState<import("../../../lib/closureDateApiClient").ClosureDateSummary | null>(null);
+  const [rawSummary, setRawSummary] = useState<import("../../../lib/flexRawApiClient").FlexRawSummary | null>(null);
+  // Day-precise date range for the comparison counts, typed into date inputs. Each is ""
+  // (unbounded) or a "YYYY-MM-DD" value. Both empty = all dates.
+  const [comparisonFrom, setComparisonFrom] = useState("");
+  const [comparisonTo, setComparisonTo] = useState("");
+  const [rawSyncing, setRawSyncing] = useState(false);
+  const [rawSyncMessage, setRawSyncMessage] = useState<string | null>(null);
+  // The record-list drill-down opened from a card's "Closure import" / "Raw data closed".
+  const [drill, setDrill] = useState<{ kind: "closure" | "raw"; aspCode: string; label: string } | null>(null);
+  // Bumped after an import/sync so the summaries refetch without reloading the report.
+  const [summaryNonce, setSummaryNonce] = useState(0);
+
+  React.useEffect(() => {
+    if (!summaryToken) return;
+    let cancelled = false;
+    void (async () => {
+      const [{ getClosureDatesSummary }, { getFlexRawSummary }] = await Promise.all([
+        import("../../../lib/closureDateApiClient"),
+        import("../../../lib/flexRawApiClient"),
+      ]);
+
+      try {
+        const summary = await getClosureDatesSummary(summaryToken);
+        if (!cancelled) setClosureSummary(summary);
+      } catch {
+        // No closure dates imported yet (or the endpoint is unavailable) — the card
+        // simply omits that line.
+      }
+
+      try {
+        const summary = await getFlexRawSummary(summaryToken);
+        if (!cancelled) setRawSummary(summary);
+      } catch {
+        // No raw data synced yet.
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [summaryToken, summaryNonce]);
+
+  // Month options — union of both sources, newest first. Empty until something imported.
+  const comparisonMonths = useMemo(() => {
+    const set = new Set<string>();
+    for (const m of closureSummary?.months ?? []) set.add(m);
+    for (const m of rawSummary?.months ?? []) set.add(m);
+    return [...set].sort().reverse();
+  }, [closureSummary, rawSummary]);
+
+  // Normalised date bounds — a reversed From/To is swapped so order never matters.
+  const [dateLo, dateHi] = useMemo(() => {
+    if (comparisonFrom && comparisonTo && comparisonFrom > comparisonTo) {
+      return [comparisonTo, comparisonFrom];
+    }
+    return [comparisonFrom, comparisonTo];
+  }, [comparisonFrom, comparisonTo]);
+  const rangeActive = Boolean(dateLo || dateHi);
+
+  // Raw data only has month granularity, so a date range maps to the months it spans.
+  const monthLo = dateLo ? dateLo.slice(0, 7) : "";
+  const monthHi = dateHi ? dateHi.slice(0, 7) : "";
+  const inMonthRange = useMemo(() => {
+    return (m: string): boolean => {
+      if (!monthLo && !monthHi) return true;
+      if (!m) return false;
+      if (monthLo && m < monthLo) return false;
+      if (monthHi && m > monthHi) return false;
+      return true;
+    };
+  }, [monthLo, monthHi]);
+
+  // Date-input bounds — first day of the earliest month to the last day of the latest.
+  const [minDate, maxDate] = useMemo(() => {
+    if (comparisonMonths.length === 0) return ["", ""];
+    const asc = [...comparisonMonths].sort();
+    const earliest = asc[0]!;
+    const latest = asc[asc.length - 1]!;
+    const [ly, lm] = latest.split("-").map(Number);
+    const lastDay = new Date(ly!, lm!, 0).getDate();
+    return [`${earliest}-01`, `${latest}-${String(lastDay).padStart(2, "0")}`];
+  }, [comparisonMonths]);
+
+  // Closure is day-precise: when a date range is active the monthly byAspMonth cannot
+  // answer a mid-month boundary, so a scoped summary is fetched for the exact range.
+  // Cleared when no range is active (the cards then use the full summary).
+  const [closureScoped, setClosureScoped] =
+    useState<import("../../../lib/closureDateApiClient").ClosureDateSummary | null>(null);
+  React.useEffect(() => {
+    if (!summaryToken || !rangeActive) {
+      setClosureScoped(null);
+      return;
+    }
+    let cancelled = false;
+    void (async () => {
+      try {
+        const { getClosureDatesSummary } = await import("../../../lib/closureDateApiClient");
+        const scoped = await getClosureDatesSummary(summaryToken, { from: dateLo, to: dateHi });
+        if (!cancelled) setClosureScoped(scoped);
+      } catch {
+        // Keep whatever the cards last showed on a transient failure.
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [summaryToken, rangeActive, dateLo, dateHi, summaryNonce]);
+
+  // Per-ASP closure count. Day-precise via the scoped summary when a range is active,
+  // otherwise the full all-dates summary. aspCode "" is the "All Regions" rollup (which
+  // includes closure dates with no matched region).
+  const closureCountFor = useMemo(() => {
+    const src = rangeActive ? closureScoped : closureSummary;
+    return (aspCode: string): number | null => {
+      if (!src) return null;
+      if (aspCode === "") return src.total;
+      return src.byAsp.find((e) => e.aspCode === aspCode)?.count ?? 0;
+    };
+  }, [closureSummary, closureScoped, rangeActive]);
+
+  // Closure unmatched count from whichever summary is active (for the ALL card hint).
+  const closureUnmatched = (rangeActive ? closureScoped : closureSummary)?.unmatched ?? 0;
+
+  // Per-ASP raw CLOSED count for the range (month-mapped) or all months.
+  const rawClosedFor = useMemo(() => {
+    return (aspCode: string): number | null => {
+      if (!rawSummary) return null;
+      if (!rangeActive) {
+        if (aspCode === "") return rawSummary.closed;
+        return rawSummary.byAsp.find((e) => e.aspCode === aspCode)?.closed ?? 0;
+      }
+      return rawSummary.byAspMonth
+        .filter((e) => inMonthRange(e.month) && (aspCode === "" || e.aspCode === aspCode))
+        .reduce((sum, e) => sum + e.closed, 0);
+    };
+  }, [rawSummary, rangeActive, inMonthRange]);
+
+  async function handleSyncRawData() {
+    if (!closureImportToken) return;
+    setRawSyncing(true);
+    setRawSyncMessage(null);
+    try {
+      const { syncFlexRawData } = await import("../../../lib/flexRawApiClient");
+      const result = await syncFlexRawData(closureImportToken);
+      setRawSyncMessage(
+        `Synced ${formatNumber(result.imported)} rows — ${formatNumber(result.closed)} closed.`,
+      );
+      setSummaryNonce((n) => n + 1);
+    } catch (error) {
+      setRawSyncMessage(
+        `Sync failed: ${error instanceof Error ? error.message : "unknown error"}`,
+      );
+    } finally {
+      setRawSyncing(false);
+    }
+  }
 
   // Customer feedback modal state. `feedbackRow` is the row currently being edited.
   const [feedbackRow, setFeedbackRow] = useState<ReportRow | null>(null);
@@ -127,6 +414,7 @@ export function ClosedCallsDashboardView({
       setImportMessage(
         `Imported ${result.imported} closure dates (skipped ${result.skippedNoDate} without a date).`,
       );
+      setSummaryNonce((n) => n + 1);
       onClosureDatesImported?.();
     } catch (error) {
       setImportMessage(
@@ -549,16 +837,61 @@ export function ClosedCallsDashboardView({
               Click any region card below to filter closed call records to that specific operational region.
             </p>
           </div>
-          {selectedRegion && selectedRegion !== "ALL" && (
-            <button
-              type="button"
-              className="textButton"
-              onClick={() => setSelectedRegion(null)}
-              style={{ fontSize: "12px", fontWeight: "600", color: "#3b82f6", cursor: "pointer", background: "none", border: "none" }}
-            >
-              Clear Region Filter (Show All)
-            </button>
-          )}
+          <div style={{ display: "flex", alignItems: "flex-end", gap: "12px", flexWrap: "wrap" }}>
+            {/* Comparison date range (typed) for the Closure-import / Raw-data-closed
+                lines. Closure filters by exact date; raw uses the months the range spans.
+                Only rendered once at least one of those sources has data. */}
+            {comparisonMonths.length > 0 && (
+              <div style={{ display: "flex", alignItems: "flex-end", gap: "8px", fontSize: "12px", color: "#6b7280", flexWrap: "wrap" }}>
+                <div style={{ display: "flex", flexDirection: "column" }}>
+                  <label style={{ fontSize: "10px", fontWeight: 600, marginBottom: "3px" }}>Comparison from</label>
+                  <input
+                    type="date"
+                    value={comparisonFrom}
+                    min={minDate || undefined}
+                    max={maxDate || undefined}
+                    onChange={(e) => setComparisonFrom(e.target.value)}
+                    style={dateInputStyle}
+                  />
+                </div>
+                <div style={{ display: "flex", flexDirection: "column" }}>
+                  <label style={{ fontSize: "10px", fontWeight: 600, marginBottom: "3px" }}>Comparison to</label>
+                  <input
+                    type="date"
+                    value={comparisonTo}
+                    min={minDate || undefined}
+                    max={maxDate || undefined}
+                    onChange={(e) => setComparisonTo(e.target.value)}
+                    style={dateInputStyle}
+                  />
+                </div>
+                {rangeActive && (
+                  <button
+                    type="button"
+                    onClick={() => { setComparisonFrom(""); setComparisonTo(""); }}
+                    title="Clear comparison dates"
+                    style={{
+                      padding: "8px 12px", fontSize: "12px", fontWeight: 600, borderRadius: "8px",
+                      border: "1px solid #d1d5db", background: "#f9fafb", color: "#374151",
+                      cursor: "pointer", whiteSpace: "nowrap",
+                    }}
+                  >
+                    Clear
+                  </button>
+                )}
+              </div>
+            )}
+            {selectedRegion && selectedRegion !== "ALL" && (
+              <button
+                type="button"
+                className="textButton"
+                onClick={() => setSelectedRegion(null)}
+                style={{ fontSize: "12px", fontWeight: "600", color: "#3b82f6", cursor: "pointer", background: "none", border: "none" }}
+              >
+                Clear Region Filter (Show All)
+              </button>
+            )}
+          </div>
         </div>
 
         {/* Region Cards Grid */}
@@ -570,9 +903,13 @@ export function ClosedCallsDashboardView({
           }}
         >
           {/* Total All Card */}
-          <button
-            type="button"
+          <div
+            role="button"
+            tabIndex={0}
             onClick={() => setSelectedRegion(null)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setSelectedRegion(null); }
+            }}
             style={{
               padding: "14px 16px",
               borderRadius: "10px",
@@ -592,15 +929,27 @@ export function ClosedCallsDashboardView({
             <div style={{ fontSize: "11px", color: "#6b7280" }}>
               {formatNumber(totalActiveWipCount)} active WIP
             </div>
-          </button>
+            <ComparisonCounts
+              closureCount={closureCountFor("")}
+              rawCount={rawClosedFor("")}
+              closureHint={
+                closureUnmatched > 0 ? `${formatNumber(closureUnmatched)} unmatched` : null
+              }
+              onDrill={(kind) => setDrill({ kind, aspCode: "", label: "All Regions" })}
+            />
+          </div>
 
           {closedRegionBreakdown.map((entry) => {
             const isSelected = selectedRegion === entry.aspCode;
             return (
-              <button
+              <div
                 key={entry.aspCode}
-                type="button"
+                role="button"
+                tabIndex={0}
                 onClick={() => setSelectedRegion(entry.aspCode)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setSelectedRegion(entry.aspCode); }
+                }}
                 style={{
                   padding: "14px 16px",
                   borderRadius: "10px",
@@ -624,7 +973,12 @@ export function ClosedCallsDashboardView({
                 <div style={{ fontSize: "11px", color: "#6b7280" }}>
                   {entry.aspCode} | {formatNumber(entry.activeCount)} WIP
                 </div>
-              </button>
+                <ComparisonCounts
+                  closureCount={closureCountFor(entry.aspCode)}
+                  rawCount={rawClosedFor(entry.aspCode)}
+                  onDrill={(kind) => setDrill({ kind, aspCode: entry.aspCode, label: entry.regionName })}
+                />
+              </div>
             );
           })}
         </div>
@@ -692,6 +1046,37 @@ export function ClosedCallsDashboardView({
                 {importMessage && (
                   <span style={{ fontSize: "11px", color: "#6b7280", maxWidth: "260px", textAlign: "right" }}>
                     {importMessage}
+                  </span>
+                )}
+              </div>
+            )}
+
+            {/* Sync Raw Data — pulls the Flex RAW closed-call rows from the raw-data
+                project's API (no file upload). Feeds the "Raw data closed" card line.
+                Same permissions as the closure-date import. */}
+            {closureImportToken && (
+              <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: "4px" }}>
+                <button
+                  type="button"
+                  disabled={rawSyncing}
+                  onClick={() => void handleSyncRawData()}
+                  style={{
+                    padding: "8px 14px",
+                    fontSize: "13px",
+                    fontWeight: 600,
+                    borderRadius: "8px",
+                    border: "1px solid #fed7aa",
+                    background: rawSyncing ? "#fff7ed" : "#ea580c",
+                    color: rawSyncing ? "#ea580c" : "#ffffff",
+                    cursor: rawSyncing ? "default" : "pointer",
+                    whiteSpace: "nowrap",
+                  }}
+                >
+                  {rawSyncing ? "Syncing…" : "🔄 Sync Raw Data"}
+                </button>
+                {rawSyncMessage && (
+                  <span style={{ fontSize: "11px", color: "#6b7280", maxWidth: "260px", textAlign: "right" }}>
+                    {rawSyncMessage}
                   </span>
                 )}
               </div>
@@ -1081,6 +1466,195 @@ export function ClosedCallsDashboardView({
         </div>,
           document.body,
         )}
+
+      {/* Record-list drill-down for a card's Closure-import / Raw-data-closed count. */}
+      {drill && summaryToken && (
+        <RecordsDrillModal
+          token={summaryToken}
+          kind={drill.kind}
+          aspCode={drill.aspCode}
+          closureFrom={dateLo}
+          closureTo={dateHi}
+          rawMonthFrom={monthLo}
+          rawMonthTo={monthHi}
+          regionLabel={drill.label}
+          onClose={() => setDrill(null)}
+        />
+      )}
     </div>
+  );
+}
+
+/**
+ * Portaled modal listing the individual records behind a card's "Closure import" or
+ * "Raw data closed" count, scoped to the same ASP + month the card showed. Fetches its
+ * own data so opening it never blocks the cards.
+ */
+function RecordsDrillModal({
+  token, kind, aspCode, closureFrom, closureTo, rawMonthFrom, rawMonthTo, regionLabel, onClose,
+}: Readonly<{
+  token: string;
+  kind: "closure" | "raw";
+  aspCode: string;
+  /** Day-precise date bounds ("YYYY-MM-DD") used for the closure records. */
+  closureFrom: string;
+  closureTo: string;
+  /** Month bounds ("YYYY-MM") used for the raw records (raw has no day granularity). */
+  rawMonthFrom: string;
+  rawMonthTo: string;
+  regionLabel: string;
+  onClose: () => void;
+}>) {
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [rows, setRows] = useState<Array<Record<string, string>>>([]);
+  const [total, setTotal] = useState(0);
+  const [search, setSearch] = useState("");
+
+  React.useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    setError(null);
+    void (async () => {
+      try {
+        if (kind === "closure") {
+          const { getClosureDateRecords } = await import("../../../lib/closureDateApiClient");
+          const res = await getClosureDateRecords(token, { asp: aspCode, from: closureFrom, to: closureTo });
+          if (cancelled) return;
+          setRows(
+            res.rows.map((r) => ({
+              "WO ID": r.woId || "-",
+              "Case ID": r.caseId || "-",
+              "Closure Date": r.closureDate,
+              Region: r.aspCode || "(unmatched)",
+            })),
+          );
+          setTotal(res.total);
+        } else {
+          const { getFlexRawRecords } = await import("../../../lib/flexRawApiClient");
+          const res = await getFlexRawRecords(token, { asp: aspCode, from: rawMonthFrom, to: rawMonthTo, status: "closed" });
+          if (cancelled) return;
+          setRows(
+            res.rows.map((r) => ({
+              Ticket: r.ticketNo || "-",
+              "Case ID": r.caseId || "-",
+              "Work Location": r.workLocation || "-",
+              "Call Status": r.callStatus || "-",
+              Month: r.month ? formatMonthKey(r.month) : "-",
+            })),
+          );
+          setTotal(res.total);
+        }
+      } catch (err) {
+        if (!cancelled) setError(err instanceof Error ? err.message : "Failed to load records");
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [token, kind, aspCode, closureFrom, closureTo, rawMonthFrom, rawMonthTo]);
+
+  const columns = rows[0] ? Object.keys(rows[0]) : [];
+  const filtered = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    if (!q) return rows;
+    return rows.filter((r) => Object.values(r).some((v) => v.toLowerCase().includes(q)));
+  }, [rows, search]);
+
+  const title = kind === "closure" ? "Closure import" : "Raw data closed";
+  // Closure shows the exact date range typed; raw shows the months it maps to.
+  const rangeLabel =
+    kind === "closure"
+      ? formatRangeLabel(closureFrom, closureTo, formatDateKey, "All dates")
+      : formatRangeLabel(rawMonthFrom, rawMonthTo, formatMonthKey, "All months");
+  const scope = `${regionLabel} · ${rangeLabel}`;
+
+  if (typeof document === "undefined") return null;
+
+  return createPortal(
+    <div
+      onClick={onClose}
+      style={{
+        position: "fixed", inset: 0, background: "rgba(15,23,42,0.45)",
+        display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000, padding: "16px",
+      }}
+    >
+      <div
+        onClick={(e) => e.stopPropagation()}
+        style={{
+          background: "var(--card-bg, #ffffff)", borderRadius: "12px", width: "760px",
+          maxWidth: "100%", maxHeight: "85vh", display: "flex", flexDirection: "column",
+          boxShadow: "0 20px 40px rgba(0,0,0,0.25)", overflow: "hidden",
+        }}
+      >
+        <div style={{ padding: "18px 20px", borderBottom: "1px solid var(--border-color, #e5e7eb)", display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: "12px" }}>
+          <div>
+            <h3 style={{ margin: 0, fontSize: "16px", fontWeight: 700, color: kind === "closure" ? "#7c3aed" : "#ea580c" }}>
+              {title}
+            </h3>
+            <div style={{ fontSize: "12px", color: "#6b7280", marginTop: "2px" }}>
+              {scope} · {formatNumber(total)} record{total === 1 ? "" : "s"}
+              {total > rows.length && ` (showing first ${formatNumber(rows.length)})`}
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            style={{ border: "none", background: "none", fontSize: "20px", cursor: "pointer", color: "#6b7280", lineHeight: 1 }}
+            aria-label="Close"
+          >
+            ×
+          </button>
+        </div>
+
+        <div style={{ padding: "12px 20px 0" }}>
+          <input
+            type="search"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Search WO, Case ID, status…"
+            style={{ width: "100%", padding: "8px 12px", fontSize: "13px", borderRadius: "8px", border: "1px solid var(--border-color, #d1d5db)", background: "var(--input-bg, #f9fafb)" }}
+          />
+        </div>
+
+        <div style={{ overflow: "auto", padding: "12px 20px 20px", flex: 1 }}>
+          {loading ? (
+            <div style={{ textAlign: "center", padding: "40px", color: "#6b7280", fontSize: "13px" }}>Loading records…</div>
+          ) : error ? (
+            <div style={{ textAlign: "center", padding: "40px", color: "#dc2626", fontSize: "13px", fontWeight: 600 }}>{error}</div>
+          ) : filtered.length === 0 ? (
+            <div style={{ textAlign: "center", padding: "40px", color: "#6b7280", fontSize: "13px" }}>
+              {rows.length === 0 ? "No records for this scope." : "No records match the search."}
+            </div>
+          ) : (
+            <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "12.5px" }}>
+              <thead>
+                <tr>
+                  {columns.map((c) => (
+                    <th key={c} style={{ textAlign: "left", padding: "8px 10px", borderBottom: "2px solid var(--border-color, #e5e7eb)", position: "sticky", top: 0, background: "var(--card-bg, #ffffff)", fontWeight: 700, color: "#374151", whiteSpace: "nowrap" }}>
+                      {c}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {filtered.map((r, i) => (
+                  <tr key={i}>
+                    {columns.map((c) => (
+                      <td key={c} style={{ padding: "7px 10px", borderBottom: "1px solid var(--border-color, #f0f1f4)", color: "#1f2937", whiteSpace: "nowrap" }}>
+                        {r[c]}
+                      </td>
+                    ))}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </div>
+      </div>
+    </div>,
+    document.body,
   );
 }

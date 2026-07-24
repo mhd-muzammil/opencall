@@ -162,6 +162,7 @@ export function RTPLDashboard({
   bodSnapshot,
   onDownloadBodEod,
   hideTimeCards = false,
+  loading = false,
 }: Readonly<{
   rtplAnalyticsDate: string;
   setRtplAnalyticsDate: Dispatch<SetStateAction<string>>;
@@ -199,6 +200,8 @@ export function RTPLDashboard({
   /** Called to download BOD + EOD as an Excel workbook */
   onDownloadBodEod: (card: RtplTimeCard & { cardBod: number; cardEod: number; breakdown: Array<{ status: string; bodCount: number; eodCount: number }> }) => void;
   hideTimeCards?: boolean;
+  /** True while a past Activity date's report is being fetched. */
+  loading?: boolean;
 }>) {
   // Set up the status order mapping helper based on RTPL_STATUS_OPTIONS
   const statusOrderMap = new Map<string, number>();
@@ -461,7 +464,7 @@ export function RTPLDashboard({
             />
           </label>
           <span className="statusBadge neutral">
-            {rtplAnalyticsRows.length} rows
+            {loading ? "Loading…" : `${rtplAnalyticsRows.length} rows`}
           </span>
         </div>
       </div>

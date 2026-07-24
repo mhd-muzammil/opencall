@@ -169,6 +169,7 @@ import {
   buildRtplTimeCards,
   filterRowsByRegion,
   hasRequestToCancelFlexStatus,
+  isRecordsPageVisibleRow,
   isTodayCallPlanVisibleRow,
   reportWithRows,
   RTPL_CARRY_FORWARD_TIME_CARD_ID,
@@ -486,6 +487,13 @@ export default function DashboardPage() {
   // state for the whole wait, which reads as broken. See the fetch effect below.
   const [productivityDayLoading, setProductivityDayLoading] = useState(false);
   const productivityDayReportCacheRef = useRef(new Map<string, GeneratedReportResponse>());
+
+  // RTPL / BOD & EOD "Activity date": picking a past day loads THAT day's final
+  // report so the status cards and BOD/EOD tables reflect it, instead of always
+  // showing the current report. Mirrors the productivity past-day fetch above.
+  const [rtplDayReport, setRtplDayReport] = useState<GeneratedReportResponse | null>(null);
+  const [rtplDayLoading, setRtplDayLoading] = useState(false);
+  const rtplDayReportCacheRef = useRef(new Map<string, GeneratedReportResponse>());
   // Per-region Final-EOD state for the productivity day on display; closed
   // regions render from their frozen snapshot instead of the live rows.
   const [productivityEodState, setProductivityEodState] =
@@ -1162,6 +1170,76 @@ export default function DashboardPage() {
     };
   }, [session, productivityFilterType, selectedProductivityValue, report?.reportDate, historySessions, regionId]);
 
+  // Day-by-day RTPL / BOD & EOD: when the Activity date differs from the current
+  // report's day, fetch that day's final report (its latest completed session) in
+  // the background, cached per date for the session. When the date IS the current
+  // report's day, use the loaded report directly.
+  useEffect(() => {
+    if (!session || session.user.role === "SPECIAL_ACCESS" || !rtplAnalyticsDate) {
+      setRtplDayReport(null);
+      setRtplDayLoading(false);
+      return;
+    }
+
+    const iso = rtplAnalyticsDate; // already YYYY-MM-DD from the date input
+
+    if (report?.reportDate === iso) {
+      setRtplDayReport(null);
+      setRtplDayLoading(false);
+      return;
+    }
+
+    const cached = rtplDayReportCacheRef.current.get(iso);
+    if (cached) {
+      setRtplDayReport(cached);
+      setRtplDayLoading(false);
+      return;
+    }
+
+    const daySession = historySessions
+      .filter((s) => s.status === "COMPLETED" && s.reportDate === iso && s.flexUploadBatchId)
+      .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())[0];
+    if (!daySession?.flexUploadBatchId) {
+      setRtplDayReport(null);
+      setRtplDayLoading(false);
+      return;
+    }
+
+    const effectiveRegionId =
+      session.user.role === "REGION_ADMIN"
+        ? session.user.regionId ?? ""
+        : daySession.regionId || regionId;
+
+    let cancelled = false;
+    setRtplDayReport(null);
+    setRtplDayLoading(true);
+    generateReport({
+      token: session.token,
+      regionId: effectiveRegionId,
+      reportDate: iso,
+      flexUploadBatchId: daySession.flexUploadBatchId,
+      ...(daySession.renderwaysUploadBatchId
+        ? { renderwaysUploadBatchId: daySession.renderwaysUploadBatchId }
+        : {}),
+      ...(daySession.callPlanUploadBatchId
+        ? { callPlanUploadBatchId: daySession.callPlanUploadBatchId }
+        : {}),
+    })
+      .then((dayReport) => {
+        rtplDayReportCacheRef.current.set(iso, dayReport);
+        if (!cancelled) setRtplDayReport(dayReport);
+      })
+      .catch(() => {
+        // Leave the view empty for the day; the date badge still shows the request.
+      })
+      .finally(() => {
+        if (!cancelled) setRtplDayLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [session, rtplAnalyticsDate, report?.reportDate, historySessions, regionId]);
+
   // ---- Per-region Final-EOD day boundary (engineer productivity) ----
   // The day whose EOD state the productivity view needs: the selected past day
   // in "Specific Date" mode, otherwise the current report's day.
@@ -1277,6 +1355,20 @@ export default function DashboardPage() {
 
 
   // Phase 5: RTPL analytics memos moved to features/dashboard/hooks/useRtplAnalytics.
+  // The report the RTPL / BOD & EOD view reads: the fetched past-day report when
+  // the Activity date targets a day other than the current report, else the
+  // current report. A past day whose report hasn't loaded (or doesn't exist)
+  // must NOT fall back to today's rows — it shows nothing for that day instead.
+  const rtplEffectiveReport =
+    rtplDayReport?.reportDate === rtplAnalyticsDate ? rtplDayReport : report;
+  const rtplActiveRows = useMemo(() => {
+    if (!rtplEffectiveReport) return [];
+    if (rtplAnalyticsDate && rtplEffectiveReport.reportDate !== rtplAnalyticsDate) {
+      return [];
+    }
+    return rtplEffectiveReport.rows.filter(isRecordsPageVisibleRow);
+  }, [rtplEffectiveReport, rtplAnalyticsDate]);
+
   const {
     rtplRowsForSelectedScope,
     rtplRowsForSelectedRegion,
@@ -1288,11 +1380,11 @@ export default function DashboardPage() {
     rtplTimeCards,
     selectedRtplTimeCard,
   } = useRtplAnalytics({
-    activeRows,
+    activeRows: rtplActiveRows,
     selectedRtplCaseScope,
     selectedRtplRegion,
     activeRegionBreakdown,
-    report,
+    report: rtplEffectiveReport,
     rtplStatusChanges,
     selectedRtplTimeCardId,
     bodFixedTime,
@@ -1571,7 +1663,10 @@ export default function DashboardPage() {
   }
 
   useEffect(() => {
-    if (!session || !report?.reportId) {
+    // Follows the RTPL view's effective report so a past Activity date reads that
+    // day's status changes, not the current report's.
+    const rtplReportId = rtplEffectiveReport?.reportId;
+    if (!session || !rtplReportId) {
       setRtplStatusChanges([]);
       return;
     }
@@ -1580,7 +1675,7 @@ export default function DashboardPage() {
 
     getRtplStatusChanges({
       token: session.token,
-      reportId: report.reportId,
+      reportId: rtplReportId,
       changeDate: rtplAnalyticsDate,
       limit: RTPL_STATUS_CHANGE_LIMIT,
     })
@@ -1598,7 +1693,7 @@ export default function DashboardPage() {
     return () => {
       cancelled = true;
     };
-  }, [report?.reportId, rtplAnalyticsDate, session]);
+  }, [rtplEffectiveReport?.reportId, rtplAnalyticsDate, session]);
 
   async function refreshHistory() {
     if (!session) return;
@@ -3930,6 +4025,7 @@ export default function DashboardPage() {
                         bodSnapshot={bodSnapshot}
                         onFixBod={handleFixBod}
                         onDownloadBodEod={handleDownloadBodEod}
+                        loading={rtplDayLoading}
                       />
                     )}
 
@@ -4143,6 +4239,7 @@ export default function DashboardPage() {
                         onFixBod={handleFixBod}
                         onDownloadBodEod={handleDownloadBodEod}
                         hideTimeCards={true}
+                        loading={rtplDayLoading}
                       />
                       {/* Per-region Final EOD: closing a region's day freezes
                           these records, so the control belongs with them. The

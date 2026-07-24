@@ -960,7 +960,7 @@ export async function downloadEngineerProductivityExcel(
     list.reduce((acc, item) => acc + (Number(item[key]) || 0), 0);
   const aoaData = [
     ["Date " + dateLabel, "", "", "", "", "", "", "", ""],
-    ["S.No", "Engineer Name", "Assigned", "Attended", "Closed", "Part ordered", "Under Observation", "CX Reschedule", "Engineer Delay"],
+    ["S.No", "Engineer Name", "Assigned", "Attended", "Closed", "Part ordered", "Under Observation", "Customer Pending", "Engineer Delay"],
     ...list.map((item, index) => [
       index + 1,
       item.name,

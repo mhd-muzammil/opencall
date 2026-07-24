@@ -481,6 +481,10 @@ export default function DashboardPage() {
   // The selected PAST day's final report for the productivity view ("Specific
   // Date" is day-by-day: it reads that day's report, not a created-time cohort).
   const [productivityDayReport, setProductivityDayReport] = useState<GeneratedReportResponse | null>(null);
+  // True while a past day's final report is being regenerated in the background.
+  // Regeneration is heavy, so without this the table shows the empty "no records"
+  // state for the whole wait, which reads as broken. See the fetch effect below.
+  const [productivityDayLoading, setProductivityDayLoading] = useState(false);
   const productivityDayReportCacheRef = useRef(new Map<string, GeneratedReportResponse>());
   // Per-region Final-EOD state for the productivity day on display; closed
   // regions render from their frozen snapshot instead of the live rows.
@@ -1089,6 +1093,7 @@ export default function DashboardPage() {
       !selectedProductivityValue
     ) {
       setProductivityDayReport(null);
+      setProductivityDayLoading(false);
       return;
     }
 
@@ -1100,12 +1105,14 @@ export default function DashboardPage() {
 
     if (report?.reportDate === iso) {
       setProductivityDayReport(null);
+      setProductivityDayLoading(false);
       return;
     }
 
     const cached = productivityDayReportCacheRef.current.get(iso);
     if (cached) {
       setProductivityDayReport(cached);
+      setProductivityDayLoading(false);
       return;
     }
 
@@ -1115,6 +1122,7 @@ export default function DashboardPage() {
       .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())[0];
     if (!daySession?.flexUploadBatchId) {
       setProductivityDayReport(null);
+      setProductivityDayLoading(false);
       return;
     }
 
@@ -1125,6 +1133,7 @@ export default function DashboardPage() {
 
     let cancelled = false;
     setProductivityDayReport(null);
+    setProductivityDayLoading(true);
     generateReport({
       token: session.token,
       regionId: effectiveRegionId,
@@ -1144,6 +1153,9 @@ export default function DashboardPage() {
       .catch(() => {
         // Leave the table empty for the day; the date label still shows which
         // day was requested.
+      })
+      .finally(() => {
+        if (!cancelled) setProductivityDayLoading(false);
       });
     return () => {
       cancelled = true;
@@ -4053,6 +4065,7 @@ export default function DashboardPage() {
                         setProductivityToDate={setProductivityToDate}
                         engineerProductivityMetrics={engineerProductivityMetrics}
                         productivityDateLabel={productivityDateLabel}
+                        loading={productivityDayLoading}
                         regionsList={report?.regionBreakdown ?? []}
                         isSuperAdmin={session?.user?.role === "SUPER_ADMIN"}
                         openRecordsWithFilter={openRecordsWithFilter}

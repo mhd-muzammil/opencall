@@ -16,6 +16,7 @@ export function ProductivityPage({
   setProductivityToDate,
   engineerProductivityMetrics,
   productivityDateLabel,
+  loading = false,
   regionsList,
   isSuperAdmin,
   openRecordsWithFilter,
@@ -56,6 +57,8 @@ export function ProductivityPage({
     datesList: string[];
   };
   productivityDateLabel: string;
+  /** True while a past day's report is being fetched — shows a loading row. */
+  loading?: boolean;
   regionsList: Array<{ aspCode: string; regionName: string; count: number }>;
   isSuperAdmin: boolean;
   openRecordsWithFilter: (args: Readonly<{
@@ -373,7 +376,7 @@ export function ProductivityPage({
           boxShadow: "0 2px 4px rgba(0, 0, 0, 0.02)"
         }}>
           <span style={{ fontSize: "12px", fontWeight: "700", color: "#1e40af", textTransform: "uppercase", letterSpacing: "0.5px" }}>📞 Total Attended Calls</span>
-          <strong style={{ fontSize: "28px", fontWeight: "900", color: "#1e3a8a" }}>{filteredTotalAttended}</strong>
+          <strong style={{ fontSize: "28px", fontWeight: "900", color: "#1e3a8a" }}>{loading ? "…" : filteredTotalAttended}</strong>
           <span style={{ fontSize: "11px", color: "#60a5fa" }}>Across filtered engineers</span>
         </div>
 
@@ -389,7 +392,7 @@ export function ProductivityPage({
           boxShadow: "0 2px 4px rgba(0, 0, 0, 0.02)"
         }}>
           <span style={{ fontSize: "12px", fontWeight: "700", color: "#166534", textTransform: "uppercase", letterSpacing: "0.5px" }}>👥 Active Engineers</span>
-          <strong style={{ fontSize: "28px", fontWeight: "900", color: "#14532d" }}>{filteredActiveEngineers}</strong>
+          <strong style={{ fontSize: "28px", fontWeight: "900", color: "#14532d" }}>{loading ? "…" : filteredActiveEngineers}</strong>
           <span style={{ fontSize: "11px", color: "#4ade80" }}>In selected view</span>
         </div>
 
@@ -405,7 +408,7 @@ export function ProductivityPage({
           boxShadow: "0 2px 4px rgba(0, 0, 0, 0.02)"
         }}>
           <span style={{ fontSize: "12px", fontWeight: "700", color: "#6b21a8", textTransform: "uppercase", letterSpacing: "0.5px" }}>⚡ Avg Calls / Engineer</span>
-          <strong style={{ fontSize: "28px", fontWeight: "900", color: "#581c87" }}>{filteredAvgProductivity}</strong>
+          <strong style={{ fontSize: "28px", fontWeight: "900", color: "#581c87" }}>{loading ? "…" : filteredAvgProductivity}</strong>
           <span style={{ fontSize: "11px", color: "#c084fc" }}>Average attended per active engg</span>
         </div>
       </div>
@@ -474,6 +477,12 @@ export function ProductivityPage({
                   {renderClickableCell(item.engineerDelay ?? 0, item.engineerDelayTickets, false, "#9a3412")}
                 </tr>
               ))
+            ) : loading ? (
+              <tr>
+                <td colSpan={showRegionColumn ? 10 : 9} style={{ padding: "24px", border: "1px solid #cbd5e1", textAlign: "center", color: "var(--muted)" }}>
+                  Loading this day&apos;s productivity…
+                </td>
+              </tr>
             ) : (
               <tr>
                 <td colSpan={showRegionColumn ? 10 : 9} style={{ padding: "24px", border: "1px solid #cbd5e1", textAlign: "center", color: "var(--muted)" }}>

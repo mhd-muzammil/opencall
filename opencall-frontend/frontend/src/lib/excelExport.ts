@@ -903,7 +903,7 @@ export async function downloadRegionSummaryExcel(
       [2, "No.of Engg Presents", presentsCount],
       [3, "Open Calls", openCallsCount],
       [4, "Actionable Calls", actionableCount || 0],
-      [5, "Planned Calls", plannedCount || 0],
+      [5, "Scheduled Calls", plannedCount || 0],
       [6, "Attended", isBod ? 0 : attendedCount || 0],
       [7, "Closed Calls", caseClosedCount || 0],
       [8, "Engg onsite", enggOnsiteCount || 0],

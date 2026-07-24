@@ -385,10 +385,20 @@ export function RTPLDashboard({
       attended: 0,
       tickets: { ...bodBase.tickets, attended: [] as string[] },
     };
+    // Actionable is a start-of-day baseline: it counts calls that were
+    // actionable in the Morning. By Evening those calls have been attended, so
+    // the live Evening count collapses to ~0. Ops wants the Evening column to
+    // carry the Morning count unchanged (same number BOD & EOD), so mirror
+    // BOD's value and its drill-down tickets.
     const eodKpiMetrics = {
       ...eodBase,
       attended: attendedRows.length,
-      tickets: { ...eodBase.tickets, attended: attendedTicketIds },
+      actionable: bodBase.actionable,
+      tickets: {
+        ...eodBase.tickets,
+        attended: attendedTicketIds,
+        actionable: bodBase.tickets.actionable,
+      },
     };
 
     return {
@@ -575,7 +585,7 @@ export function RTPLDashboard({
                     { id: 2, desc: "No.of Engg Presents", key: "enggPresents" },
                     { id: 3, desc: "Open Calls", key: "openCalls" },
                     { id: 4, desc: "Actionable Calls", key: "actionable" },
-                    { id: 5, desc: "Planned Calls", key: "planned" },
+                    { id: 5, desc: "Scheduled Calls", key: "planned" },
                     { id: 6, desc: "Attended", key: "attended", isEodOnly: true },
                     { id: 7, desc: "Closed Calls", key: "closedCalls", isEodOnly: true, alert: true },
                     { id: 8, desc: "Engg onsite", key: "enggOnsite" },

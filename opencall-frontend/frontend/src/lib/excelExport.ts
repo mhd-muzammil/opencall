@@ -881,6 +881,7 @@ export async function downloadRegionSummaryExcel(
       closedRows.length;
     const toBeScheduleCount = activeRows.filter(r => matchStatus(r, ["to be scheduled", "assignment pending", "non avl", "missed to schedule"])).length;
     const cxRescheduleCount = activeRows.filter(r => matchStatus(r, ["cx pending", "reschedule", "cx", "cust delay", "customer delay", "customer pending"])).length;
+    const engineerDelayCount = activeRows.filter(r => matchStatus(r, ["engineer delay", "eng delay"])).length;
     const sscPendingCount = activeRows.filter(r => matchStatus(r, ["ssc pending", "ssc"])).length;
     const elevateTechCount = activeRows.filter(r => matchStatus(r, ["elevation HP Pending", "elevation Part Pending", "elevation - HP Pending", "elevation - Partner Pending", "elevate"])).length;
     const underObservationCount = activeRows.filter(r => matchStatus(r, ["CRT Pending", "CT Validation Pending", "observation", "under observation", "crt"])).length;
@@ -908,16 +909,17 @@ export async function downloadRegionSummaryExcel(
       [7, "Closed Calls", caseClosedCount || 0],
       [8, "Engg onsite", enggOnsiteCount || 0],
       [9, "To be schedule", toBeScheduleCount || 0],
-      [10, "CX Reschedule Calls", cxRescheduleCount || 0],
-      [11, "SSC Pending Calls", sscPendingCount || 0],
-      [12, "Elevate/Tech Support Calls", elevateTechCount || 0],
-      [13, "Under observation Calls", underObservationCount || 0],
-      [14, "To be Yank", toBeYankCount || 0],
-      [15, "Closed cancelled", closedCancelledCount || 0],
-      [16, "Add.Part ordered", addPartOrderedCount || 0],
-      [17, "To be Cancel", toBeCancelCount || 0],
-      [18, "New calls", newCallsCount || 0],
-      [19, "Trade Open Calls", tradeOpenCallsCount || 0],
+      [10, "Customer Pending", cxRescheduleCount || 0],
+      [11, "Engineer Delay", engineerDelayCount || 0],
+      [12, "SSC Pending Calls", sscPendingCount || 0],
+      [13, "Elevate/Tech Support Calls", elevateTechCount || 0],
+      [14, "Under observation Calls", underObservationCount || 0],
+      [15, "To be Yank", toBeYankCount || 0],
+      [16, "Closed cancelled", closedCancelledCount || 0],
+      [17, "Add.Part ordered", addPartOrderedCount || 0],
+      [18, "To be Cancel", toBeCancelCount || 0],
+      [19, "New calls", newCallsCount || 0],
+      [20, "Trade Open Calls", tradeOpenCallsCount || 0],
     ];
  
     merges = [

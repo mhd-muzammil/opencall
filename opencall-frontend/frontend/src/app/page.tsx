@@ -4470,7 +4470,7 @@ export default function DashboardPage() {
                             <svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true">
                               <path d="M2 6V2.5h3.5M14 6V2.5h-3.5M2 10v3.5h3.5M14 10v3.5h-3.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
                             </svg>
-                            Full Record
+                            Full Screen
                           </button>
                           <button
                             type="button"

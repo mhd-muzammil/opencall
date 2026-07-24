@@ -81,6 +81,8 @@ function calculateKpiMetricsForCardView(
   const enggOnsiteRows = active.filter(r => isOnsiteStatusValue(getRowStatus(r)));
   const toBeScheduleRows = active.filter(r => matchStatus(r, ["to be scheduled", "assignment pending", "non avl", "missed to schedule"]));
   const cxRescheduleRows = active.filter(r => matchStatus(r, ["cx pending", "reschedule", "cx", "cust delay", "customer delay", "customer pending"]));
+  // Engineer Delay — mirrors the shared engineer-productivity classifier.
+  const engineerDelayRows = active.filter(r => matchStatus(r, ["engineer delay", "eng delay"]));
   const sscPendingRows = active.filter(r => matchStatus(r, ["ssc pending", "ssc"]));
   const elevateTechRows = active.filter(r => matchStatus(r, ["elevation HP Pending", "elevation Part Pending", "elevation - HP Pending", "elevation - Partner Pending", "elevate"]));
   const underObservationRows = active.filter(r => matchStatus(r, ["CRT Pending", "CT Validation Pending", "observation", "under observation", "crt"]));
@@ -113,6 +115,7 @@ function calculateKpiMetricsForCardView(
     enggOnsite: enggOnsiteRows.length,
     toBeSchedule: toBeScheduleRows.length,
     cxReschedule: cxRescheduleRows.length,
+    engineerDelay: engineerDelayRows.length,
     sscPending: sscPendingRows.length,
     elevateTech: elevateTechRows.length,
     underObservation: underObservationRows.length,
@@ -133,6 +136,7 @@ function calculateKpiMetricsForCardView(
       enggOnsite: getTicketIds(enggOnsiteRows),
       toBeSchedule: getTicketIds(toBeScheduleRows),
       cxReschedule: getTicketIds(cxRescheduleRows),
+      engineerDelay: getTicketIds(engineerDelayRows),
       sscPending: getTicketIds(sscPendingRows),
       elevateTech: getTicketIds(elevateTechRows),
       underObservation: getTicketIds(underObservationRows),
@@ -593,16 +597,17 @@ export function RTPLDashboard({
                     { id: 7, desc: "Closed Calls", key: "closedCalls", isEodOnly: true, alert: true },
                     { id: 8, desc: "Engg onsite", key: "enggOnsite" },
                     { id: 9, desc: "To be schedule", key: "toBeSchedule" },
-                    { id: 10, desc: "CX Reschedule Calls", key: "cxReschedule" },
-                    { id: 11, desc: "SSC Pending Calls", key: "sscPending" },
-                    { id: 12, desc: "Elevate/Tech Support Calls", key: "elevateTech" },
-                    { id: 13, desc: "Under observation Calls", key: "underObservation" },
-                    { id: 14, desc: "To be Yank", key: "toBeYank" },
-                    { id: 15, desc: "Closed cancelled", key: "closedCancelled", isEodOnly: true },
-                    { id: 16, desc: "Add.Part ordered", key: "addPartOrdered", alert: true },
-                    { id: 17, desc: "To be Cancel", key: "toBeCancel" },
-                    { id: 18, desc: "New calls", key: "newCalls", isEodOnly: true, alert: true },
-                    { id: 19, desc: "Trade Open Calls", key: "tradeOpenCalls" },
+                    { id: 10, desc: "Customer Pending", key: "cxReschedule" },
+                    { id: 11, desc: "Engineer Delay", key: "engineerDelay" },
+                    { id: 12, desc: "SSC Pending Calls", key: "sscPending" },
+                    { id: 13, desc: "Elevate/Tech Support Calls", key: "elevateTech" },
+                    { id: 14, desc: "Under observation Calls", key: "underObservation" },
+                    { id: 15, desc: "To be Yank", key: "toBeYank" },
+                    { id: 16, desc: "Closed cancelled", key: "closedCancelled", isEodOnly: true },
+                    { id: 17, desc: "Add.Part ordered", key: "addPartOrdered", alert: true },
+                    { id: 18, desc: "To be Cancel", key: "toBeCancel" },
+                    { id: 19, desc: "New calls", key: "newCalls", isEodOnly: true, alert: true },
+                    { id: 20, desc: "Trade Open Calls", key: "tradeOpenCalls" },
                   ] as const;
 
                   const renderCell = (

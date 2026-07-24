@@ -599,9 +599,6 @@ export default function DashboardPage() {
     } catch { /* non-fatal */ }
   }, [report?.reportId, rtplAnalyticsDate]);
 
-  // Whether the 6PM auto-download has already fired for this session.
-  const autoDownloadFiredRef = useRef(false);
-
 
   useEffect(() => {
     if (recordsAreaRef.current) {
@@ -1505,50 +1502,9 @@ export default function DashboardPage() {
     XLSXStyle.utils.book_append_sheet(wb, sheet, "BOD & EOD");
     XLSXStyle.writeFile(wb, `RTPL_BOD_EOD_${cardLabel.replace(/\s+/g, "_")}_${dateStr}.xlsx`);
   }
-  // 6:00 PM IST auto-download: fires once per session when the clock crosses 18:00.
-  useEffect(() => {
-    if (!rtplTimeCards || rtplTimeCards.length === 0) return;
-
-    const CHECK_INTERVAL_MS = 30_000; // check every 30 seconds
-    const AUTO_DOWNLOAD_HOUR_IST = 18; // 6:00 PM IST
-
-    const timerId = setInterval(() => {
-      if (autoDownloadFiredRef.current) return;
-
-      const nowIst = new Date().toLocaleTimeString("en-IN", {
-        timeZone: "Asia/Kolkata",
-        hour: "2-digit",
-        minute: "2-digit",
-        hour12: false,
-      });
-      const [hStr] = nowIst.split(":");
-      const currentHour = Number(hStr);
-
-      if (currentHour >= AUTO_DOWNLOAD_HOUR_IST) {
-        autoDownloadFiredRef.current = true;
-        // Find the 6PM card (id "1800"); fall back to the last card with data
-        const eodCard = rtplTimeCards.find((c) => c.id === "1800") ?? rtplTimeCards[rtplTimeCards.length - 1];
-        if (eodCard && (eodCard.count > 0 || eodCard.details.length > 0)) {
-          // Build a minimal card shape matching the download handler expectation
-          // We call the same handler that individual cards use, so logic is shared.
-          handleDownloadBodEod({
-            label: eodCard.label,
-            cardBod: 0, // BOD total will show from breakdown
-            cardEod: eodCard.count,
-            breakdown: eodCard.statusBreakdown.map((b) => ({
-              status: b.status,
-              bodCount: 0,
-              eodCount: b.count,
-            })),
-          });
-        }
-      }
-    }, CHECK_INTERVAL_MS);
-
-    return () => clearInterval(timerId);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [rtplTimeCards]);
-
+  // (Removed) The 6PM IST BOD/EOD auto-download: it fired on every evening
+  // page-open/reload (condition was hour >= 18), dropping surprise files. The
+  // BOD & EOD Excel now downloads only when a user clicks "Download BOD & EOD".
 
 
   async function refreshHealth() {

@@ -64,6 +64,9 @@ export function WarrantyLookupManager() {
   const [busy, setBusy] = useState(false);
   const [downloading, setDownloading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // The Excel-upload lookup is now a secondary option — the closed-call warranty list is
+  // the main content. Collapsed by default; opens on demand (or while a job is running).
+  const [showUpload, setShowUpload] = useState(false);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   useEffect(() => {
@@ -155,21 +158,41 @@ export function WarrantyLookupManager() {
 
   return (
     <div className="adminPage">
-      <div className="adminPageHeader">
+      <div
+        className="adminPageHeader"
+        style={{
+          display: "flex",
+          alignItems: "flex-start",
+          justifyContent: "space-between",
+          gap: 12,
+          flexWrap: "wrap",
+        }}
+      >
         <div>
           <p className="eyebrow">Data & Operations</p>
           <h2>HP Warranty Lookup</h2>
-          <p className="muted">
-            Upload a Flex WIP report; each unique serial is checked on HP&apos;s
-            warranty site. Download the same workbook with the warranty end date
-            (column AX) and lookup status (column AY) appended.
-          </p>
         </div>
+        {/* Excel upload is now a secondary option — toggled open on demand. */}
+        <button
+          type="button"
+          className="btnSecondary"
+          onClick={() => setShowUpload((v) => !v)}
+          style={{ whiteSpace: "nowrap" }}
+        >
+          ⬆ {showUpload ? "Hide Excel upload" : "Excel upload"}
+        </button>
       </div>
 
       {error && <div className="adminError">{error}</div>}
 
-      <div className="adminForm" style={{ maxWidth: "560px" }}>
+      {(showUpload || job !== null) && (
+        <>
+          <p className="muted" style={{ maxWidth: 640, marginTop: 0 }}>
+            Upload a Flex WIP report; each unique serial is checked on HP&apos;s warranty
+            site. Download the same workbook with the warranty end date (column AX) and
+            lookup status (column AY) appended.
+          </p>
+          <div className="adminForm" style={{ maxWidth: "560px" }}>
         <div className="adminField">
           <label htmlFor="warranty-file">Flex WIP report (.xlsx)</label>
           <input
@@ -311,8 +334,10 @@ export function WarrantyLookupManager() {
           </div>
         </div>
       )}
+        </>
+      )}
 
-      {/* Closed-call warranty list — auto-filled from the report's closed calls (~100/day). */}
+      {/* Closed-call warranty list — the MAIN content of this page. */}
       <ClosedCallWarrantyPanel token={session?.token ?? null} />
     </div>
   );

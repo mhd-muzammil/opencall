@@ -1,4 +1,7 @@
-import type { WarrantyJobDetail } from "@opencall/shared";
+import type {
+  ClosedCallWarrantyListResponse,
+  WarrantyJobDetail,
+} from "@opencall/shared";
 import { WEB_API_BASE_URL } from "./api/webApiClient";
 import { ApiClientError, readJson } from "./api/http";
 import type { ApiErrorBody } from "./api/types";
@@ -90,4 +93,30 @@ export async function downloadWarrantyJobFile(
     /filename="?([^";]+)"?/.exec(disposition)?.[1] ?? "warranty-result.xlsx";
 
   return { blob: await response.blob(), fileName };
+}
+
+/**
+ * The latest report's closed calls + each one's warranty status. The backend also enqueues
+ * any uncached serials for HP lookup (capped ~100/day), so calling this repeatedly (e.g. on
+ * a refresh timer) both reports status AND keeps the list filling.
+ */
+export async function fetchClosedCallWarrantyList(
+  token: string,
+): Promise<ClosedCallWarrantyListResponse> {
+  const response = await fetch(url("/api/v1/warranty/closed-calls"), {
+    headers: authHeaders(token),
+    cache: "no-store",
+  });
+  return readJson<ClosedCallWarrantyListResponse>(response);
+}
+
+/** Admin "check now": enqueue uncached serials from the latest report's closed calls. */
+export async function runClosedCallWarrantySweep(
+  token: string,
+): Promise<{ enqueued: number }> {
+  const response = await fetch(url("/api/v1/warranty/closed-calls/sweep"), {
+    method: "POST",
+    headers: authHeaders(token),
+  });
+  return readJson<{ enqueued: number }>(response);
 }

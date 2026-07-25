@@ -9,6 +9,7 @@ import {
   retryWarrantyJob,
 } from "../lib/warrantyApiClient";
 import { readSession, type ClientSession } from "../lib/session";
+import { ClosedCallWarrantyPanel } from "../features/dashboard/components/ClosedCallWarrantyPanel";
 
 /**
  * HP Warranty Lookup workspace view.
@@ -310,6 +311,9 @@ export function WarrantyLookupManager() {
           </div>
         </div>
       )}
+
+      {/* Closed-call warranty list — auto-filled from the report's closed calls (~100/day). */}
+      <ClosedCallWarrantyPanel token={session?.token ?? null} />
     </div>
   );
 }

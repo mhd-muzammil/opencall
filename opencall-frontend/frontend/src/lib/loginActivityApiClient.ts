@@ -21,13 +21,16 @@ export interface LoginLocationInfo {
 
 export interface LoginLocationSummaryItem {
   principalId: string;
-  lastLoginAt: string;
+  lastSeenAt: string;
+  /** The kind of the most recent action (LOGIN_SUCCESS, REPORT_ROW_EDITED, …). */
+  eventType: string;
   ip: string | null;
   location: LoginLocationInfo | null;
 }
 
 export interface LoginLocationEntry {
   occurredAt: string;
+  eventType: string;
   ip: string | null;
   userAgent: string | null;
   location: LoginLocationInfo | null;

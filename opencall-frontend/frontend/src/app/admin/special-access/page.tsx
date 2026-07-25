@@ -543,7 +543,7 @@ function LoginsPanel({
                 <th>Data</th>
                 <th>Permission</th>
                 <th>Status</th>
-                <th>Last location</th>
+                <th>Last seen (location)</th>
                 <th />
               </tr>
             </thead>

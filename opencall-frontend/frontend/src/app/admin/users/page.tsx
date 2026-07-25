@@ -193,7 +193,7 @@ export default function AdminUsersPage() {
                 <th>Region</th>
                 <th>Status</th>
                 <th>Last login</th>
-                <th>Last location</th>
+                <th>Last seen (location)</th>
                 <th></th>
               </tr>
             </thead>

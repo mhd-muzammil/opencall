@@ -40,6 +40,34 @@ export function describeUserAgent(ua: string | null): string {
   return os ? `${browser} · ${os}` : browser;
 }
 
+/** Human-readable label for an activity event type. */
+export function describeEvent(eventType: string): string {
+  const map: Record<string, string> = {
+    LOGIN_SUCCESS: "Logged in",
+    LOGIN_FAILED: "Failed login",
+    LOGOUT: "Logged out",
+    PASSWORD_CHANGED: "Changed password",
+    PASSWORD_RESET: "Password reset",
+    REPORT_ROW_EDITED: "Edited a case",
+    REPORT_GENERATED: "Generated report",
+    UPLOAD_CREATED: "Uploaded a file",
+    USER_CREATED: "Created a user",
+    USER_PROFILE_UPDATED: "Updated a user",
+    USER_ROLE_CHANGED: "Changed a role",
+    USER_REGION_REASSIGNED: "Reassigned region",
+    USER_DEACTIVATED: "Deactivated a user",
+    USER_REACTIVATED: "Reactivated a user",
+    VENDOR_ACCESS_CREATED: "Created a vendor",
+    VENDOR_ACCESS_UPDATED: "Updated a vendor",
+    VENDOR_ACCESS_DELETED: "Deleted a vendor",
+    VENDOR_CASE_ASSIGNED: "Assigned a case",
+    VENDOR_CASE_UNASSIGNED: "Unassigned a case",
+  };
+  if (map[eventType]) return map[eventType];
+  const s = eventType.replace(/_/g, " ").toLowerCase();
+  return s.charAt(0).toUpperCase() + s.slice(1);
+}
+
 /** Show a friendlier IP: strip the IPv4-mapped IPv6 prefix (::ffff:127.0.0.1 → 127.0.0.1). */
 function displayIp(ip: string): string {
   const rest = ip.toLowerCase().startsWith("::ffff:") ? ip.slice(7) : ip;
@@ -85,13 +113,13 @@ export function LoginLocationCell({
   onOpenHistory: () => void;
 }): React.JSX.Element {
   if (!summary) {
-    return <span className="muted">Never signed in</span>;
+    return <span className="muted">No activity yet</span>;
   }
   return (
     <button
       type="button"
       onClick={onOpenHistory}
-      title="View login history"
+      title="View activity history"
       style={{
         display: "block",
         textAlign: "left",
@@ -106,7 +134,9 @@ export function LoginLocationCell({
     >
       <LocationLabel info={summary.location} ip={summary.ip} />
       <br />
-      <small className="muted">{formatWhen(summary.lastLoginAt)} ›</small>
+      <small className="muted">
+        {describeEvent(summary.eventType)} · {formatWhen(summary.lastSeenAt)} ›
+      </small>
     </button>
   );
 }
@@ -270,7 +300,7 @@ export function LoginHistoryModal({
         >
           <div>
             <p className="eyebrow" style={{ margin: 0 }}>
-              Where they signed in from
+              Where they&apos;ve been active
             </p>
             <h3 style={{ margin: "2px 0 0", color: "#111827" }}>{title}</h3>
           </div>
@@ -301,6 +331,7 @@ export function LoginHistoryModal({
                 <thead>
                   <tr>
                     <th>When</th>
+                    <th>Action</th>
                     <th>Location</th>
                     <th>Device</th>
                   </tr>
@@ -320,6 +351,7 @@ export function LoginHistoryModal({
                         <td style={{ whiteSpace: "nowrap" }}>
                           {formatWhen(e.occurredAt)}
                         </td>
+                        <td>{describeEvent(e.eventType)}</td>
                         <td>
                           <LocationLabel info={e.location} ip={e.ip} />
                         </td>

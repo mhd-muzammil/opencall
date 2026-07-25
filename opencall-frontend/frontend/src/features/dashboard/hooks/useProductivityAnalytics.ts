@@ -435,15 +435,23 @@ export function useProductivityAnalytics(params: {
     const liveResult = computeEngineerProductivity(liveRows);
 
     // Frozen snapshots respect the region filter the live rows already had.
-    const targetRegion =
+    // The region dropdown sends an ASP work-location code ("ASPS01465"), while a
+    // frozen region carries its region code ("SAL") and name ("SALEM") — compare
+    // through the shared identity translation (the SAME one frozenAspCodes uses
+    // just above), not a raw code-vs-code equality. Without it a specific-region
+    // view silently drops its frozen snapshot and shows "no records" for any
+    // Final-EOD-closed past day (e.g. yesterday), even though "All Regions" works.
+    const targetAspCode =
       selectedRegion && selectedRegion !== "ALL"
         ? selectedRegion.trim().toUpperCase()
         : null;
     const snapshotResults = frozenRegions
       .filter(
         (region) =>
-          !targetRegion ||
-          region.regionCode.trim().toUpperCase() === targetRegion,
+          !targetAspCode ||
+          aspCodesForRegionIdentity(region.regionCode, region.regionName).has(
+            targetAspCode,
+          ),
       )
       .flatMap((region) => (region.snapshot ? [region.snapshot] : []));
 

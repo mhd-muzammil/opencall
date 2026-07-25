@@ -17,7 +17,10 @@ import { fetchClosedCallWarrantyList } from "../../../lib/warrantyApiClient";
  * live anywhere (it sits in the Warranty Lookup section).
  */
 
-const REFRESH_MS = 45_000;
+// Poll fast while serials are still being looked up so a resolved one shows
+// within seconds; back off once nothing is in flight to keep the panel cheap.
+const ACTIVE_REFRESH_MS = 7_000;
+const IDLE_REFRESH_MS = 60_000;
 
 const STATUS_META: Record<
   ClosedCallWarrantyStatus,
@@ -132,9 +135,12 @@ export function ClosedCallWarrantyPanel({
   useEffect(() => {
     if (!token) return;
     let cancelled = false;
+    let timer: ReturnType<typeof setTimeout> | undefined;
 
     const load = async () => {
       if (!firstLoadDone.current) setLoading(true);
+      // Re-poll fast unless the fetch shows nothing left in flight.
+      let nextDelay = ACTIVE_REFRESH_MS;
       try {
         const resp = await fetchClosedCallWarrantyList(token);
         if (cancelled) return;
@@ -142,6 +148,10 @@ export function ClosedCallWarrantyPanel({
         setDailyRemaining(resp.dailyRemaining);
         setRows(resp.rows);
         setLastError(null);
+        // Only rows still being looked up will change soon; once none remain,
+        // back off (NOT_CHECKED rows won't move until a later day's budget).
+        const inFlight = resp.rows.some((r) => r.status === "CHECKING");
+        nextDelay = inFlight ? ACTIVE_REFRESH_MS : IDLE_REFRESH_MS;
       } catch (e) {
         if (!cancelled) setLastError(e instanceof Error ? e.message : "Failed to load warranty");
       } finally {
@@ -150,13 +160,15 @@ export function ClosedCallWarrantyPanel({
           firstLoadDone.current = true;
         }
       }
+      if (!cancelled) {
+        timer = setTimeout(() => void load(), nextDelay);
+      }
     };
 
     void load();
-    const timer = setInterval(() => void load(), REFRESH_MS);
     return () => {
       cancelled = true;
-      clearInterval(timer);
+      if (timer) clearTimeout(timer);
     };
   }, [token]);
 

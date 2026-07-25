@@ -77,6 +77,9 @@ describe("classifyProductivityStatus", () => {
   it("maps observation, CX Pending/reschedules and Engineer Delay", () => {
     expect(classifyProductivityStatus("under observation")).toBe("UNDER_OBSERVATION");
     expect(classifyProductivityStatus("CX Pending")).toBe("CX_RESCHEDULE");
+    // "Customer Pending" is the team's current label for this bucket — it must
+    // land in the Customer Pending column, not fall through to ATTENDED_OTHER.
+    expect(classifyProductivityStatus("Customer Pending")).toBe("CX_RESCHEDULE");
     expect(classifyProductivityStatus("CX Reschedule")).toBe("CX_RESCHEDULE");
     expect(classifyProductivityStatus("CX Reshedule")).toBe("CX_RESCHEDULE");
     expect(classifyProductivityStatus("Engineer Delay")).toBe("ENGINEER_DELAY");
@@ -143,6 +146,13 @@ describe("resolveDayScopedProductivityBucket", () => {
     expect(
       resolveDayScopedProductivityBucket(
         row({ morning: "Scheduled", evening: "CX Pending" }),
+      ),
+    ).toBe("CX_RESCHEDULE");
+    // A booked call whose Evening outcome is the current "Customer Pending"
+    // label: Assigned but NOT Attended, in the Customer Pending column.
+    expect(
+      resolveDayScopedProductivityBucket(
+        row({ morning: "Scheduled", evening: "Customer Pending" }),
       ),
     ).toBe("CX_RESCHEDULE");
     expect(

@@ -21,6 +21,16 @@ import {
   type DataScope,
   type PermissionLevel,
 } from "../../../lib/specialAccessApiClient";
+import {
+  fetchSpecialAccessLoginHistory,
+  fetchSpecialAccessLoginSummary,
+  type LoginLocationEntry,
+  type LoginLocationSummaryItem,
+} from "../../../lib/loginActivityApiClient";
+import {
+  LoginHistoryModal,
+  LoginLocationCell,
+} from "../../../features/admin/LoginLocation";
 import { readSession, type ClientSession } from "../../../lib/session";
 
 function errMsg(e: unknown, fallback: string): string {
@@ -364,11 +374,54 @@ function LoginsPanel({
   const [dataScope, setDataScope] = useState<DataScope>("overall");
   const [permissionLevel, setPermissionLevel] = useState<PermissionLevel>("view");
   const [busy, setBusy] = useState(false);
+  const [locationSummary, setLocationSummary] = useState<LoginLocationSummaryItem[]>([]);
+  const [historyOpen, setHistoryOpen] = useState(false);
+  const [historyTitle, setHistoryTitle] = useState("");
+  const [historyEntries, setHistoryEntries] = useState<LoginLocationEntry[]>([]);
+  const [historyLoading, setHistoryLoading] = useState(false);
+  const [historyError, setHistoryError] = useState<string | null>(null);
 
   const regionName = useMemo(() => {
     const map = new Map(regions.map((r) => [r.id, `${r.name} (${r.code})`]));
     return (id: string) => map.get(id) ?? id;
   }, [regions]);
+
+  // Login-location summary loads independently; failure just leaves the column empty.
+  useEffect(() => {
+    let cancelled = false;
+    fetchSpecialAccessLoginSummary(token)
+      .then((s) => {
+        if (!cancelled) setLocationSummary(s);
+      })
+      .catch(() => {
+        /* optional column — ignore */
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [token, logins]);
+
+  const locationByLogin = useMemo(() => {
+    const m = new Map<string, LoginLocationSummaryItem>();
+    for (const s of locationSummary) m.set(s.principalId, s);
+    return m;
+  }, [locationSummary]);
+
+  async function openHistory(rec: SpecialAccessRecord) {
+    setHistoryOpen(true);
+    setHistoryTitle(rec.username);
+    setHistoryEntries([]);
+    setHistoryError(null);
+    setHistoryLoading(true);
+    try {
+      const entries = await fetchSpecialAccessLoginHistory(token, rec.id);
+      setHistoryEntries(entries);
+    } catch (e) {
+      setHistoryError(errMsg(e, "Failed to load login history"));
+    } finally {
+      setHistoryLoading(false);
+    }
+  }
 
   function toggleSection(key: string) {
     setSections((prev) =>
@@ -490,6 +543,7 @@ function LoginsPanel({
                 <th>Data</th>
                 <th>Permission</th>
                 <th>Status</th>
+                <th>Last location</th>
                 <th />
               </tr>
             </thead>
@@ -507,6 +561,12 @@ function LoginsPanel({
                   <td>{l.dataScope}</td>
                   <td>{l.permissionLevel}</td>
                   <td>{l.isActive ? "Active" : "Inactive"}</td>
+                  <td>
+                    <LoginLocationCell
+                      summary={locationByLogin.get(l.id)}
+                      onOpenHistory={() => void openHistory(l)}
+                    />
+                  </td>
                   <td>
                     <div className="rowActions">
                       <button
@@ -659,6 +719,15 @@ function LoginsPanel({
           </button>
         </div>
       </form>
+
+      <LoginHistoryModal
+        open={historyOpen}
+        title={historyTitle}
+        entries={historyEntries}
+        loading={historyLoading}
+        error={historyError}
+        onClose={() => setHistoryOpen(false)}
+      />
     </div>
   );
 }

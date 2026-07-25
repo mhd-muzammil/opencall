@@ -8,6 +8,16 @@ import {
   type AdminRegion,
   type ManagedUser,
 } from "../../../lib/adminApiClient";
+import {
+  fetchUserLoginHistory,
+  fetchUserLoginSummary,
+  type LoginLocationEntry,
+  type LoginLocationSummaryItem,
+} from "../../../lib/loginActivityApiClient";
+import {
+  LoginHistoryModal,
+  LoginLocationCell,
+} from "../../../features/admin/LoginLocation";
 import { readSession, type ClientSession } from "../../../lib/session";
 
 function formatDate(value: string | null): string {
@@ -26,6 +36,12 @@ export default function AdminUsersPage() {
   const [filterActive, setFilterActive] = useState<"" | "active" | "inactive">("");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [locationSummary, setLocationSummary] = useState<LoginLocationSummaryItem[]>([]);
+  const [historyOpen, setHistoryOpen] = useState(false);
+  const [historyTitle, setHistoryTitle] = useState("");
+  const [historyEntries, setHistoryEntries] = useState<LoginLocationEntry[]>([]);
+  const [historyLoading, setHistoryLoading] = useState(false);
+  const [historyError, setHistoryError] = useState<string | null>(null);
 
   useEffect(() => {
     const s = readSession();
@@ -55,6 +71,46 @@ export default function AdminUsersPage() {
       cancelled = true;
     };
   }, [session]);
+
+  // Login-location summary loads independently — if it fails (or the lookup is off) the
+  // users list still renders, just without the "Last location" column filled.
+  useEffect(() => {
+    if (!session) return;
+    let cancelled = false;
+    fetchUserLoginSummary(session.token)
+      .then((s) => {
+        if (!cancelled) setLocationSummary(s);
+      })
+      .catch(() => {
+        /* optional column — ignore */
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [session]);
+
+  const locationByUser = useMemo(() => {
+    const m = new Map<string, LoginLocationSummaryItem>();
+    for (const s of locationSummary) m.set(s.principalId, s);
+    return m;
+  }, [locationSummary]);
+
+  async function openHistory(u: ManagedUser) {
+    if (!session) return;
+    setHistoryOpen(true);
+    setHistoryTitle(u.username ?? u.email);
+    setHistoryEntries([]);
+    setHistoryError(null);
+    setHistoryLoading(true);
+    try {
+      const entries = await fetchUserLoginHistory(session.token, u.id);
+      setHistoryEntries(entries);
+    } catch (e) {
+      setHistoryError(e instanceof Error ? e.message : "Failed to load login history");
+    } finally {
+      setHistoryLoading(false);
+    }
+  }
 
   const regionLookup = useMemo(() => {
     const m = new Map<string, AdminRegion>();
@@ -137,13 +193,14 @@ export default function AdminUsersPage() {
                 <th>Region</th>
                 <th>Status</th>
                 <th>Last login</th>
+                <th>Last location</th>
                 <th></th>
               </tr>
             </thead>
             <tbody>
               {filtered.length === 0 && (
                 <tr>
-                  <td colSpan={7} className="muted" style={{ textAlign: "center", padding: 24 }}>
+                  <td colSpan={8} className="muted" style={{ textAlign: "center", padding: 24 }}>
                     No users match the current filters.
                   </td>
                 </tr>
@@ -174,6 +231,12 @@ export default function AdminUsersPage() {
                     </td>
                     <td>{formatDate(u.lastLoginAt)}</td>
                     <td>
+                      <LoginLocationCell
+                        summary={locationByUser.get(u.id)}
+                        onOpenHistory={() => void openHistory(u)}
+                      />
+                    </td>
+                    <td>
                       <Link className="btnSecondary" href={`/admin/users/${u.id}`}>
                         Manage
                       </Link>
@@ -185,6 +248,15 @@ export default function AdminUsersPage() {
           </table>
         </div>
       )}
+
+      <LoginHistoryModal
+        open={historyOpen}
+        title={historyTitle}
+        entries={historyEntries}
+        loading={historyLoading}
+        error={historyError}
+        onClose={() => setHistoryOpen(false)}
+      />
     </section>
   );
 }

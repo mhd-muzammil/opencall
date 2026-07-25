@@ -6,7 +6,7 @@ import type {
   RuntimeHealthResponse,
 } from "../lib/apiClient";
 
-export type WorkspaceView = "overview" | "closed-calls" | "records" | "record-format" | "parts-catalog" | "quotations" | "rtpl" | "rtpl-dashboard" | "pivot" | "flex" | "productivity" | "tn-view-status" | "sla-tat" | "flex-eod-bod" | "admin-engineers" | "admin-rtpl-statuses" | "warranty";
+export type WorkspaceView = "overview" | "closed-calls" | "records" | "record-format" | "parts-catalog" | "quotations" | "rtpl" | "rtpl-dashboard" | "pivot" | "flex" | "productivity" | "tn-view-status" | "sla-tat" | "flex-eod-bod" | "admin-engineers" | "admin-rtpl-statuses" | "warranty" | "vendor-dashboard";
 
 export const HEADER_COMPACT_STORAGE_KEY = "opencall.headerCompact";
 

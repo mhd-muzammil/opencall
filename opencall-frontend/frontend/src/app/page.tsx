@@ -89,6 +89,7 @@ import {
   RegionEodQuickAction,
   RTPLDashboard,
   FlexDashboard,
+  VendorDashboard,
   CaseTypeCards,
   CustomerSegmentCards,
   RTPLPivotTable,
@@ -221,6 +222,7 @@ const WORKSPACE_VIEWS = [
   "admin-engineers",
   "admin-rtpl-statuses",
   "warranty",
+  "vendor-dashboard",
 ] as const;
 type WorkspaceView = (typeof WORKSPACE_VIEWS)[number];
 
@@ -329,6 +331,17 @@ export default function DashboardPage() {
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [session, setSession] = useState<LoginResponse | null>(null);
+  // Vendor-access logins belong in the isolated /vendor portal, never the main
+  // workspace. If one is ever restored or logs in here, bounce it out immediately.
+  // (Regular / special-access sessions are completely unaffected.)
+  useEffect(() => {
+    if (
+      session?.user?.role === "VENDOR_ACCESS" &&
+      typeof window !== "undefined"
+    ) {
+      window.location.replace("/vendor");
+    }
+  }, [session]);
   // --- Special-access session (scoped login, not a users row) ---
   // All special-access behaviour is gated behind `isSpecialAccess`, so regular
   // SUPER_ADMIN / REGION_ADMIN sessions follow exactly the same code paths as before.
@@ -349,6 +362,11 @@ export default function DashboardPage() {
   // when its permission level is `edit` — the backend enforces this too.
   const canEditRows =
     !isSpecialAccess || specialAccess?.permissionLevel === "edit";
+
+  // A separate "Vendor Dashboard" sidebar section (SUPER_ADMIN only) owns all vendor
+  // management + case assignment — kept out of the Records Table entirely.
+  const isSuperAdmin = session?.user?.role === "SUPER_ADMIN";
+
   const [regionId, setRegionId] = useState("");
   const [files, setFiles] = useState<Partial<Record<FileField, File[]>>>({});
   const [upload, setUpload] = useState<UploadResponse | null>(null);
@@ -1866,13 +1884,23 @@ export default function DashboardPage() {
 
     await runAction(async () => {
       const nextSession = await login(loginUsername, password);
-      // Special-access logins carry their scope on a sibling field; fold it onto the
-      // stored user so the whole session travels together (does not affect regular users).
+      // Special-access AND vendor-access logins carry their scope on a sibling field; fold
+      // it onto the stored user so the whole session travels together. A vendor login is
+      // then bounced to the isolated /vendor portal by the effect near the top of this
+      // component. (Regular users are unaffected — both siblings are absent for them.)
       const storedUser = nextSession.specialAccess
         ? { ...nextSession.user, specialAccess: nextSession.specialAccess }
-        : nextSession.user;
+        : nextSession.vendorAccess
+          ? { ...nextSession.user, vendorAccess: nextSession.vendorAccess }
+          : nextSession.user;
       window.localStorage.setItem("opencall.token", nextSession.token);
       window.localStorage.setItem("opencall.user", JSON.stringify(storedUser));
+      // Vendor logins belong in the isolated /vendor portal — redirect immediately, so the
+      // main workspace never even renders for them.
+      if (nextSession.user.role === "VENDOR_ACCESS") {
+        window.location.replace("/vendor");
+        return;
+      }
       setSession({ ...nextSession, user: storedUser });
       setRegionId(nextSession.user.regionId ?? "");
       setUsername("");
@@ -3017,6 +3045,17 @@ export default function DashboardPage() {
     );
   }
 
+  // A vendor session must never render the main workspace — it belongs in the isolated
+  // /vendor portal. Show a tiny redirect screen while the browser navigates there.
+  if (session.user.role === "VENDOR_ACCESS") {
+    if (typeof window !== "undefined") window.location.replace("/vendor");
+    return (
+      <div style={{ minHeight: "100dvh", display: "grid", placeItems: "center", color: "#6b7280", fontSize: 14 }}>
+        Opening the vendor portal…
+      </div>
+    );
+  }
+
   // Records scope breakdown for the header card: the active dashboard category
   // (PC / Print / Trade / ...) total within the current region scope, split into
   // Consumer vs Commercial. regionFilteredRows already has the category + region
@@ -3644,6 +3683,18 @@ export default function DashboardPage() {
             </button>
           )}
 
+          {session.user.role === "SUPER_ADMIN" && (
+            <button
+              type="button"
+              className={`sidebarItem ${workspaceView === "vendor-dashboard" ? "active" : ""}`}
+              onClick={() => setWorkspaceView("vendor-dashboard")}
+            >
+              <span className="sidebarIcon">
+                <Users size={18} strokeWidth={2} /> <span className="sidebarText">Vendor Dashboard</span>
+              </span>
+            </button>
+          )}
+
           <div className="sidebarSection">Utilities & System</div>
 
           {(session.user.role === "SUPER_ADMIN" || session.user.role === "REGION_ADMIN") && (
@@ -3745,6 +3796,14 @@ export default function DashboardPage() {
               {workspaceView === "warranty" ? (
                 <section className="panel reportPanel">
                   <WarrantyLookupManager />
+                </section>
+              ) : null}
+
+              {/* Vendor Dashboard — SUPER_ADMIN only, its own section (case assignment +
+                  monitoring), deliberately separate from the Records Table. */}
+              {workspaceView === "vendor-dashboard" && isSuperAdmin ? (
+                <section className="panel reportPanel">
+                  <VendorDashboard token={session.token} report={report} />
                 </section>
               ) : null}
 

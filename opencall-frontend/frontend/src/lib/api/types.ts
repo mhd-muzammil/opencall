@@ -17,13 +17,20 @@ export interface SpecialAccessSessionInfo {
   permissionLevel: "view" | "edit";
 }
 
+export interface VendorAccessSessionInfo {
+  id: string;
+  username: string;
+  sections: string[];
+  permissionLevel: "view" | "update";
+}
+
 export interface LoginResponse {
   token: string;
   user: {
     id: string;
     email: string | null;
     username: string | null;
-    role: "SUPER_ADMIN" | "REGION_ADMIN" | "SPECIAL_ACCESS";
+    role: "SUPER_ADMIN" | "REGION_ADMIN" | "SPECIAL_ACCESS" | "VENDOR_ACCESS";
     regionId: string | null;
     region_id: string | null;
     mustChangePassword: boolean;
@@ -31,9 +38,13 @@ export interface LoginResponse {
     accessibleSections?: string[] | null;
     // Attached client-side (from the sibling below) for special-access logins.
     specialAccess?: SpecialAccessSessionInfo | null;
+    // Attached client-side for vendor-access logins.
+    vendorAccess?: VendorAccessSessionInfo | null;
   };
   // Present only when the login is a special-access credential.
   specialAccess?: SpecialAccessSessionInfo;
+  // Present only when the login is a vendor-access credential.
+  vendorAccess?: VendorAccessSessionInfo;
 }
 
 export interface UploadBatch {

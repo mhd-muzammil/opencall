@@ -11,17 +11,27 @@ export interface ClientSpecialAccessInfo {
   permissionLevel: "view" | "edit";
 }
 
+/** Present only for vendor-access logins (scoped vendor credentials, case-assigned). */
+export interface ClientVendorAccessInfo {
+  id: string;
+  username: string;
+  sections: string[];
+  permissionLevel: "view" | "update";
+}
+
 export interface ClientSessionUser {
   id: string;
   email: string | null;
   username: string | null;
-  role: UserRole | "SPECIAL_ACCESS";
+  role: UserRole | "SPECIAL_ACCESS" | "VENDOR_ACCESS";
   regionId: string | null;
   mustChangePassword?: boolean;
   // Operational sections a REGION_ADMIN may see. null/absent = all sections.
   accessibleSections?: string[] | null;
   // Present only for special-access logins (scoped credentials, not `users` rows).
   specialAccess?: ClientSpecialAccessInfo | null;
+  // Present only for vendor-access logins (scoped vendor credentials).
+  vendorAccess?: ClientVendorAccessInfo | null;
 }
 
 export interface ClientSession {

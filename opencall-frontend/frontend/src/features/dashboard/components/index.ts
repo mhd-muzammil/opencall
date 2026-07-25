@@ -24,6 +24,7 @@ export * from "./CaseDetailDrawer";
 export * from "./ClosedCallsDashboardView";
 export * from "./PartsCatalogPage";
 export * from "./QuotationsPage";
+export * from "./VendorDashboard";
 
 
 

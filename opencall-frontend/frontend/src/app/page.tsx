@@ -148,6 +148,7 @@ import {
   isApiAuthError,
 } from "../lib/apiClient";
 import type { DropdownEngineer } from "../lib/api/types";
+import { listAdminRegions } from "../lib/adminApiClient";
 import { LoginScreen, SessionLoadingScreen } from "../features/auth/LoginScreen";
 import { BusyOverlay } from "../components/ui/BoxesLoader";
 import AdminEngineersPage from "./admin/engineers/page";
@@ -368,6 +369,15 @@ export default function DashboardPage() {
   const isSuperAdmin = session?.user?.role === "SUPER_ADMIN";
 
   const [regionId, setRegionId] = useState("");
+  // Region an upload is explicitly scoped to. "" = All regions (unscoped full
+  // file) — the safe default. Deliberately SEPARATE from `regionId`: that state
+  // is seeded from the account and mutated by history restores, which used to
+  // silently region-scope uploads and drop other regions' new calls from the
+  // report (2026-07-27 incident).
+  const [uploadRegionId, setUploadRegionId] = useState("");
+  const [uploadRegionOptions, setUploadRegionOptions] = useState<
+    Array<{ id: string; name: string }>
+  >([]);
   const [files, setFiles] = useState<Partial<Record<FileField, File[]>>>({});
   const [upload, setUpload] = useState<UploadResponse | null>(null);
   const [preview, setPreview] = useState<MatchPreviewResponse | null>(null);
@@ -381,6 +391,36 @@ export default function DashboardPage() {
   // behind the modal overlay, so failures there would look like a dead Save.
   const [saveError, setSaveError] = useState<string | null>(null);
   const [caseDetailRow, setCaseDetailRow] = useState<ReportRow | null>(null);
+
+  // Region options for the upload drawer. A SUPER_ADMIN gets the full list for
+  // the explicit scope picker; a REGION_ADMIN gets only their own region back
+  // from the endpoint, used to LABEL the forced scope (server enforces it).
+  const sessionRole = session?.user?.role;
+  useEffect(() => {
+    if (
+      !session?.token ||
+      (sessionRole !== "SUPER_ADMIN" && sessionRole !== "REGION_ADMIN")
+    ) {
+      setUploadRegionOptions([]);
+      return;
+    }
+    let cancelled = false;
+    listAdminRegions(session.token)
+      .then((regions) => {
+        if (!cancelled) {
+          setUploadRegionOptions(
+            regions.map((region) => ({ id: region.id, name: region.name })),
+          );
+        }
+      })
+      .catch(() => {
+        // Options stay empty: the picker hides and uploads default to All regions.
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [session?.token, sessionRole]);
+
   const draftOutputRef = useRef(draftOutput);
   const hasAutoRestoredHistoryRef = useRef(false);
   const recordsTableWrapRef = useRef<HTMLDivElement | null>(null);
@@ -1928,10 +1968,18 @@ export default function DashboardPage() {
       return;
     }
 
+    // The upload's region scope is EXPLICIT: the drawer's picker for
+    // super admins ("" = All regions), the account's own region for region
+    // admins (the backend forces it anyway). Never the ambient `regionId`
+    // state — a history restore used to leak an old session's region into it
+    // and silently drop other regions' new calls (2026-07-27 incident).
+    const effectiveUploadRegionId =
+      session.user.role === "REGION_ADMIN" ? regionId : uploadRegionId;
+
     await runAction(async () => {
       const result = await uploadReports({
         token: session.token,
-        regionId,
+        regionId: effectiveUploadRegionId,
         flexWipReport,
         ...(renderwaysReport.length > 0 ? { renderwaysReport } : {}),
         ...(callPlan.length > 0 ? { callPlan } : {}),
@@ -1946,6 +1994,15 @@ export default function DashboardPage() {
       setRtplAnalyticsDate(todayIsoDate());
       setWorkspaceView("overview");
       setIsUploadDrawerOpen(false);
+
+      if (result.scopeWarning) {
+        const dropped =
+          result.scopeWarning.outOfScopeRowCount +
+          result.scopeWarning.blankWorkLocationRowCount;
+        setMessage(
+          `Warning: this upload is scoped to ${result.scopeWarning.regionName}, but the file has ${dropped} row(s) outside that region (e.g. ${result.scopeWarning.sampleTicketIds.slice(0, 3).join(", ")}). Those calls will NOT appear in the report. For a full all-region file, upload with region "All regions".`,
+        );
+      }
 
       // Refresh history to get the draft
       await refreshHistory();
@@ -1990,6 +2047,12 @@ export default function DashboardPage() {
       setSavingSerialNo(null);
       setDraftOutput({});
 
+      if (generated.regionScope && generated.regionScope.droppedFileRows > 0) {
+        setMessage(
+          `Warning: this report was generated region-scoped (${generated.regionScope.aspCodes.join(", ")}) and ${generated.regionScope.droppedFileRows} flex file row(s) outside that scope were ignored (e.g. ${generated.regionScope.droppedSampleTickets.slice(0, 3).join(", ")}). Those calls are NOT in this report.`,
+        );
+      }
+
       // Refresh history to see completed status
       await refreshHistory();
     });
@@ -1999,6 +2062,7 @@ export default function DashboardPage() {
     window.localStorage.removeItem("opencall.token");
     window.localStorage.removeItem("opencall.user");
     setSession(null);
+    setUploadRegionId("");
     setUpload(null);
     setPreview(null);
     setReport(null);
@@ -2093,7 +2157,11 @@ export default function DashboardPage() {
     setDraftOutput({});
     setFiles({});
 
-    if (!isRegionAdmin && detail.regionId) setRegionId(detail.regionId);
+    // Deliberately NOT setRegionId(detail.regionId) here: adopting a restored
+    // session's region into the ambient state silently region-scoped every
+    // LATER upload from this tab, dropping other regions' new calls from the
+    // report (2026-07-27 incident). The restore itself already used
+    // `effectiveRegionId` for its own preview/generate calls above.
     if (detail.reportDate) {
       setReportDate(detail.reportDate);
       setRtplAnalyticsDate(detail.reportDate);
@@ -3769,6 +3837,14 @@ export default function DashboardPage() {
             isBusy={isBusy}
             files={files}
             fileFields={FILE_FIELDS}
+            regionOptions={isSuperAdmin ? uploadRegionOptions : undefined}
+            selectedRegionId={uploadRegionId}
+            lockedRegionName={
+              sessionRole === "REGION_ADMIN"
+                ? uploadRegionOptions[0]?.name ?? "your region"
+                : null
+            }
+            onRegionChange={setUploadRegionId}
             onClose={() => setIsUploadDrawerOpen(false)}
             onSubmit={(event) => void handleUpload(event)}
             onFileChange={(field, selectedFiles) => {

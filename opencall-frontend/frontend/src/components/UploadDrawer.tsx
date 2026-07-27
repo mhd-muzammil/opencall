@@ -9,6 +9,11 @@ export interface UploadFileItem {
   multiple?: boolean;
 }
 
+export interface UploadRegionOption {
+  id: string;
+  name: string;
+}
+
 type UploadFilesByField = Partial<Record<UploadFileField, File[]>>;
 
 export function UploadDrawer({
@@ -16,6 +21,10 @@ export function UploadDrawer({
   isBusy,
   files,
   fileFields,
+  regionOptions,
+  selectedRegionId,
+  lockedRegionName,
+  onRegionChange,
   onClose,
   onSubmit,
   onFileChange,
@@ -24,6 +33,13 @@ export function UploadDrawer({
   isBusy: boolean;
   files: UploadFilesByField;
   fileFields: readonly UploadFileItem[];
+  /** Regions a non-region-admin may scope the upload to. Empty/undefined hides the picker. */
+  regionOptions?: readonly UploadRegionOption[] | undefined;
+  /** "" = All regions (unscoped full file) — the safe default. */
+  selectedRegionId?: string | undefined;
+  /** Set for a REGION_ADMIN: uploads are always scoped to this region, no choice. */
+  lockedRegionName?: string | null | undefined;
+  onRegionChange?: ((regionId: string) => void) | undefined;
   onClose: () => void;
   onSubmit: (event: FormEvent<HTMLFormElement>) => void;
   onFileChange: (field: UploadFileField, files: File[]) => void;
@@ -50,6 +66,33 @@ export function UploadDrawer({
               Close
             </button>
           </div>
+
+          {lockedRegionName ? (
+            <p className="uploadRegionNote">
+              Uploads from this account are scoped to <strong>{lockedRegionName}</strong>.
+              Calls outside this region in the file will be ignored.
+            </p>
+          ) : regionOptions && regionOptions.length > 0 ? (
+            <label className="uploadRegionPicker">
+              <span>Upload region</span>
+              <select
+                value={selectedRegionId ?? ""}
+                onChange={(event) => onRegionChange?.(event.target.value)}
+              >
+                <option value="">All regions (full file)</option>
+                {regionOptions.map((region) => (
+                  <option key={region.id} value={region.id}>
+                    {region.name} only (partial file)
+                  </option>
+                ))}
+              </select>
+              <em>
+                {selectedRegionId
+                  ? "Scoped upload: calls outside this region in the file will be IGNORED. Use only for a single-region file."
+                  : "Full file: every region's calls in the file will be processed."}
+              </em>
+            </label>
+          ) : null}
 
           <div className="fileGrid drawerFileGrid">
             {fileFields.map((item) => (

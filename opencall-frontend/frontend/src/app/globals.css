@@ -640,6 +640,43 @@ code {
   grid-template-columns: 1fr;
 }
 
+.uploadRegionPicker {
+  display: grid;
+  gap: 6px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: #f8fafd;
+  padding: 12px 14px;
+}
+
+.uploadRegionPicker > span {
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.uploadRegionPicker select {
+  border: 1px solid #b8c7dd;
+  border-radius: 8px;
+  padding: 8px 10px;
+  font: inherit;
+  background: #fff;
+}
+
+.uploadRegionPicker em {
+  font-size: 12px;
+  font-style: normal;
+  color: #5b6b82;
+}
+
+.uploadRegionNote {
+  border: 1px solid #f0d9a8;
+  border-radius: 10px;
+  background: #fdf6e4;
+  padding: 12px 14px;
+  font-size: 13px;
+  color: #6b5518;
+}
+
 .drawerFooter {
   display: flex;
   justify-content: flex-end;

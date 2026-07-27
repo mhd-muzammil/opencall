@@ -81,6 +81,19 @@ export interface UploadResponse {
     duplicateNormalizedCaseIds: string[];
     duplicateCount: number;
   }>;
+  /**
+   * Set when a region-scoped flex upload contains rows outside that region's
+   * ASP scope — generation will silently drop them, so the uploader must be
+   * warned (a full all-region file has to be uploaded with region = All).
+   */
+  scopeWarning?: {
+    regionId: string;
+    regionName: string;
+    aspCodes: string[];
+    outOfScopeRowCount: number;
+    blankWorkLocationRowCount: number;
+    sampleTicketIds: string[];
+  } | null;
 }
 
 export interface MatchPreviewResponse {
@@ -146,6 +159,16 @@ export interface GeneratedReportResponse {
       count: number;
     }>;
   }>;
+  /**
+   * Non-null when this generation ran region-scoped. droppedFileRows > 0 means
+   * the flex file contained work orders the scope discarded — they are NOT in
+   * this report and must be surfaced as a warning.
+   */
+  regionScope?: {
+    aspCodes: string[];
+    droppedFileRows: number;
+    droppedSampleTickets: string[];
+  } | null;
   rows: Array<{
     id: string | null;
     serialNo: number;

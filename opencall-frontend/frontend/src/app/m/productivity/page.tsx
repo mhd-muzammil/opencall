@@ -139,7 +139,7 @@ export default function MobileProductivityPage() {
                           <Stat label="Attended" value={e.attended} />
                           <Stat label="Closed" value={e.closed} />
                           <Stat label="Part" value={e.partOrdered} />
-                          <Stat label="UO" value={e.underObservation} />
+                          <Stat label="UO/Elev" value={e.underObservation} />
                           <Stat label="CX Resch" value={e.cxReschedule} />
                           <Stat label="Delay" value={e.engineerDelay} />
                         </div>

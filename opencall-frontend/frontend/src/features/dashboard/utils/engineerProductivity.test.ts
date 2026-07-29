@@ -76,6 +76,7 @@ describe("classifyProductivityStatus", () => {
 
   it("maps observation, CX Pending/reschedules and Engineer Delay", () => {
     expect(classifyProductivityStatus("under observation")).toBe("UNDER_OBSERVATION");
+    expect(classifyProductivityStatus("Under Observation")).toBe("UNDER_OBSERVATION");
     expect(classifyProductivityStatus("CX Pending")).toBe("CX_RESCHEDULE");
     // "Customer Pending" is the team's current label for this bucket — it must
     // land in the Customer Pending column, not fall through to ATTENDED_OTHER.
@@ -86,6 +87,22 @@ describe("classifyProductivityStatus", () => {
     expect(classifyProductivityStatus("engineer delay")).toBe("ENGINEER_DELAY");
     // A reschedule is never confused with the scheduling stage.
     expect(classifyProductivityStatus("Rescheduled")).toBe("CX_RESCHEDULE");
+  });
+
+  // The bare "Elevation" status shares the Under Observation/Elevation bucket.
+  // The match is EXACT (on the normalized status): the longer distinct
+  // "Elevation ..." statuses must keep their existing ATTENDED_OTHER class.
+  it("maps the bare 'elevation' status (any casing) to UNDER_OBSERVATION", () => {
+    expect(classifyProductivityStatus("elevation")).toBe("UNDER_OBSERVATION");
+    expect(classifyProductivityStatus("Elevation")).toBe("UNDER_OBSERVATION");
+    expect(classifyProductivityStatus("ELEVATION")).toBe("UNDER_OBSERVATION");
+    expect(classifyProductivityStatus("  Elevation  ")).toBe("UNDER_OBSERVATION");
+  });
+
+  it("keeps 'Elevation HP Pending' / 'Elevation Part Pending' as ATTENDED_OTHER", () => {
+    expect(classifyProductivityStatus("Elevation HP Pending")).toBe("ATTENDED_OTHER");
+    expect(classifyProductivityStatus("elevation hp pending")).toBe("ATTENDED_OTHER");
+    expect(classifyProductivityStatus("Elevation Part Pending")).toBe("ATTENDED_OTHER");
   });
 
   it("maps every other real status to ATTENDED_OTHER (counts as attended work)", () => {

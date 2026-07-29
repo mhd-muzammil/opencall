@@ -3,6 +3,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ASP_CODE_REGION_MAP } from "@opencall/shared";
 import {
+  BLANKS_OPTION_LABEL,
+  isBlankLikeFilterValue,
   selectWipAgingRangeValues,
   sortWipAgingFilterValues,
   type ColumnUniqueEntry,
@@ -50,12 +52,19 @@ export function ColumnFilterDropdown({
     () => uniqueValues.map((entry) => entry.value),
     [uniqueValues],
   );
-  // Work Location is stored/filtered by ASP code but shown as the region name.
+  // Display-only relabelling; the underlying filter value never changes.
+  // - Blank-like values (empty cells, the stored "Manual Entry Required"
+  //   placeholder) show as Excel-style "(Blanks)".
+  // - Work Location is stored/filtered by ASP code but shown as region name.
+  // Search matches the label as well as the value (see visibleEntries), so
+  // typing "blank" finds a "(Blanks)" entry.
   const labelFor = useCallback(
-    (value: string) =>
-      column === "Work Location"
+    (value: string) => {
+      if (isBlankLikeFilterValue(value)) return BLANKS_OPTION_LABEL;
+      return column === "Work Location"
         ? ASP_CODE_REGION_MAP[value.trim()] ?? value
-        : value,
+        : value;
+    },
     [column],
   );
 

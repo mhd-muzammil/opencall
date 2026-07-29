@@ -10,6 +10,11 @@ import {
   applyColumnFilters,
   activeFilterCount,
   isColumnFiltered,
+  isBlankLikeFilterValue,
+  filterOptionLabel,
+  compareFilterOptionValues,
+  BLANKS_OPTION_LABEL,
+  BLANK_FILTER_VALUE,
   FILTERABLE_COLUMNS,
   type ColumnFilterState,
 } from "./columnFilter";
@@ -137,13 +142,13 @@ describe("extractUniqueValues", () => {
     ]);
   });
 
-  it("treats blank values as (blank)", () => {
+  it("treats blank values as (blank), sorted last like Excel's (Blanks)", () => {
     const rows = [makeRow({ Segment: "" }), makeRow({ Segment: "PC" })];
     const result = extractUniqueValues(rows, "Segment");
 
     expect(result).toEqual([
-      { value: "(blank)", count: 1 },
       { value: "PC", count: 1 },
+      { value: "(blank)", count: 1 },
     ]);
   });
 
@@ -676,5 +681,63 @@ describe("isColumnFiltered", () => {
 
   it("returns true for active filter", () => {
     expect(isColumnFiltered({ Segment: new Set(["PC"]) }, "Segment")).toBe(true);
+  });
+});
+
+describe("blank-like option presentation (Excel-style)", () => {
+  it("classifies the blank sentinel and Manual Entry Required (any casing) as blank-like", () => {
+    expect(isBlankLikeFilterValue(BLANK_FILTER_VALUE)).toBe(true);
+    expect(isBlankLikeFilterValue("Manual Entry Required")).toBe(true);
+    expect(isBlankLikeFilterValue("MANUAL ENTRY REQUIRED")).toBe(true);
+    expect(isBlankLikeFilterValue("  manual entry required  ")).toBe(true);
+    expect(isBlankLikeFilterValue("")).toBe(true);
+    expect(isBlankLikeFilterValue("Jeeva CH")).toBe(false);
+    expect(isBlankLikeFilterValue("Scheduled")).toBe(false);
+  });
+
+  it("renders blank-like values as the (Blanks) label, others as-is", () => {
+    expect(filterOptionLabel(BLANK_FILTER_VALUE)).toBe(BLANKS_OPTION_LABEL);
+    expect(filterOptionLabel("Manual Entry Required")).toBe(BLANKS_OPTION_LABEL);
+    expect(filterOptionLabel("Jeeva CH")).toBe("Jeeva CH");
+  });
+
+  it("sorts blank-like values dead last, real values alphabetically", () => {
+    const values = [
+      "MANUAL ENTRY REQUIRED",
+      "SAMIM",
+      BLANK_FILTER_VALUE,
+      "JEEVA CH",
+    ].sort(compareFilterOptionValues);
+    expect(values.slice(0, 2)).toEqual(["JEEVA CH", "SAMIM"]);
+    expect(values.slice(2).every(isBlankLikeFilterValue)).toBe(true);
+  });
+
+  it("extractUniqueValues places blank-like entries after real names", () => {
+    const rows = [
+      makeRow({ Engineer: "Manual Entry Required" }),
+      makeRow({ Engineer: "Samim" }),
+      makeRow({ Engineer: "" }),
+      makeRow({ Engineer: "Jeeva CH" }),
+    ];
+    const values = extractUniqueValues(rows, "Engineer").map((e) => e.value);
+    expect(values.slice(0, 2)).toEqual(["JEEVA CH", "SAMIM"]);
+    expect(values.slice(2).every(isBlankLikeFilterValue)).toBe(true);
+  });
+
+  it("cascaded option lists keep blank-like entries last with correct counts", () => {
+    const rows = [
+      makeRow({ "RTPL status": "Scheduled", Engineer: "Manual Entry Required" }),
+      makeRow({ "RTPL status": "Scheduled", Engineer: "Jeeva CH" }),
+      makeRow({ "RTPL status": "Entry", Engineer: "Samim" }),
+    ];
+    const map = buildCascadedUniqueValuesMap(rows, {
+      "RTPL status": new Set(["SCHEDULED"]),
+    });
+    const engineer = map.get("Engineer")!;
+    expect(engineer.map((e) => e.value)).toEqual([
+      "JEEVA CH",
+      "MANUAL ENTRY REQUIRED",
+    ]);
+    expect(engineer.find((e) => e.value === "MANUAL ENTRY REQUIRED")!.count).toBe(1);
   });
 });

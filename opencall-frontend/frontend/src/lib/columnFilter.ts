@@ -54,6 +54,58 @@ const FILTER_VALUE_ALIASES = new Map<string, string>([
 export const BLANK_FILTER_VALUE = "(blank)";
 const BLANK_FILTER_VALUE_UPPER = BLANK_FILTER_VALUE.toUpperCase();
 
+/**
+ * Normalized form of the "Manual Entry Required" placeholder that the report
+ * generator stores in cells no human has filled in yet (Engineer, Evening
+ * status, …). It is real row data — NOT created at option-build time — so it
+ * stays a distinct filter/match value from `BLANK_FILTER_VALUE`; only its
+ * dropdown presentation is blank-like (see `filterOptionLabel`).
+ */
+const MANUAL_ENTRY_FILTER_VALUE = "MANUAL ENTRY REQUIRED";
+
+/** Excel-style label shown in dropdowns for blank-like option values. */
+export const BLANKS_OPTION_LABEL = "(Blanks)";
+
+/**
+ * Is this filter value "blank-like" for presentation purposes? True for the
+ * empty-cell sentinel and for the stored "Manual Entry Required" placeholder.
+ * Blank-like options display as `BLANKS_OPTION_LABEL` and sort LAST in option
+ * lists (the way Excel places "(Blanks)"), but keep their distinct underlying
+ * values for counting and matching.
+ */
+export function isBlankLikeFilterValue(value: string): boolean {
+  const normalized = normalizeFilterValue(value);
+  return (
+    normalized === BLANK_FILTER_VALUE ||
+    normalized === MANUAL_ENTRY_FILTER_VALUE
+  );
+}
+
+/**
+ * Display label for a dropdown option value: blank-like values render as
+ * "(Blanks)", everything else renders as-is. Display only — never feed the
+ * result back into filter state.
+ */
+export function filterOptionLabel(value: string): string {
+  return isBlankLikeFilterValue(value) ? BLANKS_OPTION_LABEL : value;
+}
+
+/**
+ * Option-list ordering: real values alphabetically, blank-like values last
+ * (Excel's "(Blanks)" placement). Deterministic when several blank-like
+ * values coexist in one column (falls back to alphabetical between them).
+ */
+export function compareFilterOptionValues(a: string, b: string): number {
+  const aBlank = isBlankLikeFilterValue(a);
+  const bBlank = isBlankLikeFilterValue(b);
+
+  if (aBlank !== bBlank) {
+    return aBlank ? 1 : -1;
+  }
+
+  return a.localeCompare(b);
+}
+
 export function normalizeFilterValue(raw: unknown): string {
   const s = String(raw ?? "")
     .normalize("NFKC")
@@ -90,7 +142,7 @@ function normalizeFilterState(filters: ColumnFilterState): ColumnFilterState {
 
 /**
  * Extract unique values (+ counts) for a single column from the given rows.
- * Returns entries sorted alphabetically by value.
+ * Returns entries sorted alphabetically by value, blank-like values last.
  */
 export function extractUniqueValues<
   T extends { output: Record<string, string | number> },
@@ -104,7 +156,7 @@ export function extractUniqueValues<
 
   return Array.from(counts.entries())
     .map(([value, count]) => ({ value, count }))
-    .sort((a, b) => a.value.localeCompare(b.value));
+    .sort((a, b) => compareFilterOptionValues(a.value, b.value));
 }
 
 function parseWipAgingFilterValue(value: string): number | null {
@@ -127,7 +179,8 @@ export function sortWipAgingFilterValues(
     if (aValue !== null) return -1;
     if (bValue !== null) return 1;
 
-    return a.value.localeCompare(b.value);
+    // Non-numeric tail: real text first, blank-like values dead last.
+    return compareFilterOptionValues(a.value, b.value);
   });
 }
 
@@ -178,7 +231,8 @@ export function buildUniqueValuesMap<
  * X's option list, even when the cascaded row set no longer contains them —
  * they appear with count 0 so the user can still see and unselect them.
  *
- * Entries are sorted alphabetically by value, matching `extractUniqueValues`.
+ * Entries are sorted alphabetically by value with blank-like values last,
+ * matching `extractUniqueValues`.
  *
  * Performance: one pass over the rows. A row failing two or more active
  * filters contributes to no column's options; a row failing exactly one
@@ -268,7 +322,7 @@ export function buildCascadedUniqueValuesMap<
       col,
       Array.from(counts.entries())
         .map(([value, count]) => ({ value, count }))
-        .sort((a, b) => a.value.localeCompare(b.value)),
+        .sort((a, b) => compareFilterOptionValues(a.value, b.value)),
     );
   }
 

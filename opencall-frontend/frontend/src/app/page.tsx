@@ -4,7 +4,7 @@ import { DAILY_CALL_PLAN_COLUMNS, RTPL_STATUS_OPTIONS, ASP_CODE_REGION_MAP, isSc
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { ColumnFilterDropdown } from "../components/ColumnFilterDropdown";
-import { AppHeader } from "../components/AppHeader";
+import { AppHeader, closeOpenDetailsOnOutsideClick } from "../components/AppHeader";
 import { HistoryDrawer } from "../components/HistoryDrawer";
 import { MetricsGrid, type MetricsGridItem } from "../components/MetricsGrid";
 import { StatusPill } from "../components/StatusPill";
@@ -71,6 +71,10 @@ import {
   formatFieldList,
   computeOperationalHealth,
 } from "../features/dashboard/utils";
+import {
+  isScheduledRemarkTriggered,
+  scheduledRemarkPreviewValue,
+} from "../features/dashboard/utils/scheduledRemarkPreview";
 
 import {
   ChangeTypeBadge,
@@ -437,6 +441,56 @@ export default function DashboardPage() {
     rtplStatusGroups.length > 0 ? rtplStatusGroups.flatMap((g) => g.options) : RTPL_STATUS_OPTIONS;
   draftOutputRef.current = draftOutput;
 
+  // Feature A — live auto-remark preview. The backend writes "Scheduled on
+  // <today>" into Current Remarks when a save sets a status column to
+  // Scheduled (open_call_2 reportRowEditService -> buildScheduledRemark).
+  // Mirror that HERE the moment the editor drafts status=Scheduled + an
+  // engineer, so the user reviews (and may edit) the exact line BEFORE
+  // saving; the save then sends the field's content and the backend keeps a
+  // client-supplied remark. The prefill/refresh rules — never clobbering
+  // user-typed text — live in scheduledRemarkPreviewValue. Covers BOTH edit
+  // surfaces (inline row editor and EditRecordModal) since they share
+  // draftOutput. The ref remembers what THIS session injected so an
+  // un-triggering change (status moved away from Scheduled, engineer
+  // cleared) withdraws only the untouched preview, restoring what the box
+  // held before — a hand-typed or persisted remark is never removed.
+  const autoRemarkPreviewRef = useRef<{ injected: string; previous: string } | null>(null);
+  useEffect(() => {
+    if (editingSerialNo === null) {
+      autoRemarkPreviewRef.current = null;
+      return;
+    }
+    const editingRow = report?.rows.find((r) => r.serialNo === editingSerialNo);
+    if (!editingRow) return;
+
+    const triggerInput = {
+      draftMorningStatus: draftOutput["RTPL status"],
+      draftEveningStatus: draftOutput["Evening status"],
+      persistedMorningStatus: editingRow.output["RTPL status"],
+      persistedEveningStatus: editingRow.output["Evening status"],
+      draftEngineer: draftOutput["Engineer"],
+    };
+    const currentRemark = String(draftOutput["Current Remarks"] ?? "");
+
+    if (isScheduledRemarkTriggered(triggerInput)) {
+      const preview = scheduledRemarkPreviewValue({
+        ...triggerInput,
+        draftRemark: currentRemark,
+      });
+      if (preview !== null) {
+        autoRemarkPreviewRef.current = { injected: preview, previous: currentRemark };
+        setDraftOutput((current) => ({ ...current, "Current Remarks": preview }));
+      }
+      return;
+    }
+
+    const injected = autoRemarkPreviewRef.current;
+    autoRemarkPreviewRef.current = null;
+    if (injected && currentRemark === injected.injected) {
+      setDraftOutput((current) => ({ ...current, "Current Remarks": injected.previous }));
+    }
+  }, [editingSerialNo, draftOutput, report]);
+
   const [sidebarWidth, setSidebarWidth] = useState<number>(260);
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState<boolean>(false);
   const [isResizing, setIsResizing] = useState<boolean>(false);
@@ -577,6 +631,21 @@ export default function DashboardPage() {
   // Whether the records table is expanded to a full-screen overlay.
   const [isRecordsTableMaximized, setIsRecordsTableMaximized] = useState(false);
   const columnsMenuRef = useRef<HTMLDivElement | null>(null);
+  // Full-screen toolbar dropdowns (Export / Final EOD). Same <details>
+  // pattern as the header Export menu; closed on outside pointerdown via the
+  // shared AppHeader helper (refs are null while not maximized — handled).
+  const fsExportDetailsRef = useRef<HTMLDetailsElement | null>(null);
+  const fsEodDetailsRef = useRef<HTMLDetailsElement | null>(null);
+  useEffect(() => {
+    const handlePointerDown = (event: PointerEvent) => {
+      closeOpenDetailsOnOutsideClick(
+        [fsExportDetailsRef.current, fsEodDetailsRef.current],
+        event.target instanceof Node ? event.target : null,
+      );
+    };
+    document.addEventListener("pointerdown", handlePointerDown);
+    return () => document.removeEventListener("pointerdown", handlePointerDown);
+  }, []);
   // Whether the stale-Flex-Status "View all" details modal is open.
   const [isStaleModalOpen, setIsStaleModalOpen] = useState(false);
   const [workspaceView, setWorkspaceView] = useState<WorkspaceView>("overview");
@@ -1404,6 +1473,17 @@ export default function DashboardPage() {
       null
     );
   }, [session, productivityEodRegions]);
+
+  // Regions a SUPER_ADMIN can still Final-EOD today — feeds the full-screen
+  // toolbar's Final EOD dropdown (the same per-region close flow as the
+  // RegionDayStatusBar chips; a REGION_ADMIN gets RegionEodQuickAction there).
+  const closableEodRegions = useMemo(
+    () =>
+      productivityEodRegions.filter(
+        (region) => region.status === "OPEN" && region.canClose,
+      ),
+    [productivityEodRegions],
+  );
 
 
 
@@ -2377,6 +2457,16 @@ export default function DashboardPage() {
           setSavingSerialNo(null);
           return;
         }
+        // On a scheduling save the Current Remarks box is authoritative: the
+        // live preview effect has already filled it with the generated
+        // "Scheduled on <today>" line (or the user adjusted/typed their own).
+        // Send it even when unchanged from the persisted value — otherwise
+        // the patch omits remarks and the backend regenerates over a remark
+        // the user saw intact in the editor. An empty box still sends null,
+        // letting the backend write the generated line (old behaviour).
+        if (!("remarks" in values)) {
+          values.remarks = patchValue("Current Remarks");
+        }
       }
 
       // Special-access logins are not `users` rows, so PATCH /report-rows/:id (which is
@@ -3222,6 +3312,66 @@ export default function DashboardPage() {
               >
                 Clear All Filters
               </button>
+            )}
+            {/* Export — the header Export menu's exact handlers, so a
+                full-screen export reflects the current filters/columns
+                without leaving full screen. */}
+            {report ? (
+              <details className="exportMenuDetails" ref={fsExportDetailsRef}>
+                <summary className="premiumActionBtn secondary">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ marginRight: "4px" }}>
+                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                    <polyline points="7 10 12 15 17 10" />
+                    <line x1="12" y1="15" x2="12" y2="3" />
+                  </svg>
+                  Export
+                </summary>
+                <div className="exportDropdownPopover">
+                  <button type="button" onClick={exportRecordsExcel}>
+                    Microsoft Excel (.xlsx)
+                  </button>
+                  <button type="button" onClick={() => exportReport((r) => downloadReportAsExcel(r, visibleColumns))}>
+                    Comma Separated (.csv)
+                  </button>
+                </div>
+              </details>
+            ) : null}
+            {/* Final EOD — the exact same per-region close flow (native
+                window.confirm -> closeRegionEod) as the Records toolbar and
+                RegionDayStatusBar, so it works above the full-screen overlay
+                (no React portal involved). REGION_ADMIN gets the same
+                compact own-region control as the normal toolbar; SUPER_ADMIN
+                picks the region from a dropdown. */}
+            {ownRegionEod && (
+              <RegionEodQuickAction
+                region={ownRegionEod}
+                busy={eodBusyRegionId === ownRegionEod.regionId}
+                onCloseRegionEod={handleCloseRegionEod}
+              />
+            )}
+            {session?.user?.role === "SUPER_ADMIN" && closableEodRegions.length > 0 && (
+              <details className="exportMenuDetails" ref={fsEodDetailsRef}>
+                <summary
+                  className="premiumActionBtn secondary"
+                  title="Freeze a region's productivity for the working day"
+                >
+                  Final EOD
+                </summary>
+                <div className="exportDropdownPopover">
+                  {closableEodRegions.map((region) => (
+                    <button
+                      key={region.regionId}
+                      type="button"
+                      disabled={eodBusyRegionId === region.regionId}
+                      onClick={() => handleCloseRegionEod(region.regionId, region.regionName)}
+                    >
+                      {eodBusyRegionId === region.regionId
+                        ? "Closing…"
+                        : `Final EOD — ${region.regionName}`}
+                    </button>
+                  ))}
+                </div>
+              </details>
             )}
             <button
               type="button"

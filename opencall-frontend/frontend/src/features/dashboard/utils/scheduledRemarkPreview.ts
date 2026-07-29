@@ -1,0 +1,107 @@
+// Live "Scheduled on <today>" auto-remark preview for the records edit
+// surfaces (the inline row editor and EditRecordModal, both driven by
+// page.tsx's shared draftOutput state).
+//
+// Mirrors the SERVER rule that fires on save:
+//   open_call_2/backend/src/services/reportRows/reportRowEditService.ts
+//   (applyReportRowManualFieldEdit -> buildScheduledRemark(istTodayIso()))
+// The template itself lives in the shared package (utils/rcaText.ts), which
+// exists as a byte-identical copy in BOTH repos. DRIFT RISK: if the backend
+// copy's template or trigger ever changes, this preview (and
+// AUTO_SCHEDULED_REMARK_PATTERN below) must change with it, or the text shown
+// before save will disagree with what a server-generated save writes.
+
+import {
+  buildScheduledRemark,
+  isScheduledStatus,
+  istTodayIso,
+} from "@opencall/shared";
+import { MANUAL_ENTRY_REQUIRED } from "../constants";
+
+/**
+ * Byte-shape of buildScheduledRemark output, e.g. "Scheduled on 29th July".
+ * Used to recognise a previously AUTO-generated remark (possibly stale, e.g.
+ * yesterday's date) so the preview may refresh it — human-typed text never
+ * matches and is never replaced.
+ */
+export const AUTO_SCHEDULED_REMARK_PATTERN =
+  /^Scheduled on \d{1,2}(st|nd|rd|th) [A-Z][a-z]+$/;
+
+export function isAutoScheduledRemark(
+  value: string | number | null | undefined,
+): boolean {
+  return AUTO_SCHEDULED_REMARK_PATTERN.test(String(value ?? "").trim());
+}
+
+/** Trim + collapse the "Manual Entry Required" sentinel to empty. */
+function clean(value: string | number | null | undefined): string {
+  const text = String(value ?? "").trim();
+  return text === MANUAL_ENTRY_REQUIRED ? "" : text;
+}
+
+export interface ScheduledRemarkTriggerInput {
+  draftMorningStatus: string | number | null | undefined;
+  draftEveningStatus: string | number | null | undefined;
+  persistedMorningStatus: string | number | null | undefined;
+  persistedEveningStatus: string | number | null | undefined;
+  draftEngineer: string | number | null | undefined;
+}
+
+/**
+ * Whether the current edit session would make the server generate the
+ * "Scheduled on <today>" remark on save: THIS edit moves a status column
+ * (Morning or Evening) to Scheduled — draft is Scheduled AND differs from the
+ * persisted value, because the save path only PATCHes changed fields and the
+ * server only fires when the patch itself sets a Scheduled status — and an
+ * engineer is selected. An already-scheduled row edited without a status
+ * change never regenerates server-side, so it never previews here either.
+ */
+export function isScheduledRemarkTriggered(
+  input: ScheduledRemarkTriggerInput,
+): boolean {
+  const setsScheduled = (
+    draft: string | number | null | undefined,
+    persisted: string | number | null | undefined,
+  ): boolean => {
+    const draftValue = clean(draft);
+    return isScheduledStatus(draftValue) && draftValue !== clean(persisted);
+  };
+
+  return (
+    (setsScheduled(input.draftMorningStatus, input.persistedMorningStatus) ||
+      setsScheduled(input.draftEveningStatus, input.persistedEveningStatus)) &&
+    clean(input.draftEngineer) !== ""
+  );
+}
+
+export interface ScheduledRemarkPreviewInput extends ScheduledRemarkTriggerInput {
+  draftRemark: string | number | null | undefined;
+  /** Injectable for tests; defaults to today in Asia/Kolkata (like the server). */
+  todayIso?: string;
+}
+
+/**
+ * The value the Current Remarks box should be prefilled with right now, or
+ * null to leave the field alone.
+ *
+ * Prefill rules: only when the trigger holds (see isScheduledRemarkTriggered)
+ * AND the remarks box is empty, the "Manual Entry Required" sentinel, or
+ * still byte-exactly a previously auto-generated value. Text the user typed
+ * is never replaced. Returns null too when the box already shows exactly
+ * today's generated line (nothing to change).
+ */
+export function scheduledRemarkPreviewValue(
+  input: ScheduledRemarkPreviewInput,
+): string | null {
+  if (!isScheduledRemarkTriggered(input)) {
+    return null;
+  }
+
+  const remark = clean(input.draftRemark);
+  if (remark !== "" && !isAutoScheduledRemark(remark)) {
+    return null;
+  }
+
+  const generated = buildScheduledRemark(input.todayIso ?? istTodayIso());
+  return remark === generated ? null : generated;
+}

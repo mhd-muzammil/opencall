@@ -1812,7 +1812,11 @@ export default function DashboardPage() {
   // genuinely NEW upload (a new report created AFTER this one loaded) and switch
   // the user onto it — never a reload of the current report.
   useEffect(() => {
-    if (!session || !report?.reportId || !upload) return;
+    // Runs for EVERY session viewing a report, not just the one that uploaded:
+    // since the FieldEZ worker took over uploads, most new reports are created
+    // by a session other than the viewer's, and CRM users who never upload
+    // must still be moved onto them.
+    if (!session || !report?.reportId) return;
 
     const token = session.token;
     const currentReportDate = report.reportDate;
@@ -1845,7 +1849,15 @@ export default function DashboardPage() {
               s.status === "COMPLETED" &&
               s.reportId !== null &&
               s.reportDate === currentReportDate &&
-              s.regionId === currentRegionId,
+              // Region compatibility, not strict equality: worker/combined
+              // uploads carry regionId null but contain every region's rows,
+              // and a super admin's ambient regionId is "" (never a UUID).
+              // Strict equality made both sides unmatchable, so nobody ever
+              // switched onto worker-created reports and Evening entries kept
+              // landing on stale ones.
+              (s.regionId === null ||
+                currentRegionId === "" ||
+                s.regionId === currentRegionId),
           )
           .sort((a, b) => b.createdAt.localeCompare(a.createdAt))[0];
 
@@ -1892,7 +1904,6 @@ export default function DashboardPage() {
   }, [
     session,
     report?.reportId,
-    upload?.batches,
     regionId,
   ]);
 

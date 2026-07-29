@@ -78,6 +78,22 @@ function rtplStatusForAnalytics(row: ReportRow): string {
   return previousStatus || currentStatus;
 }
 
+/**
+ * Evening-first status for the RTPL Hours Status cards: once an Evening entry
+ * exists it is the case's latest truth for the day, so the card counts follow
+ * it; until then the Morning-derived status applies. Placeholder values never
+ * win over the Morning fallback.
+ */
+export function rtplEveningFirstStatusForAnalytics(row: ReportRow): string {
+  const eveningStatus = cleanedString(row.output["Evening status"]);
+
+  if (eveningStatus && !isManualEntryRequired(eveningStatus)) {
+    return eveningStatus;
+  }
+
+  return rtplStatusForAnalytics(row);
+}
+
 function normalizeFlexStatus(value: unknown): string {
   return cleanedString(value).replace(/\s+/g, " ").toLowerCase();
 }
@@ -219,7 +235,7 @@ export function filterRowsByRegion(
 export function buildRtplOperationalAnalytics(
   rows: readonly ReportRow[],
 ): RtplStatusMetric[] {
-  return buildStatusAnalytics(rows, rtplStatusForAnalytics);
+  return buildStatusAnalytics(rows, rtplEveningFirstStatusForAnalytics);
 }
 
 export function buildFlexOperationalAnalytics(

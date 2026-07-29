@@ -22,6 +22,7 @@ import {
   type RtplTimeCard,
   type RtplStatusMetric,
   buildRtplOperationalAnalytics,
+  rtplEveningFirstStatusForAnalytics,
 } from "../../../lib/reportDashboardAnalytics";
 import { RTPL_STATUS_OPTIONS } from "@opencall/shared";
 
@@ -219,10 +220,12 @@ export function RTPLDashboard({
   );
 
   // Actionable = Scheduled + To Be Scheduled, shown as a pinned summary card
-  // ahead of the per-status cards.
+  // ahead of the per-status cards. Evening-first like the per-status cards: a
+  // case whose Evening entry moved past a planning status is no longer
+  // actionable, and one moved BACK to Scheduled in the Evening is.
   const actionableMetric = useMemo(() => {
     const rows = rtplAnalyticsRows.filter((r) =>
-      isActionableStatusValue(String(r.output["RTPL status"] ?? "")),
+      isActionableStatusValue(rtplEveningFirstStatusForAnalytics(r)),
     );
     return {
       count: rows.length,
@@ -231,6 +234,51 @@ export function RTPLDashboard({
         .filter(Boolean),
     };
   }, [rtplAnalyticsRows]);
+
+  // Ticket ids per evening-first status, keyed by the exact status string the
+  // metric cards show, so clicking a card opens precisely the rows it counted
+  // (a Morning-status filter would mismatch now that counts are evening-first).
+  const statusTicketIds = useMemo(() => {
+    const map = new Map<string, string[]>();
+    for (const row of rtplAnalyticsRows) {
+      const status = rtplEveningFirstStatusForAnalytics(row).trim();
+      if (!status) continue;
+      const ticketId = String(row.output["Ticket ID"] ?? "").trim();
+      if (!ticketId) continue;
+      const list = map.get(status);
+      if (list) {
+        list.push(ticketId);
+      } else {
+        map.set(status, [ticketId]);
+      }
+    }
+    return map;
+  }, [rtplAnalyticsRows]);
+
+  // Case-Closed uses the same definition as the EOD table's "Closed Calls" row:
+  // an explicit Evening closure plus rows that closed by vanishing from the
+  // day's Flex file (closed synthetic rows). The generic chips group by the
+  // Morning column, which never says Case-Closed for a call closed today, so
+  // this bucket is computed separately and any stale Morning-grouped
+  // Case-Closed entry is dropped from the generic list below.
+  const caseClosedMetric = useMemo(() => {
+    const rows = rtplAnalyticsRows.filter(
+      (r) =>
+        r.carryForward.closedSyntheticRow ||
+        isCaseClosedStatusValue(String(r.output["Evening status"] ?? "")),
+    );
+    return {
+      count: rows.length,
+      ticketIds: rows
+        .map((r) => String(r.output["Ticket ID"] ?? "").trim())
+        .filter(Boolean),
+    };
+  }, [rtplAnalyticsRows]);
+
+  const openStatusMetrics = useMemo(
+    () => rtplStatusMetrics.filter((m) => !isCaseClosedStatusValue(m.status)),
+    [rtplStatusMetrics],
+  );
 
   const compareStatuses = (a: string, b: string): number => {
     const idxA = statusOrderMap.has(a.toLowerCase()) ? statusOrderMap.get(a.toLowerCase())! : 9999;
@@ -502,7 +550,7 @@ export function RTPLDashboard({
         ))}
       </div>
 
-      {rtplStatusMetrics.length > 0 ? (
+      {rtplStatusMetrics.length > 0 || caseClosedMetric.count > 0 ? (
         <div className="rtplMetricGrid" style={{ marginBottom: "20px" }}>
           <button
             className="rtplMetricCard"
@@ -522,7 +570,26 @@ export function RTPLDashboard({
             <span>Actionable</span>
             <strong>{actionableMetric.count}</strong>
           </button>
-          {rtplStatusMetrics.map((metric, metricIndex) => (
+          {caseClosedMetric.count > 0 && (
+            <button
+              className="rtplMetricCard"
+              type="button"
+              onClick={() =>
+                openRecordsWithFilter({
+                  region:
+                    selectedRtplRegion === ALL_REGIONS_FILTER
+                      ? null
+                      : selectedRtplRegion,
+                  ticketIds: caseClosedMetric.ticketIds,
+                })
+              }
+              title="Closed today = Evening Case-Closed + calls that left the Flex file (matches the EOD table)"
+            >
+              <span>Case-Closed</span>
+              <strong>{caseClosedMetric.count}</strong>
+            </button>
+          )}
+          {openStatusMetrics.map((metric, metricIndex) => (
             <button
               className="rtplMetricCard"
               key={`${metric.status || "blank"}-${metricIndex}`}
@@ -533,9 +600,10 @@ export function RTPLDashboard({
                     selectedRtplRegion === ALL_REGIONS_FILTER
                       ? null
                       : selectedRtplRegion,
-                  rtplStatus: metric.status,
-                  warrantyOnly: selectedRtplCaseScope === "warranty",
-                  tradeOnly: selectedRtplCaseScope === "trade",
+                  // Evening-first counts can't be reproduced by a Morning-status
+                  // filter, so hand over the exact tickets the card counted
+                  // (same pattern as the Actionable card).
+                  ticketIds: statusTicketIds.get(metric.status) ?? null,
                 })
               }
               title={`Open ${metric.status} records`}

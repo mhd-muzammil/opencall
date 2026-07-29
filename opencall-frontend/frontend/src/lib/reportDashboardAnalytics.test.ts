@@ -306,3 +306,31 @@ describe("reportDashboardAnalytics", () => {
     ]);
   });
 });
+
+describe("buildRtplOperationalAnalytics — evening-first", () => {
+  it("counts a case under its Evening status once one exists, else Morning", () => {
+    const metrics = buildRtplOperationalAnalytics([
+      row(1, { "RTPL status": "Scheduled", "Evening status": "Case-Closed" }),
+      row(2, { "RTPL status": "Scheduled", "Evening status": "" }),
+      row(3, { "RTPL status": "SSC Pending", "Evening status": "SSC Pending" }),
+    ]);
+
+    expect(metrics).toEqual([
+      { status: "Case-Closed", count: 1 },
+      { status: "Scheduled", count: 1 },
+      { status: "SSC Pending", count: 1 },
+    ]);
+  });
+
+  it("ignores a placeholder Evening value and falls back to Morning", () => {
+    const metrics = buildRtplOperationalAnalytics([
+      row(1, {
+        "RTPL status": "Scheduled",
+        "Evening status": "Manual Entry Required",
+      }),
+      row(2, { "RTPL status": "Scheduled", "Evening status": "   " }),
+    ]);
+
+    expect(metrics).toEqual([{ status: "Scheduled", count: 2 }]);
+  });
+});

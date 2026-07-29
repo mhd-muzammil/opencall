@@ -162,6 +162,119 @@ export function buildUniqueValuesMap<
   return map;
 }
 
+/**
+ * Excel-style cascading (faceted) dropdown options.
+ *
+ * For each filterable column X, the option list contains the distinct values
+ * (with occurrence counts) of X across the rows that pass:
+ *   - the optional `rowPredicate` (e.g. the page's global search box), AND
+ *   - every active column filter EXCEPT column X's own filter.
+ *
+ * Excluding X's own filter is what lets the user widen their selection within
+ * X while other columns' filters are active — exactly how Excel's AutoFilter
+ * behaves.
+ *
+ * UX guarantee: values currently selected in X's filter are ALWAYS present in
+ * X's option list, even when the cascaded row set no longer contains them —
+ * they appear with count 0 so the user can still see and unselect them.
+ *
+ * Entries are sorted alphabetically by value, matching `extractUniqueValues`.
+ *
+ * Performance: one pass over the rows. A row failing two or more active
+ * filters contributes to no column's options; a row failing exactly one
+ * active filter contributes only to that column's options (its own filter is
+ * excluded there); a row failing none contributes to every column's options.
+ */
+export function buildCascadedUniqueValuesMap<
+  T extends { output: Record<string, string | number> },
+>(
+  rows: readonly T[],
+  filters: ColumnFilterState,
+  options?: { rowPredicate?: (row: T) => boolean },
+): Map<string, ColumnUniqueEntry[]> {
+  const rowPredicate = options?.rowPredicate;
+  const normalizedFilters = normalizeFilterState(filters);
+  const activeColumns = FILTERABLE_COLUMNS.filter(
+    (col) => normalizedFilters[col],
+  );
+
+  // Nothing to cascade → identical to the plain unique-values map.
+  if (activeColumns.length === 0 && !rowPredicate) {
+    return buildUniqueValuesMap(rows);
+  }
+
+  const countsByColumn = new Map<string, Map<string, number>>();
+  for (const col of FILTERABLE_COLUMNS) {
+    countsByColumn.set(col, new Map<string, number>());
+  }
+
+  for (const row of rows) {
+    if (rowPredicate && !rowPredicate(row)) continue;
+
+    // Which active column filters does this row fail?
+    let failedColumn: string | null = null;
+    let failedMoreThanOne = false;
+
+    for (const col of activeColumns) {
+      const selected = normalizedFilters[col]!;
+
+      if (
+        selected.size === 0 ||
+        !selected.has(normalizeFilterValue(row.output[col]))
+      ) {
+        if (failedColumn !== null) {
+          failedMoreThanOne = true;
+          break;
+        }
+        failedColumn = col;
+      }
+    }
+
+    // Hidden by at least two other columns' filters from every dropdown.
+    if (failedMoreThanOne) continue;
+
+    if (failedColumn !== null) {
+      // Passes everything except `failedColumn`'s own filter → visible only
+      // in `failedColumn`'s dropdown (whose own filter is excluded).
+      const counts = countsByColumn.get(failedColumn)!;
+      const value = normalizeFilterValue(row.output[failedColumn]);
+      counts.set(value, (counts.get(value) ?? 0) + 1);
+      continue;
+    }
+
+    // Passes all active filters → visible in every column's dropdown.
+    for (const col of FILTERABLE_COLUMNS) {
+      const counts = countsByColumn.get(col)!;
+      const value = normalizeFilterValue(row.output[col]);
+      counts.set(value, (counts.get(value) ?? 0) + 1);
+    }
+  }
+
+  const map = new Map<string, ColumnUniqueEntry[]>();
+
+  for (const col of FILTERABLE_COLUMNS) {
+    const counts = countsByColumn.get(col)!;
+
+    // Keep currently-selected values visible (count 0) even when the cascaded
+    // row set no longer contains them, so the user can unselect them.
+    const selected = normalizedFilters[col];
+    if (selected) {
+      for (const value of selected) {
+        if (!counts.has(value)) counts.set(value, 0);
+      }
+    }
+
+    map.set(
+      col,
+      Array.from(counts.entries())
+        .map(([value, count]) => ({ value, count }))
+        .sort((a, b) => a.value.localeCompare(b.value)),
+    );
+  }
+
+  return map;
+}
+
 // ---------------------------------------------------------------------------
 // Filter application
 // ---------------------------------------------------------------------------

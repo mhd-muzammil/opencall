@@ -5,6 +5,7 @@ import {
   selectWipAgingRangeValues,
   sortWipAgingFilterValues,
   buildUniqueValuesMap,
+  buildCascadedUniqueValuesMap,
   rowPassesFilters,
   applyColumnFilters,
   activeFilterCount,
@@ -275,6 +276,232 @@ describe("buildUniqueValuesMap", () => {
       expect(map.has(col)).toBe(true);
       expect(map.get(col)!.length).toBeGreaterThan(0);
     }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// buildCascadedUniqueValuesMap — Excel-style faceted dropdown options
+// ---------------------------------------------------------------------------
+
+describe("buildCascadedUniqueValuesMap", () => {
+  // Morning status lives under the "RTPL status" key.
+  const rows = [
+    makeRow({ "RTPL status": "Scheduled", Engineer: "John", Segment: "PC" }),
+    makeRow({ "RTPL status": "Scheduled", Engineer: "John", Segment: "Print" }),
+    makeRow({ "RTPL status": "Scheduled", Engineer: "Mary", Segment: "PC" }),
+    makeRow({ "RTPL status": "Part Pending", Engineer: "Ravi", Segment: "PC" }),
+    makeRow({ "RTPL status": "Part Pending", Engineer: "Mary", Segment: "Print" }),
+  ];
+
+  it("matches buildUniqueValuesMap when no filters and no predicate are active", () => {
+    const cascaded = buildCascadedUniqueValuesMap(rows, {});
+    const plain = buildUniqueValuesMap(rows);
+
+    for (const col of FILTERABLE_COLUMNS) {
+      expect(cascaded.get(col)).toEqual(plain.get(col));
+    }
+  });
+
+  it("restricts other columns' options to rows matching the active filter", () => {
+    const filters: ColumnFilterState = {
+      "RTPL status": new Set([normalizeFilterValue("Scheduled")]),
+    };
+
+    const map = buildCascadedUniqueValuesMap(rows, filters);
+
+    // Engineer options only list engineers on Scheduled rows, with cascaded
+    // counts (Ravi has no Scheduled rows → not listed at all).
+    expect(map.get("Engineer")).toEqual([
+      { value: "JOHN", count: 2 },
+      { value: "MARY", count: 1 },
+    ]);
+    expect(map.get("Segment")).toEqual([
+      { value: "PC", count: 2 },
+      { value: "PRINT", count: 1 },
+    ]);
+  });
+
+  it("excludes a column's OWN filter when building that column's options", () => {
+    const filters: ColumnFilterState = {
+      "RTPL status": new Set([normalizeFilterValue("Scheduled")]),
+    };
+
+    const map = buildCascadedUniqueValuesMap(rows, filters);
+
+    // The filtered column itself still offers the full value list (from rows
+    // passing every OTHER filter — here, none), so the user can widen it.
+    expect(map.get("RTPL status")).toEqual([
+      { value: "PART PENDING", count: 2 },
+      { value: "SCHEDULED", count: 3 },
+    ]);
+  });
+
+  it("cascades between two filtered columns while excluding each column's own filter", () => {
+    const filters: ColumnFilterState = {
+      "RTPL status": new Set([normalizeFilterValue("Scheduled")]),
+      Engineer: new Set([normalizeFilterValue("Mary")]),
+    };
+
+    const map = buildCascadedUniqueValuesMap(rows, filters);
+
+    // Engineer options: rows passing RTPL status=Scheduled (own filter excluded).
+    expect(map.get("Engineer")).toEqual([
+      { value: "JOHN", count: 2 },
+      { value: "MARY", count: 1 },
+    ]);
+
+    // RTPL status options: rows passing Engineer=Mary (own filter excluded).
+    expect(map.get("RTPL status")).toEqual([
+      { value: "PART PENDING", count: 1 },
+      { value: "SCHEDULED", count: 1 },
+    ]);
+
+    // Unfiltered column: rows passing BOTH filters (Scheduled + Mary → 1 row).
+    expect(map.get("Segment")).toEqual([{ value: "PC", count: 1 }]);
+  });
+
+  it("keeps selected-but-now-empty values visible with count 0 so they can be unselected", () => {
+    const filters: ColumnFilterState = {
+      // User first picked Ravi…
+      Engineer: new Set([normalizeFilterValue("Ravi")]),
+      // …then filtered Morning status to Scheduled, which has no Ravi rows.
+      "RTPL status": new Set([normalizeFilterValue("Scheduled")]),
+    };
+
+    const map = buildCascadedUniqueValuesMap(rows, filters);
+
+    // Engineer options come from Scheduled rows (own filter excluded): John
+    // and Mary. Ravi has no Scheduled rows, but he is selected — he must stay
+    // listed with count 0 (sorted in place) so the user can unselect him.
+    expect(map.get("Engineer")).toEqual([
+      { value: "JOHN", count: 2 },
+      { value: "MARY", count: 1 },
+      { value: "RAVI", count: 0 },
+    ]);
+  });
+
+  it("keeps the filtered column's selection visible with count 0 when a predicate empties it", () => {
+    const filters: ColumnFilterState = {
+      Engineer: new Set([normalizeFilterValue("Ravi")]),
+    };
+
+    // Global search that matches no Ravi rows.
+    const map = buildCascadedUniqueValuesMap(rows, filters, {
+      rowPredicate: (row) =>
+        String(row.output["Engineer"]).toLowerCase().includes("john"),
+    });
+
+    expect(map.get("Engineer")).toEqual([
+      { value: "JOHN", count: 2 },
+      { value: "RAVI", count: 0 },
+    ]);
+  });
+
+  it("applies the row predicate (global search) to every column's options", () => {
+    const map = buildCascadedUniqueValuesMap(rows, {}, {
+      rowPredicate: (row) => row.output["Segment"] === "PC",
+    });
+
+    expect(map.get("Engineer")).toEqual([
+      { value: "JOHN", count: 1 },
+      { value: "MARY", count: 1 },
+      { value: "RAVI", count: 1 },
+    ]);
+    expect(map.get("RTPL status")).toEqual([
+      { value: "PART PENDING", count: 1 },
+      { value: "SCHEDULED", count: 2 },
+    ]);
+  });
+
+  it("hides rows failing two or more other filters from unfiltered columns", () => {
+    const filters: ColumnFilterState = {
+      "RTPL status": new Set([normalizeFilterValue("Scheduled")]),
+      Engineer: new Set([normalizeFilterValue("John")]),
+      Segment: new Set([normalizeFilterValue("PC")]),
+    };
+
+    const map = buildCascadedUniqueValuesMap(rows, filters);
+
+    // "Location" is unfiltered: only rows passing ALL three filters count.
+    // Row 1 (Scheduled/John/PC, Location Delhi) is the only one.
+    expect(map.get("Location")).toEqual([{ value: "DELHI", count: 1 }]);
+
+    // Segment's own list: rows passing Scheduled+John (rows 1-2).
+    expect(map.get("Segment")).toEqual([
+      { value: "PC", count: 1 },
+      { value: "PRINT", count: 1 },
+    ]);
+  });
+
+  it("treats an explicitly empty selection as hiding all rows from OTHER columns but not its own", () => {
+    const filters: ColumnFilterState = {
+      Engineer: new Set<string>(),
+    };
+
+    const map = buildCascadedUniqueValuesMap(rows, filters);
+
+    // Engineer's own dropdown still lists everything (escape hatch).
+    expect(map.get("Engineer")).toEqual([
+      { value: "JOHN", count: 2 },
+      { value: "MARY", count: 2 },
+      { value: "RAVI", count: 1 },
+    ]);
+
+    // Other columns reflect the (empty) visible row set.
+    expect(map.get("Segment")).toEqual([]);
+  });
+
+  it("normalizes selected values the same way applyColumnFilters does", () => {
+    const filters: ColumnFilterState = {
+      // Raw, un-normalized selection (as a defensive caller might pass).
+      "RTPL status": new Set(["  scheduled "]),
+    };
+
+    const map = buildCascadedUniqueValuesMap(rows, filters);
+    expect(map.get("Engineer")).toEqual([
+      { value: "JOHN", count: 2 },
+      { value: "MARY", count: 1 },
+    ]);
+  });
+
+  it("agrees with applyColumnFilters: option counts for an unfiltered column sum to the filtered row count", () => {
+    const filters: ColumnFilterState = {
+      "RTPL status": new Set([normalizeFilterValue("Scheduled")]),
+      Engineer: new Set([normalizeFilterValue("John")]),
+    };
+
+    const map = buildCascadedUniqueValuesMap(rows, filters);
+    const visibleRows = applyColumnFilters(rows, filters);
+
+    const segmentTotal = map
+      .get("Segment")!
+      .reduce((sum, entry) => sum + entry.count, 0);
+
+    expect(segmentTotal).toBe(visibleRows.length);
+  });
+
+  it("handles large row sets efficiently", () => {
+    const rows = Array.from({ length: 10000 }, (_, i) =>
+      makeRow({
+        Segment: i % 3 === 0 ? "PC" : i % 3 === 1 ? "Print" : "LaserJet",
+        Engineer: `Eng ${i % 25}`,
+        "RTPL status": i % 2 === 0 ? "Scheduled" : "Part Pending",
+      }),
+    );
+
+    const filters: ColumnFilterState = {
+      Segment: new Set(["PC"]),
+      "RTPL status": new Set(["SCHEDULED"]),
+    };
+
+    const start = performance.now();
+    const map = buildCascadedUniqueValuesMap(rows, filters);
+    const duration = performance.now() - start;
+
+    expect(map.get("Engineer")!.length).toBeGreaterThan(0);
+    // Single pass over 10k rows × 26 columns worst case — generous threshold
+    // to avoid flaking on a loaded machine while still catching O(n²) blowups.
+    expect(duration).toBeLessThan(500);
   });
 });
 

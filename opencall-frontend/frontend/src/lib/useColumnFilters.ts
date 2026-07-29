@@ -3,7 +3,7 @@
 import { useCallback, useMemo, useState } from "react";
 import {
   applyColumnFilters,
-  buildUniqueValuesMap,
+  buildCascadedUniqueValuesMap,
   activeFilterCount as countActiveFilters,
   isColumnFiltered as checkIsColumnFiltered,
   FILTERABLE_COLUMNS,
@@ -44,7 +44,12 @@ export interface UseColumnFiltersResult<T> {
   /** Apply rows filtered through both upstream + column filters. */
   filteredRows: (rows: readonly T[]) => T[];
 
-  /** Memoized unique-value map built from the provided rows. */
+  /**
+   * Memoized cascaded (Excel-style) unique-value map. Each column's option
+   * list reflects the rows that pass every OTHER active column filter (and
+   * the optional cascade predicate); currently-selected values that the
+   * cascaded rows no longer contain stay listed with count 0.
+   */
   uniqueValuesMap: Map<string, ColumnUniqueEntry[]>;
 
   /** Number of columns that currently have active filters. */
@@ -58,6 +63,15 @@ export interface UseColumnFiltersResult<T> {
 
   /** Is the given column filterable? */
   isFilterable: (column: string) => boolean;
+
+  /**
+   * Register (or clear, with null) an extra row predicate folded into the
+   * dropdown-option cascade — e.g. the records page's global search box, so
+   * dropdown options and counts reflect only rows matching the search. Only
+   * affects `uniqueValuesMap`; row filtering (`filteredRows`) is untouched.
+   * Stable identity — safe to use as an effect dependency.
+   */
+  setCascadePredicate: (predicate: ((row: T) => boolean) | null) => void;
 }
 
 /**
@@ -73,10 +87,34 @@ export function useColumnFilters<
   const [filters, setFilters] = useState<ColumnFilterState>({});
   const [openColumn, setOpenColumn] = useState<string | null>(null);
 
+  // Optional extra row predicate folded into the dropdown-option cascade
+  // (e.g. the records page's global search box — wired by useExportRows).
+  // It only affects `uniqueValuesMap`, never `filteredRows`.
+  const [cascadePredicate, setCascadePredicateState] = useState<
+    ((row: T) => boolean) | null
+  >(null);
+
+  const setCascadePredicate = useCallback(
+    (predicate: ((row: T) => boolean) | null) => {
+      // Functional form so React stores the predicate itself rather than
+      // treating it as a state updater.
+      setCascadePredicateState(() => predicate);
+    },
+    [],
+  );
+
   // ---- Memoized unique values ------------------------------------------
+  // Excel-style cascade: each column's options come from the rows that pass
+  // every OTHER active column filter (its own filter is excluded so the user
+  // can widen their selection), plus the optional cascade predicate.
   const uniqueValuesMap = useMemo(
-    () => buildUniqueValuesMap(baseRows),
-    [baseRows],
+    () =>
+      buildCascadedUniqueValuesMap(
+        baseRows,
+        filters,
+        cascadePredicate ? { rowPredicate: cascadePredicate } : undefined,
+      ),
+    [baseRows, filters, cascadePredicate],
   );
 
   // ---- Memoized filtered rows -----------------------------------------
@@ -177,5 +215,6 @@ export function useColumnFilters<
     isColumnFiltered: isFiltered,
     resetAll,
     isFilterable,
+    setCascadePredicate,
   };
 }

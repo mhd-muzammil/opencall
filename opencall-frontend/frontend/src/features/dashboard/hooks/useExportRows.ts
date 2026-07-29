@@ -1,9 +1,11 @@
 // Derived export/visible-row memos extracted from app/page.tsx (Phase 5).
-// useMemo bodies and dependency arrays preserved verbatim — no behavior changes.
+// useMemo bodies and dependency arrays preserved verbatim from that extraction.
+// Since then this hook also wires the records search box into the column-filter
+// dropdown cascade (setCascadePredicate below).
 //
 // useColumnFilters stays in page.tsx; its result (colFilters) is passed in, so this
 // hook must be called after colFilters.
-import { useMemo } from "react";
+import { useEffect, useMemo } from "react";
 import type { UseColumnFiltersResult } from "../../../lib/useColumnFilters";
 import type { WipAgingSortDirection } from "../../../lib/columnFilter";
 import type {
@@ -51,6 +53,20 @@ export function useExportRows(params: {
     selectedPreviewCategory,
     upload,
   } = params;
+
+  // Fold the global search box into the column-filter dropdown cascade so
+  // each dropdown's options/counts reflect only rows matching the search
+  // (Excel-style faceted filters). Uses the same predicate as filteredRows
+  // below, so dropdown counts agree with the rows actually shown.
+  const { setCascadePredicate } = colFilters;
+  useEffect(() => {
+    const query = recordsSearchQuery;
+    setCascadePredicate(
+      query.trim() === ""
+        ? null
+        : (row: ReportRow) => rowMatchesRecordSearch(row, query),
+    );
+  }, [recordsSearchQuery, setCascadePredicate]);
 
   // With no search this is exactly the old behavior (category/OTC/region-scoped
   // rows through the column filters). While a search is active the base widens

@@ -97,6 +97,7 @@ export interface OpenCallApiClient {
   updateAdminEngineer(token: string, id: string, input: { engineerName?: string; engineerCode?: string | null; regionId?: string; email?: string | null; phone?: string | null; hpId?: string; vendorId?: string }): Promise<{ engineer: Engineer }>;
   deactivateAdminEngineer(token: string, id: string): Promise<{ engineer: Engineer }>;
   reactivateAdminEngineer(token: string, id: string): Promise<{ engineer: Engineer }>;
+  deleteAdminEngineer(token: string, id: string): Promise<{ success: boolean }>;
   getEngineersDropdown(token: string, regionId?: string): Promise<{ engineers: DropdownEngineer[] }>;
   getAdminRtplStatuses(token: string, filters?: { category?: string; search?: string; isActive?: boolean }): Promise<{ statuses: RtplStatus[] }>;
   createAdminRtplStatus(token: string, input: { name: string; category?: string | null; sortOrder?: number }): Promise<{ status: RtplStatus }>;
@@ -396,6 +397,15 @@ export function createOpenCallApiClient({
       });
 
       return readJson<{ engineer: Engineer }>(response);
+    },
+
+    async deleteAdminEngineer(token, id) {
+      const response = await fetchImpl(url(`/api/v1/admin/engineers/${id}`), {
+        method: "DELETE",
+        headers: authHeaders(token),
+      });
+
+      return readJson<{ success: boolean }>(response);
     },
 
     async getEngineersDropdown(token, regionId) {

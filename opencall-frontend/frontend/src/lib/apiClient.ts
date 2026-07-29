@@ -53,6 +53,7 @@ export const createAdminEngineer = webApiClient.createAdminEngineer;
 export const updateAdminEngineer = webApiClient.updateAdminEngineer;
 export const deactivateAdminEngineer = webApiClient.deactivateAdminEngineer;
 export const reactivateAdminEngineer = webApiClient.reactivateAdminEngineer;
+export const deleteAdminEngineer = webApiClient.deleteAdminEngineer;
 export const getEngineersDropdown = webApiClient.getEngineersDropdown;
 export const getAdminRtplStatuses = webApiClient.getAdminRtplStatuses;
 export const createAdminRtplStatus = webApiClient.createAdminRtplStatus;

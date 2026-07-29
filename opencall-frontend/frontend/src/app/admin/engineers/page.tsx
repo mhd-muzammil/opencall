@@ -7,6 +7,7 @@ import {
   updateAdminEngineer,
   deactivateAdminEngineer,
   reactivateAdminEngineer,
+  deleteAdminEngineer,
 } from "../../../lib/apiClient";
 import { listAdminRegions, type AdminRegion } from "../../../lib/adminApiClient";
 import { readSession, type ClientSession } from "../../../lib/session";
@@ -221,6 +222,26 @@ export default function AdminEngineersPage() {
       await loadData();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to change status");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handleDelete = async (engineer: Engineer) => {
+    if (!session) return;
+    const confirmed = window.confirm(
+      `Delete engineer "${engineer.engineerName}"? ` +
+        `Past call records keep the engineer's name, but the engineer is removed ` +
+        `from dropdowns and this cannot be undone.`,
+    );
+    if (!confirmed) return;
+    setBusy(true);
+    setError(null);
+    try {
+      await deleteAdminEngineer(session.token, engineer.id);
+      await loadData();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to delete engineer");
     } finally {
       setBusy(false);
     }
@@ -504,6 +525,13 @@ export default function AdminEngineersPage() {
                         disabled={busy}
                       >
                         {e.isActive ? "Disable" : "Enable"}
+                      </button>
+                      <button
+                        className="btnDanger"
+                        onClick={() => handleDelete(e)}
+                        disabled={busy}
+                      >
+                        Delete
                       </button>
                     </td>
                   </tr>

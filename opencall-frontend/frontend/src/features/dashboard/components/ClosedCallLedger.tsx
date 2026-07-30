@@ -4,12 +4,14 @@ import { formatNumber } from "../utils";
 
 export function ClosedCallLedger({
   overallClosedCount,
+  closedTodayCount,
   closedRegionBreakdown,
   showClosedOnly,
   selectedRegion,
   openRecordsWithFilter,
 }: Readonly<{
   overallClosedCount: number;
+  closedTodayCount: number;
   closedRegionBreakdown: Array<{
     aspCode: string;
     regionName: string;
@@ -36,9 +38,9 @@ export function ClosedCallLedger({
           className={`closedCallsTotal ${showClosedOnly && (!selectedRegion || selectedRegion === "ALL") ? "active" : ""}`}
           onClick={() => openRecordsWithFilter({ region: "ALL", closedOnly: true })}
         >
-          <span>Total Closed</span>
-          <strong>{formatNumber(overallClosedCount)}</strong>
-          <small>Open closed records</small>
+          <span>Closed Today</span>
+          <strong>{formatNumber(closedTodayCount)}</strong>
+          <small>{formatNumber(overallClosedCount)} closed in total</small>
         </button>
       </div>
 

@@ -870,6 +870,7 @@ export default function DashboardPage() {
     rcaRows,
     tradeRows,
     closedRows,
+    closedTodayRows,
     consumerRows,
     commercialRows,
     warrantyRows,
@@ -4522,6 +4523,7 @@ export default function DashboardPage() {
                     {showClosedCallLedger && overallClosedCount > 0 && workspaceView === "overview" ? (
                       <ClosedCallLedger
                         overallClosedCount={overallClosedCount}
+                        closedTodayCount={closedTodayRows.length}
                         closedRegionBreakdown={closedRegionBreakdown}
                         showClosedOnly={showClosedOnly}
                         selectedRegion={selectedRegion}

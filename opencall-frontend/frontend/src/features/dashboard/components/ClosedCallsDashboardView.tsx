@@ -503,6 +503,14 @@ export function ClosedCallsDashboardView({
     background: "var(--input-bg, #f9fafb)",
   };
 
+  // Closures that happened on this report's day. overallClosedCount is the whole
+  // ledger — a closed ticket is carried into every later report, so it answers
+  // "how many have we ever closed", which is not what anyone reads this page for.
+  const closedTodayCount = useMemo(
+    () => closedRows.filter((row) => row.carryForward.sameDayClosedRow === true).length,
+    [closedRows],
+  );
+
   // Closed share % — uses the date-filtered closed count when a range is applied.
   const shareClosed =
     closedFrom || closedTo ? filteredClosedRows.length : overallClosedCount;
@@ -622,7 +630,10 @@ export function ClosedCallsDashboardView({
                 border: "1px solid #10b98130",
               }}
             >
-              ✓ {formatNumber(dateFilterActive ? dateFilteredTotal : overallClosedCount)} Total Closed
+              ✓{" "}
+              {dateFilterActive
+                ? `${formatNumber(dateFilteredTotal)} Closed in range`
+                : `${formatNumber(closedTodayCount)} Closed today · ${formatNumber(overallClosedCount)} all time`}
             </span>
           </div>
           <h2 style={{ fontSize: "22px", fontWeight: "800", color: "var(--heading-color, #111827)", margin: "6px 0 2px 0" }}>
@@ -930,10 +941,12 @@ export function ClosedCallsDashboardView({
               ALL REGIONS
             </div>
             <div style={{ fontSize: "22px", fontWeight: "800", color: "#10b981", margin: "4px 0" }}>
-              {formatNumber(dateFilterActive ? dateFilteredTotal : overallClosedCount)}
+              {formatNumber(dateFilterActive ? dateFilteredTotal : closedTodayCount)}
             </div>
             <div style={{ fontSize: "11px", color: "#6b7280" }}>
-              {formatNumber(totalActiveWipCount)} active WIP
+              {dateFilterActive
+                ? `${formatNumber(totalActiveWipCount)} active WIP`
+                : `${formatNumber(overallClosedCount)} all time · ${formatNumber(totalActiveWipCount)} active WIP`}
             </div>
             <ComparisonCounts
               closureCount={closureCountFor("")}

@@ -87,6 +87,21 @@ export function useRecordRowSets(params: {
     return report.rows.filter((row) => row.carryForward.closedSyntheticRow);
   }, [report]);
 
+  // Closures that happened on THIS report's day. closedRows is cumulative by
+  // design — a closed ticket is re-emitted into every later report so the ledger
+  // keeps it — so its length answers "how many have we ever closed", never
+  // "how many closed today". sameDayClosedRow is the flag that separates them:
+  // it is set when a still-active ticket vanishes from a same-day re-upload and
+  // is cleared by the next day's first upload.
+  const closedTodayRows = useMemo(() => {
+    if (!report) return [];
+    return report.rows.filter(
+      (row) =>
+        row.carryForward.closedSyntheticRow &&
+        row.carryForward.sameDayClosedRow === true,
+    );
+  }, [report]);
+
   const consumerRows = useMemo(() => {
     return activeRows.filter(isConsumerCase);
   }, [activeRows]);
@@ -187,6 +202,7 @@ export function useRecordRowSets(params: {
     rcaRows,
     tradeRows,
     closedRows,
+    closedTodayRows,
     consumerRows,
     commercialRows,
     warrantyRows,

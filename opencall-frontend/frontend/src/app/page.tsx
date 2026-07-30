@@ -185,7 +185,9 @@ import {
 import { getLatestCompletedReportSession } from "../lib/reportHistorySelection";
 import {
   fetchSpecialAccessReport,
+  getSpecialAccessEngineersDropdown,
   getSpecialAccessRecordLayout,
+  getSpecialAccessRtplStatusesDropdown,
   updateSpecialAccessReportRow,
 } from "../lib/specialAccessApiClient";
 
@@ -1845,15 +1847,29 @@ export default function DashboardPage() {
           }
         }
       }).catch(handleBackgroundError);
-      getEngineersDropdown(session.token)
+      // A special-access credential is not a row in `users`, so it can never satisfy the
+      // role guard on the admin dropdown endpoints — those calls 401 and left the Work
+      // Order Details & Entry modal with an EMPTY Engineer picker and the hard-coded RTPL
+      // status list instead of the admin-managed one. Use its own scoped equivalents so
+      // the entry form fills exactly like a regular user's.
+      (isSpecialAccess
+        ? getSpecialAccessEngineersDropdown(session.token)
+        : getEngineersDropdown(session.token))
         .then((res) => setEngineersList(res.engineers))
         .catch(handleBackgroundError);
-      getRtplStatusesDropdown(session.token)
+      (isSpecialAccess
+        ? getSpecialAccessRtplStatusesDropdown(session.token)
+        : getRtplStatusesDropdown(session.token))
         .then((res) => setRtplStatusGroups(buildStatusGroups(res.statuses)))
         .catch(handleBackgroundError);
-      getRecordLayout(session.token)
-        .then((layout) => setRecordLayout(layout?.orderedColumns ?? null))
-        .catch(handleBackgroundError);
+      // The user-only /record-layout endpoint 401s for special access; its scoped layout
+      // is loaded by the dedicated effect below, so don't fire a call that can only fail
+      // and surface an "Operation failed" banner.
+      if (!isSpecialAccess) {
+        getRecordLayout(session.token)
+          .then((layout) => setRecordLayout(layout?.orderedColumns ?? null))
+          .catch(handleBackgroundError);
+      }
     } else {
       setHistorySessions([]);
       setEngineersList([]);

@@ -2,6 +2,8 @@ import { WEB_API_BASE_URL } from "./api/webApiClient";
 import { readJson, ApiClientError } from "./api/http";
 import type {
   ApiErrorBody,
+  DropdownEngineer,
+  DropdownRtplStatus,
   EditedReportRowResponse,
   GeneratedReportResponse,
 } from "./api/types";
@@ -253,6 +255,32 @@ export async function fetchSpecialAccessReport(
     cache: "no-store",
   });
   return readJson<SpecialAccessScopedReport>(response);
+}
+
+// --- Work Order Details & Entry reference data (engineer + RTPL status pickers) ---
+// The admin dropdown endpoints are role-guarded, so a special-access token 401s on them
+// and the entry modal used to open with an empty Engineer picker and the hard-coded RTPL
+// status list. These are the scoped equivalents; engineers come back scoped to the
+// credential's granted regions.
+
+export async function getSpecialAccessEngineersDropdown(
+  token: string,
+): Promise<{ engineers: DropdownEngineer[] }> {
+  const response = await fetch(url("/api/v1/special-access/engineers/dropdown"), {
+    headers: authHeaders(token),
+    cache: "no-store",
+  });
+  return readJson<{ engineers: DropdownEngineer[] }>(response);
+}
+
+export async function getSpecialAccessRtplStatusesDropdown(
+  token: string,
+): Promise<{ statuses: DropdownRtplStatus[] }> {
+  const response = await fetch(url("/api/v1/special-access/rtpl-statuses/dropdown"), {
+    headers: authHeaders(token),
+    cache: "no-store",
+  });
+  return readJson<{ statuses: DropdownRtplStatus[] }>(response);
 }
 
 // ----------- Record Format (a special-access login's own grid layout) -----------

@@ -94,6 +94,7 @@ import {
   RTPLDashboard,
   FlexDashboard,
   VendorDashboard,
+  RenewalPipelinePage,
   CaseTypeCards,
   CustomerSegmentCards,
   RTPLPivotTable,
@@ -227,6 +228,7 @@ const WORKSPACE_VIEWS = [
   "admin-engineers",
   "admin-rtpl-statuses",
   "warranty",
+  "renewal-pipeline",
   "vendor-dashboard",
 ] as const;
 type WorkspaceView = (typeof WORKSPACE_VIEWS)[number];
@@ -3814,6 +3816,7 @@ export default function DashboardPage() {
           {(canSeeSection("records") ||
             canSeeSection("productivity") ||
             (!isSpecialAccess && canSeeSection("warranty")) ||
+            (!isSpecialAccess && canSeeSection("renewal-pipeline")) ||
             (session.user.role === "SUPER_ADMIN" && !isSpecialAccess) ||
             (isSpecialAccess && (canSeeSection("parts-catalog") || canSeeSection("quotations")))) && (
             <div className="sidebarSection">Data & Operations</div>
@@ -3903,6 +3906,24 @@ export default function DashboardPage() {
               >
                 <span className="sidebarIcon">
                   <ShieldCheck size={18} strokeWidth={2} /> <span className="sidebarText">Warranty Lookup</span>
+                </span>
+              </button>
+            )}
+
+          {/* Renewal Pipeline — AMC leads derived from the warranty data we already have.
+              Same audience as Warranty Lookup; the API region-scopes what a REGION_ADMIN
+              sees. Its own section (not inside Warranty Lookup) because this is sales
+              follow-up work, not a warranty check. */}
+          {(session.user.role === "SUPER_ADMIN" ||
+            session.user.role === "REGION_ADMIN") &&
+            canSeeSection("renewal-pipeline") && (
+              <button
+                type="button"
+                className={`sidebarItem ${workspaceView === "renewal-pipeline" ? "active" : ""}`}
+                onClick={() => setWorkspaceView("renewal-pipeline")}
+              >
+                <span className="sidebarIcon">
+                  <RefreshCw size={18} strokeWidth={2} /> <span className="sidebarText">Renewal Pipeline</span>
                 </span>
               </button>
             )}
@@ -4068,8 +4089,24 @@ export default function DashboardPage() {
                 </section>
               ) : null}
 
+              {/* Renewal Pipeline — derived from the warranty cache, so like Warranty
+                  Lookup it needs no generated report.
+                  `minWidth: 0` is required and is deliberately inline (NOT a `.panel` rule
+                  in globals.css, which would change every other panel in the app): `.panel`
+                  is a grid item of `.mainGrid` and defaults to `min-width: auto`, so it
+                  refuses to shrink below its content. The renewal table is the widest in
+                  the app, so without this the panel grows past its grid track and
+                  `.mainLayoutContent` — which wraps the header too — scrolls sideways
+                  instead of the table's own scroll container. */}
+              {workspaceView === "renewal-pipeline" ? (
+                <section className="panel reportPanel" style={{ minWidth: 0 }}>
+                  <RenewalPipelinePage token={session.token} />
+                </section>
+              ) : null}
+
               {report &&
               workspaceView !== "warranty" &&
+              workspaceView !== "renewal-pipeline" &&
               workspaceView !== "parts-catalog" &&
               workspaceView !== "quotations" ? (
                 <section className="panel reportPanel">

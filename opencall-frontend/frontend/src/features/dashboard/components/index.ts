@@ -25,6 +25,7 @@ export * from "./ClosedCallsDashboardView";
 export * from "./PartsCatalogPage";
 export * from "./QuotationsPage";
 export * from "./VendorDashboard";
+export * from "./RenewalPipelinePage";
 
 
 

@@ -19,6 +19,16 @@ const base = {
   todayIso: "2026-07-29",
 };
 
+// A row that sat on Customer Pending yesterday: today's report carries that
+// status AND that day's remark forward, and the editor now moves it to
+// Scheduled with an engineer.
+const carriedForward = {
+  ...base,
+  persistedMorningStatus: "Customer Pending",
+  draftRemark: "Customer asked to call back after 2 PM",
+  persistedRemark: "Customer asked to call back after 2 PM",
+};
+
 describe("isAutoScheduledRemark", () => {
   it("matches the exact generated template (any ordinal date)", () => {
     expect(isAutoScheduledRemark("Scheduled on 29th July")).toBe(true);
@@ -81,6 +91,10 @@ describe("isScheduledRemarkTriggered", () => {
       isScheduledRemarkTriggered({ ...base, draftMorningStatus: "Customer Pending" }),
     ).toBe(false);
   });
+
+  it("triggers when a carried-forward Customer Pending row moves to Scheduled", () => {
+    expect(isScheduledRemarkTriggered(carriedForward)).toBe(true);
+  });
 });
 
 describe("scheduledRemarkPreviewValue", () => {
@@ -98,6 +112,41 @@ describe("scheduledRemarkPreviewValue", () => {
     expect(
       scheduledRemarkPreviewValue({ ...base, draftRemark: "Scheduled on 28th July" }),
     ).toBe("Scheduled on 29th July");
+  });
+
+  it("prefills over the remark a Customer Pending row carried in from a previous day", () => {
+    expect(scheduledRemarkPreviewValue(carriedForward)).toBe("Scheduled on 29th July");
+  });
+
+  it("prefills over a carried-in remark that is itself yesterday's generated line", () => {
+    expect(
+      scheduledRemarkPreviewValue({
+        ...carriedForward,
+        draftRemark: "Scheduled on 28th July",
+        persistedRemark: "Scheduled on 28th July",
+      }),
+    ).toBe("Scheduled on 29th July");
+  });
+
+  it("never clobbers text typed in this edit session over a carried-in remark", () => {
+    expect(
+      scheduledRemarkPreviewValue({
+        ...carriedForward,
+        draftRemark: "customer confirmed 4 PM slot",
+      }),
+    ).toBeNull();
+  });
+
+  it("leaves the carried-in remark alone until the row is actually being scheduled", () => {
+    expect(
+      scheduledRemarkPreviewValue({
+        ...carriedForward,
+        draftMorningStatus: "Customer Pending",
+      }),
+    ).toBeNull();
+    expect(
+      scheduledRemarkPreviewValue({ ...carriedForward, draftEngineer: "" }),
+    ).toBeNull();
   });
 
   it("never clobbers text the user typed", () => {

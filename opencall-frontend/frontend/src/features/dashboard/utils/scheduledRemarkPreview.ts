@@ -10,6 +10,9 @@
 // copy's template or trigger ever changes, this preview (and
 // AUTO_SCHEDULED_REMARK_PATTERN below) must change with it, or the text shown
 // before save will disagree with what a server-generated save writes.
+// A scheduling save sends the Current Remarks box even when unchanged (see
+// saveEditing), so whatever this preview leaves in the box IS what the server
+// stores — the box, not the server, decides the remark on these saves.
 
 import {
   buildScheduledRemark,
@@ -76,6 +79,14 @@ export function isScheduledRemarkTriggered(
 
 export interface ScheduledRemarkPreviewInput extends ScheduledRemarkTriggerInput {
   draftRemark: string | number | null | undefined;
+  /**
+   * The row's SAVED remark (row.output, not the draft). Separates a remark the
+   * row arrived with — typically carried forward from the day it was Customer
+   * Pending, which a scheduling save overwrites — from text typed during THIS
+   * edit session, which the save keeps. Omit only where the saved value is not
+   * available; the box is then treated as user-authored and left alone.
+   */
+  persistedRemark?: string | number | null | undefined;
   /** Injectable for tests; defaults to today in Asia/Kolkata (like the server). */
   todayIso?: string;
 }
@@ -85,10 +96,11 @@ export interface ScheduledRemarkPreviewInput extends ScheduledRemarkTriggerInput
  * null to leave the field alone.
  *
  * Prefill rules: only when the trigger holds (see isScheduledRemarkTriggered)
- * AND the remarks box is empty, the "Manual Entry Required" sentinel, or
- * still byte-exactly a previously auto-generated value. Text the user typed
- * is never replaced. Returns null too when the box already shows exactly
- * today's generated line (nothing to change).
+ * AND the remarks box is empty, the "Manual Entry Required" sentinel, still
+ * byte-exactly a previously auto-generated value, or still the row's saved
+ * remark untouched by this edit session. Text the user typed while editing is
+ * never replaced. Returns null too when the box already shows exactly today's
+ * generated line (nothing to change).
  */
 export function scheduledRemarkPreviewValue(
   input: ScheduledRemarkPreviewInput,
@@ -98,7 +110,8 @@ export function scheduledRemarkPreviewValue(
   }
 
   const remark = clean(input.draftRemark);
-  if (remark !== "" && !isAutoScheduledRemark(remark)) {
+  const untouchedThisSession = remark === clean(input.persistedRemark);
+  if (remark !== "" && !untouchedThisSession && !isAutoScheduledRemark(remark)) {
     return null;
   }
 

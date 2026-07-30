@@ -476,6 +476,7 @@ export default function DashboardPage() {
       const preview = scheduledRemarkPreviewValue({
         ...triggerInput,
         draftRemark: currentRemark,
+        persistedRemark: editingRow.output["Current Remarks"],
       });
       if (preview !== null) {
         autoRemarkPreviewRef.current = { injected: preview, previous: currentRemark };
@@ -3297,22 +3298,6 @@ export default function DashboardPage() {
                 onDebouncedChange={setRecordsSearchQuery}
               />
             </div>
-            {/* Single escape hatch next to the search: clears every column
-                filter AND the search in one click. Only shown while something
-                is actually filtering the table. */}
-            {(colFilters.activeFilterCount > 0 || recordsSearchQuery.trim() !== "") && (
-              <button
-                type="button"
-                className="secondaryButton"
-                title={`${filteredRows.length} of ${regionFilteredRows.length} rows shown`}
-                onClick={() => {
-                  colFilters.resetAll();
-                  setRecordsSearchQuery("");
-                }}
-              >
-                Clear All Filters
-              </button>
-            )}
             {/* Export — the header Export menu's exact handlers, so a
                 full-screen export reflects the current filters/columns
                 without leaving full screen. */}
@@ -3372,6 +3357,24 @@ export default function DashboardPage() {
                   ))}
                 </div>
               </details>
+            )}
+            {/* Single escape hatch beside Exit Full Screen: clears every
+                column filter AND the search in one click, and carries the
+                active-filter count the normal toolbar's summary shows. Only
+                rendered while something is actually filtering the table. */}
+            {(colFilters.activeFilterCount > 0 || recordsSearchQuery.trim() !== "") && (
+              <button
+                type="button"
+                className="secondaryButton"
+                title={`${filteredRows.length} of ${regionFilteredRows.length} rows shown`}
+                onClick={() => {
+                  colFilters.resetAll();
+                  setRecordsSearchQuery("");
+                }}
+              >
+                Clear All Filters
+                {colFilters.activeFilterCount > 0 ? ` (${colFilters.activeFilterCount})` : ""}
+              </button>
             )}
             <button
               type="button"

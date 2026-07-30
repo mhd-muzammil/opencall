@@ -77,7 +77,7 @@ export interface FlexRawRecordList {
   total: number;
 }
 
-/** The raw records behind a "Raw data closed" count (defaults to closed status). */
+/** The raw records behind a "Raw data closures" count (defaults to closed status). */
 export async function getFlexRawRecords(
   token: string,
   params: { asp?: string; from?: string; to?: string; status?: string },

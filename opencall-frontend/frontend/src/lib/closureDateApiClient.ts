@@ -82,7 +82,7 @@ export interface ClosureDateRecordList {
   total: number;
 }
 
-/** The closure dates behind a "Closure import" count for a region + month range. */
+/** The closure dates behind a "FieldEZ data closure" count for a region + month range. */
 export async function getClosureDateRecords(
   token: string,
   params: { asp?: string; from?: string; to?: string },

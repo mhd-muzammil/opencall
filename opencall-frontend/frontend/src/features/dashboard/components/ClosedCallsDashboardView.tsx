@@ -58,7 +58,7 @@ function formatRangeLabel(
 /**
  * The two imported comparison counts shown under a region card's own closed count:
  *
- *   Closure import — rows in the last Flex Closure ASP Report import that trace back to
+ *   FieldEZ data closure — rows in the last Flex Closure ASP Report import that trace back to
  *                    this ASP (that report has no region column, so the server resolves
  *                    it from the report rows / raw data)
  *   Raw data       — rows in the last Flex RAW export import whose Call Status is closed
@@ -134,8 +134,8 @@ function ComparisonCounts({
         borderTop: "1px dashed var(--border-color, #e5e7eb)",
       }}
     >
-      {closureCount !== null && line("Closure import", closureCount, "#7c3aed", "closure")}
-      {rawCount !== null && line("Raw data closed", rawCount, "#ea580c", "raw")}
+      {closureCount !== null && line("FieldEZ data closure", closureCount, "#7c3aed", "closure")}
+      {rawCount !== null && line("Raw data closures", rawCount, "#ea580c", "raw")}
       {closureHint && (
         <div style={{ fontSize: "10px", color: "#9ca3af", marginTop: "2px" }}>
           {closureHint}
@@ -206,7 +206,7 @@ export function ClosedCallsDashboardView({
   const [comparisonTo, setComparisonTo] = useState("");
   const [rawSyncing, setRawSyncing] = useState(false);
   const [rawSyncMessage, setRawSyncMessage] = useState<string | null>(null);
-  // The record-list drill-down opened from a card's "Closure import" / "Raw data closed".
+  // The record-list drill-down opened from a card's "FieldEZ data closure" / "Raw data closures".
   const [drill, setDrill] = useState<{ kind: "closure" | "raw"; aspCode: string; label: string } | null>(null);
   // Bumped after an import/sync so the summaries refetch without reloading the report.
   const [summaryNonce, setSummaryNonce] = useState(0);
@@ -894,11 +894,17 @@ export function ClosedCallsDashboardView({
           </div>
         </div>
 
-        {/* Region Cards Grid */}
+        {/* Region Cards Grid — three per row, so the six cards read as a balanced 3 + 3
+            block instead of five across with one stranded underneath.
+            `calc(33.333% - 8px)` is exactly one third of the row once the two 12px gaps
+            are taken out, so a wide container lays out exactly three columns; the 220px
+            floor takes over on narrow screens (phones / collapsed sidebar) and the grid
+            drops to two columns and then one, rather than squeezing three. */}
         <div
           style={{
             display: "grid",
-            gridTemplateColumns: "repeat(auto-fill, minmax(200px, 1fr))",
+            gridTemplateColumns:
+              "repeat(auto-fill, minmax(max(220px, calc(33.333% - 8px)), 1fr))",
             gap: "12px",
           }}
         >
@@ -1052,7 +1058,7 @@ export function ClosedCallsDashboardView({
             )}
 
             {/* Sync Raw Data — pulls the Flex RAW closed-call rows from the raw-data
-                project's API (no file upload). Feeds the "Raw data closed" card line.
+                project's API (no file upload). Feeds the "Raw data closures" card line.
                 Same permissions as the closure-date import. */}
             {closureImportToken && (
               <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: "4px" }}>
@@ -1486,8 +1492,8 @@ export function ClosedCallsDashboardView({
 }
 
 /**
- * Portaled modal listing the individual records behind a card's "Closure import" or
- * "Raw data closed" count, scoped to the same ASP + month the card showed. Fetches its
+ * Portaled modal listing the individual records behind a card's "FieldEZ data closure" or
+ * "Raw data closures" count, scoped to the same ASP + month the card showed. Fetches its
  * own data so opening it never blocks the cards.
  */
 function RecordsDrillModal({
@@ -1563,7 +1569,7 @@ function RecordsDrillModal({
     return rows.filter((r) => Object.values(r).some((v) => v.toLowerCase().includes(q)));
   }, [rows, search]);
 
-  const title = kind === "closure" ? "Closure import" : "Raw data closed";
+  const title = kind === "closure" ? "FieldEZ data closure" : "Raw data closures";
   // Closure shows the exact date range typed; raw shows the months it maps to.
   const rangeLabel =
     kind === "closure"

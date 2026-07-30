@@ -3,6 +3,9 @@
 
 export interface RegionStats {
   count: number;
+  // Still-open calls: `count` minus the ones that closed on a same-day
+  // re-upload, which stay on the Records page but are no longer actionable.
+  openCount: number;
   consumerCount: number;
   commercialCount: number;
   warrantyCount: number;

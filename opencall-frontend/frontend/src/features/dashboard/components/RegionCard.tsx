@@ -62,11 +62,19 @@ export function RegionCard({
       onClick={() => openRecordsWithFilter({ region: aspCode })}
       style={{ cursor: "pointer" }}
     >
-      {/* Card Header */}
+      {/* Card Header. The headline is the still-open count; calls that closed on
+          a same-day re-upload are shown beneath rather than folded into it, so
+          the figure does not quietly include work nobody can action. Both parts
+          are shown because a card click opens all of them on the Records page. */}
       <div className="regionCardHeader">
-        <div className="regionCardValue">{stats.count}</div>
+        <div className="regionCardValue">{stats.openCount}</div>
         <div className="regionCardName">{regionName}</div>
         <div className="regionCardSubtitle">{subtitle}</div>
+        {stats.count > stats.openCount && (
+          <div className="regionCardClosedToday">
+            +{stats.count - stats.openCount} closed today
+          </div>
+        )}
       </div>
 
       {/* Primary Metrics (2x2 Grid of buttons/boxes) */}

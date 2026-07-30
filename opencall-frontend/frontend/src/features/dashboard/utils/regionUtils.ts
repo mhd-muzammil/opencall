@@ -1,6 +1,7 @@
 // Pure region-stats utilities extracted from app/page.tsx (Phase 3).
 // Moved verbatim — no behavior changes.
 import type { GeneratedReportResponse } from "../../../lib/apiClient";
+import { isTodayCallPlanVisibleRow } from "../../../lib/reportDashboardAnalytics";
 import type { RegionStats } from "../types";
 import {
   isConsumerCase,
@@ -35,6 +36,7 @@ export function getOtcSortWeight(code: string): number {
 
 export function calculateRegionStats(rows: GeneratedReportResponse["rows"][number][]): RegionStats {
   const count = rows.length;
+  const openCount = rows.filter(isTodayCallPlanVisibleRow).length;
   let consumerCount = 0;
   let commercialCount = 0;
   let warrantyCount = 0;
@@ -145,6 +147,7 @@ export function calculateRegionStats(rows: GeneratedReportResponse["rows"][numbe
 
   return {
     count,
+    openCount,
     consumerCount,
     commercialCount,
     warrantyCount,

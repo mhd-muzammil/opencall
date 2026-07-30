@@ -1043,12 +1043,16 @@ export default function DashboardPage() {
   // Column-filter hook: operates on rows already filtered by region/WO OTC
   const colFilters = useColumnFilters(regionFilteredRows);
 
-  // Reset column filters when the report changes
-  const reportId = report?.reportId;
+  // Reset column filters when the report DATE changes. Deliberately not the
+  // report id: the auto-sync worker mints a new report every ~15 minutes and the
+  // poll below silently switches onto it, so keying this on the id wiped the
+  // user's filters mid-shift — and, because the poll defers while an edit is
+  // open, it landed right after a save and looked like the edit had done it.
+  const loadedReportDate = report?.reportDate;
   useEffect(() => {
     colFilters.resetAll();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [reportId]);
+  }, [loadedReportDate]);
 
   // Phase 5: export/visible-row memos moved to features/dashboard/hooks/useExportRows
   // (called after colFilters, which stays in page.tsx).
@@ -3362,20 +3366,20 @@ export default function DashboardPage() {
                 column filter AND the search in one click, and carries the
                 active-filter count the normal toolbar's summary shows. Only
                 rendered while something is actually filtering the table. */}
-            {(colFilters.activeFilterCount > 0 || recordsSearchQuery.trim() !== "") && (
-              <button
-                type="button"
-                className="secondaryButton"
-                title={`${filteredRows.length} of ${regionFilteredRows.length} rows shown`}
-                onClick={() => {
-                  colFilters.resetAll();
-                  setRecordsSearchQuery("");
-                }}
-              >
-                Clear All Filters
-                {colFilters.activeFilterCount > 0 ? ` (${colFilters.activeFilterCount})` : ""}
-              </button>
-            )}
+            <button
+              type="button"
+              className="secondaryButton"
+              style={{ marginRight: "18px" }}
+              disabled={colFilters.activeFilterCount === 0 && recordsSearchQuery.trim() === ""}
+              title={`${filteredRows.length} of ${regionFilteredRows.length} rows shown`}
+              onClick={() => {
+                colFilters.resetAll();
+                setRecordsSearchQuery("");
+              }}
+            >
+              Clear All Filters
+              {colFilters.activeFilterCount > 0 ? ` (${colFilters.activeFilterCount})` : ""}
+            </button>
             <button
               type="button"
               className="secondaryButton"

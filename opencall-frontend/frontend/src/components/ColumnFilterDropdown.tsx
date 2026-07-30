@@ -73,6 +73,7 @@ export function ColumnFilterDropdown({
       setSearch("");
       setWipAgingValueSort(wipAgingSort ?? "lowToHigh");
       setDraftSelectedValues(new Set(selectedValues ?? allValues));
+      selectAllPressed.current = false;
     }
   }, [allValues, isOpen, selectedValues, wipAgingSort]);
 
@@ -142,7 +143,14 @@ export function ColumnFilterDropdown({
     [],
   );
 
+  // Whether the user actually pressed Select All this time round. Since the
+  // options are cascaded, "everything listed is ticked" no longer implies "no
+  // filter" — another column's filter can narrow this list down to exactly what
+  // is already selected, and collapsing on that silently deleted the filter.
+  const selectAllPressed = useRef(false);
+
   const selectAllDraft = useCallback(() => {
+    selectAllPressed.current = true;
     setDraftSelectedValues(new Set(allValues));
   }, [allValues]);
 
@@ -158,14 +166,23 @@ export function ColumnFilterDropdown({
   );
 
   const applyDraft = useCallback(() => {
-    if (draftSelectedValues.size === allValues.length) {
+    const coversEveryOption = draftSelectedValues.size === allValues.length;
+    if (coversEveryOption && (selectedValues === undefined || selectAllPressed.current)) {
       onSelectAll(column);
     } else {
       onApply(column, new Set(draftSelectedValues));
     }
 
     onClose();
-  }, [allValues.length, column, draftSelectedValues, onApply, onClose, onSelectAll]);
+  }, [
+    allValues.length,
+    column,
+    draftSelectedValues,
+    onApply,
+    onClose,
+    onSelectAll,
+    selectedValues,
+  ]);
 
   const isAllSelected = draftSelectedValues.size === allValues.length;
   const totalUniqueCount = uniqueValues.length;

@@ -5,6 +5,7 @@ import {
   listCatalogParts,
   type CatalogPart,
 } from "../../../lib/partsCatalogApiClient";
+import { PartShareCard } from "./PartShareCard";
 
 /**
  * Parts Catalog — OpenCall's copy of the HP Stock RMA parts. View + search always; the
@@ -22,6 +23,8 @@ export function PartsCatalogPage({
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  // The part whose share card is open, or null. Purely local UI state.
+  const [sharePart, setSharePart] = useState<CatalogPart | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const perPage = 50;
 
@@ -208,18 +211,19 @@ export function PartsCatalogPage({
               <th style={headStyle}>EOSL</th>
               <th style={headStyle}>Validity</th>
               <th style={headStyle}>Status</th>
+              <th style={headStyle}>Share</th>
             </tr>
           </thead>
           <tbody>
             {loading ? (
               <tr>
-                <td colSpan={11} style={{ ...cellStyle, textAlign: "center", color: "#6b7280", padding: "28px" }}>
+                <td colSpan={12} style={{ ...cellStyle, textAlign: "center", color: "#6b7280", padding: "28px" }}>
                   Loading…
                 </td>
               </tr>
             ) : items.length === 0 ? (
               <tr>
-                <td colSpan={11} style={{ ...cellStyle, textAlign: "center", color: "#6b7280", padding: "28px" }}>
+                <td colSpan={12} style={{ ...cellStyle, textAlign: "center", color: "#6b7280", padding: "28px" }}>
                   {search ? `No parts matching "${search}"` : "No parts in the catalog yet."}
                 </td>
               </tr>
@@ -239,6 +243,30 @@ export function PartsCatalogPage({
                   <td style={cellStyle}>{p.eoslFlag || "-"}</td>
                   <td style={cellStyle}>{p.validity || "-"}</td>
                   <td style={cellStyle}>{p.partsStatus || "-"}</td>
+                  <td style={cellStyle}>
+                    <button
+                      type="button"
+                      onClick={() => setSharePart(p)}
+                      title="Share this part's price details as an image or text"
+                      // `color` and `minHeight` are set explicitly: globals.css styles every
+                      // bare <button> as a solid accent button (white text, 40px tall), so a
+                      // light table button without them renders as an empty white box.
+                      style={{
+                        padding: "4px 12px",
+                        minHeight: "28px",
+                        fontSize: "12px",
+                        fontWeight: 600,
+                        borderRadius: "6px",
+                        border: "1px solid #d1d5db",
+                        background: "#ffffff",
+                        color: "#374151",
+                        cursor: "pointer",
+                        whiteSpace: "nowrap",
+                      }}
+                    >
+                      Share
+                    </button>
+                  </td>
                 </tr>
               ))
             )}
@@ -268,6 +296,12 @@ export function PartsCatalogPage({
             Next ›
           </button>
         </div>
+      )}
+
+      {/* Share card for one part. Read-only and entirely client-side — it renders the
+          selected row's existing fields, hits no API and changes no catalog data. */}
+      {sharePart && (
+        <PartShareCard part={sharePart} onClose={() => setSharePart(null)} />
       )}
     </section>
   );

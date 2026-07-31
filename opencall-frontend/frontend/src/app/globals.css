@@ -431,6 +431,31 @@ code {
   outline-offset: 1px;
 }
 
+/* ASP Code filter in the maximised records toolbar. The overview's region picker
+   is unreachable from full screen, so multi-region logins get this compact
+   equivalent beside Clear All Filters / Exit Full Screen. */
+.fullScreenAspFilter {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: auto;
+}
+
+.fullScreenAspFilterLabel {
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  color: var(--muted, var(--text));
+  white-space: nowrap;
+}
+
+.fullScreenAspFilter .overviewRegionSelect {
+  max-width: 240px;
+  padding: 6px 30px 6px 10px;
+  font-size: 13px;
+}
+
 .secondaryButton,
 .iconButton {
   border: 1px solid var(--border);

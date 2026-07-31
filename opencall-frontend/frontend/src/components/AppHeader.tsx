@@ -51,6 +51,7 @@ export function AppHeader({
   onExportCsv,
   onLogout,
   initialCompact,
+  scopeRegions,
 }: Readonly<{
   workspaceView: WorkspaceView;
   hasReport: boolean;
@@ -68,6 +69,14 @@ export function AppHeader({
   onExportCsv: () => void;
   onLogout: () => void;
   initialCompact?: boolean;
+  /**
+   * Region names this session is scoped to. A special-access credential is not a
+   * `users` row, so `session.user.regionId` is always null for it and the Region
+   * pill disappeared entirely — a two-region user had no way to tell which regions
+   * they were looking at, which is the most visible way this login differed from
+   * the ordinary per-region ones. Pass the granted region names to restore it.
+   */
+  scopeRegions?: readonly string[];
 }>) {
   const exportDetailsRef = React.useRef<HTMLDetailsElement | null>(null);
   const profileDetailsRef = React.useRef<HTMLDetailsElement | null>(null);
@@ -232,11 +241,23 @@ export function AppHeader({
             </details>
           )}
 
-          {session.user.regionId && (
+          {session.user.regionId ? (
             <span className="regionPill">
               Region: {session.user.regionId.toUpperCase()}
             </span>
-          )}
+          ) : scopeRegions && scopeRegions.length > 0 ? (
+            <span
+              className="regionPill"
+              title={
+                scopeRegions.length > 1
+                  ? `This login covers ${scopeRegions.length} regions. Click a region card to view one at a time.`
+                  : undefined
+              }
+            >
+              {scopeRegions.length > 1 ? "Regions" : "Region"}:{" "}
+              {scopeRegions.map((name) => name.toUpperCase()).join(" · ")}
+            </span>
+          ) : null}
         </div>
 
         {/* User Profile */}

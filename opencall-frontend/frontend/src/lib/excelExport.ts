@@ -875,10 +875,11 @@ export async function downloadRegionSummaryExcel(
         !isPlannedStatusValue(evening)
       );
     }).length;
-    // Closed Calls = explicit "Case-Closed" statuses plus closed-by-vanishing rows.
+    // Closed Calls = explicit "Case-Closed" statuses plus closed-by-vanishing
+    // rows, minus vanished cancellations (those belong to Closed cancelled).
     const caseClosedCount =
       activeRows.filter((r) => isCaseClosedStatusValue(getRowStatus(r))).length +
-      closedRows.length;
+      closedRows.filter((r) => !matchStatus(r, ["cancel"])).length;
     const toBeScheduleCount = activeRows.filter(r => matchStatus(r, ["to be scheduled", "assignment pending", "non avl", "missed to schedule"])).length;
     const cxRescheduleCount = activeRows.filter(r => matchStatus(r, ["cx pending", "reschedule", "cx", "cust delay", "customer delay", "customer pending"])).length;
     const engineerDelayCount = activeRows.filter(r => matchStatus(r, ["engineer delay", "eng delay"])).length;

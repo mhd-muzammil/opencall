@@ -6,6 +6,7 @@ import type {
   DropdownRtplStatus,
   EditedReportRowResponse,
   GeneratedReportResponse,
+  RegionEodStateResponse,
 } from "./api/types";
 import type { RecordColumnCatalog, RecordLayout } from "./recordLayoutApiClient";
 import type { ReportRowPatchValues } from "../features/dashboard/types/dashboard.types";
@@ -323,6 +324,40 @@ export async function saveSpecialAccessRecordLayout(
 
 export async function resetSpecialAccessRecordLayout(token: string): Promise<void> {
   await fetch(url(SA_LAYOUT), { method: "DELETE", headers: authHeaders(token) });
+}
+
+// ----------------- Final EOD for a special-access login -----------------
+// GET /reports/:date/eod-state and POST /regions/:id/eod/close are role-guarded, so
+// they 401 for special access: the productivity view could not tell which regions
+// were frozen, and the Final EOD button was absent entirely. These scoped
+// equivalents return only granted regions, and the close is rejected server-side
+// unless the credential has `edit` permission and the `productivity` grant.
+
+export async function getSpecialAccessRegionEodState(
+  token: string,
+  workingDate: string,
+): Promise<RegionEodStateResponse> {
+  const response = await fetch(
+    url(`/api/v1/special-access/eod-state/${encodeURIComponent(workingDate)}`),
+    { headers: authHeaders(token), cache: "no-store" },
+  );
+  return readJson<RegionEodStateResponse>(response);
+}
+
+export async function closeSpecialAccessRegionEod(
+  token: string,
+  regionId: string,
+  workingDate: string,
+): Promise<unknown> {
+  const response = await fetch(
+    url(`/api/v1/special-access/regions/${encodeURIComponent(regionId)}/eod/close`),
+    {
+      method: "POST",
+      headers: authHeaders(token),
+      body: JSON.stringify({ workingDate }),
+    },
+  );
+  return readJson<unknown>(response);
 }
 
 // ---------- Records table "Save Entry" for a special-access login ----------

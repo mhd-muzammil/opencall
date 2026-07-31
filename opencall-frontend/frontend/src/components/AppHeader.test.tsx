@@ -130,4 +130,55 @@ describe("closeOpenDetailsOnOutsideClick", () => {
     expect(exportMenu.open).toBe(false);
     expect(profile.open).toBe(true);
   });
+
+  // --- Region pill ---------------------------------------------------------
+  // A special-access credential is not a `users` row, so `user.regionId` is always
+  // null for it and the pill vanished — a Chennai+Kanchipuram user could not tell
+  // which regions they were seeing. `scopeRegions` restores it.
+
+  it("shows the user's own region pill when the session has a regionId", () => {
+    const html = renderHeader({
+      session: {
+        ...session,
+        user: { ...session.user, role: "REGION_ADMIN", regionId: "chennai" },
+      } as LoginResponse,
+    });
+
+    expect(html).toContain("Region: CHENNAI");
+  });
+
+  it("shows every granted region for a multi-region special-access login", () => {
+    const html = renderHeader({ scopeRegions: ["Chennai", "Kanchipuram"] });
+
+    expect(html).toContain("Regions");
+    expect(html).toContain("CHENNAI");
+    expect(html).toContain("KANCHIPURAM");
+  });
+
+  it("uses the singular label for a single-region special-access login", () => {
+    const html = renderHeader({ scopeRegions: ["Chennai"] });
+
+    expect(html).toContain("Region");
+    expect(html).toContain("CHENNAI");
+    expect(html).not.toContain("Regions:");
+  });
+
+  it("renders no pill when the session is scoped to nothing", () => {
+    // SUPER_ADMIN: no regionId and no scope list — unchanged from before.
+    expect(renderHeader({ scopeRegions: [] })).not.toContain("regionPill");
+    expect(renderHeader()).not.toContain("regionPill");
+  });
+
+  it("prefers the session's own regionId over the scope list", () => {
+    const html = renderHeader({
+      session: {
+        ...session,
+        user: { ...session.user, role: "REGION_ADMIN", regionId: "salem" },
+      } as LoginResponse,
+      scopeRegions: ["Chennai", "Kanchipuram"],
+    });
+
+    expect(html).toContain("Region: SALEM");
+    expect(html).not.toContain("KANCHIPURAM");
+  });
 });

@@ -184,9 +184,11 @@ import {
 } from "../lib/reportDashboardAnalytics";
 import { getLatestCompletedReportSession } from "../lib/reportHistorySelection";
 import {
+  closeSpecialAccessRegionEod,
   fetchSpecialAccessReport,
   getSpecialAccessEngineersDropdown,
   getSpecialAccessRecordLayout,
+  getSpecialAccessRegionEodState,
   getSpecialAccessRtplStatusesDropdown,
   updateSpecialAccessReportRow,
 } from "../lib/specialAccessApiClient";
@@ -1388,19 +1390,24 @@ export default function DashboardPage() {
   }, [productivityFilterType, selectedProductivityValue, report?.reportDate]);
 
   const refreshProductivityEodState = useCallback(async () => {
-    if (!session || session.user.role === "SPECIAL_ACCESS" || !productivityEodDateIso) {
+    if (!session || !productivityEodDateIso) {
       setProductivityEodState(null);
       return;
     }
     try {
+      // Special access reads its own scoped endpoint (the role-guarded one 401s), so
+      // the productivity view honours the Final-EOD freeze for its granted regions
+      // instead of silently showing live numbers for a closed day.
       setProductivityEodState(
-        await getRegionEodState(session.token, productivityEodDateIso),
+        isSpecialAccess
+          ? await getSpecialAccessRegionEodState(session.token, productivityEodDateIso)
+          : await getRegionEodState(session.token, productivityEodDateIso),
       );
     } catch {
       // No EOD state (e.g. endpoint unavailable): the view stays fully live.
       setProductivityEodState(null);
     }
-  }, [session, productivityEodDateIso]);
+  }, [session, productivityEodDateIso, isSpecialAccess]);
 
   useEffect(() => {
     void refreshProductivityEodState();
@@ -1416,7 +1423,18 @@ export default function DashboardPage() {
 
       setEodBusyRegionId(eodRegionId);
       try {
-        await closeRegionEod(session.token, eodRegionId, productivityEodDateIso);
+        // The role-guarded close 401s for special access; its scoped equivalent
+        // re-checks permission level, the productivity grant and the granted region
+        // set server-side before freezing anything.
+        if (isSpecialAccess) {
+          await closeSpecialAccessRegionEod(
+            session.token,
+            eodRegionId,
+            productivityEodDateIso,
+          );
+        } else {
+          await closeRegionEod(session.token, eodRegionId, productivityEodDateIso);
+        }
         await refreshProductivityEodState();
       } catch (error) {
         handleBackgroundError(error);
@@ -1424,7 +1442,7 @@ export default function DashboardPage() {
         setEodBusyRegionId(null);
       }
     },
-    [session, productivityEodDateIso, refreshProductivityEodState],
+    [session, productivityEodDateIso, refreshProductivityEodState, isSpecialAccess],
   );
 
   const handleReopenRegionEod = useCallback(
@@ -1450,13 +1468,21 @@ export default function DashboardPage() {
 
   // Chip/button model for the Records-page EOD bar. A REGION_ADMIN may
   // Final-EOD their own region only (the backend enforces this regardless);
-  // reopen is SUPER_ADMIN only.
+  // reopen is SUPER_ADMIN only. A special-access credential may close any region it
+  // was granted, provided its permission level is `edit` — the same right a
+  // REGION_ADMIN has over its own region. Reopen stays SUPER_ADMIN-only for everyone.
   const productivityEodRegions = useMemo(() => {
-    if (!session || session.user.role === "SPECIAL_ACCESS" || !productivityEodState) {
+    if (!session || !productivityEodState) {
       return [];
     }
     const isSuperAdminUser = session.user.role === "SUPER_ADMIN";
     const userRegionId = session.user.regionId ?? session.user.region_id;
+    // The scoped endpoint already returns only granted regions, so every region
+    // present here is one this credential may act on.
+    const specialAccessMayClose =
+      isSpecialAccess &&
+      specialAccess?.permissionLevel === "edit" &&
+      (specialAccess?.sections?.includes("productivity") ?? false);
     return productivityEodState.regions.map((region) => ({
       regionId: region.regionId,
       regionCode: region.regionCode,
@@ -1466,15 +1492,28 @@ export default function DashboardPage() {
       closedBy: region.closedBy,
       canClose:
         region.status === "OPEN" &&
-        (isSuperAdminUser || userRegionId === region.regionId),
+        (isSpecialAccess
+          ? specialAccessMayClose
+          : isSuperAdminUser || userRegionId === region.regionId),
       canReopen: region.status === "CLOSED" && isSuperAdminUser,
     }));
-  }, [session, productivityEodState]);
+  }, [session, productivityEodState, isSpecialAccess, specialAccess]);
 
   // A REGION_ADMIN sees only their own region's Final-EOD control (a compact
   // button in the records toolbar); the multi-region chip bar is SUPER_ADMIN's.
   const ownRegionEod = useMemo(() => {
-    if (!session || session.user.role !== "REGION_ADMIN") {
+    if (!session) {
+      return null;
+    }
+    // A special-access credential granted exactly one region behaves like a
+    // REGION_ADMIN: one compact button for its own region. Multi-region credentials
+    // pick from the dropdown instead, like a SUPER_ADMIN.
+    if (isSpecialAccess) {
+      return productivityEodRegions.length === 1
+        ? productivityEodRegions[0] ?? null
+        : null;
+    }
+    if (session.user.role !== "REGION_ADMIN") {
       return null;
     }
     const userRegionId = session.user.regionId ?? session.user.region_id;
@@ -1482,7 +1521,7 @@ export default function DashboardPage() {
       productivityEodRegions.find((region) => region.regionId === userRegionId) ??
       null
     );
-  }, [session, productivityEodRegions]);
+  }, [session, productivityEodRegions, isSpecialAccess]);
 
   // Regions a SUPER_ADMIN can still Final-EOD today — feeds the full-screen
   // toolbar's Final EOD dropdown (the same per-region close flow as the
@@ -1697,28 +1736,44 @@ export default function DashboardPage() {
 
   // Special-access logins load their report from a dedicated, server-filtered endpoint
   // (region set + warranty/trade applied server-side). No-ops for regular users.
+  // Hoisted out of the effect below so the manual refresh paths can reuse it: a
+  // special-access credential has no report history to restore from, so refetching
+  // this scoped report is its only "refresh".
+  const reloadSpecialAccessReport = useCallback(async () => {
+    if (!isSpecialAccess || !session) return;
+    try {
+      const res = await fetchSpecialAccessReport(session.token);
+      setReport(res.report);
+    } catch (error) {
+      console.error("Failed to load special-access report", error);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isSpecialAccess, session?.token]);
+
   useEffect(() => {
     if (!isSpecialAccess || !session) return;
-    const token = session.token;
-    let cancelled = false;
 
-    async function loadScopedReport() {
-      try {
-        const res = await fetchSpecialAccessReport(token);
-        if (!cancelled) setReport(res.report);
-      } catch (error) {
-        if (!cancelled) console.error("Failed to load special-access report", error);
-      }
-    }
-
-    void loadScopedReport();
-    const timer = setInterval(loadScopedReport, 60000);
+    void reloadSpecialAccessReport();
+    const timer = setInterval(() => void reloadSpecialAccessReport(), 60000);
     return () => {
-      cancelled = true;
       clearInterval(timer);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isSpecialAccess, session?.token]);
+  }, [isSpecialAccess, session?.token, reloadSpecialAccessReport]);
+
+  // Region names behind a special-access session, for the header pill. `specialAccess
+  // .regions` holds region UUIDs, which are meaningless on screen; the scoped report's
+  // regionBreakdown is already server-filtered to exactly the granted regions and
+  // carries their display names, so derive them from there.
+  const specialAccessRegionNames = useMemo<readonly string[]>(() => {
+    if (!isSpecialAccess) return [];
+    const names = new Set<string>();
+    for (const entry of report?.regionBreakdown ?? []) {
+      const name = entry.regionName?.trim();
+      if (name) names.add(name);
+    }
+    return [...names].sort();
+  }, [isSpecialAccess, report?.regionBreakdown]);
 
   // Keep a special-access user on a section they are actually allowed to see.
   useEffect(() => {
@@ -1775,6 +1830,17 @@ export default function DashboardPage() {
       return;
     }
 
+    // GET /report-rows/rtpl-status-changes is role-guarded to SUPER_ADMIN /
+    // REGION_ADMIN, so it 401s for a special-access credential and raised a failure
+    // banner every time an RTPL view rendered. Leave the activity feed empty rather
+    // than firing a call that can only fail; the panel already handles no rows.
+    // TODO: give special access a scoped equivalent so the granted RTPL sections
+    // show status activity instead of an always-empty feed.
+    if (isSpecialAccess) {
+      setRtplStatusChanges([]);
+      return;
+    }
+
     let cancelled = false;
 
     getRtplStatusChanges({
@@ -1797,10 +1863,18 @@ export default function DashboardPage() {
     return () => {
       cancelled = true;
     };
-  }, [rtplEffectiveReport?.reportId, rtplAnalyticsDate, session]);
+  }, [rtplEffectiveReport?.reportId, rtplAnalyticsDate, session, isSpecialAccess]);
 
   async function refreshHistory() {
     if (!session) return;
+
+    // /report-history is user-only, so it 401s for a special-access credential and
+    // the error surfaced as a failure banner. They have no history panel — reloading
+    // the scoped report is the equivalent refresh.
+    if (isSpecialAccess) {
+      await reloadSpecialAccessReport();
+      return;
+    }
 
     try {
       setHistorySessions(await getReportHistory(session.token));
@@ -1814,6 +1888,14 @@ export default function DashboardPage() {
       await refreshHealth();
 
       if (!session) {
+        return;
+      }
+
+      // Special access cannot read /report-history (user-only). Its scoped endpoint
+      // always serves the latest completed report, so refetching that IS the refresh.
+      if (isSpecialAccess) {
+        await reloadSpecialAccessReport();
+        setMessage("Workspace refreshed with latest report data.");
         return;
       }
 
@@ -1836,18 +1918,25 @@ export default function DashboardPage() {
 
   useEffect(() => {
     if (session) {
-      getReportHistory(session.token).then((sessions) => {
-        setHistorySessions(sessions);
+      // /report-history is user-only. A special-access credential is not a `users`
+      // row, so this 401s for them — and because their auth errors deliberately do
+      // NOT force a logout, the rejection fell through to a failure banner on every
+      // login. They restore nothing from history (their report comes from the scoped
+      // endpoint), so don't fire a call that can only fail.
+      if (!isSpecialAccess) {
+        getReportHistory(session.token).then((sessions) => {
+          setHistorySessions(sessions);
 
-        if (!hasAutoRestoredHistoryRef.current && !report && !upload) {
-          hasAutoRestoredHistoryRef.current = true;
-          const sessionToRestore = getLatestCompletedReportSession(sessions);
+          if (!hasAutoRestoredHistoryRef.current && !report && !upload) {
+            hasAutoRestoredHistoryRef.current = true;
+            const sessionToRestore = getLatestCompletedReportSession(sessions);
 
-          if (sessionToRestore) {
-            void handleHistoryOpen(sessionToRestore);
+            if (sessionToRestore) {
+              void handleHistoryOpen(sessionToRestore);
+            }
           }
-        }
-      }).catch(handleBackgroundError);
+        }).catch(handleBackgroundError);
+      }
       // A special-access credential is not a row in `users`, so it can never satisfy the
       // role guard on the admin dropdown endpoints — those calls 401 and left the Work
       // Order Details & Entry modal with an EMPTY Engineer picker and the hard-coded RTPL
@@ -1920,7 +2009,13 @@ export default function DashboardPage() {
     // since the FieldEZ worker took over uploads, most new reports are created
     // by a session other than the viewer's, and CRM users who never upload
     // must still be moved onto them.
-    if (!session || !report?.reportId) return;
+    //
+    // EXCEPT special access: this poll reads /report-history, which is user-only, so
+    // every tick 401'd and raised a failure banner — once on load and then every 15
+    // seconds for the whole session, which made working screens look broken too.
+    // Their own scoped endpoint already refetches the latest report each minute, so
+    // they need no auto-switch here.
+    if (!session || !report?.reportId || isSpecialAccess) return;
 
     const token = session.token;
     const currentReportDate = report.reportDate;
@@ -2009,6 +2104,7 @@ export default function DashboardPage() {
     session,
     report?.reportId,
     regionId,
+    isSpecialAccess,
   ]);
 
 
@@ -2987,6 +3083,30 @@ export default function DashboardPage() {
     colFilters.resetAll();
   };
 
+  // ASP Code options for the full-screen records toolbar. Sourced from the report's
+  // own region breakdown, so a special-access credential only ever sees the regions
+  // it was granted (the report is filtered server-side before it reaches the browser).
+  const aspCodeFilterOptions = useMemo(
+    () =>
+      activeRegionBreakdown
+        .filter((entry) => entry.count > 0 && Boolean(entry.aspCode?.trim()))
+        .map((entry) => ({
+          aspCode: entry.aspCode.trim().toUpperCase(),
+          regionName: entry.regionName?.trim() ?? "",
+          count: entry.count,
+        }))
+        .sort((a, b) => a.aspCode.localeCompare(b.aspCode)),
+    [activeRegionBreakdown],
+  );
+
+  // Full-screen ASP filter. Keeps the RTPL region tab in sync (same as the overview
+  // picker) but deliberately leaves the column filters alone — see the call site.
+  const selectRecordsAspCode = (value: string) => {
+    setSelectedRegion(value === ALL_REGIONS_FILTER ? null : value);
+    setSelectedRtplRegion(value === ALL_REGIONS_FILTER ? ALL_REGIONS_FILTER : value);
+    setSelectedWoOtcCode(null);
+  };
+
   // Open rows scoped to the region chosen in the overview dropdown (null/"ALL"
   // → every region). Drives the operational-health header cards below.
   const regionScopedActiveRows = useMemo(() => {
@@ -3357,7 +3477,8 @@ export default function DashboardPage() {
                 onCloseRegionEod={handleCloseRegionEod}
               />
             )}
-            {session?.user?.role === "SUPER_ADMIN" && closableEodRegions.length > 0 && (
+            {(session?.user?.role === "SUPER_ADMIN" || isSpecialAccess) &&
+              closableEodRegions.length > 0 && (
               <details className="exportMenuDetails" ref={fsEodDetailsRef}>
                 <summary
                   className="premiumActionBtn secondary"
@@ -3380,6 +3501,39 @@ export default function DashboardPage() {
                   ))}
                 </div>
               </details>
+            )}
+            {/* ASP Code filter. The overview's region picker is unreachable from
+                full screen, so a multi-region login (SUPER_ADMIN, or a special-access
+                credential granted more than one region) had no way to narrow the
+                table to one ASP without leaving full screen. Options come from
+                activeRegionBreakdown, which is already scoped to what this login may
+                see, so it can never offer an out-of-scope region. Unlike the overview
+                picker this does NOT reset the column filters — in full screen the
+                user is actively working with them, and "Clear All Filters" is
+                immediately to the right if they want a reset. */}
+            {aspCodeFilterOptions.length > 1 && (
+              <label className="fullScreenAspFilter">
+                <span className="fullScreenAspFilterLabel">ASP Code</span>
+                <select
+                  className="overviewRegionSelect"
+                  aria-label="Filter records by ASP Code"
+                  value={selectedRegion ?? ALL_REGIONS_FILTER}
+                  onChange={(event) => selectRecordsAspCode(event.target.value)}
+                >
+                  <option value={ALL_REGIONS_FILTER}>
+                    All ASP Codes ({aspCodeFilterOptions.length})
+                  </option>
+                  {aspCodeFilterOptions.map((entry) => (
+                    <option key={entry.aspCode} value={entry.aspCode}>
+                      {entry.aspCode}
+                      {entry.regionName && entry.regionName !== entry.aspCode
+                        ? ` — ${entry.regionName}`
+                        : ""}
+                      {` (${entry.count})`}
+                    </option>
+                  ))}
+                </select>
+              </label>
             )}
             {/* Single escape hatch beside Exit Full Screen: clears every
                 column filter AND the search in one click, and carries the
@@ -4035,6 +4189,7 @@ export default function DashboardPage() {
           onExportXlsx={exportRecordsExcel}
           onExportCsv={() => exportReport((r) => downloadReportAsExcel(r, visibleColumns))}
           onLogout={handleLogout}
+          scopeRegions={specialAccessRegionNames}
         />
 
         <div className="pageContent">
@@ -4557,9 +4712,13 @@ export default function DashboardPage() {
                       />
                       {/* Per-region Final EOD: closing a region's day freezes
                           these records, so the control belongs with them. The
-                          all-regions bar is SUPER_ADMIN-only; a REGION_ADMIN
-                          gets a compact own-region button in the toolbar below. */}
-                      {session?.user?.role === "SUPER_ADMIN" && (
+                          multi-region bar is for SUPER_ADMIN and for a special-access
+                          credential granted more than one region (its entries are
+                          already scoped to the grant); a REGION_ADMIN — or a
+                          single-region credential — gets a compact own-region button
+                          in the toolbar below instead. */}
+                      {(session?.user?.role === "SUPER_ADMIN" ||
+                        (isSpecialAccess && productivityEodRegions.length > 1)) && (
                         <RegionDayStatusBar
                           regions={productivityEodRegions}
                           workingDate={productivityEodDateIso}

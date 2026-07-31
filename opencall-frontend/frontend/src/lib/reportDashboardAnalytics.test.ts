@@ -227,6 +227,21 @@ describe("reportDashboardAnalytics", () => {
     expect(isTodayCallPlanVisibleRow(requestToCancelRow)).toBe(false);
   });
 
+  it("keeps a Request-to-Cancel row hidden after the closure overlay rewrites Flex Status", () => {
+    // The serve-time closure overlay replaces "Flex Status" with Flex's own closure
+    // status and parks the vendor's WIP value in "Flex Status (WIP)". Reading only the
+    // current value would make this row reappear on the open call plan the moment the
+    // hourly closure import ran.
+    const overlaidRow = row(1, {
+      "Ticket ID": "WO-1",
+      "Flex Status": "Closed - Canceled",
+    });
+    overlaidRow.output["Flex Status (WIP)"] = "Request to Cancel";
+
+    expect(isTodayCallPlanVisibleRow(overlaidRow)).toBe(false);
+    expect(isRecordsPageVisibleRow(overlaidRow)).toBe(false);
+  });
+
   it("keeps a same-day closed row on the Records page but not in the open-call set", () => {
     const openRow = row(1, { "Ticket ID": "WO-1", "Flex Status": "Open" });
 

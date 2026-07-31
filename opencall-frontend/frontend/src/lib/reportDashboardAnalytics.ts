@@ -177,6 +177,11 @@ export function isRequestToCancelFlexStatus(value: unknown): boolean {
 export function hasRequestToCancelFlexStatus(row: ReportRow): boolean {
   return (
     isRequestToCancelFlexStatus(row.output["Flex Status"]) ||
+    // The closure overlay rewrites "Flex Status" with Flex's own closure status and
+    // parks the vendor's WIP value here. Without this check a Request-to-Cancel row
+    // that Flex has since closed would stop matching and would reappear on the open
+    // call plan and the Records page the moment the closure import ran.
+    isRequestToCancelFlexStatus(row.output["Flex Status (WIP)"]) ||
     isRequestToCancelFlexStatus(row.comparison?.previousFlexStatus)
   );
 }

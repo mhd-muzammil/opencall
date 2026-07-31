@@ -340,6 +340,26 @@ describe("computeEngineerProductivity — day-scoped Assigned/Attended", () => {
     expect(result.list[0]?.regionName).toBe("VELLORE");
   });
 
+  it("still skips a Request-to-Cancel row after the closure overlay rewrites Flex Status", () => {
+    // The serve-time overlay replaces "Flex Status" with Flex's own closure status and
+    // parks the vendor's WIP value in "Flex Status (WIP)". Reading only the current
+    // value would pull this row back into the productivity plan.
+    const overlaid = row({
+      ticketId: "R5",
+      engineer: "Vel",
+      morning: "Scheduled",
+      workLocation: "ASPS01463",
+      flexStatus: "Closed - Canceled",
+    });
+    overlaid.output["Flex Status (WIP)"] = "Request to Cancel";
+
+    const result = computeEngineerProductivity([overlaid], {
+      regionAspCodes: ["ASPS01463"],
+    });
+
+    expect(result.list).toHaveLength(0);
+  });
+
   it("dedupes by Ticket ID and merges engineer casing/alias variants", () => {
     const result = computeEngineerProductivity([
       row({ ticketId: "D1", engineer: "Lava Kumar", morning: "Scheduled" }),

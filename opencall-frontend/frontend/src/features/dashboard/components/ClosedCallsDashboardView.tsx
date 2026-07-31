@@ -4,6 +4,11 @@ import * as XLSX from "xlsx";
 import { ASP_CODE_REGION_MAP } from "@opencall/shared";
 import type { ReportRow } from "../types";
 import { formatNumber } from "../utils";
+import { todayIsoDate } from "../utils/dateUtils";
+import type {
+  ClosureImportStatus,
+  ClosureReconciliation,
+} from "../../../lib/closureDateApiClient";
 import {
   CALL_STATUS_OPTIONS,
   CUSTOMER_FEEDBACK_OPTIONS,
@@ -145,6 +150,57 @@ function ComparisonCounts({
   );
 }
 
+/**
+ * How often the FieldEZ worker's closure job is expected to run, and how many missed
+ * cycles turn the "Auto-synced" line red. Mirrors FIELDEZ_CLOSURE_INTERVAL_MS's default
+ * (1 h): the frontend cannot read the worker's env, so this is the assumption the
+ * staleness warning is calibrated to. A worker that has silently died keeps serving
+ * yesterday's statuses while the stored row count still looks perfectly healthy.
+ */
+const CLOSURE_SYNC_INTERVAL_MS = 60 * 60 * 1000;
+const CLOSURE_SYNC_STALE_AFTER_MS = 3 * CLOSURE_SYNC_INTERVAL_MS;
+
+/** "2026-07-31T09:05:00Z" -> "14:35" in IST, or "" when unparseable. */
+function formatIstTime(iso: string | null): string {
+  if (!iso) return "";
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return "";
+  return new Intl.DateTimeFormat("en-GB", {
+    timeZone: "Asia/Kolkata",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  }).format(date);
+}
+
+type ReconBucket = "matched" | "closedHereNotInFlex" | "closedInFlexNotHere";
+
+const RECON_BUCKETS: ReadonlyArray<{
+  key: ReconBucket;
+  label: string;
+  hint: string;
+  color: string;
+}> = [
+  {
+    key: "matched",
+    label: "Closed both sides",
+    hint: "We closed it and Flex reported a closure for the same day.",
+    color: "#059669",
+  },
+  {
+    key: "closedHereNotInFlex",
+    label: "Closed here, not in Flex",
+    hint: "We marked it closed; Flex has no closure for this day yet.",
+    color: "#d97706",
+  },
+  {
+    key: "closedInFlexNotHere",
+    label: "Closed in Flex, not here",
+    hint: "Flex closed it; our evening status does not say closed.",
+    color: "#dc2626",
+  },
+];
+
 export interface ClosedCallsDashboardViewProps {
   overallClosedCount: number;
   closedRegionBreakdown: Array<{
@@ -210,6 +266,15 @@ export function ClosedCallsDashboardView({
   const [drill, setDrill] = useState<{ kind: "closure" | "raw"; aspCode: string; label: string } | null>(null);
   // Bumped after an import/sync so the summaries refetch without reloading the report.
   const [summaryNonce, setSummaryNonce] = useState(0);
+
+  // --- Flex reconciliation: "did Flex agree with us on this day?" ---
+  const [reconDate, setReconDate] = useState(todayIsoDate);
+  const [recon, setRecon] = useState<ClosureReconciliation | null>(null);
+  const [reconError, setReconError] = useState<string | null>(null);
+  const [reconLoading, setReconLoading] = useState(false);
+  const [reconBucket, setReconBucket] = useState<ReconBucket | null>(null);
+  // Freshness of the closure data itself — drives the "Auto-synced HH:mm" line.
+  const [closureStatus, setClosureStatus] = useState<ClosureImportStatus | null>(null);
 
   React.useEffect(() => {
     if (!summaryToken) return;
@@ -321,6 +386,70 @@ export function ClosedCallsDashboardView({
   // Closure unmatched count from whichever summary is active (for the ALL card hint).
   const closureUnmatched = (rangeActive ? closureScoped : closureSummary)?.unmatched ?? 0;
 
+  // Reconciliation for the chosen day, scoped to the selected region card. Refetched
+  // after an import so the counts move as soon as new closure data lands.
+  const reconAsp = selectedRegion && selectedRegion !== "ALL" ? selectedRegion : "";
+  React.useEffect(() => {
+    if (!summaryToken || !reconDate) {
+      setRecon(null);
+      return;
+    }
+    let cancelled = false;
+    setReconLoading(true);
+    void (async () => {
+      try {
+        const { getClosureReconciliation } = await import("../../../lib/closureDateApiClient");
+        const result = await getClosureReconciliation(summaryToken, {
+          date: reconDate,
+          ...(reconAsp ? { asp: reconAsp } : {}),
+        });
+        if (cancelled) return;
+        setRecon(result);
+        setReconError(null);
+      } catch (error) {
+        if (cancelled) return;
+        setRecon(null);
+        setReconError(error instanceof Error ? error.message : "Could not load reconciliation");
+      } finally {
+        if (!cancelled) setReconLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [summaryToken, reconDate, reconAsp, summaryNonce]);
+
+  // Selecting a different day/region invalidates whichever bucket list was open.
+  React.useEffect(() => {
+    setReconBucket(null);
+  }, [reconDate, reconAsp]);
+
+  React.useEffect(() => {
+    if (!summaryToken) return;
+    let cancelled = false;
+    void (async () => {
+      try {
+        const { getClosureDatesStatus } = await import("../../../lib/closureDateApiClient");
+        const status = await getClosureDatesStatus(summaryToken);
+        if (!cancelled) setClosureStatus(status);
+      } catch {
+        // Freshness is a nicety — a failed fetch just omits the line.
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [summaryToken, summaryNonce]);
+
+  const closureSyncAgeMs = useMemo(() => {
+    const iso = closureStatus?.lastImportedAt;
+    if (!iso) return null;
+    const then = Date.parse(iso);
+    return Number.isNaN(then) ? null : Date.now() - then;
+  }, [closureStatus]);
+  const closureSyncStale =
+    closureSyncAgeMs !== null && closureSyncAgeMs > CLOSURE_SYNC_STALE_AFTER_MS;
+
   // Per-ASP raw CLOSED count for the range (month-mapped) or all months.
   const rawClosedFor = useMemo(() => {
     return (aspCode: string): number | null => {
@@ -411,8 +540,13 @@ export function ClosedCallsDashboardView({
     try {
       const { importClosureDates } = await import("../../../lib/closureDateApiClient");
       const result = await importClosureDates(closureImportToken, file);
+      // The file has one row per PART ORDER, so the work-order count is the number that
+      // means anything to a human; the "no closure date" ones are Flex's cancellations,
+      // which are stored, not skipped.
       setImportMessage(
-        `Imported ${result.imported} closure dates (skipped ${result.skippedNoDate} without a date).`,
+        `Imported ${result.imported} work orders from ${result.totalRows} rows ` +
+          `(${result.byStatus.closed} closed, ${result.byStatus.cancelled} cancelled` +
+          `${result.withoutClosureDate > 0 ? `, ${result.withoutClosureDate} with no closure date` : ""}).`,
       );
       setSummaryNonce((n) => n + 1);
       onClosureDatesImported?.();
@@ -1003,6 +1137,169 @@ export function ClosedCallsDashboardView({
         </div>
       </div>
 
+      {/* Flex reconciliation — "did Flex agree with us on this day?". Sits beside the
+          per-card "FieldEZ data closure" / "Raw data closures" comparison lines and uses
+          the same count-with-drill-down pattern. Purely informational: nothing here
+          closes, reopens or edits a call. Hidden entirely without a read token. */}
+      {summaryToken && (
+        <div
+          style={{
+            background: "var(--card-bg, #ffffff)",
+            border: "1px solid var(--border-color, #e5e7eb)",
+            borderRadius: "12px",
+            padding: "20px",
+            boxShadow: "0 1px 4px rgba(0,0,0,0.04)",
+          }}
+        >
+          <div
+            style={{
+              display: "flex",
+              justifyContent: "space-between",
+              alignItems: "flex-start",
+              flexWrap: "wrap",
+              gap: "12px",
+              marginBottom: "14px",
+            }}
+          >
+            <div>
+              <h3 style={{ fontSize: "16px", fontWeight: 700, margin: 0 }}>
+                Flex reconciliation
+              </h3>
+              <p style={{ fontSize: "12px", color: "#6b7280", margin: "2px 0 0 0" }}>
+                What we closed versus what Flex reported
+                {reconAsp ? ` · ${reconAsp}` : " · all regions"}
+              </p>
+            </div>
+
+            <div style={{ display: "flex", alignItems: "center", gap: "10px", flexWrap: "wrap" }}>
+              {closureStatus?.lastImportedAt && (
+                <span
+                  title={
+                    closureSyncStale
+                      ? "No closure data has arrived for over 3 sync cycles — the FieldEZ worker may be down."
+                      : `Last closure import (${closureStatus.lastImportSource ?? "?"})`
+                  }
+                  style={{
+                    fontSize: "11px",
+                    fontWeight: 600,
+                    padding: "3px 8px",
+                    borderRadius: "999px",
+                    border: `1px solid ${closureSyncStale ? "#fecaca" : "#d1fae5"}`,
+                    background: closureSyncStale ? "#fef2f2" : "#ecfdf5",
+                    color: closureSyncStale ? "#b91c1c" : "#047857",
+                    whiteSpace: "nowrap",
+                  }}
+                >
+                  {closureStatus.lastImportSource === "AUTO" ? "Auto-synced" : "Imported"}{" "}
+                  {formatIstTime(closureStatus.lastImportedAt)}
+                  {closureSyncStale ? " · stale" : ""}
+                </span>
+              )}
+              <label style={{ fontSize: "12px", color: "#6b7280", display: "flex", alignItems: "center", gap: "6px" }}>
+                Day
+                <input
+                  type="date"
+                  value={reconDate}
+                  onChange={(e) => setReconDate(e.target.value)}
+                  style={{
+                    padding: "6px 8px",
+                    fontSize: "12px",
+                    borderRadius: "6px",
+                    border: "1px solid var(--border-color, #e5e7eb)",
+                  }}
+                />
+              </label>
+            </div>
+          </div>
+
+          {reconError && (
+            <p style={{ fontSize: "12px", color: "#b91c1c", margin: "0 0 10px 0" }}>
+              {reconError}
+            </p>
+          )}
+
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))",
+              gap: "12px",
+            }}
+          >
+            {RECON_BUCKETS.map((bucket) => {
+              const count = recon?.counts[bucket.key] ?? 0;
+              const isOpen = reconBucket === bucket.key;
+              const clickable = count > 0;
+              return (
+                <button
+                  key={bucket.key}
+                  type="button"
+                  disabled={!clickable}
+                  title={bucket.hint}
+                  onClick={() => setReconBucket(isOpen ? null : bucket.key)}
+                  style={{
+                    padding: "12px 14px",
+                    borderRadius: "10px",
+                    border: isOpen
+                      ? `2px solid ${bucket.color}`
+                      : "1px solid var(--border-color, #e5e7eb)",
+                    background: isOpen ? "#f9fafb" : "var(--card-bg, #ffffff)",
+                    textAlign: "left",
+                    cursor: clickable ? "pointer" : "default",
+                    font: "inherit",
+                  }}
+                >
+                  <div style={{ fontSize: "11px", fontWeight: 700, color: "#6b7280" }}>
+                    {bucket.label}
+                    {clickable && <span style={{ fontSize: "9px", opacity: 0.7 }}> ▸</span>}
+                  </div>
+                  <div style={{ fontSize: "22px", fontWeight: 800, color: bucket.color, margin: "4px 0 0 0" }}>
+                    {reconLoading && !recon ? "…" : formatNumber(count)}
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+
+          {reconBucket && recon && (
+            <div style={{ marginTop: "14px", overflowX: "auto" }}>
+              <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "12px" }}>
+                <thead>
+                  <tr style={{ background: "#f9fafb", textAlign: "left" }}>
+                    <th style={{ padding: "6px 8px" }}>Ticket</th>
+                    <th style={{ padding: "6px 8px" }}>Case</th>
+                    <th style={{ padding: "6px 8px" }}>Region</th>
+                    <th style={{ padding: "6px 8px" }}>Our status</th>
+                    <th style={{ padding: "6px 8px" }}>Flex status</th>
+                    <th style={{ padding: "6px 8px" }}>Closure date</th>
+                    <th style={{ padding: "6px 8px" }}>Closed here</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {recon[reconBucket].map((row, index) => (
+                    <tr
+                      key={`${row.ticketId}-${row.caseId}-${index}`}
+                      style={{ borderTop: "1px solid var(--border-color, #e5e7eb)" }}
+                    >
+                      <td style={{ padding: "6px 8px", fontWeight: 600 }}>{row.ticketId || "—"}</td>
+                      <td style={{ padding: "6px 8px" }}>{row.caseId || "—"}</td>
+                      <td style={{ padding: "6px 8px" }}>{row.aspCode || "—"}</td>
+                      <td style={{ padding: "6px 8px" }}>{row.rtplStatus || "—"}</td>
+                      <td style={{ padding: "6px 8px" }}>{row.closureStatus || "—"}</td>
+                      <td style={{ padding: "6px 8px" }}>{row.closureDate || "—"}</td>
+                      <td style={{ padding: "6px 8px", color: "#6b7280" }}>
+                        {row.hoursSinceClosedHere === null
+                          ? "—"
+                          : `${row.hoursSinceClosedHere}h ago`}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      )}
+
       {/* Closed Calls Ledger Data Table Section */}
       <div
         style={{
@@ -1544,7 +1841,10 @@ function RecordsDrillModal({
             res.rows.map((r) => ({
               "WO ID": r.woId || "-",
               "Case ID": r.caseId || "-",
-              "Closure Date": r.closureDate,
+              // Flex closes cancellations without a closure date, so a blank here is
+              // expected — the status column is what explains it.
+              "Closure Date": r.closureDate || "-",
+              "Flex Status": r.closureStatus || "-",
               Region: r.aspCode || "(unmatched)",
             })),
           );

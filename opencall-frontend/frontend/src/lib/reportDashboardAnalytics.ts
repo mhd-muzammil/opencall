@@ -1,3 +1,4 @@
+import { isScheduledStatus } from "@opencall/shared";
 import type { GeneratedReportResponse, RtplStatusChange } from "./apiClient";
 
 export const ALL_REGIONS_FILTER = "ALL";
@@ -229,7 +230,39 @@ export function filterRowsByRegion(
     return [...rows];
   }
 
-  return rows.filter((row) => row.output["Work Location"] === regionFilter);
+  // Normalized like the region-chip counts (useRtplAnalytics), so clicking a
+  // chip always yields exactly the rows the chip counted.
+  const normalizedFilter = regionFilter.trim().toUpperCase();
+  return rows.filter(
+    (row) =>
+      cleanedString(row.output["Work Location"]).toUpperCase() ===
+      normalizedFilter,
+  );
+}
+
+/**
+ * Scheduled (booked plan) = rows whose Morning column is exactly "Scheduled" —
+ * the engineer-productivity plan gate (isScheduledStatus), minus its engineer
+ * requirement. The evening-first status cards move a booked call onto its
+ * outcome status as the day progresses, so a plain "Scheduled" chip reads zero
+ * by EOD; this metric answers "how many calls were booked today" and stays
+ * stable all day. Same-day closures keep their pre-close Morning status, so a
+ * booked call that closed today still counts.
+ */
+export function buildScheduledPlanMetric(rows: readonly ReportRow[]): {
+  count: number;
+  ticketIds: string[];
+} {
+  const matched = rows.filter((row) =>
+    isScheduledStatus(cleanedString(row.output["RTPL status"])),
+  );
+
+  return {
+    count: matched.length,
+    ticketIds: matched
+      .map((row) => cleanedString(row.output["Ticket ID"]))
+      .filter(Boolean),
+  };
 }
 
 export function buildRtplOperationalAnalytics(

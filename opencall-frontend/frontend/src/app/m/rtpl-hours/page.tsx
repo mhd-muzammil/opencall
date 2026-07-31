@@ -52,7 +52,7 @@ export default function MobileRtplHoursPage() {
       rows,
       isBod ? maps.bod : maps.eod,
       isBod,
-      maps.attendedRows,
+      maps,
     );
   }, [rows, mode]);
 

@@ -22,6 +22,7 @@ import {
   type RtplTimeCard,
   type RtplStatusMetric,
   buildRtplOperationalAnalytics,
+  buildScheduledPlanMetric,
   rtplEveningFirstStatusForAnalytics,
 } from "../../../lib/reportDashboardAnalytics";
 import { RTPL_STATUS_OPTIONS } from "@opencall/shared";
@@ -101,9 +102,11 @@ function calculateKpiMetricsForCardView(
 
   // Closed Calls = an explicit "Case-Closed" status in this column, plus rows
   // that closed by vanishing from the day's Flex file (closed synthetic rows).
+  // A vanished row whose status says "cancel" is a cancellation, not a
+  // completed close: it belongs to Closed cancelled only, never both rows.
   const caseClosedRows = [
     ...active.filter((r) => isCaseClosedStatusValue(getRowStatus(r))),
-    ...closed,
+    ...closed.filter((r) => !matchStatus(r, ["cancel"])),
   ];
 
   return {
@@ -235,6 +238,14 @@ export function RTPLDashboard({
     };
   }, [rtplAnalyticsRows]);
 
+  // Scheduled (Plan) = the day's booked calls (Morning status exactly
+  // "Scheduled"), pinned so the count survives the evening-first migration of
+  // those calls onto their outcome cards. Always rendered, even at 0.
+  const scheduledPlanMetric = useMemo(
+    () => buildScheduledPlanMetric(rtplAnalyticsRows),
+    [rtplAnalyticsRows],
+  );
+
   // Ticket ids per evening-first status, keyed by the exact status string the
   // metric cards show, so clicking a card opens precisely the rows it counted
   // (a Morning-status filter would mismatch now that counts are evening-first).
@@ -262,10 +273,15 @@ export function RTPLDashboard({
   // this bucket is computed separately and any stale Morning-grouped
   // Case-Closed entry is dropped from the generic list below.
   const caseClosedMetric = useMemo(() => {
-    const rows = rtplAnalyticsRows.filter(
-      (r) =>
-        r.carryForward.closedSyntheticRow ||
-        isCaseClosedStatusValue(String(r.output["Evening status"] ?? "")),
+    // A vanished row whose Evening says "cancel" is a cancellation, not a
+    // completed close — excluded exactly like the EOD table's Closed Calls
+    // row, so the card and the table always agree.
+    const isCancelledEvening = (r: ReportRow) =>
+      String(r.output["Evening status"] ?? "").toLowerCase().includes("cancel");
+    const rows = rtplAnalyticsRows.filter((r) =>
+      r.carryForward.closedSyntheticRow
+        ? !isCancelledEvening(r)
+        : isCaseClosedStatusValue(String(r.output["Evening status"] ?? "")),
     );
     return {
       count: rows.length,
@@ -432,6 +448,21 @@ export function RTPLDashboard({
     );
     const attendedTicketIds = attendedRows.map((r) => r.ticketId);
 
+    // Actionable / Scheduled in the Evening = the Morning population PLUS
+    // whatever became actionable/scheduled later in the day: the union of the
+    // two columns, taken per row so a case sitting in both is counted once.
+    // The Morning half is read over every row (a call actionable at 9 AM still
+    // counts once it closes), so the EOD figure can never fall below BOD.
+    // Both need the two columns together, so they live here rather than in
+    // calculateKpiMetricsForCardView, which only ever sees one column.
+    const actionableEodRows = rowsWithStatuses.filter(
+      (r) =>
+        isActionableStatusValue(r.bodStatus) || isActionableStatusValue(r.eodStatus),
+    );
+    const plannedEodRows = rowsWithStatuses.filter(
+      (r) => isPlannedStatusValue(r.bodStatus) || isPlannedStatusValue(r.eodStatus),
+    );
+
     const bodBase = calculateKpiMetricsForCardView(rtplAnalyticsRows, bodStatusMap, true);
     const eodBase = calculateKpiMetricsForCardView(rtplAnalyticsRows, eodStatusMap, false);
     // Attended is an EOD-only outcome; the BOD side stays empty by definition.
@@ -440,19 +471,21 @@ export function RTPLDashboard({
       attended: 0,
       tickets: { ...bodBase.tickets, attended: [] as string[] },
     };
-    // Actionable is a start-of-day baseline: it counts calls that were
-    // actionable in the Morning. By Evening those calls have been attended, so
-    // the live Evening count collapses to ~0. Ops wants the Evening column to
-    // carry the Morning count unchanged (same number BOD & EOD), so mirror
-    // BOD's value and its drill-down tickets.
+    // Actionable and Scheduled read as a whole-day population, not an
+    // Evening-only snapshot: the live Evening count alone collapses to ~0 once
+    // the morning's booked calls move onto their outcome status. Both take the
+    // Morning ∪ Evening union computed above; every other row stays
+    // Evening-only.
     const eodKpiMetrics = {
       ...eodBase,
       attended: attendedRows.length,
-      actionable: bodBase.actionable,
+      actionable: actionableEodRows.length,
+      planned: plannedEodRows.length,
       tickets: {
         ...eodBase.tickets,
         attended: attendedTicketIds,
-        actionable: bodBase.tickets.actionable,
+        actionable: actionableEodRows.map((r) => r.ticketId),
+        planned: plannedEodRows.map((r) => r.ticketId),
       },
     };
 
@@ -569,6 +602,24 @@ export function RTPLDashboard({
           >
             <span>Actionable</span>
             <strong>{actionableMetric.count}</strong>
+          </button>
+          <button
+            className="rtplMetricCard"
+            type="button"
+            style={{ border: "1.5px solid #0f766e", background: "#f0fdfa" }}
+            onClick={() =>
+              openRecordsWithFilter({
+                region:
+                  selectedRtplRegion === ALL_REGIONS_FILTER
+                    ? null
+                    : selectedRtplRegion,
+                ticketIds: scheduledPlanMetric.ticketIds,
+              })
+            }
+            title="Scheduled (Plan) = calls booked today (Morning status exactly 'Scheduled'). By evening each booked call counts under its outcome card (Case-Closed, Customer Pending, …); Engineer Productivity's Assigned = these calls with an engineer."
+          >
+            <span>Scheduled (Plan)</span>
+            <strong>{scheduledPlanMetric.count}</strong>
           </button>
           {caseClosedMetric.count > 0 && (
             <button

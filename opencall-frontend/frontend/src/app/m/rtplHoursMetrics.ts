@@ -34,15 +34,28 @@ function cleanStatus(value: string): string {
   return !trimmed || trimmed.toLowerCase() === "manual entry required" ? "" : trimmed;
 }
 
+/**
+ * Row lists that can only be derived from the Morning and Evening columns
+ * together, so they are built alongside the status maps rather than inside
+ * `calculateRtplHoursMetrics`, which only ever sees one column. All three are
+ * EOD-only; the BOD side of each is defined separately.
+ */
+export interface CrossColumnRows {
+  attendedRows: Row[];
+  actionableEodRows: Row[];
+  plannedEodRows: Row[];
+}
+
 /** Ticket-id keyed status map, exactly how the web builds it. */
 export function buildStatusMaps(rows: Row[]): {
   bod: Record<string, string>;
   eod: Record<string, string>;
-  attendedRows: Row[];
-} {
+} & CrossColumnRows {
   const bod: Record<string, string> = {};
   const eod: Record<string, string> = {};
   const attendedRows: Row[] = [];
+  const actionableEodRows: Row[] = [];
+  const plannedEodRows: Row[] = [];
 
   for (const r of rows) {
     const ticketId = String(r.output["Ticket ID"] || "").trim();
@@ -56,17 +69,30 @@ export function buildStatusMaps(rows: Row[]): {
     if (isPlannedStatusValue(bodStatus) && eodStatus !== "" && !isPlannedStatusValue(eodStatus)) {
       attendedRows.push(r);
     }
+
+    // Actionable / Scheduled in the Evening = the Morning population PLUS
+    // whatever became actionable/scheduled later in the day. Taken per row so a
+    // case sitting in both columns is counted once, and the Morning half is read
+    // over every row (a call actionable at 9 AM still counts once it closes), so
+    // the EOD figure can never fall below BOD.
+    if (isActionableStatusValue(bodStatus) || isActionableStatusValue(eodStatus)) {
+      actionableEodRows.push(r);
+    }
+    if (isPlannedStatusValue(bodStatus) || isPlannedStatusValue(eodStatus)) {
+      plannedEodRows.push(r);
+    }
   }
 
-  return { bod, eod, attendedRows };
+  return { bod, eod, attendedRows, actionableEodRows, plannedEodRows };
 }
 
 export function calculateRtplHoursMetrics(
   rows: Row[],
   rowStatusMap: Record<string, string>,
   isBod: boolean,
-  attendedRows: Row[],
+  crossColumn: CrossColumnRows,
 ): RtplHoursMetric[] {
+  const { attendedRows, actionableEodRows, plannedEodRows } = crossColumn;
   const active = isBod ? rows : rows.filter((r) => !r.carryForward.closedSyntheticRow);
   const closed = isBod ? [] : rows.filter((r) => r.carryForward.closedSyntheticRow);
 
@@ -97,8 +123,16 @@ export function calculateRtplHoursMetrics(
     return matchesKeyword && !matchesExclude;
   };
 
-  const actionableRows = active.filter((r) => isActionableStatusValue(getRowStatus(r)));
-  const plannedRows = active.filter((r) => isPlannedStatusValue(getRowStatus(r)));
+  // Actionable and Scheduled read as a whole-day population, not an
+  // Evening-only snapshot: the live Evening count alone collapses to ~0 once the
+  // morning's booked calls move onto their outcome status. In EOD both take the
+  // Morning ∪ Evening union; every other row below stays single-column.
+  const actionableRows = isBod
+    ? active.filter((r) => isActionableStatusValue(getRowStatus(r)))
+    : actionableEodRows;
+  const plannedRows = isBod
+    ? active.filter((r) => isPlannedStatusValue(getRowStatus(r)))
+    : plannedEodRows;
   const enggOnsiteRows = active.filter((r) => isOnsiteStatusValue(getRowStatus(r)));
   const toBeScheduleRows = active.filter((r) =>
     matchStatus(r, ["to be scheduled", "assignment pending", "non avl", "missed to schedule"]));
@@ -123,10 +157,12 @@ export function calculateRtplHoursMetrics(
   const newCallsRows = active.filter((r) => r.comparison?.changeType === "NEW");
 
   // Closed Calls = an explicit "Case-Closed" status in this column, plus rows that
-  // closed by vanishing from the day's Flex file (closed synthetic rows).
+  // closed by vanishing from the day's Flex file (closed synthetic rows). A vanished
+  // row whose status says "cancel" is a cancellation, not a completed close: it
+  // belongs to Closed cancelled only, never both rows.
   const caseClosedRows = [
     ...active.filter((r) => isCaseClosedStatusValue(getRowStatus(r))),
-    ...closed,
+    ...closed.filter((r) => !matchStatus(r, ["cancel"])),
   ];
 
   // Attended is an EOD-only outcome; the BOD side stays empty by definition.

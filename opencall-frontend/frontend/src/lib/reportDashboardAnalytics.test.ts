@@ -6,6 +6,7 @@ import {
   buildOverallWoOtcBreakdown,
   buildRtplOperationalAnalytics,
   buildRtplTimeCards,
+  buildScheduledPlanMetric,
   filterRowsByRegion,
   isRecordsPageVisibleRow,
   isTodayCallPlanVisibleRow,
@@ -200,6 +201,18 @@ describe("reportDashboardAnalytics", () => {
     expect(exportReport.regionBreakdown).toBe(report.regionBreakdown);
   });
 
+  it("matches Work Location case/whitespace-insensitively, like the region-chip counts", () => {
+    const rows = [
+      row(1, { "Ticket ID": "WO-1", "Work Location": " asps01461 " }),
+      row(2, { "Ticket ID": "WO-2", "Work Location": "ASPS01461" }),
+      row(3, { "Ticket ID": "WO-3", "Work Location": "ASPS01465" }),
+    ];
+
+    expect(
+      filterRowsByRegion(rows, "ASPS01461").map((r) => r.output["Ticket ID"]),
+    ).toEqual(["WO-1", "WO-2"]);
+  });
+
   it("removes Request to Cancel flex statuses from today call-plan visibility", () => {
     const visibleRow = row(1, {
       "Ticket ID": "WO-1",
@@ -332,5 +345,35 @@ describe("buildRtplOperationalAnalytics — evening-first", () => {
     ]);
 
     expect(metrics).toEqual([{ status: "Scheduled", count: 2 }]);
+  });
+});
+
+describe("buildScheduledPlanMetric — the pinned Scheduled (Plan) card", () => {
+  it("counts booked calls by Morning status, ignoring the Evening outcome", () => {
+    const metric = buildScheduledPlanMetric([
+      // Booked and closed in the evening: still part of the day's plan.
+      row(1, { "Ticket ID": "WO-1", "RTPL status": "Scheduled", "Evening status": "Case-Closed" }),
+      // Booked, not yet worked.
+      row(2, { "Ticket ID": "WO-2", "RTPL status": " scheduled ", "Evening status": "" }),
+      // Pre-booking states are not part of the plan.
+      row(3, { "Ticket ID": "WO-3", "RTPL status": "To be Scheduled" }),
+      row(4, { "Ticket ID": "WO-4", "RTPL status": "Engg Assigned" }),
+      // An Evening move back to Scheduled does not create a booking.
+      row(5, { "Ticket ID": "WO-5", "RTPL status": "SSC Pending", "Evening status": "Scheduled" }),
+    ]);
+
+    expect(metric.count).toBe(2);
+    expect(metric.ticketIds).toEqual(["WO-1", "WO-2"]);
+  });
+
+  it("keeps a booked call that closed by vanishing from the Flex file", () => {
+    const closedSameDay = row(1, {
+      "Ticket ID": "WO-1",
+      "RTPL status": "Scheduled",
+    });
+    closedSameDay.carryForward.closedSyntheticRow = true;
+    closedSameDay.carryForward.sameDayClosedRow = true;
+
+    expect(buildScheduledPlanMetric([closedSameDay]).count).toBe(1);
   });
 });

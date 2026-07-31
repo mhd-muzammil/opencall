@@ -9,6 +9,7 @@ import {
   buildScheduledPlanMetric,
   filterRowsByRegion,
   isRecordsPageVisibleRow,
+  normalizeStatusGroupKey,
   isTodayCallPlanVisibleRow,
   reportWithRows,
 } from "./reportDashboardAnalytics";
@@ -390,5 +391,45 @@ describe("buildScheduledPlanMetric — the pinned Scheduled (Plan) card", () => 
     closedSameDay.carryForward.sameDayClosedRow = true;
 
     expect(buildScheduledPlanMetric([closedSameDay]).count).toBe(1);
+  });
+});
+
+describe("buildFlexOperationalAnalytics — case-insensitive grouping", () => {
+  it("merges spellings that differ only by case or spacing into one card", () => {
+    // Real data: statuses are free-typed in places, so the same value arrives in
+    // several casings. Keying on the raw string split one status into two cards,
+    // each showing a fraction of the real count.
+    const metrics = buildFlexOperationalAnalytics([
+      row(1, { "Flex Status": "Move to cancellation" }),
+      row(2, { "Flex Status": "Move to Cancellation" }),
+      row(3, { "Flex Status": "Move to Cancellation" }),
+      row(4, { "Flex Status": "Move  to   Cancellation" }),
+    ]);
+
+    expect(metrics).toHaveLength(1);
+    expect(metrics[0]?.count).toBe(4);
+    // The most common spelling wins the label.
+    expect(metrics[0]?.status).toBe("Move to Cancellation");
+  });
+
+  it("keeps genuinely different statuses apart", () => {
+    const metrics = buildFlexOperationalAnalytics([
+      row(1, { "Flex Status": "WO Closed" }),
+      row(2, { "Flex Status": "Closed - Canceled" }),
+      row(3, { "Flex Status": "OTP Validate" }),
+    ]);
+
+    expect(metrics).toHaveLength(3);
+  });
+
+  it("normalizeStatusGroupKey folds case and collapses whitespace only", () => {
+    expect(normalizeStatusGroupKey("Move to Cancellation")).toBe(
+      normalizeStatusGroupKey("move to   cancellation"),
+    );
+    // Punctuation is deliberately kept — the admin status list has values that
+    // differ only by it.
+    expect(normalizeStatusGroupKey("WO-closed")).not.toBe(
+      normalizeStatusGroupKey("WO closed"),
+    );
   });
 });

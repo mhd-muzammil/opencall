@@ -347,11 +347,37 @@ export function buildRtplTimeCards(
   });
 }
 
+/**
+ * The key two spellings of the same status must share. Case is folded and runs
+ * of whitespace collapsed; punctuation is deliberately KEPT, because the admin
+ * status list contains genuinely distinct values that differ only by it.
+ *
+ * Statuses are free-typed in places, so the same one reaches the report in
+ * several casings — "Move to cancellation" and "Move to Cancellation" were
+ * rendering as two separate cards, each showing a fraction of the real count.
+ */
+export function normalizeStatusGroupKey(status: unknown): string {
+  return cleanedString(status).toLowerCase().replace(/\s+/g, " ");
+}
+
+/** The spelling to display for a group: the most common one, ties to first seen. */
+function dominantLabel(labels: ReadonlyMap<string, number>): string {
+  let best = "";
+  let bestCount = 0;
+  for (const [label, count] of labels) {
+    if (count > bestCount) {
+      best = label;
+      bestCount = count;
+    }
+  }
+  return best;
+}
+
 function buildStatusAnalytics(
   rows: readonly ReportRow[],
   getStatus: (row: ReportRow) => unknown,
 ): RtplStatusMetric[] {
-  const counts = new Map<string, number>();
+  const groups = new Map<string, { count: number; labels: Map<string, number> }>();
 
   for (const row of rows) {
     const status = cleanedString(getStatus(row));
@@ -360,11 +386,15 @@ function buildStatusAnalytics(
       continue;
     }
 
-    counts.set(status, (counts.get(status) ?? 0) + 1);
+    const key = normalizeStatusGroupKey(status);
+    const group = groups.get(key) ?? { count: 0, labels: new Map<string, number>() };
+    group.count += 1;
+    group.labels.set(status, (group.labels.get(status) ?? 0) + 1);
+    groups.set(key, group);
   }
 
-  return Array.from(counts.entries())
-    .map(([status, count]) => ({ status, count }))
+  return Array.from(groups.values())
+    .map((group) => ({ status: dominantLabel(group.labels), count: group.count }))
     .sort((a, b) => b.count - a.count || a.status.localeCompare(b.status));
 }
 

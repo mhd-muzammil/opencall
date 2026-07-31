@@ -23,6 +23,7 @@ import {
   type RtplStatusMetric,
   buildRtplOperationalAnalytics,
   buildScheduledPlanMetric,
+  normalizeStatusGroupKey,
   rtplEveningFirstStatusForAnalytics,
 } from "../../../lib/reportDashboardAnalytics";
 import { RTPL_STATUS_OPTIONS } from "@opencall/shared";
@@ -223,12 +224,23 @@ export function RTPLDashboard({
   );
 
   // Actionable = Scheduled + To Be Scheduled, shown as a pinned summary card
-  // ahead of the per-status cards. Evening-first like the per-status cards: a
-  // case whose Evening entry moved past a planning status is no longer
-  // actionable, and one moved BACK to Scheduled in the Evening is.
+  // ahead of the per-status cards.
+  //
+  // The UNION of the Morning and Evening columns, taken per row so a case
+  // sitting in both is counted once — byte-identical to `actionableEodRows`
+  // below, which is what the BOD & EOD table's "Actionable Calls" row reports.
+  //
+  // This used to read the evening-first status instead, which answers a
+  // different question ("still actionable right now") and made the card read 43
+  // while the EOD table said 142 for the same day. Worse, it sat directly beside
+  // the Morning-based "Scheduled (Plan)" card: Actionable is meant to CONTAIN
+  // Scheduled, so a smaller number there is nonsense. Both pinned cards now read
+  // the day as a whole and stay stable as calls move onto their outcomes.
   const actionableMetric = useMemo(() => {
-    const rows = rtplAnalyticsRows.filter((r) =>
-      isActionableStatusValue(rtplEveningFirstStatusForAnalytics(r)),
+    const rows = rtplAnalyticsRows.filter(
+      (r) =>
+        isActionableStatusValue(r.output["RTPL status"]) ||
+        isActionableStatusValue(r.output["Evening status"]),
     );
     return {
       count: rows.length,
@@ -246,21 +258,21 @@ export function RTPLDashboard({
     [rtplAnalyticsRows],
   );
 
-  // Ticket ids per evening-first status, keyed by the exact status string the
-  // metric cards show, so clicking a card opens precisely the rows it counted
-  // (a Morning-status filter would mismatch now that counts are evening-first).
+  // Ticket ids per evening-first status, keyed the SAME case-insensitive way
+  // buildStatusAnalytics groups its cards — otherwise a card that merged two
+  // spellings would drill into only one of them.
   const statusTicketIds = useMemo(() => {
     const map = new Map<string, string[]>();
     for (const row of rtplAnalyticsRows) {
-      const status = rtplEveningFirstStatusForAnalytics(row).trim();
-      if (!status) continue;
+      const key = normalizeStatusGroupKey(rtplEveningFirstStatusForAnalytics(row));
+      if (!key) continue;
       const ticketId = String(row.output["Ticket ID"] ?? "").trim();
       if (!ticketId) continue;
-      const list = map.get(status);
+      const list = map.get(key);
       if (list) {
         list.push(ticketId);
       } else {
-        map.set(status, [ticketId]);
+        map.set(key, [ticketId]);
       }
     }
     return map;
@@ -654,7 +666,8 @@ export function RTPLDashboard({
                   // Evening-first counts can't be reproduced by a Morning-status
                   // filter, so hand over the exact tickets the card counted
                   // (same pattern as the Actionable card).
-                  ticketIds: statusTicketIds.get(metric.status) ?? null,
+                  ticketIds:
+                    statusTicketIds.get(normalizeStatusGroupKey(metric.status)) ?? null,
                 })
               }
               title={`Open ${metric.status} records`}

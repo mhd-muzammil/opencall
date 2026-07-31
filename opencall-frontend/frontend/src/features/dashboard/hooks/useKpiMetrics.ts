@@ -112,11 +112,17 @@ export function useKpiMetrics(params: {
 
     const closedCancelled = closed.filter((r) => matchStatus(r, ["cancel"])).length;
 
-    // Closed Calls = an explicit "Case-Closed" status, plus rows that closed
-    // by vanishing from the day's Flex file (closed synthetic rows).
+    // Closed Calls = an explicit "Case-Closed" / "WO Closed" status, plus rows
+    // that closed by vanishing from the day's Flex file — MINUS the vanished
+    // cancellations, which belong to "Closed cancelled" and nowhere else.
+    //
+    // This used to add `closed.length` wholesale, so every cancelled row was
+    // counted in BOTH lines. The Excel export (buildRegionSummaryWorkbook) has
+    // always subtracted them; the on-screen tile just never got the same fix,
+    // which is why the two disagreed. A cancellation is not a completed close.
     const caseClosed =
       active.filter((r) => isCaseClosedStatusValue(getRowStatus(r))).length +
-      closed.length;
+      closed.filter((r) => !matchStatus(r, ["cancel"])).length;
 
     return {
       engineerCount,

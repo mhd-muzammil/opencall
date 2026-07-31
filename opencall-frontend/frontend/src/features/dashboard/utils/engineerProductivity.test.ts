@@ -89,9 +89,8 @@ describe("classifyProductivityStatus", () => {
     expect(classifyProductivityStatus("Rescheduled")).toBe("CX_RESCHEDULE");
   });
 
-  // The bare "Elevation" status shares the Under Observation/Elevation bucket.
-  // The match is EXACT (on the normalized status): the longer distinct
-  // "Elevation ..." statuses must keep their existing ATTENDED_OTHER class.
+  // The whole Elevation family shares the bucket the column is already named
+  // after: "Under Observation/Elevation".
   it("maps the bare 'elevation' status (any casing) to UNDER_OBSERVATION", () => {
     expect(classifyProductivityStatus("elevation")).toBe("UNDER_OBSERVATION");
     expect(classifyProductivityStatus("Elevation")).toBe("UNDER_OBSERVATION");
@@ -99,10 +98,14 @@ describe("classifyProductivityStatus", () => {
     expect(classifyProductivityStatus("  Elevation  ")).toBe("UNDER_OBSERVATION");
   });
 
-  it("keeps 'Elevation HP Pending' / 'Elevation Part Pending' as ATTENDED_OTHER", () => {
-    expect(classifyProductivityStatus("Elevation HP Pending")).toBe("ATTENDED_OTHER");
-    expect(classifyProductivityStatus("elevation hp pending")).toBe("ATTENDED_OTHER");
-    expect(classifyProductivityStatus("Elevation Part Pending")).toBe("ATTENDED_OTHER");
+  // Reversed 2026-07-31: these used to fall through to ATTENDED_OTHER, so an
+  // elevated call counted as Attended but appeared in no named column.
+  it("maps every 'Elevation …' status to UNDER_OBSERVATION", () => {
+    expect(classifyProductivityStatus("Elevation HP Pending")).toBe("UNDER_OBSERVATION");
+    expect(classifyProductivityStatus("elevation hp pending")).toBe("UNDER_OBSERVATION");
+    expect(classifyProductivityStatus("Elevation Part Pending")).toBe("UNDER_OBSERVATION");
+    expect(classifyProductivityStatus("Elevation - HP Pending")).toBe("UNDER_OBSERVATION");
+    expect(classifyProductivityStatus("HP Pending")).toBe("UNDER_OBSERVATION");
   });
 
   it("maps every other real status to ATTENDED_OTHER (counts as attended work)", () => {

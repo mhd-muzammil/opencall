@@ -73,7 +73,9 @@ import {
 } from "../features/dashboard/utils";
 import {
   isScheduledRemarkTriggered,
+  isSscEtaRemarkTriggered,
   scheduledRemarkPreviewValue,
+  sscEtaRemarkPreviewValue,
 } from "../features/dashboard/utils/scheduledRemarkPreview";
 
 import {
@@ -483,6 +485,25 @@ export default function DashboardPage() {
         ...triggerInput,
         draftRemark: currentRemark,
         persistedRemark: editingRow.output["Current Remarks"],
+      });
+      if (preview !== null) {
+        autoRemarkPreviewRef.current = { injected: preview, previous: currentRemark };
+        setDraftOutput((current) => ({ ...current, "Current Remarks": preview }));
+      }
+      return;
+    }
+
+    // Same mechanism for SSC Pending: moving a status column there previews
+    // "ETA <case created + 2 days>" so the team sees when the part is due
+    // before saving. Checked AFTER scheduling because the two triggers are
+    // mutually exclusive by status, and scheduling is the stronger rule (it
+    // also demands an engineer).
+    if (isSscEtaRemarkTriggered(triggerInput)) {
+      const preview = sscEtaRemarkPreviewValue({
+        ...triggerInput,
+        draftRemark: currentRemark,
+        persistedRemark: editingRow.output["Current Remarks"],
+        caseCreatedTime: editingRow.output["Case Created Time"],
       });
       if (preview !== null) {
         autoRemarkPreviewRef.current = { injected: preview, previous: currentRemark };

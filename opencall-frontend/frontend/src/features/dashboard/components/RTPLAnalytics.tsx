@@ -13,6 +13,8 @@ import {
   isPlannedStatusValue,
   isOnsiteStatusValue,
   isCaseClosedStatusValue,
+  classifyFlexClosureOutcome,
+  hasFlexClosureOutcome,
 } from "../utils";
 import type { ReportRow, RtplCaseScope } from "../types";
 import {
@@ -284,22 +286,39 @@ export function RTPLDashboard({
   // Morning column, which never says Case-Closed for a call closed today, so
   // this bucket is computed separately and any stale Morning-grouped
   // Case-Closed entry is dropped from the generic list below.
-  const caseClosedMetric = useMemo(() => {
-    // A vanished row whose Evening says "cancel" is a cancellation, not a
-    // completed close — excluded exactly like the EOD table's Closed Calls
-    // row, so the card and the table always agree.
-    const isCancelledEvening = (r: ReportRow) =>
-      String(r.output["Evening status"] ?? "").toLowerCase().includes("cancel");
-    const rows = rtplAnalyticsRows.filter((r) =>
-      r.carryForward.closedSyntheticRow
-        ? !isCancelledEvening(r)
-        : isCaseClosedStatusValue(String(r.output["Evening status"] ?? "")),
-    );
+  const closureOutcomeMetrics = useMemo(() => {
+    const closed: ReportRow[] = [];
+    const cancelled: ReportRow[] = [];
+    const unreported: ReportRow[] = [];
+
+    for (const row of rtplAnalyticsRows) {
+      const output = row.output as unknown as Record<string, unknown>;
+      // Closed today = an Evening Case-Closed, or the call left the Flex file.
+      const closedToday =
+        row.carryForward.closedSyntheticRow ||
+        isCaseClosedStatusValue(String(output["Evening status"] ?? ""));
+      if (!closedToday) continue;
+
+      // FLEX decides how it closed, not our own Evening status. Only "WO Closed"
+      // is a completed job — the one that gets paid for; "Closed - Canceled" is
+      // an abandoned call. A closure Flex has not reported yet is neither, and
+      // gets its own card rather than being folded into the billable one.
+      const outcome = hasFlexClosureOutcome(output)
+        ? classifyFlexClosureOutcome(output["Flex Status"])
+        : "other";
+
+      if (outcome === "closed") closed.push(row);
+      else if (outcome === "cancelled") cancelled.push(row);
+      else unreported.push(row);
+    }
+
+    const ticketIdsOf = (rows: ReportRow[]) =>
+      rows.map((r) => String(r.output["Ticket ID"] ?? "").trim()).filter(Boolean);
+
     return {
-      count: rows.length,
-      ticketIds: rows
-        .map((r) => String(r.output["Ticket ID"] ?? "").trim())
-        .filter(Boolean),
+      closed: { count: closed.length, ticketIds: ticketIdsOf(closed) },
+      cancelled: { count: cancelled.length, ticketIds: ticketIdsOf(cancelled) },
+      unreported: { count: unreported.length, ticketIds: ticketIdsOf(unreported) },
     };
   }, [rtplAnalyticsRows]);
 
@@ -595,7 +614,10 @@ export function RTPLDashboard({
         ))}
       </div>
 
-      {rtplStatusMetrics.length > 0 || caseClosedMetric.count > 0 ? (
+      {rtplStatusMetrics.length > 0 ||
+      closureOutcomeMetrics.closed.count > 0 ||
+      closureOutcomeMetrics.cancelled.count > 0 ||
+      closureOutcomeMetrics.unreported.count > 0 ? (
         <div className="rtplMetricGrid" style={{ marginBottom: "20px" }}>
           <button
             className="rtplMetricCard"
@@ -633,24 +655,54 @@ export function RTPLDashboard({
             <span>Scheduled (Plan)</span>
             <strong>{scheduledPlanMetric.count}</strong>
           </button>
-          {caseClosedMetric.count > 0 && (
-            <button
-              className="rtplMetricCard"
-              type="button"
-              onClick={() =>
-                openRecordsWithFilter({
-                  region:
-                    selectedRtplRegion === ALL_REGIONS_FILTER
-                      ? null
-                      : selectedRtplRegion,
-                  ticketIds: caseClosedMetric.ticketIds,
-                })
-              }
-              title="Closed today = Evening Case-Closed + calls that left the Flex file (matches the EOD table)"
-            >
-              <span>Case-Closed</span>
-              <strong>{caseClosedMetric.count}</strong>
-            </button>
+          {/* How today's closures actually ended, per FLEX. Kept as three separate
+              cards because only "WO Closed" is billable — adding a cancellation to it
+              answers no question anyone has. */}
+          {(
+            [
+              {
+                key: "closed",
+                label: "Case-Closed",
+                metric: closureOutcomeMetrics.closed,
+                title:
+                  "Closed today that Flex reports as WO Closed — completed work, the billable ones.",
+              },
+              {
+                key: "cancelled",
+                label: "Closed-cancelled",
+                metric: closureOutcomeMetrics.cancelled,
+                title:
+                  "Closed today that Flex reports as Closed - Canceled — abandoned calls, not billable.",
+              },
+              {
+                key: "unreported",
+                label: "Closed (Flex pending)",
+                metric: closureOutcomeMetrics.unreported,
+                title:
+                  "Closed today, but Flex has not reported how it closed yet. The hourly closure sync moves these into one of the other two.",
+              },
+            ] as const
+          ).map(({ key, label, metric, title }) =>
+            metric.count > 0 ? (
+              <button
+                className="rtplMetricCard"
+                key={key}
+                type="button"
+                onClick={() =>
+                  openRecordsWithFilter({
+                    region:
+                      selectedRtplRegion === ALL_REGIONS_FILTER
+                        ? null
+                        : selectedRtplRegion,
+                    ticketIds: metric.ticketIds,
+                  })
+                }
+                title={title}
+              >
+                <span>{label}</span>
+                <strong>{metric.count}</strong>
+              </button>
+            ) : null,
           )}
           {openStatusMetrics.map((metric, metricIndex) => (
             <button

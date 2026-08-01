@@ -392,6 +392,26 @@ describe("buildScheduledPlanMetric — the pinned Scheduled (Plan) card", () => 
 
     expect(buildScheduledPlanMetric([closedSameDay]).count).toBe(1);
   });
+
+  it("drops a booked call the customer postponed", () => {
+    // The visit is not happening today, so counting it as booked work overstates
+    // the day (team decision 2026-08-01). Every other Evening outcome is work that
+    // went ahead and stays counted.
+    const metric = buildScheduledPlanMetric([
+      row(1, { "Ticket ID": "WO-1", "RTPL status": "Scheduled", "Evening status": "Customer Pending" }),
+      // Trimmed + case-insensitive, matching the shared isCustomerPendingStatus the
+      // server's KCI rule uses. Statuses come from the admin dropdown, so that is the
+      // whole tolerance needed.
+      row(2, { "Ticket ID": "WO-2", "RTPL status": "Scheduled", "Evening status": " customer pending " }),
+      // Still counted: these went ahead.
+      row(3, { "Ticket ID": "WO-3", "RTPL status": "Scheduled", "Evening status": "Case-Closed" }),
+      row(4, { "Ticket ID": "WO-4", "RTPL status": "Scheduled", "Evening status": "SSC Pending" }),
+      row(5, { "Ticket ID": "WO-5", "RTPL status": "Scheduled", "Evening status": "" }),
+    ]);
+
+    expect(metric.count).toBe(3);
+    expect(metric.ticketIds).toEqual(["WO-3", "WO-4", "WO-5"]);
+  });
 });
 
 describe("buildFlexOperationalAnalytics — case-insensitive grouping", () => {

@@ -1,4 +1,4 @@
-import { isScheduledStatus } from "@opencall/shared";
+import { isCustomerPendingStatus, isScheduledStatus } from "@opencall/shared";
 import type { GeneratedReportResponse, RtplStatusChange } from "./apiClient";
 
 export const ALL_REGIONS_FILTER = "ALL";
@@ -253,13 +253,21 @@ export function filterRowsByRegion(
  * by EOD; this metric answers "how many calls were booked today" and stays
  * stable all day. Same-day closures keep their pre-close Morning status, so a
  * booked call that closed today still counts.
+ *
+ * EXCEPT a booked call the customer then postponed: an Evening of "Customer
+ * Pending" takes it back out of the plan (team decision 2026-08-01). The visit
+ * is not happening today, so counting it as booked work overstates the day.
+ * Every other Evening outcome — closed, part-ordered, under observation — is
+ * work that went ahead and stays counted.
  */
 export function buildScheduledPlanMetric(rows: readonly ReportRow[]): {
   count: number;
   ticketIds: string[];
 } {
-  const matched = rows.filter((row) =>
-    isScheduledStatus(cleanedString(row.output["RTPL status"])),
+  const matched = rows.filter(
+    (row) =>
+      isScheduledStatus(cleanedString(row.output["RTPL status"])) &&
+      !isCustomerPendingStatus(cleanedString(row.output["Evening status"])),
   );
 
   return {

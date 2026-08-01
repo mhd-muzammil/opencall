@@ -3,7 +3,11 @@ import { createPortal } from "react-dom";
 import * as XLSX from "xlsx";
 import { ASP_CODE_REGION_MAP } from "@opencall/shared";
 import type { ReportRow } from "../types";
-import { formatNumber } from "../utils";
+import {
+  classifyFlexClosureOutcome,
+  formatNumber,
+  hasFlexClosureOutcome,
+} from "../utils";
 import { todayIsoDate } from "../utils/dateUtils";
 import type {
   ClosureImportStatus,
@@ -200,6 +204,45 @@ const RECON_BUCKETS: ReadonlyArray<{
     color: "#dc2626",
   },
 ];
+
+/**
+ * The completed / cancelled / unknown split under a card's total.
+ *
+ * "WO Closed" is a finished job and the only one that gets paid for; "Closed - Canceled"
+ * is an abandoned call. They are shown apart because adding them together answers no
+ * question anyone has. Unknown means Flex has not reported that closure yet, so it is
+ * deliberately neither — and it doubles as a coverage indicator for the closure import.
+ */
+function ClosedOutcomeSplit({
+  closed,
+  cancelled,
+  unknown,
+}: Readonly<{ closed: number; cancelled: number; unknown: number }>) {
+  if (closed === 0 && cancelled === 0 && unknown === 0) return null;
+
+  const part = (label: string, value: number, color: string, title: string) => (
+    <span title={title} style={{ color, whiteSpace: "nowrap" }}>
+      <strong style={{ fontWeight: 700 }}>{formatNumber(value)}</strong> {label}
+    </span>
+  );
+
+  return (
+    <div
+      style={{
+        display: "flex",
+        flexWrap: "wrap",
+        gap: "8px",
+        fontSize: "10px",
+        marginTop: "3px",
+      }}
+    >
+      {part("closed", closed, "#047857", "WO Closed in Flex — completed, billable")}
+      {part("cancelled", cancelled, "#b45309", "Closed - Canceled in Flex — not billable")}
+      {unknown > 0 &&
+        part("unknown", unknown, "#9ca3af", "Flex has not reported a closure for these yet")}
+    </div>
+  );
+}
 
 export interface ClosedCallsDashboardViewProps {
   overallClosedCount: number;
@@ -726,6 +769,71 @@ export function ClosedCallsDashboardView({
     closedTodayCount,
   ]);
 
+  /** Whether a closed row belongs to the period the cards are currently showing. */
+  const rowInScope = useMemo(() => {
+    return (row: ReportRow): boolean => {
+      if (dateFilterActive) {
+        const raw = String((row.output ?? {})["Case Closed Date"] ?? "").trim();
+        const dmy = /^(\d{2})-(\d{2})-(\d{4})$/.exec(raw);
+        if (!dmy) return false;
+        const iso = `${dmy[3]}-${dmy[2]}-${dmy[1]}`;
+        if (closedFrom && iso < closedFrom) return false;
+        if (closedTo && iso > closedTo) return false;
+        return true;
+      }
+      if (countScope === "today") return row.carryForward.sameDayClosedRow === true;
+      return true;
+    };
+  }, [dateFilterActive, closedFrom, closedTo, countScope]);
+
+  /**
+   * Completed vs cancelled, per region and overall.
+   *
+   * Only "WO Closed" is a finished job — the one that gets paid for. "Closed - Canceled"
+   * is an abandoned call and is counted apart from it, never with it.
+   *
+   * A closed row whose Flex Status was never overlaid has no closure record yet, so the
+   * vendor has not told us how it ended: it is UNKNOWN, not assumed billable. Unknown is
+   * taken as the remainder of the card's own total, so the three parts always add up to
+   * the headline even if the ledger and the region breakdown ever drift apart.
+   */
+  const closedOutcomeByAsp = useMemo(() => {
+    const counts = new Map<string, { closed: number; cancelled: number }>();
+    for (const row of closedRows) {
+      if (!rowInScope(row)) continue;
+      const output = (row.output ?? {}) as Record<string, unknown>;
+      if (!hasFlexClosureOutcome(output)) continue;
+      const outcome = classifyFlexClosureOutcome(output["Flex Status"]);
+      if (outcome === "other") continue;
+      const asp = getRowAspCode(output);
+      const entry = counts.get(asp) ?? { closed: 0, cancelled: 0 };
+      entry[outcome] += 1;
+      counts.set(asp, entry);
+    }
+    return counts;
+  }, [closedRows, rowInScope]);
+
+  const closedOutcomeFor = useMemo(() => {
+    return (
+      aspCode: string,
+      total: number,
+    ): { closed: number; cancelled: number; unknown: number } => {
+      let closed = 0;
+      let cancelled = 0;
+      if (aspCode) {
+        const entry = closedOutcomeByAsp.get(aspCode);
+        closed = entry?.closed ?? 0;
+        cancelled = entry?.cancelled ?? 0;
+      } else {
+        for (const entry of closedOutcomeByAsp.values()) {
+          closed += entry.closed;
+          cancelled += entry.cancelled;
+        }
+      }
+      return { closed, cancelled, unknown: Math.max(0, total - closed - cancelled) };
+    };
+  }, [closedOutcomeByAsp]);
+
   // Regional stats for active selection
   const activeRegionStats = useMemo(() => {
     if (!selectedRegion || selectedRegion === "ALL") {
@@ -1173,6 +1281,9 @@ export function ClosedCallsDashboardView({
                   ? `${formatNumber(overallClosedCount)} all time · ${formatNumber(totalActiveWipCount)} active WIP`
                   : `${formatNumber(closedTodayCount)} closed today · ${formatNumber(totalActiveWipCount)} active WIP`}
             </div>
+            <ClosedOutcomeSplit
+              {...closedOutcomeFor("", closedCountFor("", overallClosedCount))}
+            />
             <ComparisonCounts
               closureCount={closureCountFor("")}
               rawCount={rawClosedFor("")}
@@ -1216,6 +1327,12 @@ export function ClosedCallsDashboardView({
                     ? ` · ${formatNumber(entry.closedCount)} all time`
                     : ""}
                 </div>
+                <ClosedOutcomeSplit
+                  {...closedOutcomeFor(
+                    entry.aspCode,
+                    closedCountFor(entry.aspCode, entry.closedCount),
+                  )}
+                />
                 <ComparisonCounts
                   closureCount={closureCountFor(entry.aspCode)}
                   rawCount={rawClosedFor(entry.aspCode)}

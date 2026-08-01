@@ -126,6 +126,37 @@ export function isCaseClosedStatusValue(status: unknown): boolean {
   return s.includes("case close") || s.includes("wo close");
 }
 
+/** The vendor's verdict on a work order it has closed. */
+export type FlexClosureOutcome = "closed" | "cancelled" | "other";
+
+/**
+ * Classifies the Flex Closure ASP Report's own status. Only "WO Closed" is a completed
+ * job — the one that gets paid for; "Closed - Canceled" is an abandoned call and must
+ * never be counted with it.
+ *
+ * ORDER MATTERS: the literal "Closed - Canceled" contains BOTH words, so CANCEL is
+ * tested first. Mirrors the backend's `classifyClosureStatus`
+ * (services/closureDates/closureStatusClassify.ts) — the two must agree.
+ */
+export function classifyFlexClosureOutcome(status: unknown): FlexClosureOutcome {
+  const s = String(status ?? "").toUpperCase();
+  if (s.includes("CANCEL")) return "cancelled";
+  if (s.includes("CLOSE")) return "closed";
+  return "other";
+}
+
+/**
+ * True when the serve-time closure overlay rewrote this row's Flex Status, i.e. Flex
+ * has actually told us how the call ended. The overlay parks the vendor's WIP value in
+ * "Flex Status (WIP)" whenever it fires, so the key's PRESENCE is the marker — its
+ * value may legitimately be the empty string.
+ *
+ * Without it, "Flex Status" is just the WIP status and says nothing about the outcome.
+ */
+export function hasFlexClosureOutcome(output: Record<string, unknown>): boolean {
+  return "Flex Status (WIP)" in output;
+}
+
 export function normalizeRecordSearchValue(value: unknown): string {
   return String(value ?? "").trim().toLowerCase();
 }

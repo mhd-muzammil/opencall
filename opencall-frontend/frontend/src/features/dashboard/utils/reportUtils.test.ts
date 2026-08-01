@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 import type { ReportRow } from "../types";
 import { isTradeCase } from "./caseClassification";
 import {
+  classifyFlexClosureOutcome,
+  hasFlexClosureOutcome,
   isCaseClosedStatusValue,
   isOnsiteStatusValue,
   isPlannedStatusValue,
@@ -172,5 +174,44 @@ describe("isCaseClosedStatusValue", () => {
     expect(isCaseClosedStatusValue("Need to Cancel")).toBe(false);
     expect(isCaseClosedStatusValue("Under Cancellation")).toBe(false);
     expect(isCaseClosedStatusValue("")).toBe(false);
+  });
+});
+
+describe("classifyFlexClosureOutcome", () => {
+  it("never counts a cancellation as a completion", () => {
+    // Only "WO Closed" is billable. The literal "Closed - Canceled" contains BOTH
+    // words, so testing CLOSED first would silently bill every cancelled call.
+    expect(classifyFlexClosureOutcome("Closed - Canceled")).toBe("cancelled");
+    expect(classifyFlexClosureOutcome("Closed - Cancelled")).toBe("cancelled");
+    expect(classifyFlexClosureOutcome("closed-canceled")).toBe("cancelled");
+  });
+
+  it("recognises a genuine closure", () => {
+    expect(classifyFlexClosureOutcome("WO Closed")).toBe("closed");
+    expect(classifyFlexClosureOutcome("wo closed")).toBe("closed");
+    expect(classifyFlexClosureOutcome("Closed")).toBe("closed");
+  });
+
+  it("treats anything else, including blanks, as neither", () => {
+    expect(classifyFlexClosureOutcome("")).toBe("other");
+    expect(classifyFlexClosureOutcome(null)).toBe("other");
+    expect(classifyFlexClosureOutcome("SSC Pending")).toBe("other");
+  });
+});
+
+describe("hasFlexClosureOutcome", () => {
+  it("is true only once the overlay has run on the row", () => {
+    // The overlay parks the vendor's WIP value under this key whenever it fires, so
+    // the key's PRESENCE is the marker — an empty string is a legitimate value.
+    expect(hasFlexClosureOutcome({ "Flex Status": "WO Closed" })).toBe(false);
+    expect(
+      hasFlexClosureOutcome({ "Flex Status": "WO Closed", "Flex Status (WIP)": "" }),
+    ).toBe(true);
+    expect(
+      hasFlexClosureOutcome({
+        "Flex Status": "WO Closed",
+        "Flex Status (WIP)": "SSC Pending",
+      }),
+    ).toBe(true);
   });
 });

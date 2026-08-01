@@ -682,6 +682,50 @@ export function ClosedCallsDashboardView({
     return sum;
   }, [dateFilteredCountByAsp]);
 
+  // Per-region equivalent of closedTodayCount — the same same-day rule, grouped by ASP.
+  const closedTodayCountByAsp = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const row of closedRows) {
+      if (row.carryForward.sameDayClosedRow !== true) continue;
+      const asp = getRowAspCode((row.output ?? {}) as Record<string, unknown>);
+      counts.set(asp, (counts.get(asp) ?? 0) + 1);
+    }
+    return counts;
+  }, [closedRows]);
+
+  /**
+   * Which closed count the cards show. "today" is the default because that is what
+   * this page is read for; the whole ledger is still one click away.
+   */
+  const [countScope, setCountScope] = useState<"today" | "all">("today");
+
+  /**
+   * The number ONE card shows — the ALL card (aspCode "") or a single region.
+   *
+   * A single resolver on purpose: the ALL card used to show today's closures while
+   * every region card showed its all-time ledger, so the parts never summed to the
+   * whole (4 vs 563 + 464 + 292 + 291 + 264). An explicit Closed-date range still
+   * outranks the toggle, since that is a narrower question the user just asked.
+   */
+  const closedCountFor = useMemo(() => {
+    return (aspCode: string, allTimeCount: number): number => {
+      if (dateFilterActive) {
+        return aspCode ? dateFilteredCountByAsp.get(aspCode) ?? 0 : dateFilteredTotal;
+      }
+      if (countScope === "today") {
+        return aspCode ? closedTodayCountByAsp.get(aspCode) ?? 0 : closedTodayCount;
+      }
+      return allTimeCount;
+    };
+  }, [
+    dateFilterActive,
+    dateFilteredCountByAsp,
+    dateFilteredTotal,
+    countScope,
+    closedTodayCountByAsp,
+    closedTodayCount,
+  ]);
+
   // Regional stats for active selection
   const activeRegionStats = useMemo(() => {
     if (!selectedRegion || selectedRegion === "ALL") {
@@ -983,6 +1027,51 @@ export function ClosedCallsDashboardView({
             </p>
           </div>
           <div style={{ display: "flex", alignItems: "flex-end", gap: "12px", flexWrap: "wrap" }}>
+            {/* Today / All time. Every card follows this, so the region numbers always
+                sum to the ALL card. Hidden while a Closed-date range is set, because
+                that range already decides the period and would silently outrank it. */}
+            {!dateFilterActive && (
+              <div
+                style={{
+                  display: "inline-flex",
+                  borderRadius: "8px",
+                  border: "1px solid var(--border-color, #e5e7eb)",
+                  overflow: "hidden",
+                }}
+              >
+                {(
+                  [
+                    { key: "today", label: "Today" },
+                    { key: "all", label: "All time" },
+                  ] as const
+                ).map((option) => {
+                  const active = countScope === option.key;
+                  return (
+                    <button
+                      key={option.key}
+                      type="button"
+                      onClick={() => setCountScope(option.key)}
+                      title={
+                        option.key === "today"
+                          ? "Calls that closed on this report's day"
+                          : "Every call ever closed — the whole ledger"
+                      }
+                      style={{
+                        padding: "6px 12px",
+                        fontSize: "12px",
+                        fontWeight: 700,
+                        border: "none",
+                        background: active ? "#10b981" : "var(--card-bg, #ffffff)",
+                        color: active ? "#ffffff" : "#6b7280",
+                        cursor: "pointer",
+                      }}
+                    >
+                      {option.label}
+                    </button>
+                  );
+                })}
+              </div>
+            )}
             {/* Comparison date range (typed) for the Closure-import / Raw-data-closed
                 lines. Closure filters by exact date; raw uses the months the range spans.
                 Only rendered once at least one of those sources has data. */}
@@ -1075,12 +1164,14 @@ export function ClosedCallsDashboardView({
               ALL REGIONS
             </div>
             <div style={{ fontSize: "22px", fontWeight: "800", color: "#10b981", margin: "4px 0" }}>
-              {formatNumber(dateFilterActive ? dateFilteredTotal : closedTodayCount)}
+              {formatNumber(closedCountFor("", overallClosedCount))}
             </div>
             <div style={{ fontSize: "11px", color: "#6b7280" }}>
               {dateFilterActive
                 ? `${formatNumber(totalActiveWipCount)} active WIP`
-                : `${formatNumber(overallClosedCount)} all time · ${formatNumber(totalActiveWipCount)} active WIP`}
+                : countScope === "today"
+                  ? `${formatNumber(overallClosedCount)} all time · ${formatNumber(totalActiveWipCount)} active WIP`
+                  : `${formatNumber(closedTodayCount)} closed today · ${formatNumber(totalActiveWipCount)} active WIP`}
             </div>
             <ComparisonCounts
               closureCount={closureCountFor("")}
@@ -1117,14 +1208,13 @@ export function ClosedCallsDashboardView({
                   {entry.regionName}
                 </div>
                 <div style={{ fontSize: "20px", fontWeight: "800", color: isSelected ? "#2563eb" : "#10b981", margin: "4px 0" }}>
-                  {formatNumber(
-                    dateFilterActive
-                      ? dateFilteredCountByAsp.get(entry.aspCode) ?? 0
-                      : entry.closedCount,
-                  )}
+                  {formatNumber(closedCountFor(entry.aspCode, entry.closedCount))}
                 </div>
                 <div style={{ fontSize: "11px", color: "#6b7280" }}>
                   {entry.aspCode} | {formatNumber(entry.activeCount)} WIP
+                  {!dateFilterActive && countScope === "today"
+                    ? ` · ${formatNumber(entry.closedCount)} all time`
+                    : ""}
                 </div>
                 <ComparisonCounts
                   closureCount={closureCountFor(entry.aspCode)}

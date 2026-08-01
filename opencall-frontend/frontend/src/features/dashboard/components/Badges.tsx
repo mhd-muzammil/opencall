@@ -2,7 +2,12 @@
 // Props-only, JSX preserved verbatim — no behavior changes.
 import type { GeneratedReportResponse } from "../../../lib/apiClient";
 import { CHANGE_TYPE_LABELS, CHANGE_FIELD_LABELS } from "../constants";
-import { formatComparisonValue, formatFieldList } from "../utils";
+import {
+  classifyFlexClosureOutcome,
+  formatComparisonValue,
+  formatFieldList,
+  hasFlexClosureOutcome,
+} from "../utils";
 
 export function ChangeTypeBadge({
   comparison,
@@ -60,10 +65,35 @@ export function ChangeTypeBadge({
 
 export function CarryForwardBadge({
   carryForward,
+  output,
 }: Readonly<{
   carryForward: GeneratedReportResponse["rows"][number]["carryForward"];
+  /**
+   * The row's outgoing values, so a closed work order can show HOW it closed.
+   * Optional: callers without it fall back to the flat "Closed" badge.
+   */
+  output?: Record<string, unknown> | undefined;
 }>) {
   if (carryForward.closedSyntheticRow) {
+    // Flex distinguishes a completed job from an abandoned one, and only the
+    // former is billable — so a cancellation says so instead of hiding behind
+    // the same "Closed" badge as real work.
+    const cancelled =
+      output !== undefined &&
+      hasFlexClosureOutcome(output) &&
+      classifyFlexClosureOutcome(output["Flex Status"]) === "cancelled";
+
+    if (cancelled) {
+      return (
+        <span
+          className="opsBadge cancelled"
+          title="Flex closed this work order as Closed - Canceled — abandoned, not billable"
+        >
+          Cancellation
+        </span>
+      );
+    }
+
     return (
       <span
         className="opsBadge closed"

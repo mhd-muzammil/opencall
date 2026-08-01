@@ -3824,7 +3824,10 @@ export default function DashboardPage() {
                       <ChangeTypeBadge comparison={row.comparison} />
                     </td>
                     <td className="opsCell">
-                      <CarryForwardBadge carryForward={row.carryForward} />
+                      <CarryForwardBadge
+                        carryForward={row.carryForward}
+                        output={row.output}
+                      />
                       {row.carryForward.manualFieldsMissing.length > 0 ? (
                         <span
                           className="manualCount"

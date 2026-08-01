@@ -2645,6 +2645,15 @@ th.stickyActionColumn {
   border: 1px solid #fecaca;
 }
 
+/* A work order Flex closed as "Closed - Canceled" — abandoned, not billable.
+   Amber rather than the closed red so it reads as a different outcome at a
+   glance, not just another closure. */
+.opsBadge.cancelled {
+  background: #fef3c7;
+  color: #b45309;
+  border: 1px solid #fde68a;
+}
+
 .opsBadge.manual {
   background: #ffedd5;
   color: #c2410c;

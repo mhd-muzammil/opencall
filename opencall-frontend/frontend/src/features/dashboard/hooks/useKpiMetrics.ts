@@ -17,7 +17,6 @@ import {
   isPlannedStatusValue,
   isOnsiteStatusValue,
   isCaseClosedStatusValue,
-  isCancelledClosure,
 } from "../utils";
 
 export function useKpiMetrics(params: {
@@ -111,15 +110,7 @@ export function useKpiMetrics(params: {
       ? rows.filter((r) => r.comparison?.changeType !== "NEW" && isTradeCase(r)).length
       : rows.filter((r) => !r.carryForward.closedSyntheticRow && isTradeCase(r)).length;
 
-    // Flex decides whether a vanished row was cancelled; our own status column is
-    // only the fallback until it reports. See isCancelledClosure.
-    const wasCancelled = (r: typeof rows[number]) =>
-      isCancelledClosure(
-        r.output as unknown as Record<string, unknown>,
-        getRowStatus(r),
-      );
-
-    const closedCancelled = closed.filter(wasCancelled).length;
+    const closedCancelled = closed.filter((r) => matchStatus(r, ["cancel"])).length;
 
     // Closed Calls = an explicit "Case-Closed" / "WO Closed" status, plus rows
     // that closed by vanishing from the day's Flex file — MINUS the vanished
@@ -131,7 +122,7 @@ export function useKpiMetrics(params: {
     // which is why the two disagreed. A cancellation is not a completed close.
     const caseClosed =
       active.filter((r) => isCaseClosedStatusValue(getRowStatus(r))).length +
-      closed.filter((r) => !wasCancelled(r)).length;
+      closed.filter((r) => !matchStatus(r, ["cancel"])).length;
 
     return {
       engineerCount,

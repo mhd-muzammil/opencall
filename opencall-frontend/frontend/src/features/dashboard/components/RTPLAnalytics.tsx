@@ -301,23 +301,36 @@ export function RTPLDashboard({
 
     for (const row of rtplAnalyticsRows) {
       const output = row.output as unknown as Record<string, unknown>;
+      const markedCaseClosed = isCaseClosedStatusValue(
+        String(output["Evening status"] ?? ""),
+      );
       // Closed today = an Evening Case-Closed, or the call left the Flex file.
-      const closedToday =
-        row.carryForward.closedSyntheticRow ||
-        isCaseClosedStatusValue(String(output["Evening status"] ?? ""));
+      const closedToday = row.carryForward.closedSyntheticRow || markedCaseClosed;
       if (!closedToday) continue;
 
-      // FLEX decides how it closed, not our own Evening status. Only "WO Closed"
-      // is a completed job — the one that gets paid for; "Closed - Canceled" is
-      // an abandoned call. A closure Flex has not reported yet is neither, and
-      // gets its own card rather than being folded into the billable one.
-      const outcome = hasFlexClosureOutcome(output)
+      const flexOutcome = hasFlexClosureOutcome(output)
         ? classifyFlexClosureOutcome(output["Flex Status"])
         : "other";
 
-      if (outcome === "closed") closed.push(row);
-      else if (outcome === "cancelled") cancelled.push(row);
-      else unreported.push(row);
+      // A cancellation from Flex outranks everything: "Closed - Canceled" is an
+      // abandoned call and is never billable, whatever our own column says.
+      if (flexOutcome === "cancelled") {
+        cancelled.push(row);
+        continue;
+      }
+
+      // A completed close is either Flex confirming "WO Closed" OR one of the team
+      // marking the case closed. Both are real closures and belong in the same
+      // count — the split exists to keep CANCELLATIONS out, not to discount the
+      // coordinators' own work while Flex catches up.
+      if (flexOutcome === "closed" || markedCaseClosed) {
+        closed.push(row);
+        continue;
+      }
+
+      // Left the Flex file, nobody marked it closed, and Flex has not reported how
+      // it ended. Genuinely unknown until the hourly closure sync says otherwise.
+      unreported.push(row);
     }
 
     const ticketIdsOf = (rows: ReportRow[]) =>
@@ -673,7 +686,7 @@ export function RTPLDashboard({
                 label: "Case-Closed",
                 metric: closureOutcomeMetrics.closed,
                 title:
-                  "Closed today that Flex reports as WO Closed — completed work, the billable ones.",
+                  "Closed today: Flex reports WO Closed, or one of the team marked the case closed. Cancellations are excluded.",
               },
               {
                 key: "cancelled",
@@ -687,7 +700,7 @@ export function RTPLDashboard({
                 label: "Closed (Flex pending)",
                 metric: closureOutcomeMetrics.unreported,
                 title:
-                  "Closed today, but Flex has not reported how it closed yet. The hourly closure sync moves these into one of the other two.",
+                  "Left the Flex file, nobody marked the case closed, and Flex has not reported how it ended. The hourly closure sync moves these into one of the other two.",
               },
             ] as const
           ).map(({ key, label, metric, title }) =>

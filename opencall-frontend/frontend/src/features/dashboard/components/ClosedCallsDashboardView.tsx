@@ -157,11 +157,14 @@ function ComparisonCounts({
 /**
  * How often the FieldEZ worker's closure job is expected to run, and how many missed
  * cycles turn the "Auto-synced" line red. Mirrors FIELDEZ_CLOSURE_INTERVAL_MS's default
- * (1 h): the frontend cannot read the worker's env, so this is the assumption the
+ * (15 min): the frontend cannot read the worker's env, so this is the assumption the
  * staleness warning is calibrated to. A worker that has silently died keeps serving
  * yesterday's statuses while the stored row count still looks perfectly healthy.
+ *
+ * Keep this in step with the worker's default — left at an hour, a dead sync would go
+ * unflagged for three hours instead of forty-five minutes.
  */
-const CLOSURE_SYNC_INTERVAL_MS = 60 * 60 * 1000;
+const CLOSURE_SYNC_INTERVAL_MS = 15 * 60 * 1000;
 const CLOSURE_SYNC_STALE_AFTER_MS = 3 * CLOSURE_SYNC_INTERVAL_MS;
 
 /** "2026-07-31T09:05:00Z" -> "14:35" in IST, or "" when unparseable. */

@@ -157,6 +157,31 @@ export function hasFlexClosureOutcome(output: Record<string, unknown>): boolean 
   return "Flex Status (WIP)" in output;
 }
 
+/**
+ * Whether a CLOSED row was a cancellation rather than a completed job — the test
+ * behind "Closed Calls" vs "Closed cancelled" everywhere they are reported.
+ *
+ * Flex decides once it has reported the closure: only "WO Closed" is billable. This
+ * used to test OUR OWN status column for the word "cancel", which misses every call
+ * Flex cancelled while our column said something else — a row reading Customer
+ * Pending in both Morning and Evening, with a Flex Status of "Closed - Canceled",
+ * was counted as a completed closure.
+ *
+ * Until Flex reports, our column is the only signal there is, so the keyword test
+ * stays as the fallback rather than being dropped.
+ *
+ * `ownStatus` is whichever column the caller reads — Morning for BOD, Evening for EOD.
+ */
+export function isCancelledClosure(
+  output: Record<string, unknown>,
+  ownStatus: unknown,
+): boolean {
+  if (hasFlexClosureOutcome(output)) {
+    return classifyFlexClosureOutcome(output["Flex Status"]) === "cancelled";
+  }
+  return normalizeStatusValue(ownStatus).includes("cancel");
+}
+
 export function normalizeRecordSearchValue(value: unknown): string {
   return String(value ?? "").trim().toLowerCase();
 }

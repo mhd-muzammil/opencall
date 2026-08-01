@@ -21,6 +21,7 @@ import {
   isPlannedStatusValue,
   isOnsiteStatusValue,
   isCaseClosedStatusValue,
+  isCancelledClosure,
 } from "../features/dashboard/utils/reportUtils";
 // Runtime `xlsx` (~900KB) is loaded lazily at export time so it stays out of the
 // initial page bundle. Only the type namespace is imported statically (erased at
@@ -875,11 +876,19 @@ export async function downloadRegionSummaryExcel(
         !isPlannedStatusValue(evening)
       );
     }).length;
+    // Flex decides whether a vanished row was cancelled; our own status column is
+    // only the fallback until it reports. See isCancelledClosure.
+    const wasCancelled = (r: typeof rows[number]) =>
+      isCancelledClosure(
+        r.output as unknown as Record<string, unknown>,
+        getRowStatus(r),
+      );
+
     // Closed Calls = explicit "Case-Closed" statuses plus closed-by-vanishing
     // rows, minus vanished cancellations (those belong to Closed cancelled).
     const caseClosedCount =
       activeRows.filter((r) => isCaseClosedStatusValue(getRowStatus(r))).length +
-      closedRows.filter((r) => !matchStatus(r, ["cancel"])).length;
+      closedRows.filter((r) => !wasCancelled(r)).length;
     const toBeScheduleCount = activeRows.filter(r => matchStatus(r, ["to be scheduled", "assignment pending", "non avl", "missed to schedule"])).length;
     const cxRescheduleCount = activeRows.filter(r => matchStatus(r, ["cx pending", "reschedule", "cx", "cust delay", "customer delay", "customer pending"])).length;
     const engineerDelayCount = activeRows.filter(r => matchStatus(r, ["engineer delay", "eng delay"])).length;
@@ -896,7 +905,7 @@ export async function downloadRegionSummaryExcel(
       : rows.filter((r) => !r.carryForward.closedSyntheticRow && isTradeRow(r)).length;
  
     // Closed cancelled
-    const closedCancelledCount = closedRows.filter((r) => matchStatus(r, ["cancel"])).length;
+    const closedCancelledCount = closedRows.filter(wasCancelled).length;
  
     aoaData = [
       [reportDate, "", regionName],

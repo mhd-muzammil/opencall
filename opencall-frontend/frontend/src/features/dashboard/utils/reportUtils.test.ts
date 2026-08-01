@@ -4,6 +4,7 @@ import { isTradeCase } from "./caseClassification";
 import {
   classifyFlexClosureOutcome,
   hasFlexClosureOutcome,
+  isCancelledClosure,
   isCaseClosedStatusValue,
   isOnsiteStatusValue,
   isPlannedStatusValue,
@@ -213,5 +214,35 @@ describe("hasFlexClosureOutcome", () => {
         "Flex Status (WIP)": "SSC Pending",
       }),
     ).toBe(true);
+  });
+});
+
+describe("isCancelledClosure", () => {
+  it("follows Flex even when our own column says nothing about cancelling", () => {
+    // The row that exposed this: Morning and Evening both "Customer Pending",
+    // Flex Status "Closed - Canceled". The old keyword test on our column found no
+    // "cancel" and counted it as a completed closure in BOD & EOD Closed Calls.
+    expect(
+      isCancelledClosure(
+        { "Flex Status": "Closed - Canceled", "Flex Status (WIP)": "Request to Cancel" },
+        "Customer Pending",
+      ),
+    ).toBe(true);
+  });
+
+  it("does not call a completed job cancelled just because our column mentions cancel", () => {
+    expect(
+      isCancelledClosure(
+        { "Flex Status": "WO Closed", "Flex Status (WIP)": "Under Cancellation" },
+        "Under Cancellation",
+      ),
+    ).toBe(false);
+  });
+
+  it("falls back to our own column until Flex reports the closure", () => {
+    // No overlay marker => Flex has said nothing, so our column is all there is.
+    expect(isCancelledClosure({ "Flex Status": "OTP Validate" }, "Closed-cancellation")).toBe(true);
+    expect(isCancelledClosure({ "Flex Status": "OTP Validate" }, "Case-Closed")).toBe(false);
+    expect(isCancelledClosure({}, "")).toBe(false);
   });
 });

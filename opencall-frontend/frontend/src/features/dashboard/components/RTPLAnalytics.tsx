@@ -15,6 +15,7 @@ import {
   isCaseClosedStatusValue,
   classifyFlexClosureOutcome,
   hasFlexClosureOutcome,
+  isCancelledClosure,
 } from "../utils";
 import type { ReportRow, RtplCaseScope } from "../types";
 import {
@@ -100,16 +101,23 @@ function calculateKpiMetricsForCardView(
     ? rows.filter((r) => isTradeCase(r))
     : rows.filter((r) => !r.carryForward.closedSyntheticRow && isTradeCase(r));
 
-  const closedCancelledRows = closed.filter((r) => matchStatus(r, ["cancel"]));
+  // A vanished row Flex reports as "Closed - Canceled" is a cancellation, not a
+  // completed close, whatever our own column says — see isCancelledClosure.
+  const wasCancelled = (r: typeof rows[number]) =>
+    isCancelledClosure(
+      r.output as unknown as Record<string, unknown>,
+      getRowStatus(r),
+    );
+
+  const closedCancelledRows = closed.filter(wasCancelled);
   const newCallsRows = active.filter((r) => r.comparison?.changeType === "NEW");
 
   // Closed Calls = an explicit "Case-Closed" status in this column, plus rows
-  // that closed by vanishing from the day's Flex file (closed synthetic rows).
-  // A vanished row whose status says "cancel" is a cancellation, not a
-  // completed close: it belongs to Closed cancelled only, never both rows.
+  // that closed by vanishing from the day's Flex file (closed synthetic rows),
+  // minus the cancellations — they belong to Closed cancelled only, never both.
   const caseClosedRows = [
     ...active.filter((r) => isCaseClosedStatusValue(getRowStatus(r))),
-    ...closed.filter((r) => !matchStatus(r, ["cancel"])),
+    ...closed.filter((r) => !wasCancelled(r)),
   ];
 
   return {

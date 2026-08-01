@@ -1,6 +1,7 @@
 // Engineer Productivity dashboard page extracted from app/page.tsx (Phase 6.5) and updated to render as a separate page view.
 import { useState, useMemo, type Dispatch, type SetStateAction } from "react";
 import { downloadEngineerProductivityExcel } from "../../../lib/excelExport";
+import { EngineerTargetTab } from "./EngineerTargetTab";
 
 export function ProductivityPage({
   selectedRegion,
@@ -77,6 +78,9 @@ export function ProductivityPage({
   }>) => void;
 }>) {
   const [searchQuery, setSearchQuery] = useState("");
+  // Which tab of this page is showing. "target" renders the self-contained Engineer
+  // Target view; everything else on this page is untouched.
+  const [activeTab, setActiveTab] = useState<"productivity" | "target">("productivity");
 
   // Filter list locally by search query (checks engineer name or region name)
   const filteredList = useMemo(() => {
@@ -217,8 +221,44 @@ export function ProductivityPage({
     );
   };
 
+  const tabButton = (key: "productivity" | "target", label: string) => (
+    <button
+      type="button"
+      onClick={() => setActiveTab(key)}
+      style={{
+        padding: "7px 16px",
+        minHeight: "34px",
+        borderRadius: "999px",
+        border: `1px solid ${activeTab === key ? "#4f46e5" : "#d1d5db"}`,
+        background: activeTab === key ? "#4f46e5" : "#ffffff",
+        color: activeTab === key ? "#ffffff" : "#374151",
+        fontSize: "13px",
+        fontWeight: 600,
+        cursor: "pointer",
+      }}
+    >
+      {label}
+    </button>
+  );
+
+  if (activeTab === "target") {
+    return (
+      <div className="panel" style={{ display: "grid", gap: "20px", minWidth: 0 }}>
+        <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
+          {tabButton("productivity", "Productivity")}
+          {tabButton("target", "Target")}
+        </div>
+        <EngineerTargetTab />
+      </div>
+    );
+  }
+
   return (
     <div className="panel" style={{ display: "grid", gap: "20px" }}>
+      <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
+        {tabButton("productivity", "Productivity")}
+        {tabButton("target", "Target")}
+      </div>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", borderBottom: "1px solid var(--border)", paddingBottom: "16px", gap: "16px", flexWrap: "wrap" }}>
         <div style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
           <h2 style={{ margin: 0, fontSize: "20px", fontWeight: "700" }}>👥 Engineer Productivity Dashboard</h2>

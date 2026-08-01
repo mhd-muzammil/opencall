@@ -769,6 +769,36 @@ export function ClosedCallsDashboardView({
     closedTodayCount,
   ]);
 
+  /**
+   * The ledger renders a PAGE at a time.
+   *
+   * It used to render every filtered row, and each row is 16 cells with nested spans
+   * and two buttons — roughly 30 DOM nodes. At ~1,900 closed records that is ~55,000
+   * nodes built synchronously, and a <input type="date"> fires onChange for each
+   * segment you type, so picking a date rebuilt the whole table several times and the
+   * tab went Unresponsive. Everything else on the page (the counts, the cards, Export
+   * Excel) still works off the full filtered set — only the DOM is paged.
+   */
+  const LEDGER_PAGE_SIZE = 100;
+  const [ledgerPage, setLedgerPage] = useState(0);
+
+  const ledgerPageCount = Math.max(
+    1,
+    Math.ceil(filteredClosedRows.length / LEDGER_PAGE_SIZE),
+  );
+  // Any filter change can shrink the list past the current page; clamp rather than
+  // showing an empty table with rows that exist.
+  const safeLedgerPage = Math.min(ledgerPage, ledgerPageCount - 1);
+  const ledgerStart = safeLedgerPage * LEDGER_PAGE_SIZE;
+  const visibleClosedRows = useMemo(
+    () => filteredClosedRows.slice(ledgerStart, ledgerStart + LEDGER_PAGE_SIZE),
+    [filteredClosedRows, ledgerStart],
+  );
+
+  React.useEffect(() => {
+    setLedgerPage(0);
+  }, [selectedRegion, closedFrom, closedTo, searchQuery]);
+
   /** Whether a closed row belongs to the period the cards are currently showing. */
   const rowInScope = useMemo(() => {
     return (row: ReportRow): boolean => {
@@ -1658,7 +1688,10 @@ export function ClosedCallsDashboardView({
                   </td>
                 </tr>
               ) : (
-                filteredClosedRows.map((row, idx) => {
+                visibleClosedRows.map((row, pageIdx) => {
+                  // Absolute position in the filtered set, so the S.No column keeps
+                  // counting across pages instead of restarting at 1 on each one.
+                  const idx = ledgerStart + pageIdx;
                   const out = (row.output ?? {}) as Record<string, unknown>;
                   const ticketId = String(out["Ticket ID"] ?? "-");
                   const rowAsp = getRowAspCode(out);
@@ -1818,15 +1851,67 @@ export function ClosedCallsDashboardView({
         </div>
 
         {filteredClosedRows.length > 0 && (
-          <div style={{ marginTop: "12px", textAlign: "center", fontSize: "12px", color: "#6b7280" }}>
-            Showing all {filteredClosedRows.length} closed call records.{" "}
-            <button
-              type="button"
-              onClick={() => openRecordsWithFilter({ region: selectedRegion, closedOnly: true })}
-              style={{ color: "#2563eb", fontWeight: "600", background: "none", border: "none", cursor: "pointer", textDecoration: "underline" }}
-            >
-              Open full interactive table
-            </button>
+          <div
+            style={{
+              marginTop: "12px",
+              display: "flex",
+              justifyContent: "center",
+              alignItems: "center",
+              flexWrap: "wrap",
+              gap: "10px",
+              fontSize: "12px",
+              color: "#6b7280",
+            }}
+          >
+            {ledgerPageCount > 1 && (
+              <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                {(
+                  [
+                    { label: "‹ Prev", to: safeLedgerPage - 1, disabled: safeLedgerPage === 0 },
+                    {
+                      label: "Next ›",
+                      to: safeLedgerPage + 1,
+                      disabled: safeLedgerPage >= ledgerPageCount - 1,
+                    },
+                  ] as const
+                ).map((control) => (
+                  <button
+                    key={control.label}
+                    type="button"
+                    disabled={control.disabled}
+                    onClick={() => setLedgerPage(control.to)}
+                    style={{
+                      padding: "4px 10px",
+                      fontSize: "12px",
+                      fontWeight: 600,
+                      borderRadius: "6px",
+                      border: "1px solid var(--border-color, #e5e7eb)",
+                      background: control.disabled ? "#f9fafb" : "var(--card-bg, #ffffff)",
+                      color: control.disabled ? "#d1d5db" : "#374151",
+                      cursor: control.disabled ? "default" : "pointer",
+                    }}
+                  >
+                    {control.label}
+                  </button>
+                ))}
+                <span>
+                  Page {safeLedgerPage + 1} of {formatNumber(ledgerPageCount)}
+                </span>
+              </div>
+            )}
+            <span>
+              Showing {formatNumber(ledgerStart + 1)}–
+              {formatNumber(ledgerStart + visibleClosedRows.length)} of{" "}
+              {formatNumber(filteredClosedRows.length)} closed call records. Export Excel
+              covers all of them.{" "}
+              <button
+                type="button"
+                onClick={() => openRecordsWithFilter({ region: selectedRegion, closedOnly: true })}
+                style={{ color: "#2563eb", fontWeight: "600", background: "none", border: "none", cursor: "pointer", textDecoration: "underline" }}
+              >
+                Open full interactive table
+              </button>
+            </span>
           </div>
         )}
       </div>

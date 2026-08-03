@@ -235,12 +235,21 @@ export function RTPLDashboard({
   const [bodEodFormatPicker, setBodEodFormatPicker] = useState<string | null>(null);
 
   async function downloadBodEodImage(mode: "bod" | "eod" | "both", label: string): Promise<void> {
-    const node = bodEodTableRefs.current.get(mode);
-    if (!node) return;
+    const wrap = bodEodTableRefs.current.get(mode);
+    if (!wrap) return;
+    // Capture the TABLE, not its scroll wrapper: the wrapper is overflow:auto, so a
+    // capture of it clips whatever is scrolled out of view and paints the scrollbars
+    // into the PNG. The table itself always has its full content size.
+    const node = (wrap.querySelector("table") ?? wrap) as HTMLElement;
     const { toPng } = await import("html-to-image");
-    // pixelRatio 2: the on-screen table is 10px type; a 1:1 capture is illegible
+    // pixelRatio 3: the on-screen table is 10px type; anything less reads blurry
     // when pasted into chat apps, which is what this download exists for.
-    const dataUrl = await toPng(node, { backgroundColor: "#ffffff", pixelRatio: 2 });
+    const dataUrl = await toPng(node, {
+      backgroundColor: "#ffffff",
+      pixelRatio: 3,
+      width: node.scrollWidth,
+      height: node.scrollHeight,
+    });
     const anchor = document.createElement("a");
     const datePart = (rtplAnalyticsDate || todayIsoDate()).replace(/[^0-9-]/g, "");
     anchor.href = dataUrl;

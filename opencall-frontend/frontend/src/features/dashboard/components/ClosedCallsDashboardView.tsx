@@ -18,6 +18,13 @@ import {
   CUSTOMER_FEEDBACK_OPTIONS,
 } from "../../../lib/customerFeedbackApiClient";
 
+/** The row's Case Closed Date as YYYY-MM-DD, or null when absent/unparseable. */
+function caseClosedIsoOf(output: Record<string, unknown>): string | null {
+  const raw = String(output["Case Closed Date"] ?? "").trim();
+  const dmy = /^(\d{2})-(\d{2})-(\d{4})$/.exec(raw);
+  return dmy ? `${dmy[3]}-${dmy[2]}-${dmy[1]}` : null;
+}
+
 function getRowAspCode(output: Record<string, unknown> = {}): string {
   return String(
     output["Work Location"] ??
@@ -758,10 +765,53 @@ export function ClosedCallsDashboardView({
   }, [closedRows]);
 
   /**
+   * The current bill cycle: the 25th of one month through the 24th of the next —
+   * the billing convention closures are invoiced under. Computed on the IST
+   * calendar day so the cycle rolls over at midnight IST, not UTC.
+   */
+  const billCycle = useMemo(() => {
+    const todayIso = new Intl.DateTimeFormat("en-CA", {
+      timeZone: "Asia/Kolkata",
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+    }).format(new Date());
+    const [y, m, d] = todayIso.split("-").map(Number);
+    const start =
+      (d ?? 1) >= 25
+        ? new Date(Date.UTC(y!, (m ?? 1) - 1, 25))
+        : new Date(Date.UTC(y!, (m ?? 1) - 2, 25));
+    const end = new Date(Date.UTC(start.getUTCFullYear(), start.getUTCMonth() + 1, 24));
+    const iso = (dt: Date) => dt.toISOString().slice(0, 10);
+    const label = (dt: Date) =>
+      dt.toLocaleDateString("en-GB", { day: "2-digit", month: "short", timeZone: "UTC" });
+    return { fromIso: iso(start), toIso: iso(end), label: `${label(start)} – ${label(end)}` };
+  }, []);
+
+  // Per-region closed count inside the current bill cycle, by Case Closed Date.
+  const cycleCountByAsp = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const row of closedRows) {
+      const output = (row.output ?? {}) as Record<string, unknown>;
+      const iso = caseClosedIsoOf(output);
+      if (!iso || iso < billCycle.fromIso || iso > billCycle.toIso) continue;
+      const asp = getRowAspCode(output);
+      counts.set(asp, (counts.get(asp) ?? 0) + 1);
+    }
+    return counts;
+  }, [closedRows, billCycle]);
+
+  const cycleTotal = useMemo(() => {
+    let sum = 0;
+    for (const v of cycleCountByAsp.values()) sum += v;
+    return sum;
+  }, [cycleCountByAsp]);
+
+  /**
    * Which closed count the cards show. "today" is the default because that is what
    * this page is read for; the whole ledger is still one click away.
    */
-  const [countScope, setCountScope] = useState<"today" | "all">("today");
+  const [countScope, setCountScope] = useState<"today" | "all" | "cycle">("today");
 
   /**
    * The number ONE card shows — the ALL card (aspCode "") or a single region.
@@ -779,6 +829,9 @@ export function ClosedCallsDashboardView({
       if (countScope === "today") {
         return aspCode ? closedTodayCountByAsp.get(aspCode) ?? 0 : closedTodayCount;
       }
+      if (countScope === "cycle") {
+        return aspCode ? cycleCountByAsp.get(aspCode) ?? 0 : cycleTotal;
+      }
       return allTimeCount;
     };
   }, [
@@ -788,6 +841,8 @@ export function ClosedCallsDashboardView({
     countScope,
     closedTodayCountByAsp,
     closedTodayCount,
+    cycleCountByAsp,
+    cycleTotal,
   ]);
 
   /**
@@ -833,9 +888,13 @@ export function ClosedCallsDashboardView({
         return true;
       }
       if (countScope === "today") return row.carryForward.sameDayClosedRow === true;
+      if (countScope === "cycle") {
+        const iso = caseClosedIsoOf((row.output ?? {}) as Record<string, unknown>);
+        return iso !== null && iso >= billCycle.fromIso && iso <= billCycle.toIso;
+      }
       return true;
     };
-  }, [dateFilterActive, closedFrom, closedTo, countScope]);
+  }, [dateFilterActive, closedFrom, closedTo, countScope, billCycle]);
 
   /**
    * Completed vs cancelled, per region and overall.
@@ -1201,6 +1260,7 @@ export function ClosedCallsDashboardView({
                 {(
                   [
                     { key: "today", label: "Today" },
+                    { key: "cycle", label: "Bill cycle" },
                     { key: "all", label: "All time" },
                   ] as const
                 ).map((option) => {
@@ -1213,7 +1273,9 @@ export function ClosedCallsDashboardView({
                       title={
                         option.key === "today"
                           ? "Calls that closed on this report's day"
-                          : "Every call ever closed — the whole ledger"
+                          : option.key === "cycle"
+                            ? `Calls closed in the current bill cycle (${billCycle.label}; runs 25th → 24th)`
+                            : "Every call ever closed — the whole ledger"
                       }
                       style={{
                         padding: "6px 12px",
@@ -1329,9 +1391,16 @@ export function ClosedCallsDashboardView({
               {dateFilterActive
                 ? `${formatNumber(totalActiveWipCount)} active WIP`
                 : countScope === "today"
-                  ? `${formatNumber(overallClosedCount)} all time · ${formatNumber(totalActiveWipCount)} active WIP`
-                  : `${formatNumber(closedTodayCount)} closed today · ${formatNumber(totalActiveWipCount)} active WIP`}
+                  ? `${formatNumber(cycleTotal)} bill cycle · ${formatNumber(overallClosedCount)} all time · ${formatNumber(totalActiveWipCount)} active WIP`
+                  : countScope === "cycle"
+                    ? `${formatNumber(closedTodayCount)} closed today · ${formatNumber(overallClosedCount)} all time · ${formatNumber(totalActiveWipCount)} active WIP`
+                    : `${formatNumber(closedTodayCount)} closed today · ${formatNumber(cycleTotal)} bill cycle · ${formatNumber(totalActiveWipCount)} active WIP`}
             </div>
+            {countScope === "cycle" && !dateFilterActive && (
+              <div style={{ fontSize: "10px", color: "#9ca3af", marginTop: "2px" }}>
+                Bill cycle {billCycle.label}
+              </div>
+            )}
             <ClosedOutcomeSplit
               {...closedOutcomeFor("", closedCountFor("", overallClosedCount))}
             />
@@ -1375,7 +1444,13 @@ export function ClosedCallsDashboardView({
                 <div style={{ fontSize: "11px", color: "#6b7280" }}>
                   {entry.aspCode} | {formatNumber(entry.activeCount)} WIP
                   {!dateFilterActive && countScope === "today"
-                    ? ` · ${formatNumber(entry.closedCount)} all time`
+                    ? ` · ${formatNumber(cycleCountByAsp.get(entry.aspCode) ?? 0)} cycle · ${formatNumber(entry.closedCount)} all time`
+                    : ""}
+                  {!dateFilterActive && countScope === "cycle"
+                    ? ` · ${formatNumber(closedTodayCountByAsp.get(entry.aspCode) ?? 0)} today · ${formatNumber(entry.closedCount)} all time`
+                    : ""}
+                  {!dateFilterActive && countScope === "all"
+                    ? ` · ${formatNumber(closedTodayCountByAsp.get(entry.aspCode) ?? 0)} today · ${formatNumber(cycleCountByAsp.get(entry.aspCode) ?? 0)} cycle`
                     : ""}
                 </div>
                 <ClosedOutcomeSplit
@@ -1427,6 +1502,15 @@ export function ClosedCallsDashboardView({
                 What we closed versus what Flex reported
                 {reconAsp ? ` · ${reconAsp}` : " · all regions"}
               </p>
+              {/* The two real totals, spelled out. The three bucket cards are a
+                  comparison table — adding them up counts both sides' disagreements
+                  plus the overlap as one number, which is nobody's closed count. */}
+              {recon && (
+                <p style={{ fontSize: "12px", fontWeight: 600, color: "#374151", margin: "4px 0 0 0" }}>
+                  We closed {formatNumber(recon.counts.matched + recon.counts.closedHereNotInFlex)}
+                  {" · "}Flex reported {formatNumber(recon.counts.matched + recon.counts.closedInFlexNotHere)}
+                </p>
+              )}
             </div>
 
             <div style={{ display: "flex", alignItems: "center", gap: "10px", flexWrap: "wrap" }}>

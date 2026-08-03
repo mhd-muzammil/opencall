@@ -1647,27 +1647,38 @@ export default function DashboardPage() {
     try { window.sessionStorage.setItem("opencall.bodSnapshot", JSON.stringify(snapshot)); } catch { /* non-fatal */ }
   }
 
-  // Download BOD + EOD status breakdown as a single combined sheet.
+  // Download the status breakdown as a sheet, scoped to one view: BOD only,
+  // EOD only, or the combined BOD & EOD (the original download).
   async function handleDownloadBodEod(
     card: { label: string; cardBod: number; cardEod: number; breakdown: Array<{ status: string; bodCount: number; eodCount: number }> },
+    mode: "bod" | "eod" | "both" = "both",
   ): Promise<void> {
     const XLSXStyle = await import("xlsx-js-style");
     const dateStr = rtplAnalyticsDate || todayIsoDate();
     const cardLabel = card.label.replace(/[^a-zA-Z0-9 _-]/g, "").trim();
 
-    // Combined BOD + EOD data on one sheet.
+    const showBod = mode !== "eod";
+    const showEod = mode !== "bod";
+    const viewTitle = mode === "both" ? "BOD & EOD" : mode.toUpperCase();
+
+    const countCols = (entry: { bodCount: number; eodCount: number }): number[] => [
+      ...(showBod ? [entry.bodCount] : []),
+      ...(showEod ? [entry.eodCount] : []),
+    ];
+
     const aoa: (string | number)[][] = [
-      [`Status Summary — ${cardLabel} — ${dateStr}`],
-      ["S.No", "Status", "BOD Count", "EOD Count"],
-      ...card.breakdown.map((entry, idx) => [idx + 1, entry.status, entry.bodCount, entry.eodCount]),
-      ["Total", "", card.cardBod, card.cardEod],
+      [`Status Summary (${viewTitle}) — ${cardLabel} — ${dateStr}`],
+      ["S.No", "Status", ...(showBod ? ["BOD Count"] : []), ...(showEod ? ["EOD Count"] : [])],
+      ...card.breakdown.map((entry, idx) => [idx + 1, entry.status, ...countCols(entry)]),
+      ["Total", "", ...countCols({ bodCount: card.cardBod, eodCount: card.cardEod })],
     ];
 
     const wb = XLSXStyle.utils.book_new();
     const sheet = XLSXStyle.utils.aoa_to_sheet(aoa);
-    sheet["!cols"] = [{ wch: 8 }, { wch: 35 }, { wch: 12 }, { wch: 12 }];
-    // Merge the title across all 4 columns.
-    sheet["!merges"] = [{ s: { r: 0, c: 0 }, e: { r: 0, c: 3 } }];
+    const lastCol = aoa[1]!.length - 1;
+    sheet["!cols"] = [{ wch: 8 }, { wch: 35 }, ...Array.from({ length: lastCol - 1 }, () => ({ wch: 12 }))];
+    // Merge the title across every column of this view.
+    sheet["!merges"] = [{ s: { r: 0, c: 0 }, e: { r: 0, c: lastCol } }];
 
     // ---- Cell styling to match the report template ----
     const thinBorder = { style: "thin", color: { rgb: "000000" } };
@@ -1675,7 +1686,6 @@ export default function DashboardPage() {
     const center = { horizontal: "center", vertical: "center" };
 
     const lastRow = aoa.length - 1; // Total row index
-    const lastCol = 3; // D
     for (let r = 0; r <= lastRow; r++) {
       for (let c = 0; c <= lastCol; c++) {
         const addr = XLSXStyle.utils.encode_cell({ r, c });
@@ -1707,8 +1717,9 @@ export default function DashboardPage() {
       }
     }
 
-    XLSXStyle.utils.book_append_sheet(wb, sheet, "BOD & EOD");
-    XLSXStyle.writeFile(wb, `RTPL_BOD_EOD_${cardLabel.replace(/\s+/g, "_")}_${dateStr}.xlsx`);
+    XLSXStyle.utils.book_append_sheet(wb, sheet, viewTitle.replace(/[\\/?*[\]]/g, ""));
+    const fileTag = mode === "both" ? "BOD_EOD" : mode.toUpperCase();
+    XLSXStyle.writeFile(wb, `RTPL_${fileTag}_${cardLabel.replace(/\s+/g, "_")}_${dateStr}.xlsx`);
   }
   // (Removed) The 6PM IST BOD/EOD auto-download: it fired on every evening
   // page-open/reload (condition was hour >= 18), dropping surprise files. The

@@ -3,7 +3,7 @@
 // calculation, filtering, scope-selection, region-selection, handler, or
 // modal-opening changes). openRtplCheckpointModal and openRecordsWithFilter are
 // passed in unchanged. These two sections render unconditionally in page.tsx.
-import { useMemo, type Dispatch, type SetStateAction } from "react";
+import { useMemo, useRef, useState, type Dispatch, type SetStateAction } from "react";
 import {
   formatNumber,
   todayIsoDate,
@@ -216,8 +216,8 @@ export function RTPLDashboard({
   bodSnapshot: Record<string, string> | null;
   /** Called when user clicks "Fix BOD" button on Upload Time card */
   onFixBod: () => void;
-  /** Called to download BOD + EOD as an Excel workbook */
-  onDownloadBodEod: (card: RtplTimeCard & { cardBod: number; cardEod: number; breakdown: Array<{ status: string; bodCount: number; eodCount: number }> }) => void;
+  /** Called to download the status breakdown as an Excel workbook, scoped to one view. */
+  onDownloadBodEod: (card: RtplTimeCard & { cardBod: number; cardEod: number; breakdown: Array<{ status: string; bodCount: number; eodCount: number }> }, mode: "bod" | "eod" | "both") => void;
   hideTimeCards?: boolean;
   /** True while a past Activity date's report is being fetched. */
   loading?: boolean;
@@ -227,6 +227,26 @@ export function RTPLDashboard({
   RTPL_STATUS_OPTIONS.forEach((status, index) => {
     statusOrderMap.set(status.toLowerCase(), index);
   });
+
+  // One rendered table node per BOD/EOD view, so "Download as image" captures
+  // exactly the table the user is looking at.
+  const bodEodTableRefs = useRef(new Map<string, HTMLDivElement>());
+  // Which view's Image/Excel chooser is open ("bod" | "eod" | "both" | null).
+  const [bodEodFormatPicker, setBodEodFormatPicker] = useState<string | null>(null);
+
+  async function downloadBodEodImage(mode: "bod" | "eod" | "both", label: string): Promise<void> {
+    const node = bodEodTableRefs.current.get(mode);
+    if (!node) return;
+    const { toPng } = await import("html-to-image");
+    // pixelRatio 2: the on-screen table is 10px type; a 1:1 capture is illegible
+    // when pasted into chat apps, which is what this download exists for.
+    const dataUrl = await toPng(node, { backgroundColor: "#ffffff", pixelRatio: 2 });
+    const anchor = document.createElement("a");
+    const datePart = (rtplAnalyticsDate || todayIsoDate()).replace(/[^0-9-]/g, "");
+    anchor.href = dataUrl;
+    anchor.download = `RTPL_${label.replace(/[^a-zA-Z0-9]+/g, "_")}_${datePart}.png`;
+    anchor.click();
+  }
 
   const rtplStatusMetrics = useMemo(
     () => buildRtplOperationalAnalytics(rtplAnalyticsRows),
@@ -857,6 +877,10 @@ export function RTPLDashboard({
                   return (
                     <div
                       className="rtplTimeCardTableWrap"
+                      ref={(el) => {
+                        if (el) bodEodTableRefs.current.set(view.mode, el);
+                        else bodEodTableRefs.current.delete(view.mode);
+                      }}
                       style={{
                         overflowX: "auto",
                         margin: "12px 0",
@@ -935,13 +959,78 @@ export function RTPLDashboard({
                   );
                 })()}
 
-                {/* Action row — the BOD & EOD download only. "Fix BOD" was
-                    removed: BOD is now the Morning column (already the fixed,
-                    carried-forward start-of-day value), so freezing a snapshot
-                    no longer does anything. */}
-                {view.mode === "both" && (
+                {/* Action row — every view (BOD, EOD, BOD & EOD) downloads itself.
+                    Clicking 📥 opens the format chooser; Image captures the table
+                    exactly as rendered, Excel builds the status-breakdown sheet
+                    scoped to this view's columns. ("Fix BOD" was removed: BOD is
+                    the Morning column, already the fixed start-of-day value.) */}
+                {(card.cardBod > 0 || card.cardEod > 0) && (
                   <div style={{ padding: "8px 12px", borderTop: "1px solid #e2e8f0", display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap", justifyContent: "flex-end" }}>
-                    {(card.cardBod > 0 || card.cardEod > 0) && (
+                    {bodEodFormatPicker === view.mode ? (
+                      <>
+                        <span style={{ fontSize: "11px", fontWeight: 600, color: "#475569" }}>
+                          Download {view.title} as
+                        </span>
+                        <button
+                          type="button"
+                          style={{
+                            fontSize: "11px",
+                            fontWeight: "700",
+                            padding: "4px 10px",
+                            borderRadius: "6px",
+                            border: "1px solid #047857",
+                            background: "linear-gradient(135deg, #059669, #047857)",
+                            color: "#ffffff",
+                            cursor: "pointer",
+                          }}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setBodEodFormatPicker(null);
+                            void downloadBodEodImage(view.mode, `${view.title}_${card.label}`);
+                          }}
+                          title={`Download the ${view.title} table as a PNG image`}
+                        >
+                          🖼 Image
+                        </button>
+                        <button
+                          type="button"
+                          style={{
+                            fontSize: "11px",
+                            fontWeight: "700",
+                            padding: "4px 10px",
+                            borderRadius: "6px",
+                            border: "1px solid #0369a1",
+                            background: "linear-gradient(135deg, #0284c7, #0369a1)",
+                            color: "#ffffff",
+                            cursor: "pointer",
+                          }}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setBodEodFormatPicker(null);
+                            onDownloadBodEod(card, view.mode);
+                          }}
+                          title={`Download the ${view.title} status breakdown as Excel`}
+                        >
+                          📊 Excel
+                        </button>
+                        <button
+                          type="button"
+                          style={{
+                            fontSize: "11px",
+                            fontWeight: "600",
+                            padding: "4px 8px",
+                            borderRadius: "6px",
+                            border: "1px solid #cbd5e1",
+                            background: "#f8fafc",
+                            color: "#475569",
+                            cursor: "pointer",
+                          }}
+                          onClick={(e) => { e.stopPropagation(); setBodEodFormatPicker(null); }}
+                        >
+                          ✕
+                        </button>
+                      </>
+                    ) : (
                       <button
                         type="button"
                         style={{
@@ -957,10 +1046,10 @@ export function RTPLDashboard({
                           alignItems: "center",
                           gap: "4px",
                         }}
-                        onClick={(e) => { e.stopPropagation(); onDownloadBodEod(card); }}
-                        title={`Download BOD & EOD for ${card.label}`}
+                        onClick={(e) => { e.stopPropagation(); setBodEodFormatPicker(view.mode); }}
+                        title={`Download ${view.title} for ${card.label} — choose image or Excel`}
                       >
-                        📥 BOD &amp; EOD
+                        📥 {view.title}
                       </button>
                     )}
                   </div>
@@ -1124,7 +1213,7 @@ export function RTPLAnalytics({
   /** Frozen snapshot of ticketId → rtplStatus at Fix BOD click time. */
   bodSnapshot: Record<string, string> | null;
   onFixBod: () => void;
-  onDownloadBodEod: (card: RtplTimeCard & { cardBod: number; cardEod: number; breakdown: Array<{ status: string; bodCount: number; eodCount: number }> }) => void;
+  onDownloadBodEod: (card: RtplTimeCard & { cardBod: number; cardEod: number; breakdown: Array<{ status: string; bodCount: number; eodCount: number }> }, mode: "bod" | "eod" | "both") => void;
 }>) {
   return (
     <>

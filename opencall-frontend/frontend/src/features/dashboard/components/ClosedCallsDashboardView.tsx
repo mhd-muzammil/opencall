@@ -487,14 +487,32 @@ export function ClosedCallsDashboardView({
     };
   }, [summaryToken, summaryNonce]);
 
+  // Liveness comes from the last sync RUN (lastSyncAt) when the backend reports it:
+  // an empty new-day export imports 0 rows, so lastImportedAt legitimately sits at
+  // last night's final import all morning while the worker is perfectly healthy.
+  // Older backends (pre-migration-042) only send lastImportedAt — fall back to it.
   const closureSyncAgeMs = useMemo(() => {
-    const iso = closureStatus?.lastImportedAt;
+    const iso = closureStatus?.lastSyncAt ?? closureStatus?.lastImportedAt;
     if (!iso) return null;
     const then = Date.parse(iso);
     return Number.isNaN(then) ? null : Date.now() - then;
   }, [closureStatus]);
   const closureSyncStale =
     closureSyncAgeMs !== null && closureSyncAgeMs > CLOSURE_SYNC_STALE_AFTER_MS;
+  // Sync alive but the newest DATA is old: Flex simply has nothing new to report
+  // (typical every morning until its first closure of the day). Shown neutrally —
+  // it must not read as the red "worker is down" state.
+  const closureDataAgeMs = useMemo(() => {
+    const iso = closureStatus?.lastImportedAt;
+    if (!iso) return null;
+    const then = Date.parse(iso);
+    return Number.isNaN(then) ? null : Date.now() - then;
+  }, [closureStatus]);
+  const closureNoNewData =
+    !closureSyncStale &&
+    closureStatus?.lastSyncAt != null &&
+    closureDataAgeMs !== null &&
+    closureDataAgeMs > CLOSURE_SYNC_STALE_AFTER_MS;
 
   // Per-ASP raw CLOSED count for the range (month-mapped) or all months.
   const rawClosedFor = useMemo(() => {
@@ -1412,27 +1430,35 @@ export function ClosedCallsDashboardView({
             </div>
 
             <div style={{ display: "flex", alignItems: "center", gap: "10px", flexWrap: "wrap" }}>
-              {closureStatus?.lastImportedAt && (
+              {(closureStatus?.lastSyncAt || closureStatus?.lastImportedAt) && (
                 <span
                   title={
                     closureSyncStale
-                      ? "No closure data has arrived for over 3 sync cycles — the FieldEZ worker may be down."
-                      : `Last closure import (${closureStatus.lastImportSource ?? "?"})`
+                      ? "No sync has completed for over 3 cycles — the FieldEZ worker may be down."
+                      : closureNoNewData
+                        ? `Sync is running; the last closure data arrived ${formatIstTime(closureStatus.lastImportedAt)} (Flex has reported nothing new since).`
+                        : `Last closure import (${closureStatus.lastImportSource ?? "?"})`
                   }
                   style={{
                     fontSize: "11px",
                     fontWeight: 600,
                     padding: "3px 8px",
                     borderRadius: "999px",
-                    border: `1px solid ${closureSyncStale ? "#fecaca" : "#d1fae5"}`,
-                    background: closureSyncStale ? "#fef2f2" : "#ecfdf5",
-                    color: closureSyncStale ? "#b91c1c" : "#047857",
+                    border: `1px solid ${closureSyncStale ? "#fecaca" : closureNoNewData ? "#e5e7eb" : "#d1fae5"}`,
+                    background: closureSyncStale ? "#fef2f2" : closureNoNewData ? "#f9fafb" : "#ecfdf5",
+                    color: closureSyncStale ? "#b91c1c" : closureNoNewData ? "#4b5563" : "#047857",
                     whiteSpace: "nowrap",
                   }}
                 >
-                  {closureStatus.lastImportSource === "AUTO" ? "Auto-synced" : "Imported"}{" "}
-                  {formatIstTime(closureStatus.lastImportedAt)}
-                  {closureSyncStale ? " · stale" : ""}
+                  {(closureStatus.lastSyncSource ?? closureStatus.lastImportSource) === "AUTO"
+                    ? "Auto-synced"
+                    : "Imported"}{" "}
+                  {formatIstTime(closureStatus.lastSyncAt ?? closureStatus.lastImportedAt)}
+                  {closureSyncStale
+                    ? " · stale"
+                    : closureNoNewData
+                      ? " · no new closures yet"
+                      : ""}
                 </span>
               )}
               <label style={{ fontSize: "12px", color: "#6b7280", display: "flex", alignItems: "center", gap: "6px" }}>

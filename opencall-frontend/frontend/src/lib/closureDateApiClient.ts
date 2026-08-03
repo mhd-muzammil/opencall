@@ -44,6 +44,17 @@ export interface ClosureImportStatus {
   lastImportSource: string | null;
   /** YYYY-MM-DD of the latest closure day covered. */
   lastClosedOn: string | null;
+  /**
+   * ISO instant of the most recent import RUN, imported-0 runs included — the sync
+   * liveness signal. `lastImportedAt` only moves when rows were written, which on an
+   * empty new-day export is hours behind a perfectly healthy worker. Null from a
+   * backend without migration 042 (fall back to `lastImportedAt`).
+   */
+  lastSyncAt?: string | null;
+  /** 'AUTO' / 'MANUAL' — the source of that most recent run. */
+  lastSyncSource?: string | null;
+  /** Work orders that run imported (0 for an empty export). */
+  lastSyncImported?: number | null;
 }
 
 export async function getClosureDatesStatus(

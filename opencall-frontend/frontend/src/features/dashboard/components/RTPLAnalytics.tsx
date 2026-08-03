@@ -233,28 +233,44 @@ export function RTPLDashboard({
   const bodEodTableRefs = useRef(new Map<string, HTMLDivElement>());
   // Which view's Image/Excel chooser is open ("bod" | "eod" | "both" | null).
   const [bodEodFormatPicker, setBodEodFormatPicker] = useState<string | null>(null);
+  // The view currently being rendered to PNG (disables its buttons), and the last
+  // capture failure — rendering happens in the browser and CAN fail (fonts,
+  // memory), which must not end as a silently-dead button.
+  const [bodEodImageBusy, setBodEodImageBusy] = useState<string | null>(null);
+  const [bodEodImageError, setBodEodImageError] = useState<string | null>(null);
 
   async function downloadBodEodImage(mode: "bod" | "eod" | "both", label: string): Promise<void> {
+    if (bodEodImageBusy) return;
     const wrap = bodEodTableRefs.current.get(mode);
     if (!wrap) return;
     // Capture the TABLE, not its scroll wrapper: the wrapper is overflow:auto, so a
     // capture of it clips whatever is scrolled out of view and paints the scrollbars
     // into the PNG. The table itself always has its full content size.
     const node = (wrap.querySelector("table") ?? wrap) as HTMLElement;
-    const { toPng } = await import("html-to-image");
-    // pixelRatio 3: the on-screen table is 10px type; anything less reads blurry
-    // when pasted into chat apps, which is what this download exists for.
-    const dataUrl = await toPng(node, {
-      backgroundColor: "#ffffff",
-      pixelRatio: 3,
-      width: node.scrollWidth,
-      height: node.scrollHeight,
-    });
-    const anchor = document.createElement("a");
-    const datePart = (rtplAnalyticsDate || todayIsoDate()).replace(/[^0-9-]/g, "");
-    anchor.href = dataUrl;
-    anchor.download = `RTPL_${label.replace(/[^a-zA-Z0-9]+/g, "_")}_${datePart}.png`;
-    anchor.click();
+    setBodEodImageBusy(mode);
+    setBodEodImageError(null);
+    try {
+      const { toPng } = await import("html-to-image");
+      // pixelRatio 3: the on-screen table is 10px type; anything less reads blurry
+      // when pasted into chat apps, which is what this download exists for.
+      const dataUrl = await toPng(node, {
+        backgroundColor: "#ffffff",
+        pixelRatio: 3,
+        width: node.scrollWidth,
+        height: node.scrollHeight,
+      });
+      const anchor = document.createElement("a");
+      const datePart = (rtplAnalyticsDate || todayIsoDate()).replace(/[^0-9-]/g, "");
+      anchor.href = dataUrl;
+      anchor.download = `RTPL_${label.replace(/[^a-zA-Z0-9]+/g, "_")}_${datePart}.png`;
+      anchor.click();
+      setBodEodFormatPicker(null);
+    } catch (error) {
+      console.error("BOD/EOD image capture failed:", error);
+      setBodEodImageError("Could not render the image — try again, or use Excel.");
+    } finally {
+      setBodEodImageBusy(null);
+    }
   }
 
   const rtplStatusMetrics = useMemo(
@@ -977,11 +993,17 @@ export function RTPLDashboard({
                   <div style={{ padding: "8px 12px", borderTop: "1px solid #e2e8f0", display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap", justifyContent: "flex-end" }}>
                     {bodEodFormatPicker === view.mode ? (
                       <>
+                        {bodEodImageError && (
+                          <span style={{ fontSize: "11px", fontWeight: 600, color: "#b91c1c" }}>
+                            {bodEodImageError}
+                          </span>
+                        )}
                         <span style={{ fontSize: "11px", fontWeight: 600, color: "#475569" }}>
                           Download {view.title} as
                         </span>
                         <button
                           type="button"
+                          disabled={bodEodImageBusy !== null}
                           style={{
                             fontSize: "11px",
                             fontWeight: "700",
@@ -990,19 +1012,20 @@ export function RTPLDashboard({
                             border: "1px solid #047857",
                             background: "linear-gradient(135deg, #059669, #047857)",
                             color: "#ffffff",
-                            cursor: "pointer",
+                            cursor: bodEodImageBusy ? "wait" : "pointer",
+                            opacity: bodEodImageBusy ? 0.7 : 1,
                           }}
                           onClick={(e) => {
                             e.stopPropagation();
-                            setBodEodFormatPicker(null);
                             void downloadBodEodImage(view.mode, `${view.title}_${card.label}`);
                           }}
                           title={`Download the ${view.title} table as a PNG image`}
                         >
-                          🖼 Image
+                          {bodEodImageBusy === view.mode ? "Rendering…" : "🖼 Image"}
                         </button>
                         <button
                           type="button"
+                          disabled={bodEodImageBusy !== null}
                           style={{
                             fontSize: "11px",
                             fontWeight: "700",
@@ -1011,11 +1034,13 @@ export function RTPLDashboard({
                             border: "1px solid #0369a1",
                             background: "linear-gradient(135deg, #0284c7, #0369a1)",
                             color: "#ffffff",
-                            cursor: "pointer",
+                            cursor: bodEodImageBusy ? "wait" : "pointer",
+                            opacity: bodEodImageBusy ? 0.7 : 1,
                           }}
                           onClick={(e) => {
                             e.stopPropagation();
                             setBodEodFormatPicker(null);
+                            setBodEodImageError(null);
                             onDownloadBodEod(card, view.mode);
                           }}
                           title={`Download the ${view.title} status breakdown as Excel`}
@@ -1024,6 +1049,7 @@ export function RTPLDashboard({
                         </button>
                         <button
                           type="button"
+                          disabled={bodEodImageBusy !== null}
                           style={{
                             fontSize: "11px",
                             fontWeight: "600",
@@ -1032,9 +1058,13 @@ export function RTPLDashboard({
                             border: "1px solid #cbd5e1",
                             background: "#f8fafc",
                             color: "#475569",
-                            cursor: "pointer",
+                            cursor: bodEodImageBusy ? "wait" : "pointer",
                           }}
-                          onClick={(e) => { e.stopPropagation(); setBodEodFormatPicker(null); }}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setBodEodFormatPicker(null);
+                            setBodEodImageError(null);
+                          }}
                         >
                           ✕
                         </button>
@@ -1055,7 +1085,11 @@ export function RTPLDashboard({
                           alignItems: "center",
                           gap: "4px",
                         }}
-                        onClick={(e) => { e.stopPropagation(); setBodEodFormatPicker(view.mode); }}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setBodEodImageError(null);
+                          setBodEodFormatPicker(view.mode);
+                        }}
                         title={`Download ${view.title} for ${card.label} — choose image or Excel`}
                       >
                         📥 {view.title}

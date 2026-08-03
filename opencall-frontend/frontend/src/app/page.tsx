@@ -1666,10 +1666,17 @@ export default function DashboardPage() {
       ...(showEod ? [entry.eodCount] : []),
     ];
 
+    // A single-column sheet only lists statuses with a count in THAT column; the
+    // combined sheet keeps every row so BOD and EOD stay comparable side by side.
+    const visibleBreakdown =
+      mode === "both"
+        ? card.breakdown
+        : card.breakdown.filter((entry) => (mode === "bod" ? entry.bodCount : entry.eodCount) > 0);
+
     const aoa: (string | number)[][] = [
       [`Status Summary (${viewTitle}) — ${cardLabel} — ${dateStr}`],
       ["S.No", "Status", ...(showBod ? ["BOD Count"] : []), ...(showEod ? ["EOD Count"] : [])],
-      ...card.breakdown.map((entry, idx) => [idx + 1, entry.status, ...countCols(entry)]),
+      ...visibleBreakdown.map((entry, idx) => [idx + 1, entry.status, ...countCols(entry)]),
       ["Total", "", ...countCols({ bodCount: card.cardBod, eodCount: card.cardEod })],
     ];
 

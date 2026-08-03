@@ -661,10 +661,8 @@ export function ClosedCallsDashboardView({
       // Case Closed Date range filter. The value is DD-MM-YYYY; convert to YYYY-MM-DD
       // for a lexical comparison against the (already YYYY-MM-DD) date-input bounds.
       if (closedFrom || closedTo) {
-        const raw = String(output["Case Closed Date"] ?? "").trim();
-        const dmy = /^(\d{2})-(\d{2})-(\d{4})$/.exec(raw);
-        if (!dmy) return false; // no closed date → excluded once a bound is set
-        const iso = `${dmy[3]}-${dmy[2]}-${dmy[1]}`;
+        const iso = caseClosedIsoOf(output);
+        if (!iso) return false; // no closed date → excluded once a bound is set
         if (closedFrom && iso < closedFrom) return false;
         if (closedTo && iso > closedTo) return false;
       }
@@ -734,10 +732,8 @@ export function ClosedCallsDashboardView({
     if (!dateFilterActive) return counts;
     for (const row of closedRows) {
       const output = (row.output ?? {}) as Record<string, unknown>;
-      const raw = String(output["Case Closed Date"] ?? "").trim();
-      const dmy = /^(\d{2})-(\d{2})-(\d{4})$/.exec(raw);
-      if (!dmy) continue;
-      const iso = `${dmy[3]}-${dmy[2]}-${dmy[1]}`;
+      const iso = caseClosedIsoOf(output);
+      if (!iso) continue;
       if (closedFrom && iso < closedFrom) continue;
       if (closedTo && iso > closedTo) continue;
       const asp = getRowAspCode(output);
@@ -879,10 +875,8 @@ export function ClosedCallsDashboardView({
   const rowInScope = useMemo(() => {
     return (row: ReportRow): boolean => {
       if (dateFilterActive) {
-        const raw = String((row.output ?? {})["Case Closed Date"] ?? "").trim();
-        const dmy = /^(\d{2})-(\d{2})-(\d{4})$/.exec(raw);
-        if (!dmy) return false;
-        const iso = `${dmy[3]}-${dmy[2]}-${dmy[1]}`;
+        const iso = caseClosedIsoOf((row.output ?? {}) as Record<string, unknown>);
+        if (!iso) return false;
         if (closedFrom && iso < closedFrom) return false;
         if (closedTo && iso > closedTo) return false;
         return true;

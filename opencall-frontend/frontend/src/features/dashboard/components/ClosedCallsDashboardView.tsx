@@ -59,6 +59,54 @@ function formatDateKey(key: string): string {
   return match ? `${match[3]}-${match[2]}-${match[1]}` : key;
 }
 
+export interface BillCycle {
+  /** The month the cycle ENDS in, "YYYY-MM" — how the invoice names it. */
+  key: string;
+  fromIso: string;
+  toIso: string;
+  /** "25 Jul – 24 Aug" */
+  label: string;
+  /** "Aug 2026" */
+  monthLabel: string;
+}
+
+/**
+ * The bill cycle an IST calendar day falls in: the 25th of one month through the 24th of
+ * the next, the convention closures are invoiced under. Keyed by the month the cycle ENDS
+ * in ("2026-08" = 25 Jul → 24 Aug 2026), because that is the month it gets billed as.
+ */
+export function billCycleFor(iso: string): BillCycle {
+  const [y, m, d] = iso.split("-").map(Number);
+  const start =
+    (d ?? 1) >= 25
+      ? new Date(Date.UTC(y!, (m ?? 1) - 1, 25))
+      : new Date(Date.UTC(y!, (m ?? 1) - 2, 25));
+  const end = new Date(Date.UTC(start.getUTCFullYear(), start.getUTCMonth() + 1, 24));
+  const isoOf = (dt: Date) => dt.toISOString().slice(0, 10);
+  const dayLabel = (dt: Date) =>
+    dt.toLocaleDateString("en-GB", { day: "2-digit", month: "short", timeZone: "UTC" });
+  const key = isoOf(end).slice(0, 7);
+  return {
+    key,
+    fromIso: isoOf(start),
+    toIso: isoOf(end),
+    label: `${dayLabel(start)} – ${dayLabel(end)}`,
+    monthLabel: formatMonthKey(key),
+  };
+}
+
+/** The cycle a "YYYY-MM" key names — the 24th always falls inside its own cycle. */
+export function billCycleForKey(key: string): BillCycle {
+  return billCycleFor(`${key}-24`);
+}
+
+/** "2026-08" -> "2026-07". */
+export function prevMonthKey(key: string): string {
+  const [y, m] = key.split("-").map(Number);
+  const dt = new Date(Date.UTC(y!, (m ?? 1) - 2, 1));
+  return `${dt.getUTCFullYear()}-${String(dt.getUTCMonth() + 1).padStart(2, "0")}`;
+}
+
 /** Human label for a from/to range: "05-06-2026 → 20-08-2026", "onwards", "up to", etc. */
 function formatRangeLabel(
   lo: string,
@@ -88,11 +136,18 @@ function ComparisonCounts({
   closureCount,
   rawCount,
   closureHint,
+  rawHint,
   onDrill,
 }: Readonly<{
   closureCount: number | null;
   rawCount: number | null;
   closureHint?: string | null;
+  /**
+   * Why the raw number covers a wider period than the closure one — raw data is stored
+   * per month, so a day range still reports whole months. Without this the default
+   * "today" scope reads as a wild discrepancy instead of two different periods.
+   */
+  rawHint?: string | null;
   /** Opens the record list for that source; only wired when the count is clickable. */
   onDrill?: (kind: "closure" | "raw") => void;
 }>) {
@@ -152,6 +207,11 @@ function ComparisonCounts({
     >
       {closureCount !== null && line("FieldEZ data closure", closureCount, "#7c3aed", "closure")}
       {rawCount !== null && line("Raw data closures", rawCount, "#ea580c", "raw")}
+      {rawCount !== null && rawHint && (
+        <div style={{ fontSize: "10px", color: "#9ca3af", marginTop: "-2px" }}>
+          {rawHint}
+        </div>
+      )}
       {closureHint && (
         <div style={{ fontSize: "10px", color: "#9ca3af", marginTop: "2px" }}>
           {closureHint}
@@ -311,8 +371,13 @@ export function ClosedCallsDashboardView({
   const [rawSummary, setRawSummary] = useState<import("../../../lib/flexRawApiClient").FlexRawSummary | null>(null);
   // Day-precise date range for the comparison counts, typed into date inputs. Each is ""
   // (unbounded) or a "YYYY-MM-DD" value. Both empty = all dates.
-  const [comparisonFrom, setComparisonFrom] = useState("");
-  const [comparisonTo, setComparisonTo] = useState("");
+  //
+  // Defaults to TODAY, not all dates: the closure store keeps every closure Flex has ever
+  // reported, so an unbounded count answers "how many since the import began" (6,129) when
+  // what this page is read for is "how many today". The presets and the two date inputs
+  // still reach any other period, all dates included.
+  const [comparisonFrom, setComparisonFrom] = useState(todayIsoDate);
+  const [comparisonTo, setComparisonTo] = useState(todayIsoDate);
   const [rawSyncing, setRawSyncing] = useState(false);
   const [rawSyncMessage, setRawSyncMessage] = useState<string | null>(null);
   // The record-list drill-down opened from a card's "FieldEZ data closure" / "Raw data closures".
@@ -389,6 +454,9 @@ export function ClosedCallsDashboardView({
   }, [monthLo, monthHi]);
 
   // Date-input bounds — first day of the earliest month to the last day of the latest.
+  // Never earlier than today at the top end: the range defaults to today, and on a
+  // morning where Flex has reported nothing yet the latest imported month can still be
+  // last month, which would flag the default value as out of range.
   const [minDate, maxDate] = useMemo(() => {
     if (comparisonMonths.length === 0) return ["", ""];
     const asc = [...comparisonMonths].sort();
@@ -396,7 +464,9 @@ export function ClosedCallsDashboardView({
     const latest = asc[asc.length - 1]!;
     const [ly, lm] = latest.split("-").map(Number);
     const lastDay = new Date(ly!, lm!, 0).getDate();
-    return [`${earliest}-01`, `${latest}-${String(lastDay).padStart(2, "0")}`];
+    const hi = `${latest}-${String(lastDay).padStart(2, "0")}`;
+    const today = todayIsoDate();
+    return [`${earliest}-01`, hi > today ? hi : today];
   }, [comparisonMonths]);
 
   // Closure is day-precise: when a date range is active the monthly byAspMonth cannot
@@ -761,30 +831,88 @@ export function ClosedCallsDashboardView({
   }, [closedRows]);
 
   /**
-   * The current bill cycle: the 25th of one month through the 24th of the next —
-   * the billing convention closures are invoiced under. Computed on the IST
-   * calendar day so the cycle rolls over at midnight IST, not UTC.
+   * The bill cycle today falls in — the 25th of one month through the 24th of the next,
+   * the convention closures are invoiced under. Read off the IST calendar day so the
+   * cycle rolls over at midnight IST, not UTC.
    */
-  const billCycle = useMemo(() => {
-    const todayIso = new Intl.DateTimeFormat("en-CA", {
-      timeZone: "Asia/Kolkata",
-      year: "numeric",
-      month: "2-digit",
-      day: "2-digit",
-    }).format(new Date());
-    const [y, m, d] = todayIso.split("-").map(Number);
-    const start =
-      (d ?? 1) >= 25
-        ? new Date(Date.UTC(y!, (m ?? 1) - 1, 25))
-        : new Date(Date.UTC(y!, (m ?? 1) - 2, 25));
-    const end = new Date(Date.UTC(start.getUTCFullYear(), start.getUTCMonth() + 1, 24));
-    const iso = (dt: Date) => dt.toISOString().slice(0, 10);
-    const label = (dt: Date) =>
-      dt.toLocaleDateString("en-GB", { day: "2-digit", month: "short", timeZone: "UTC" });
-    return { fromIso: iso(start), toIso: iso(end), label: `${label(start)} – ${label(end)}` };
-  }, []);
+  const currentBillCycle = useMemo(() => billCycleFor(todayIsoDate()), []);
 
-  // Per-region closed count inside the current bill cycle, by Case Closed Date.
+  /**
+   * Which cycle the "Bill cycle" scope shows. The ledger holds many months, so the
+   * toggle alone could only ever answer for the current one; this is the month picker
+   * that sits beside it. Keyed by end month ("2026-08" = 25 Jul → 24 Aug).
+   */
+  const [cycleKey, setCycleKey] = useState(() => currentBillCycle.key);
+
+  /**
+   * Selectable cycles: every one from the current cycle back to the oldest closure the
+   * page can count, so a month with data is never missing from the list. Capped at two
+   * years, and at six cycles while nothing has loaded yet.
+   */
+  const billCycleOptions = useMemo(() => {
+    let earliestIso: string | null = null;
+    for (const row of closedRows) {
+      const iso = caseClosedIsoOf((row.output ?? {}) as Record<string, unknown>);
+      if (!iso) continue;
+      if (earliestIso === null || iso < earliestIso) earliestIso = iso;
+    }
+    const monthsAsc = [...comparisonMonths].sort();
+    const earliestMonth = monthsAsc[0];
+    const earliestKeys = [
+      earliestIso ? billCycleFor(earliestIso).key : null,
+      earliestMonth ? billCycleFor(`${earliestMonth}-01`).key : null,
+    ].filter((k): k is string => k !== null);
+    const earliestKey = earliestKeys.length ? earliestKeys.sort()[0]! : null;
+    // A future-dated Case Closed Date (they happen) would otherwise leave the current
+    // cycle as the only option — fall back to the six-cycle default instead.
+    const floorKey =
+      earliestKey && earliestKey < currentBillCycle.key ? earliestKey : null;
+
+    const options: BillCycle[] = [];
+    let key = currentBillCycle.key;
+    for (let i = 0; i < 24; i += 1) {
+      options.push(billCycleForKey(key));
+      if (floorKey ? key <= floorKey : i >= 5) break;
+      key = prevMonthKey(key);
+    }
+    return options;
+  }, [closedRows, comparisonMonths, currentBillCycle]);
+
+  const billCycle = useMemo(
+    () => billCycleOptions.find((c) => c.key === cycleKey) ?? currentBillCycle,
+    [billCycleOptions, cycleKey, currentBillCycle],
+  );
+  const isCurrentCycle = billCycle.key === currentBillCycle.key;
+
+  // Which preset the comparison date inputs currently match (drives the chip states).
+  const comparisonPreset = useMemo<"today" | "cycle" | "all" | "custom">(() => {
+    if (!dateLo && !dateHi) return "all";
+    const today = todayIsoDate();
+    if (dateLo === today && dateHi === today) return "today";
+    if (dateLo === billCycle.fromIso && dateHi === billCycle.toIso) return "cycle";
+    return "custom";
+  }, [dateLo, dateHi, billCycle]);
+
+  /**
+   * Raw data is stored per month, so anything narrower than whole months still reports
+   * whole months. Said out loud on the card — otherwise the default "today" scope puts
+   * a day's closure count next to a month's raw count and they read as a discrepancy.
+   */
+  const rawScopeNote = useMemo(() => {
+    if (!rangeActive) return null;
+    const lastDayOf = (month: string) => {
+      const [y, m] = month.split("-").map(Number);
+      const day = new Date(Date.UTC(y!, m!, 0)).getUTCDate();
+      return `${month}-${String(day).padStart(2, "0")}`;
+    };
+    const wholeMonths =
+      (!monthLo || dateLo === `${monthLo}-01`) &&
+      (!monthHi || dateHi === lastDayOf(monthHi));
+    if (wholeMonths) return null;
+    return `whole of ${formatRangeLabel(monthLo, monthHi, formatMonthKey, "all months")} — raw data is month-level`;
+  }, [rangeActive, monthLo, monthHi, dateLo, dateHi]);
+
+  // Per-region closed count inside the selected bill cycle, by Case Closed Date.
   const cycleCountByAsp = useMemo(() => {
     const counts = new Map<string, number>();
     for (const row of closedRows) {
@@ -1268,7 +1396,7 @@ export function ClosedCallsDashboardView({
                         option.key === "today"
                           ? "Calls that closed on this report's day"
                           : option.key === "cycle"
-                            ? `Calls closed in the current bill cycle (${billCycle.label}; runs 25th → 24th)`
+                            ? `Calls closed in one bill cycle (25th → 24th) — pick the month beside this button. Showing ${billCycle.monthLabel}: ${billCycle.label}`
                             : "Every call ever closed — the whole ledger"
                       }
                       style={{
@@ -1287,9 +1415,42 @@ export function ClosedCallsDashboardView({
                 })}
               </div>
             )}
+            {/* Which cycle "Bill cycle" means. The ledger spans many months, so the
+                toggle on its own could only ever answer for the current one. Appears
+                with the scope so picking the scope and picking the month is one move. */}
+            {!dateFilterActive && countScope === "cycle" && (
+              <div style={{ display: "flex", flexDirection: "column" }}>
+                <label
+                  htmlFor="bill-cycle-month"
+                  style={{ fontSize: "10px", fontWeight: 600, marginBottom: "3px", color: "#6b7280" }}
+                >
+                  Bill cycle month
+                </label>
+                <select
+                  id="bill-cycle-month"
+                  value={billCycle.key}
+                  onChange={(e) => setCycleKey(e.target.value)}
+                  title="Each cycle runs from the 25th to the 24th and is named after the month it ends in"
+                  style={{
+                    ...dateInputStyle,
+                    fontWeight: 600,
+                    background: "var(--card-bg, #ffffff)",
+                    cursor: "pointer",
+                  }}
+                >
+                  {billCycleOptions.map((cycle) => (
+                    <option key={cycle.key} value={cycle.key}>
+                      {cycle.monthLabel} ({cycle.label})
+                      {cycle.key === currentBillCycle.key ? " · current" : ""}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
             {/* Comparison date range (typed) for the Closure-import / Raw-data-closed
                 lines. Closure filters by exact date; raw uses the months the range spans.
-                Only rendered once at least one of those sources has data. */}
+                Defaults to today — the presets jump to the selected bill cycle or back to
+                the whole store. Only rendered once one of those sources has data. */}
             {comparisonMonths.length > 0 && (
               <div style={{ display: "flex", alignItems: "flex-end", gap: "8px", fontSize: "12px", color: "#6b7280", flexWrap: "wrap" }}>
                 <div style={{ display: "flex", flexDirection: "column" }}>
@@ -1314,20 +1475,50 @@ export function ClosedCallsDashboardView({
                     style={dateInputStyle}
                   />
                 </div>
-                {rangeActive && (
-                  <button
-                    type="button"
-                    onClick={() => { setComparisonFrom(""); setComparisonTo(""); }}
-                    title="Clear comparison dates"
-                    style={{
-                      padding: "8px 12px", fontSize: "12px", fontWeight: 600, borderRadius: "8px",
-                      border: "1px solid #d1d5db", background: "#f9fafb", color: "#374151",
-                      cursor: "pointer", whiteSpace: "nowrap",
-                    }}
-                  >
-                    Clear
-                  </button>
-                )}
+                <div style={{ display: "inline-flex", borderRadius: "8px", border: "1px solid var(--border-color, #e5e7eb)", overflow: "hidden" }}>
+                  {(
+                    [
+                      { key: "today", label: "Today", title: "Closures Flex reported for today" },
+                      {
+                        key: "cycle",
+                        label: "Bill cycle",
+                        title: `Closures across the ${billCycle.monthLabel} bill cycle (${billCycle.label})`,
+                      },
+                      { key: "all", label: "All dates", title: "Every closure in the store" },
+                    ] as const
+                  ).map((preset) => (
+                    <button
+                      key={preset.key}
+                      type="button"
+                      title={preset.title}
+                      onClick={() => {
+                        if (preset.key === "today") {
+                          const today = todayIsoDate();
+                          setComparisonFrom(today);
+                          setComparisonTo(today);
+                        } else if (preset.key === "cycle") {
+                          setComparisonFrom(billCycle.fromIso);
+                          setComparisonTo(billCycle.toIso);
+                        } else {
+                          setComparisonFrom("");
+                          setComparisonTo("");
+                        }
+                      }}
+                      style={{
+                        padding: "7px 10px",
+                        fontSize: "11px",
+                        fontWeight: 700,
+                        border: "none",
+                        background: comparisonPreset === preset.key ? "#7c3aed" : "var(--card-bg, #ffffff)",
+                        color: comparisonPreset === preset.key ? "#ffffff" : "#6b7280",
+                        cursor: "pointer",
+                        whiteSpace: "nowrap",
+                      }}
+                    >
+                      {preset.label}
+                    </button>
+                  ))}
+                </div>
               </div>
             )}
             {selectedRegion && selectedRegion !== "ALL" && (
@@ -1390,9 +1581,10 @@ export function ClosedCallsDashboardView({
                     ? `${formatNumber(closedTodayCount)} closed today · ${formatNumber(overallClosedCount)} all time · ${formatNumber(totalActiveWipCount)} active WIP`
                     : `${formatNumber(closedTodayCount)} closed today · ${formatNumber(cycleTotal)} bill cycle · ${formatNumber(totalActiveWipCount)} active WIP`}
             </div>
-            {countScope === "cycle" && !dateFilterActive && (
+            {!dateFilterActive && (countScope === "cycle" || !isCurrentCycle) && (
               <div style={{ fontSize: "10px", color: "#9ca3af", marginTop: "2px" }}>
-                Bill cycle {billCycle.label}
+                Bill cycle {billCycle.monthLabel} · {billCycle.label}
+                {isCurrentCycle ? "" : " (past cycle)"}
               </div>
             )}
             <ClosedOutcomeSplit
@@ -1401,6 +1593,7 @@ export function ClosedCallsDashboardView({
             <ComparisonCounts
               closureCount={closureCountFor("")}
               rawCount={rawClosedFor("")}
+              rawHint={rawScopeNote}
               closureHint={
                 closureUnmatched > 0 ? `${formatNumber(closureUnmatched)} unmatched` : null
               }
@@ -1456,6 +1649,7 @@ export function ClosedCallsDashboardView({
                 <ComparisonCounts
                   closureCount={closureCountFor(entry.aspCode)}
                   rawCount={rawClosedFor(entry.aspCode)}
+                  rawHint={rawScopeNote}
                   onDrill={(kind) => setDrill({ kind, aspCode: entry.aspCode, label: entry.regionName })}
                 />
               </div>

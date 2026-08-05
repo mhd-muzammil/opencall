@@ -7,6 +7,7 @@ import type {
   EditedReportRowResponse,
   GeneratedReportResponse,
   RegionEodStateResponse,
+  RtplStatusChange,
 } from "./api/types";
 import type { RecordColumnCatalog, RecordLayout } from "./recordLayoutApiClient";
 import type { ReportRowPatchValues } from "../features/dashboard/types/dashboard.types";
@@ -238,6 +239,8 @@ export interface SpecialAccessScopedReport {
   report: GeneratedReportResponse | null;
   dataScope: DataScope;
   permissionLevel: PermissionLevel;
+  /** The day the returned report covers; null when there is no report at all. */
+  reportDate: string | null;
 }
 
 export async function fetchSpecialAccessMe(token: string): Promise<SpecialAccessMe> {
@@ -248,14 +251,56 @@ export async function fetchSpecialAccessMe(token: string): Promise<SpecialAccess
   return readJson<SpecialAccessMe>(response);
 }
 
+/**
+ * The scoped report. `reportDate` (YYYY-MM-DD) opens a past day; omit it for the
+ * latest. Past days are otherwise unreachable for special access — /report-history
+ * and /reports/daily-call-plan/generate are both user-only.
+ */
 export async function fetchSpecialAccessReport(
   token: string,
+  reportDate?: string,
 ): Promise<SpecialAccessScopedReport> {
-  const response = await fetch(url("/api/v1/special-access/report"), {
+  const path = reportDate
+    ? `/api/v1/special-access/report?date=${encodeURIComponent(reportDate)}`
+    : "/api/v1/special-access/report";
+  const response = await fetch(url(path), {
     headers: authHeaders(token),
     cache: "no-store",
   });
   return readJson<SpecialAccessScopedReport>(response);
+}
+
+/** Days this credential may open, newest first. Drives its date pickers. */
+export async function fetchSpecialAccessReportDates(
+  token: string,
+): Promise<string[]> {
+  const response = await fetch(url("/api/v1/special-access/report-dates"), {
+    headers: authHeaders(token),
+    cache: "no-store",
+  });
+  return (await readJson<{ dates: string[] }>(response)).dates;
+}
+
+/**
+ * RTPL status activity, scoped to the credential's regions. Mirrors
+ * GET /report-rows/rtpl-status-changes, which is role-guarded — the feed used to
+ * be left permanently empty rather than fire a call that could only 401.
+ */
+export async function getSpecialAccessRtplStatusChanges(input: {
+  token: string;
+  reportId: string;
+  changeDate?: string;
+  limit?: number;
+}): Promise<RtplStatusChange[]> {
+  const params = new URLSearchParams({ reportId: input.reportId });
+  if (input.changeDate) params.set("changeDate", input.changeDate);
+  if (input.limit) params.set("limit", String(input.limit));
+
+  const response = await fetch(
+    url(`/api/v1/special-access/rtpl-status-changes?${params.toString()}`),
+    { headers: authHeaders(input.token), cache: "no-store" },
+  );
+  return readJson<RtplStatusChange[]>(response);
 }
 
 // --- Work Order Details & Entry reference data (engineer + RTPL status pickers) ---

@@ -1,0 +1,92 @@
+// Rules that decide when a REFRESHED report may overwrite what is on screen.
+//
+// The records workspace holds one `report` object and rebuilds everything from
+// it. Two independent things swap that object out from under the user:
+//
+//   1. A special-access session polls its scoped endpoint every 60s. That
+//      endpoint runs a full server-side regeneration, so the response describes
+//      the database as of when the REQUEST STARTED — not when it arrived.
+//   2. Any session can land on a newer report (the FieldEZ worker creates one
+//      per changed file), which changes `reportId` while the user is working.
+//
+// Both used to be applied unconditionally, which is what made a saved row snap
+// back to its old status and the full-screen ASP Code filter un-filter itself.
+// These helpers are pure so the rules can be tested without a browser.
+
+/** Anything with an ASP code — the shape of a report's `regionBreakdown` entry. */
+export interface AspScopedEntry {
+  aspCode?: string | null;
+}
+
+function normalizeAspCode(value: string | null | undefined): string {
+  return String(value ?? "").trim().toUpperCase();
+}
+
+export interface ReportRefreshDecisionInput {
+  /** Sequence number of the request whose response just arrived. */
+  seq: number;
+  /** Highest sequence number already applied to the report state. */
+  appliedSeq: number;
+  /** `Date.now()` captured immediately BEFORE the request was sent. */
+  startedAt: number;
+  /**
+   * `Date.now()` stamped after the last locally-confirmed row save or delete
+   * (0 when this session has not written anything yet).
+   */
+  mutatedAt: number;
+}
+
+/**
+ * May this refresh response be applied to the report on screen?
+ *
+ * Rejected when:
+ *   - a NEWER refresh already landed (out-of-order response), or
+ *   - the request left before a save this session made was confirmed, so the
+ *     response cannot contain that save and applying it would revert the row.
+ *
+ * The mutation comparison is `>=` because `Date.now()` is millisecond-grained:
+ * a tie must fall on the safe side, since dropping a good response only costs
+ * one poll interval while applying a stale one silently undoes an edit.
+ */
+export function shouldApplyReportRefresh({
+  seq,
+  appliedSeq,
+  startedAt,
+  mutatedAt,
+}: ReportRefreshDecisionInput): boolean {
+  if (seq < appliedSeq) return false;
+  if (mutatedAt >= startedAt) return false;
+  return true;
+}
+
+/**
+ * The ASP Code selection to keep when the report object is replaced: the
+ * previous selection when the incoming report still has rows under it,
+ * otherwise null ("All ASP Codes").
+ *
+ * Without this the selection reset on every report swap. In full screen that
+ * dropdown is the only region control there is, so a mid-shift reset is
+ * indistinguishable from the filter clearing itself.
+ *
+ * `allValue` is the sentinel the pickers use for "all regions" (never retained).
+ */
+export function retainedAspSelection(
+  previousAspCode: string | null,
+  regionBreakdown: readonly AspScopedEntry[] | null | undefined,
+  allValue = "ALL",
+): string | null {
+  if (!previousAspCode || previousAspCode === allValue) {
+    return null;
+  }
+
+  const target = normalizeAspCode(previousAspCode);
+  if (!target) {
+    return null;
+  }
+
+  const stillPresent = (regionBreakdown ?? []).some(
+    (entry) => normalizeAspCode(entry.aspCode) === target,
+  );
+
+  return stillPresent ? previousAspCode : null;
+}

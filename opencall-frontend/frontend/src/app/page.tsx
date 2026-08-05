@@ -1,6 +1,6 @@
 "use client";
 
-import { DAILY_CALL_PLAN_COLUMNS, RTPL_STATUS_OPTIONS, ASP_CODE_REGION_MAP, isScheduledStatus, type DailyCallPlanColumn } from "@opencall/shared";
+import { DAILY_CALL_PLAN_COLUMNS, RTPL_STATUS_OPTIONS, ASP_CODE_REGION_MAP, isScheduledStatus, isSscPendingStatus, type DailyCallPlanColumn } from "@opencall/shared";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { ColumnFilterDropdown } from "../components/ColumnFilterDropdown";
@@ -77,6 +77,10 @@ import {
   scheduledRemarkPreviewValue,
   sscEtaRemarkPreviewValue,
 } from "../features/dashboard/utils/scheduledRemarkPreview";
+import {
+  retainedAspSelection,
+  shouldApplyReportRefresh,
+} from "../features/dashboard/utils/reportRefresh";
 
 import {
   ChangeTypeBadge,
@@ -188,6 +192,8 @@ import { getLatestCompletedReportSession } from "../lib/reportHistorySelection";
 import {
   closeSpecialAccessRegionEod,
   fetchSpecialAccessReport,
+  fetchSpecialAccessReportDates,
+  getSpecialAccessRtplStatusChanges,
   getSpecialAccessEngineersDropdown,
   getSpecialAccessRecordLayout,
   getSpecialAccessRegionEodState,
@@ -468,7 +474,10 @@ export default function DashboardPage() {
       autoRemarkPreviewRef.current = null;
       return;
     }
-    const editingRow = report?.rows.find((r) => r.serialNo === editingSerialNo);
+    // Anchored, not positional: this compares the draft against the row's SAVED
+    // values to decide whether to inject the auto-remark, so reading a different
+    // work order after a report swap would preview the wrong line.
+    const editingRow = resolveEditingRow(report, editingSerialNo);
     if (!editingRow) return;
 
     const triggerInput = {
@@ -840,11 +849,33 @@ export default function DashboardPage() {
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [isRecordsTableMaximized]);
 
+  // The ASP/region currently selected, READ (never depended on) by the
+  // report-change reset below — listing it as a dependency would make the reset
+  // fire on the user's own selection and immediately undo it.
+  const selectedRegionRef = useRef(selectedRegion);
+  selectedRegionRef.current = selectedRegion;
+
   useEffect(() => {
     const isRegionAdmin = session?.user?.role === "REGION_ADMIN";
-    const initialRegion = isRegionAdmin && report?.regionBreakdown?.[0]?.aspCode
-      ? report.regionBreakdown[0].aspCode
-      : null;
+
+    // A report SWAP must not silently drop the ASP the user is working in.
+    // reportId changes on its own every time a newer report becomes the latest
+    // (the FieldEZ worker creates one per changed file, and the special-access
+    // poll follows the newest one), so resetting to "All ASP Codes" mid-shift
+    // reads as the filter un-filtering itself — worst of all in full screen,
+    // where that dropdown is the only region control there is. Keep the
+    // selection whenever the new report still has rows for it.
+    const retainedRegion = retainedAspSelection(
+      selectedRegionRef.current,
+      report?.regionBreakdown,
+      ALL_REGIONS_FILTER,
+    );
+
+    const initialRegion = retainedRegion
+      ? retainedRegion
+      : isRegionAdmin && report?.regionBreakdown?.[0]?.aspCode
+        ? report.regionBreakdown[0].aspCode
+        : null;
 
     setSelectedRegion(initialRegion);
     setSelectedWoOtcCode(null);
@@ -1253,7 +1284,6 @@ export default function DashboardPage() {
   useEffect(() => {
     if (
       !session ||
-      session.user.role === "SPECIAL_ACCESS" ||
       productivityFilterType !== "Specific Date" ||
       !selectedProductivityValue
     ) {
@@ -1279,6 +1309,31 @@ export default function DashboardPage() {
       setProductivityDayReport(cached);
       setProductivityDayLoading(false);
       return;
+    }
+
+    // Special access takes the scoped route: it has no history sessions to pick a
+    // batch from and cannot call /reports/daily-call-plan/generate (both user-only),
+    // which is why past-day productivity used to be permanently blank for it. The
+    // scoped endpoint serves the day's report already filtered to the grant.
+    if (isSpecialAccess) {
+      let cancelledScoped = false;
+      setProductivityDayReport(null);
+      setProductivityDayLoading(true);
+      fetchSpecialAccessReport(session.token, iso)
+        .then((scoped) => {
+          if (!scoped.report) return;
+          productivityDayReportCacheRef.current.set(iso, scoped.report);
+          if (!cancelledScoped) setProductivityDayReport(scoped.report);
+        })
+        .catch(() => {
+          // Leave the day blank; the date label still says which day was asked for.
+        })
+        .finally(() => {
+          if (!cancelledScoped) setProductivityDayLoading(false);
+        });
+      return () => {
+        cancelledScoped = true;
+      };
     }
 
     // The day's FINAL report = its most recent completed session.
@@ -1325,14 +1380,14 @@ export default function DashboardPage() {
     return () => {
       cancelled = true;
     };
-  }, [session, productivityFilterType, selectedProductivityValue, report?.reportDate, historySessions, regionId]);
+  }, [session, isSpecialAccess, productivityFilterType, selectedProductivityValue, report?.reportDate, historySessions, regionId]);
 
   // Day-by-day RTPL / BOD & EOD: when the Activity date differs from the current
   // report's day, fetch that day's final report (its latest completed session) in
   // the background, cached per date for the session. When the date IS the current
   // report's day, use the loaded report directly.
   useEffect(() => {
-    if (!session || session.user.role === "SPECIAL_ACCESS" || !rtplAnalyticsDate) {
+    if (!session || !rtplAnalyticsDate) {
       setRtplDayReport(null);
       setRtplDayLoading(false);
       return;
@@ -1351,6 +1406,30 @@ export default function DashboardPage() {
       setRtplDayReport(cached);
       setRtplDayLoading(false);
       return;
+    }
+
+    // Scoped route for special access — same reason as the productivity effect
+    // above: no history sessions to pick a batch from, and /generate is user-only.
+    // This is what makes a past BOD/EOD day reachable for the flex-eod-bod grant.
+    if (isSpecialAccess) {
+      let cancelledScoped = false;
+      setRtplDayReport(null);
+      setRtplDayLoading(true);
+      fetchSpecialAccessReport(session.token, iso)
+        .then((scoped) => {
+          if (!scoped.report) return;
+          rtplDayReportCacheRef.current.set(iso, scoped.report);
+          if (!cancelledScoped) setRtplDayReport(scoped.report);
+        })
+        .catch(() => {
+          // Leave the view empty; the date badge still shows the request.
+        })
+        .finally(() => {
+          if (!cancelledScoped) setRtplDayLoading(false);
+        });
+      return () => {
+        cancelledScoped = true;
+      };
     }
 
     const daySession = historySessions
@@ -1395,7 +1474,7 @@ export default function DashboardPage() {
     return () => {
       cancelled = true;
     };
-  }, [session, rtplAnalyticsDate, report?.reportDate, historySessions, regionId]);
+  }, [session, isSpecialAccess, rtplAnalyticsDate, report?.reportDate, historySessions, regionId]);
 
   // ---- Per-region Final-EOD day boundary (engineer productivity) ----
   // The day whose EOD state the productivity view needs: the selected past day
@@ -1773,32 +1852,118 @@ export default function DashboardPage() {
     void refreshHealth();
   }, []);
 
+  // Wall-clock of the last local report mutation (a row saved or deleted). The
+  // special-access scoped endpoint runs a FULL server-side regeneration, so its
+  // response reflects the database as it was when the request STARTED —
+  // applying a response that left before the save committed silently reverts
+  // that save, which is exactly the bug the regular-user "Background upload
+  // watcher" below documents (and avoids by never re-fetching at all). Any
+  // refresh whose request predates this stamp is dropped.
+  const reportMutatedAtRef = useRef(0);
+  // Monotonic request counter, so a slow response can never overwrite a newer
+  // one that already landed.
+  const specialAccessReloadSeqRef = useRef(0);
+  const specialAccessAppliedSeqRef = useRef(0);
+
   // Special-access logins load their report from a dedicated, server-filtered endpoint
   // (region set + warranty/trade applied server-side). No-ops for regular users.
   // Hoisted out of the effect below so the manual refresh paths can reuse it: a
   // special-access credential has no report history to restore from, so refetching
   // this scoped report is its only "refresh".
-  const reloadSpecialAccessReport = useCallback(async () => {
-    if (!isSpecialAccess || !session) return;
-    try {
-      const res = await fetchSpecialAccessReport(session.token);
-      setReport(res.report);
-    } catch (error) {
-      console.error("Failed to load special-access report", error);
-    }
+  // The day a special-access login is viewing. "" = latest (live, auto-refreshing);
+  // a YYYY-MM-DD pins the workspace to a past day and suspends the poll, so a
+  // background refresh can never yank them back to today mid-correction.
+  const [specialAccessDate, setSpecialAccessDate] = useState<string>("");
+  const [specialAccessDates, setSpecialAccessDates] = useState<string[]>([]);
+  const specialAccessDateRef = useRef(specialAccessDate);
+  specialAccessDateRef.current = specialAccessDate;
+
+  const reloadSpecialAccessReport = useCallback(
+    async (options?: { force?: boolean }) => {
+      if (!isSpecialAccess || !session) return;
+
+      // Never interrupt an in-progress edit / save / busy operation: this
+      // replaces the whole report object, which swaps out the row the open
+      // editor is bound to. Same guard the regular-user poll applies. A manual
+      // refresh (the Refresh button) passes force.
+      if (
+        !options?.force &&
+        (editingSerialNoRef.current !== null ||
+          savingSerialNoRef.current !== null ||
+          isBusyRef.current)
+      ) {
+        return;
+      }
+
+      const seq = ++specialAccessReloadSeqRef.current;
+      const startedAt = Date.now();
+
+      try {
+        const res = await fetchSpecialAccessReport(
+          session.token,
+          specialAccessDateRef.current || undefined,
+        );
+
+        // Out-of-order response, or one computed before a save this session
+        // made — applying either reverts the grid to a state the user has
+        // already moved past. See reportRefresh.ts for the exact rules.
+        if (
+          !shouldApplyReportRefresh({
+            seq,
+            appliedSeq: specialAccessAppliedSeqRef.current,
+            startedAt,
+            mutatedAt: reportMutatedAtRef.current,
+          })
+        ) {
+          return;
+        }
+
+        specialAccessAppliedSeqRef.current = seq;
+        setReport(res.report);
+      } catch (error) {
+        console.error("Failed to load special-access report", error);
+      }
+    },
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isSpecialAccess, session?.token]);
+    [isSpecialAccess, session?.token],
+  );
 
   useEffect(() => {
     if (!isSpecialAccess || !session) return;
 
-    void reloadSpecialAccessReport();
+    // Always load the chosen day once. The 60s auto-refresh runs only for the
+    // LIVE view: on a past day there is nothing new to poll for, and refreshing
+    // would fight a correction the user is making to a closed day.
+    void reloadSpecialAccessReport({ force: true });
+    if (specialAccessDate) return;
+
     const timer = setInterval(() => void reloadSpecialAccessReport(), 60000);
     return () => {
       clearInterval(timer);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isSpecialAccess, session?.token, reloadSpecialAccessReport]);
+  }, [isSpecialAccess, session?.token, specialAccessDate, reloadSpecialAccessReport]);
+
+  // The days this credential may open. /report-history is user-only, so without
+  // this its history was permanently empty and yesterday was unreachable.
+  useEffect(() => {
+    if (!isSpecialAccess || !session) {
+      setSpecialAccessDates([]);
+      return;
+    }
+    let cancelled = false;
+    fetchSpecialAccessReportDates(session.token)
+      .then((dates) => {
+        if (!cancelled) setSpecialAccessDates(dates);
+      })
+      .catch(() => {
+        // Picker stays on "Latest"; the live view is unaffected.
+      });
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isSpecialAccess, session?.token]);
 
   // Region names behind a special-access session, for the header pill. `specialAccess
   // .regions` holds region UUIDs, which are meaningless on screen; the scoped report's
@@ -1869,25 +2034,27 @@ export default function DashboardPage() {
       return;
     }
 
-    // GET /report-rows/rtpl-status-changes is role-guarded to SUPER_ADMIN /
-    // REGION_ADMIN, so it 401s for a special-access credential and raised a failure
-    // banner every time an RTPL view rendered. Leave the activity feed empty rather
-    // than firing a call that can only fail; the panel already handles no rows.
-    // TODO: give special access a scoped equivalent so the granted RTPL sections
-    // show status activity instead of an always-empty feed.
-    if (isSpecialAccess) {
-      setRtplStatusChanges([]);
-      return;
-    }
-
     let cancelled = false;
 
-    getRtplStatusChanges({
-      token: session.token,
-      reportId: rtplReportId,
-      changeDate: rtplAnalyticsDate,
-      limit: RTPL_STATUS_CHANGE_LIMIT,
-    })
+    // GET /report-rows/rtpl-status-changes is role-guarded to SUPER_ADMIN /
+    // REGION_ADMIN, so it 401s for a special-access credential — which is why this
+    // feed used to be hard-coded empty and every granted RTPL section looked
+    // broken. It now has a scoped mirror, filtered to the credential's ASP codes.
+    const loadChanges = isSpecialAccess
+      ? getSpecialAccessRtplStatusChanges({
+          token: session.token,
+          reportId: rtplReportId,
+          changeDate: rtplAnalyticsDate,
+          limit: RTPL_STATUS_CHANGE_LIMIT,
+        })
+      : getRtplStatusChanges({
+          token: session.token,
+          reportId: rtplReportId,
+          changeDate: rtplAnalyticsDate,
+          limit: RTPL_STATUS_CHANGE_LIMIT,
+        });
+
+    loadChanges
       .then((changes) => {
         if (!cancelled) {
           setRtplStatusChanges(changes);
@@ -1909,9 +2076,10 @@ export default function DashboardPage() {
 
     // /report-history is user-only, so it 401s for a special-access credential and
     // the error surfaced as a failure banner. They have no history panel — reloading
-    // the scoped report is the equivalent refresh.
+    // the scoped report is the equivalent refresh. Forced: an explicit refresh is
+    // the user asking for server truth, so it bypasses the poll's edit/save guard.
     if (isSpecialAccess) {
-      await reloadSpecialAccessReport();
+      await reloadSpecialAccessReport({ force: true });
       return;
     }
 
@@ -1932,8 +2100,10 @@ export default function DashboardPage() {
 
       // Special access cannot read /report-history (user-only). Its scoped endpoint
       // always serves the latest completed report, so refetching that IS the refresh.
+      // Forced: this runs inside runAction, which is exactly the "busy" state the
+      // background poll skips, and the user explicitly asked for server truth.
       if (isSpecialAccess) {
-        await reloadSpecialAccessReport();
+        await reloadSpecialAccessReport({ force: true });
         setMessage("Workspace refreshed with latest report data.");
         return;
       }
@@ -2460,10 +2630,56 @@ export default function DashboardPage() {
 
   const canUseBatches = Boolean(batchIds.flexUploadBatchId);
 
+  /**
+   * Identity of the row the editor was opened on.
+   *
+   * `serialNo` is POSITIONAL: the generator assigns it as `index + 1` over rows
+   * sorted by case-created time, recomputes it on every regeneration, and
+   * re-attaches persisted rows by TICKET (`applyPersistedRowMetadata`) — never by
+   * serial. So serial N can name a different work order after the report object
+   * is replaced, and a save that looks the row up by serial alone can write the
+   * draft onto the WRONG ticket. Anchor on the row id, which follows the ticket.
+   */
+  const editingRowAnchorRef = useRef<{ id: string | null; ticketId: string } | null>(
+    null,
+  );
+
+  /**
+   * The row an open editor refers to, or null when it is no longer in the report.
+   * Callers must refuse to act on null rather than falling back to the serial —
+   * acting on the wrong row is far worse than making the user reopen the record.
+   */
+  function resolveEditingRow(
+    fromReport: GeneratedReportResponse | null,
+    serialNo: number,
+  ): GeneratedReportResponse["rows"][number] | null {
+    if (!fromReport) return null;
+    const anchor = editingRowAnchorRef.current;
+
+    if (anchor?.id) {
+      return fromReport.rows.find((candidate) => candidate.id === anchor.id) ?? null;
+    }
+
+    const bySerial =
+      fromReport.rows.find((candidate) => candidate.serialNo === serialNo) ?? null;
+    if (!bySerial) return null;
+
+    // No id to anchor on (a row that has never been persisted). The serial is
+    // all there is, so accept it only while it still names the same work order.
+    if (anchor && String(bySerial.output["Ticket ID"] ?? "") !== anchor.ticketId) {
+      return null;
+    }
+    return bySerial;
+  }
+
   function startEditing(row: GeneratedReportResponse["rows"][number]) {
     // View-only special-access credentials cannot edit rows (the backend rejects the
     // save too); never put them into an edit state they cannot commit.
     if (!canEditRows) return;
+    editingRowAnchorRef.current = {
+      id: row.id ?? null,
+      ticketId: String(row.output["Ticket ID"] ?? ""),
+    };
     setEditingSerialNo(row.serialNo);
     setDraftOutput({ ...row.output });
     setSaveError(null);
@@ -2482,6 +2698,7 @@ export default function DashboardPage() {
   }
 
   function cancelEditing() {
+    editingRowAnchorRef.current = null;
     setEditingSerialNo(null);
     setDraftOutput({});
     setIsEditModalOpen(false);
@@ -2575,9 +2792,21 @@ export default function DashboardPage() {
     }
 
     const currentReport = report;
-    const row = currentReport?.rows.find((candidate) => candidate.serialNo === serialNo);
+    const row = resolveEditingRow(currentReport, serialNo);
 
-    if (!currentReport || !row) {
+    if (!currentReport) {
+      return;
+    }
+
+    // The anchored work order is no longer in the loaded report (it was replaced
+    // by a newer one that no longer carries this ticket). Refuse rather than fall
+    // back to the positional serial, which by now may name a different case. The
+    // modal stays open with the typed values intact so nothing is lost.
+    if (!row) {
+      const reason =
+        "This work order is no longer in the loaded report. Your entries are still on screen — close this window, reopen the record, and save again.";
+      setMessage(`Save failed: ${reason}`);
+      setSaveError(reason);
       return;
     }
 
@@ -2628,6 +2857,21 @@ export default function DashboardPage() {
         }
       }
 
+      // Same rule for an SSC Pending transition. The live preview has been
+      // showing the generated "ETA <case created + 2 days>" line in the Current
+      // Remarks box (see the sscEtaRemarkPreview helper), so whatever the box
+      // holds at save time is what the user agreed to. Without this, a save
+      // that leaves the box exactly as the row already had it omits `remarks`
+      // entirely, and the backend's own movedToSscPending rule then writes the
+      // ETA over a remark the user deliberately kept. An empty box still sends
+      // null, letting the backend write the generated line.
+      const settingSscPending =
+        isSscPendingStatus(values.rtpl_status ?? undefined) ||
+        isSscPendingStatus(values.evening_rtpl_status ?? undefined);
+      if (settingSscPending && !("remarks" in values)) {
+        values.remarks = patchValue("Current Remarks");
+      }
+
       // Special-access logins are not `users` rows, so PATCH /report-rows/:id (which is
       // role-gated to SUPER_ADMIN / REGION_ADMIN) 401s for them. They save through their
       // own endpoint, which re-checks permission level, regions and data scope.
@@ -2643,6 +2887,12 @@ export default function DashboardPage() {
             values,
           });
       const editedApiFields = new Set(Object.keys(values));
+
+      // Stamped AFTER the server confirmed the write, so it is at or after the
+      // commit: any background refresh whose request started earlier than this
+      // is now known to carry a pre-save snapshot and gets dropped rather than
+      // reverting the row the user just saved.
+      reportMutatedAtRef.current = Date.now();
 
       setReport((latestReport) => {
         if (!latestReport) {
@@ -2720,9 +2970,18 @@ export default function DashboardPage() {
     }
 
     const currentReport = report;
-    const row = currentReport?.rows.find((candidate) => candidate.serialNo === serialNo);
+    // Anchored the same way as the save, and for a stronger reason: deleting by
+    // a positional serial after a report swap would remove the wrong case.
+    const row = resolveEditingRow(currentReport, serialNo);
 
-    if (!currentReport || !row) {
+    if (!currentReport) {
+      return;
+    }
+
+    if (!row) {
+      setMessage(
+        "Delete failed: this work order is no longer in the loaded report. Reopen the record and try again.",
+      );
       return;
     }
 
@@ -2731,7 +2990,7 @@ export default function DashboardPage() {
       return;
     }
 
-    if (!window.confirm("Are you sure you want to delete this case? It will be removed from tomorrow's report generation.")) {
+    if (!window.confirm(`Are you sure you want to delete case ${row.output["Ticket ID"] ?? serialNo}? It will be removed from tomorrow's report generation.`)) {
       return;
     }
 
@@ -2740,6 +2999,10 @@ export default function DashboardPage() {
 
     try {
       await deleteReportRow(session.token, row.id);
+
+      // Same stale-refresh guard as a save — without it a background refresh
+      // already in flight brings the deleted row straight back.
+      reportMutatedAtRef.current = Date.now();
 
       setReport((latestReport) => {
         if (!latestReport) {
@@ -4179,6 +4442,10 @@ export default function DashboardPage() {
             </button>
           )}
 
+          {/* Hidden for special access: /report-history is user-only, so this
+              panel could only ever open empty. The "Report day" picker above the
+              workspace is their equivalent, and it actually works. */}
+          {!isSpecialAccess && (
           <button
             type="button"
             className="sidebarItem"
@@ -4188,6 +4455,7 @@ export default function DashboardPage() {
               <ScrollText size={18} strokeWidth={2} /> <span className="sidebarText">History Logs</span>
             </span>
           </button>
+          )}
 
           <button
             type="button"
@@ -4235,6 +4503,71 @@ export default function DashboardPage() {
         />
 
         <div className="pageContent">
+          {/* Day picker for special-access logins. The history panel is driven by
+              /report-history (user-only), so these credentials previously had no
+              way to look at — let alone correct — any day but the current one.
+              Choosing a past day pins the whole workspace to it and suspends the
+              60s auto-refresh, so a background reload cannot drag the user back to
+              today mid-correction. */}
+          {isSpecialAccess && specialAccessDates.length > 0 && (
+            <div
+              className="specialAccessDateBar"
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: "10px",
+                flexWrap: "wrap",
+                padding: "10px 14px",
+                marginBottom: "16px",
+                borderRadius: "10px",
+                border: specialAccessDate ? "1px solid #fed7aa" : "1px solid #e5e7eb",
+                background: specialAccessDate ? "#fffbeb" : "#f9fafb",
+              }}
+            >
+              <label
+                style={{ display: "flex", alignItems: "center", gap: "8px", margin: 0 }}
+              >
+                <span style={{ fontSize: "12px", fontWeight: 800, color: "#374151" }}>
+                  Report day
+                </span>
+                <select
+                  className="overviewRegionSelect"
+                  aria-label="Select report day"
+                  value={specialAccessDate}
+                  onChange={(event) => setSpecialAccessDate(event.target.value)}
+                >
+                  <option value="">Latest (live)</option>
+                  {specialAccessDates.map((date) => (
+                    <option key={date} value={date}>
+                      {date}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              {specialAccessDate ? (
+                <>
+                  <span style={{ fontSize: "12px", fontWeight: 700, color: "#b45309" }}>
+                    Viewing a past day — auto-refresh is paused. Edits save
+                    normally, but a Final EOD already closed for that day keeps
+                    its frozen figures.
+                  </span>
+                  <button
+                    type="button"
+                    className="secondaryButton"
+                    onClick={() => setSpecialAccessDate("")}
+                  >
+                    Back to latest
+                  </button>
+                </>
+              ) : (
+                <span style={{ fontSize: "12px", color: "#6b7280" }}>
+                  {report?.reportDate
+                    ? `Live — showing ${report.reportDate}, refreshing every minute.`
+                    : "Live — refreshing every minute."}
+                </span>
+              )}
+            </div>
+          )}
           <UploadDrawer
             isOpen={isUploadDrawerOpen}
             isBusy={isBusy}
@@ -5138,7 +5471,7 @@ export default function DashboardPage() {
           onViewDetails={() => {
             // The eye in the modal header: open the read-only case drawer on
             // top of the modal for the row being edited.
-            const row = report?.rows.find((r) => r.serialNo === editingSerialNo);
+            const row = resolveEditingRow(report, editingSerialNo);
             if (row) setCaseDetailRow(row);
           }}
         />

@@ -4,6 +4,7 @@ import {
   classifyProductivityStatus,
   computeEngineerProductivity,
   emptyProductivityBucketCounts,
+  isAttendedOutcomeStatus,
   mergeEngineerProductivityResults,
   resolveDayScopedProductivityBucket,
   type ProductivityReportRow,
@@ -118,6 +119,55 @@ describe("classifyProductivityStatus", () => {
 // The Scheduled-gate rule: only calls whose Morning status is a scheduling
 // status are in the day's plan; for those, Evening (or a same-day close)
 // decides the outcome. Unplanned work never counts — anywhere.
+describe("isAttendedOutcomeStatus", () => {
+  it("counts work that actually happened", () => {
+    expect(isAttendedOutcomeStatus("Case-Closed")).toBe(true);
+    expect(isAttendedOutcomeStatus("SSC Pending")).toBe(true);
+    expect(isAttendedOutcomeStatus("Additional Part")).toBe(true);
+    expect(isAttendedOutcomeStatus("Under Observation")).toBe(true);
+    expect(isAttendedOutcomeStatus("Elevation - L2")).toBe(true);
+    // Anything unrecognised is ATTENDED_OTHER — the engineer did something.
+    expect(isAttendedOutcomeStatus("Visit Quote to Customer")).toBe(true);
+  });
+
+  /**
+   * The BOD/EOD "Attended = 110 vs productivity 73" report. Both of these mean
+   * the visit did NOT take place, so both stay Assigned. Counting them was the
+   * whole of that 37-call gap: Customer Pending 25 + Engineer Delay 11 (+1 of
+   * snapshot drift between the two pages).
+   */
+  it("does not count outcomes where the visit never happened", () => {
+    expect(isAttendedOutcomeStatus("Customer Pending")).toBe(false);
+    expect(isAttendedOutcomeStatus("CX Pending")).toBe(false);
+    expect(isAttendedOutcomeStatus("CX Reschedule")).toBe(false);
+    expect(isAttendedOutcomeStatus("Engineer Delay")).toBe(false);
+  });
+
+  it("does not count a call that is still only booked", () => {
+    expect(isAttendedOutcomeStatus("Scheduled")).toBe(false);
+    expect(isAttendedOutcomeStatus("To be Scheduled")).toBe(false);
+    expect(isAttendedOutcomeStatus("Engg Assigned")).toBe(false);
+  });
+
+  it("does not count a blank status — nothing has happened yet", () => {
+    expect(isAttendedOutcomeStatus("")).toBe(false);
+    expect(isAttendedOutcomeStatus("   ")).toBe(false);
+  });
+
+  it("agrees with the productivity buckets it is derived from", () => {
+    // The guard against the two drifting apart again: Attended is exactly the
+    // buckets that are neither booked-only nor a non-visit.
+    for (const status of ["Case-Closed", "SSC Pending", "Under Observation"]) {
+      const bucket = classifyProductivityStatus(status);
+      expect(bucket).not.toBeNull();
+      expect(isAttendedOutcomeStatus(status)).toBe(true);
+    }
+    for (const status of ["Customer Pending", "Engineer Delay", "Scheduled"]) {
+      expect(isAttendedOutcomeStatus(status)).toBe(false);
+    }
+  });
+});
+
 describe("resolveDayScopedProductivityBucket", () => {
   it("keeps a carried-Scheduled call in the plan (Assigned, not worked)", () => {
     expect(

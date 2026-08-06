@@ -29,7 +29,7 @@ import {
   normalizeStatusGroupKey,
   rtplEveningFirstStatusForAnalytics,
 } from "../../../lib/reportDashboardAnalytics";
-import { RTPL_STATUS_OPTIONS } from "@opencall/shared";
+import { RTPL_STATUS_OPTIONS, isAttendedOutcomeStatus } from "@opencall/shared";
 
 function calculateKpiMetricsForCardView(
   rows: ReportRow[],
@@ -533,15 +533,20 @@ export function RTPLDashboard({
     });
 
     // Attended = a planned case (Morning Scheduled / Engineer Assigned) whose
-    // status has since moved on: the Evening entry exists and is no longer a
-    // planning status. An Evening set back to Scheduled/Assigned is still just
-    // booked, not attended. Needs both columns, so it lives here rather than
-    // in calculateKpiMetricsForCardView.
+    // Evening status shows the visit actually happened. An Evening set back to
+    // Scheduled/Assigned is still just booked, not attended. Needs both
+    // columns, so it lives here rather than in calculateKpiMetricsForCardView.
+    //
+    // The outcome test is the SHARED one Engineer Productivity uses
+    // (isAttendedOutcomeStatus), so the two pages report the same number for
+    // the same day. Previously this counted any status that was merely not a
+    // planning status, which swept in Customer Pending and Engineer Delay —
+    // outcomes that mean the visit did NOT take place. For 05-08-2026 that
+    // read 110 attended against productivity's 73, the 37 difference being
+    // exactly those two buckets.
     const attendedRows = rowsWithStatuses.filter(
       (r) =>
-        isPlannedStatusValue(r.bodStatus) &&
-        r.eodStatus !== "" &&
-        !isPlannedStatusValue(r.eodStatus),
+        isPlannedStatusValue(r.bodStatus) && isAttendedOutcomeStatus(r.eodStatus),
     );
     const attendedTicketIds = attendedRows.map((r) => r.ticketId);
 

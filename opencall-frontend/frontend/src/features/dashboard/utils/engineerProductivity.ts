@@ -17,6 +17,7 @@ export {
   computeEngineerProductivity,
   emptyProductivityBucketCounts,
   eveningProductivityStatus,
+  isAttendedOutcomeStatus,
   isProductivityVisibleRow,
   mergeEngineerProductivityResults,
   morningProductivityStatus,

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { engineersForAspCode } from "./engineerScope";
+import { engineersForAspCode, type RegionScopedEngineer } from "./engineerScope";
 
 // Region records carry a short code and a name; report rows carry ASP
 // work-location codes. ASPS01461 is CHENNAI, ASPS01511 is HOSUR.
@@ -31,7 +31,13 @@ describe("engineersForAspCode", () => {
   it("falls open when no engineer carries region information", () => {
     // An older API build omits regionCode/regionName. Showing everyone is
     // recoverable; showing nobody would block scheduling entirely.
-    const legacy = [{ engineerName: "Praveen" }, { engineerName: "Samim" }];
+    // Typed as the payload shape with the region fields simply absent, which is
+    // what an older API returns — an untyped literal shares no property with
+    // RegionScopedEngineer and would not compile.
+    const legacy: RegionScopedEngineer[] = [
+      { engineerName: "Praveen" } as RegionScopedEngineer,
+      { engineerName: "Samim" } as RegionScopedEngineer,
+    ];
     expect(engineersForAspCode(legacy, "ASPS01461")).toEqual(legacy);
   });
 

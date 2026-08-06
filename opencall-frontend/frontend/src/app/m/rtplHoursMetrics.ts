@@ -1,3 +1,4 @@
+import { isAttendedOutcomeStatus } from "@opencall/shared";
 import {
   isTradeCase,
   isActionableStatusValue,
@@ -64,9 +65,12 @@ export function buildStatusMaps(rows: Row[]): {
     bod[ticketId] = bodStatus;
     eod[ticketId] = eodStatus;
 
-    // Attended = a planned case (Morning Scheduled / Engineer Assigned) whose status
-    // has since moved on: the Evening entry exists and is no longer a planning status.
-    if (isPlannedStatusValue(bodStatus) && eodStatus !== "" && !isPlannedStatusValue(eodStatus)) {
+    // Attended = a planned case (Morning Scheduled / Engineer Assigned) whose
+    // Evening status shows the visit actually happened. Uses the SHARED outcome
+    // test so this mobile view, the desktop BOD/EOD table and Engineer
+    // Productivity all report the same number — Customer Pending and Engineer
+    // Delay are Assigned, not Attended (see isAttendedOutcomeStatus).
+    if (isPlannedStatusValue(bodStatus) && isAttendedOutcomeStatus(eodStatus)) {
       attendedRows.push(r);
     }
 

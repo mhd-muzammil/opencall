@@ -2,6 +2,7 @@
 import { useState, useMemo, type Dispatch, type SetStateAction } from "react";
 import { downloadEngineerProductivityExcel } from "../../../lib/excelExport";
 import { EngineerTargetTab } from "./EngineerTargetTab";
+import { LocationPerformancePanel } from "./LocationPerformancePanel";
 
 export function ProductivityPage({
   selectedRegion,
@@ -550,6 +551,10 @@ export function ProductivityPage({
           </tbody>
         </table>
       </div>
+
+      {/* Location-wise ratios + charts. Additive only — it reads the same
+          filtered list the table above renders and changes nothing in it. */}
+      <LocationPerformancePanel list={filteredList} loading={loading} />
     </div>
   );
 }

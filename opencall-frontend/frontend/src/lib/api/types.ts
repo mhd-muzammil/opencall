@@ -321,6 +321,13 @@ export interface DropdownEngineer {
   id: string;
   engineerCode: string | null;
   engineerName: string;
+  /**
+   * The engineer's own region, used to narrow the picker to the ASP code the
+   * user is filtered to. Optional: an older API build omits them, and the
+   * picker then shows everyone rather than nobody.
+   */
+  regionCode?: string | null;
+  regionName?: string | null;
 }
 
 export interface ListEngineersResult {

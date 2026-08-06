@@ -80,6 +80,7 @@ import {
   retainedAspSelection,
   shouldApplyReportRefresh,
 } from "../features/dashboard/utils/reportRefresh";
+import { engineersForAspCode } from "../features/dashboard/utils/engineerScope";
 
 import {
   ChangeTypeBadge,
@@ -3388,6 +3389,16 @@ export default function DashboardPage() {
     [activeRegionBreakdown],
   );
 
+  // Engineers offered by the row editor's Engineer picker. While the table is
+  // narrowed to one ASP code every visible row belongs to that region, so the
+  // picker follows: selecting CHENNAI offers Chennai's engineers, not everyone.
+  // Fails open (see engineersForAspCode) — an empty picker would block
+  // scheduling, which requires an engineer.
+  const scopedEngineersList = useMemo(
+    () => engineersForAspCode(engineersList, selectedRegion, ALL_REGIONS_FILTER),
+    [engineersList, selectedRegion],
+  );
+
   // Full-screen ASP filter. Keeps the RTPL region tab in sync (same as the overview
   // picker) but deliberately leaves the column filters alone — see the call site.
   const selectRecordsAspCode = (value: string) => {
@@ -4013,10 +4024,10 @@ export default function DashboardPage() {
                                 }
                               >
                                 <option value="">Entry</option>
-                                {engineersList.map(e => (
+                                {scopedEngineersList.map(e => (
                                   <option key={e.id} value={e.engineerName}>{e.engineerName}</option>
                                 ))}
-                                {draftOutput[column] && draftOutput[column] !== MANUAL_ENTRY_REQUIRED && !engineersList.some(e => e.engineerName === String(draftOutput[column])) && (
+                                {draftOutput[column] && draftOutput[column] !== MANUAL_ENTRY_REQUIRED && !scopedEngineersList.some(e => e.engineerName === String(draftOutput[column])) && (
                                   <option value={String(draftOutput[column])}>{String(draftOutput[column])} (Inactive/Not in list)</option>
                                 )}
                               </select>
@@ -5450,7 +5461,7 @@ export default function DashboardPage() {
           savingSerialNo={savingSerialNo}
           draftOutput={draftOutput}
           setDraftOutput={setDraftOutput}
-          engineersList={engineersList}
+          engineersList={scopedEngineersList}
           rtplStatusGroups={rtplStatusGroups}
           cancelEditing={cancelEditing}
           saveEditing={saveEditing}

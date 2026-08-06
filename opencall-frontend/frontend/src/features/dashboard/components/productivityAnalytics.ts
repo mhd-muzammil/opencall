@@ -21,6 +21,11 @@ export interface ProductivityListItem {
   assigned: number;
   attended: number;
   closed: number;
+  /** Outcome buckets, for the mix chart. Optional: absent reads as zero. */
+  partOrdered?: number;
+  underObservation?: number;
+  cxReschedule?: number;
+  engineerDelay?: number;
 }
 
 export type PerformanceBand = "green" | "amber" | "orange" | "red";
@@ -71,6 +76,16 @@ export interface LocationComparisonRow {
   assigned: number;
   attended: number;
   closed: number;
+  partOrdered: number;
+  underObservation: number;
+  cxReschedule: number;
+  engineerDelay: number;
+  /**
+   * Assigned calls in none of the five outcome buckets — attended work under a
+   * status the table has no column for, plus calls still sitting booked.
+   * Clamped at zero so a stacked bar can never exceed its own total.
+   */
+  otherOrPending: number;
   /** Of the calls booked to this region, how many were actually attended. */
   assignedVsAttendedPercent: number | null;
   /** Of the calls attended, how many were closed on the day. */
@@ -83,6 +98,24 @@ export interface LocationComparison {
 }
 
 const ALL_LOCATIONS_LABEL = "ALL LOCATIONS";
+
+/** Assigned calls left over once the five outcome buckets are taken out. */
+function remainderOf(row: {
+  assigned: number;
+  closed: number;
+  partOrdered: number;
+  underObservation: number;
+  cxReschedule: number;
+  engineerDelay: number;
+}): number {
+  const accounted =
+    row.closed +
+    row.partOrdered +
+    row.underObservation +
+    row.cxReschedule +
+    row.engineerDelay;
+  return Math.max(0, row.assigned - accounted);
+}
 
 function labelFor(item: ProductivityListItem): string {
   const name = String(item.regionName ?? "").trim();
@@ -111,6 +144,11 @@ export function buildLocationComparison(
       assigned: 0,
       attended: 0,
       closed: 0,
+      partOrdered: 0,
+      underObservation: 0,
+      cxReschedule: 0,
+      engineerDelay: 0,
+      otherOrPending: 0,
       assignedVsAttendedPercent: null,
       attendedVsClosedPercent: null,
     };
@@ -118,11 +156,16 @@ export function buildLocationComparison(
     row.assigned += item.assigned ?? 0;
     row.attended += item.attended ?? 0;
     row.closed += item.closed ?? 0;
+    row.partOrdered += item.partOrdered ?? 0;
+    row.underObservation += item.underObservation ?? 0;
+    row.cxReschedule += item.cxReschedule ?? 0;
+    row.engineerDelay += item.engineerDelay ?? 0;
     byRegion.set(key, row);
   }
 
   const rows = [...byRegion.values()].map((row) => ({
     ...row,
+    otherOrPending: remainderOf(row),
     assignedVsAttendedPercent: ratioPercent(row.attended, row.assigned),
     attendedVsClosedPercent: ratioPercent(row.closed, row.attended),
   }));
@@ -142,8 +185,21 @@ export function buildLocationComparison(
       assigned: acc.assigned + row.assigned,
       attended: acc.attended + row.attended,
       closed: acc.closed + row.closed,
+      partOrdered: acc.partOrdered + row.partOrdered,
+      underObservation: acc.underObservation + row.underObservation,
+      cxReschedule: acc.cxReschedule + row.cxReschedule,
+      engineerDelay: acc.engineerDelay + row.engineerDelay,
     }),
-    { engineers: 0, assigned: 0, attended: 0, closed: 0 },
+    {
+      engineers: 0,
+      assigned: 0,
+      attended: 0,
+      closed: 0,
+      partOrdered: 0,
+      underObservation: 0,
+      cxReschedule: 0,
+      engineerDelay: 0,
+    },
   );
 
   return {
@@ -151,6 +207,7 @@ export function buildLocationComparison(
     total: {
       regionName: ALL_LOCATIONS_LABEL,
       ...totals,
+      otherOrPending: remainderOf(totals),
       // Computed from the pooled totals, NOT averaged across regions: a region
       // with two calls must not weigh the same as one with fifty.
       assignedVsAttendedPercent: ratioPercent(totals.attended, totals.assigned),

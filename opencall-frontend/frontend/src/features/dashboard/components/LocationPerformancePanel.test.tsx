@@ -39,13 +39,38 @@ describe("LocationPerformancePanel", () => {
     expect(html).toContain("74.2%");
   });
 
-  it("renders both charts", () => {
+  it("renders all three charts", () => {
     const html = render();
-    expect(html).toContain("Assigned vs Attended %");
-    expect(html).toContain("Attended vs Closed %");
-    // Each bar is labelled for screen readers with its own figures.
-    expect(html).toContain("SALEM: 84.2% (16 of 19 assigned)");
-    expect(html).toContain("VELLORE: 71.4% (5 of 7 attended)");
+    expect(html).toContain("Call conversion funnel");
+    expect(html).toContain("Conversion rate by location");
+    expect(html).toContain("Outcome mix by location");
+  });
+
+  it("gives every mark a hover tooltip carrying its own figures", () => {
+    const html = render();
+    // Tooltips enhance, never gate: the same values are in the table above.
+    expect(html).toContain("Assigned: 31 of 31 assigned");
+    expect(html).toContain("SALEM — Attended of assigned: 84.2% (16 of 19 assigned)");
+  });
+
+  it("labels each multi-series chart with a legend", () => {
+    // Identity never rests on colour alone.
+    const html = render();
+    expect(html).toContain("Attended of assigned");
+    expect(html).toContain("Closed of attended");
+    expect(html).toContain("Under observation");
+    expect(html).toContain("Other / not actioned");
+  });
+
+  it("colours a bar by its series, never by its own value", () => {
+    // A value-ramp on nominal categories double-encodes length as hue. Salem
+    // (84.2%) and Vellore (58.3%) sit in different performance bands, yet both
+    // attendance bars carry the same slot-1 blue — the band colours stay in the
+    // table above, where they label text rather than size a mark.
+    const html = render();
+    const bars = [...html.matchAll(/title="([^"]*Attended of assigned[^"]*)"[^>]*background:(#[0-9a-f]{6})/g)];
+    expect(bars).toHaveLength(2);
+    expect(new Set(bars.map((match) => match[2]))).toEqual(new Set(["#2a78d6"]));
   });
 
   it("renders nothing while the day is still loading", () => {

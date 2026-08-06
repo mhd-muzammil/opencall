@@ -513,14 +513,23 @@ describe("buildOcrExportFilename", () => {
     );
   });
 
-  it("REGION_ADMIN: company-Region with the region title-cased", () => {
+  it("region-scoped export: company_Region with the region title-cased", () => {
+    // The ASP Code filter (or a REGION_ADMIN's own region) puts the region in
+    // the name, so per-ASP exports are distinguishable in a download folder.
     const report = reportWith([namedRow({ "Evening status": "" })]);
     expect(buildOcrExportFilename(report, "CHENNAI")).toBe(
-      "Renderways_Technology_Pvt_Ltd-Chennai_OCR_BOD_15-July.xlsx",
+      "Renderways_Technology_Pvt_Ltd_Chennai_OCR_BOD_15-July.xlsx",
     );
     const eodReport = reportWith([namedRow({ "Evening status": "Case-Closed" })]);
     expect(buildOcrExportFilename(eodReport, "VELLORE")).toBe(
-      "Renderways_Technology_Pvt_Ltd-Vellore_OCR_EOD_15-July.xlsx",
+      "Renderways_Technology_Pvt_Ltd_Vellore_OCR_EOD_15-July.xlsx",
+    );
+  });
+
+  it("ignores a blank region rather than emitting a dangling separator", () => {
+    const report = reportWith([namedRow({ "Evening status": "" })]);
+    expect(buildOcrExportFilename(report, "   ")).toBe(
+      "Renderways_Technology_Pvt_Ltd_OCR_BOD_15-July.xlsx",
     );
   });
 });

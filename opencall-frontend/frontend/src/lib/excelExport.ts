@@ -390,9 +390,10 @@ const XLSX_MIME =
   "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
 
 // ——— OCR export filename ————————————————————————————————————————————————————
-// The workbook export is named for the company and the day's phase:
-//   Renderways_Technology_Pvt_Ltd_OCR_BOD_15-July.xlsx          (SUPER_ADMIN)
-//   Renderways_Technology_Pvt_Ltd-Chennai_OCR_EOD_15-July.xlsx  (REGION_ADMIN)
+// The workbook export is named for the company, the region it was scoped to,
+// and the day's phase:
+//   Renderways_Technology_Pvt_Ltd_OCR_BOD_15-July.xlsx          (all ASP codes)
+//   Renderways_Technology_Pvt_Ltd_Chennai_OCR_EOD_15-July.xlsx  (one ASP code)
 // EOD only when the employees have filled the Evening status on EVERY open
 // call in the export — one missing entry keeps it a BOD file.
 const EXPORT_COMPANY_NAME = "Renderways_Technology_Pvt_Ltd";
@@ -442,15 +443,18 @@ export function isEveningStatusComplete(
 }
 
 /**
- * The exported workbook's filename. `regionName` is set for a REGION_ADMIN
- * export (adds "-Chennai" after the company) and null/absent for SUPER_ADMIN.
+ * The exported workbook's filename. `regionName` names the region the export
+ * was scoped to — the ASP Code the user filtered the table by, or a
+ * REGION_ADMIN's own region — and is null/absent for an unfiltered export.
+ * Underscore-delimited like the rest of the name, so the whole filename splits
+ * cleanly on "_".
  */
 export function buildOcrExportFilename(
   report: GeneratedReportResponse,
   regionName?: string | null,
 ): string {
   const company = regionName?.trim()
-    ? `${EXPORT_COMPANY_NAME}-${formatOcrRegionName(regionName)}`
+    ? `${EXPORT_COMPANY_NAME}_${formatOcrRegionName(regionName)}`
     : EXPORT_COMPANY_NAME;
   const phase = isEveningStatusComplete(report.rows) ? "EOD" : "BOD";
   const date = report.reportDate || new Date().toISOString().split("T")[0];

@@ -18,6 +18,36 @@ export interface AspScopedEntry {
   aspCode?: string | null;
 }
 
+/**
+ * May the 15s "a newer report was uploaded" poll move this session onto that
+ * report?
+ *
+ * Only when the report covers at least what the user is currently looking at:
+ *   - an UNSCOPED report (`regionId === null` — the FieldEZ worker's and every
+ *     combined upload) is safe for everyone, and
+ *   - a region-SCOPED report only for a session pinned to that same region.
+ *
+ * The `null` case is the one the auto-switch exists for; without it nobody ever
+ * followed worker-created reports and Evening entries kept landing on stale
+ * ones. But "a multi-region login matches everything" (ambient regionId "") let
+ * a SUPER_ADMIN working across all ASPs get pulled onto a single-region upload
+ * — the report then covers one region, so the table silently narrows and the
+ * full-screen ASP Code filter, having nothing left to retain, falls back to
+ * "All ASP Codes" mid-shift. A narrower report must never win that way.
+ */
+export function isAutoSwitchCandidate({
+  reportRegionId,
+  currentRegionId,
+}: {
+  /** `regionId` of the uploaded session being considered (null = unscoped). */
+  reportRegionId: string | null;
+  /** The session's ambient region ("" for a multi-region login). */
+  currentRegionId: string;
+}): boolean {
+  if (reportRegionId === null) return true;
+  return reportRegionId === currentRegionId;
+}
+
 function normalizeAspCode(value: string | null | undefined): string {
   return String(value ?? "").trim().toUpperCase();
 }

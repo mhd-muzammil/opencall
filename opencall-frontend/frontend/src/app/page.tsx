@@ -76,6 +76,7 @@ import {
   scheduledRemarkPreviewValue,
 } from "../features/dashboard/utils/scheduledRemarkPreview";
 import {
+  isAutoSwitchCandidate,
   retainedAspSelection,
   shouldApplyReportRefresh,
 } from "../features/dashboard/utils/reportRefresh";
@@ -2238,13 +2239,15 @@ export default function DashboardPage() {
               s.reportDate === currentReportDate &&
               // Region compatibility, not strict equality: worker/combined
               // uploads carry regionId null but contain every region's rows,
-              // and a super admin's ambient regionId is "" (never a UUID).
-              // Strict equality made both sides unmatchable, so nobody ever
-              // switched onto worker-created reports and Evening entries kept
-              // landing on stale ones.
-              (s.regionId === null ||
-                currentRegionId === "" ||
-                s.regionId === currentRegionId),
+              // so they must stay followable (strict equality made both sides
+              // unmatchable, and nobody ever switched onto worker-created
+              // reports — Evening entries kept landing on stale ones). What a
+              // multi-region login must NOT follow is a single-region upload:
+              // see isAutoSwitchCandidate.
+              isAutoSwitchCandidate({
+                reportRegionId: s.regionId,
+                currentRegionId,
+              }),
           )
           .sort((a, b) => b.createdAt.localeCompare(a.createdAt))[0];
 
@@ -3106,14 +3109,34 @@ export default function DashboardPage() {
   // sees it — their column layout/order, filters, search, and sort, with the
   // on-screen blue header.
   //
-  // Filename: Renderways_Technology_Pvt_Ltd[-Region]_OCR_BOD|EOD_15-July.xlsx.
-  // A REGION_ADMIN export carries their region name; EOD only once every open
-  // call's Evening status is filled (see buildOcrExportFilename).
+  // Filename: Renderways_Technology_Pvt_Ltd[_Region]_OCR_BOD|EOD_15-July.xlsx.
+  // EOD only once every open call's Evening status is filled (see
+  // buildOcrExportFilename).
+  //
+  // The region in the name follows what was actually EXPORTED. The workbook
+  // carries `filteredRows`, so picking Chennai in the ASP Code filter exports
+  // Chennai's calls — and the file was still landing as the plain company name,
+  // making a folder of per-ASP exports indistinguishable. The selected ASP wins;
+  // a REGION_ADMIN (whose report only ever holds their own region, and who has
+  // no ASP picker when there is a single option) falls back to that region.
   function exportRecordsExcel() {
-    const exportRegionName =
-      session?.user?.role === "REGION_ADMIN"
-        ? report?.regionBreakdown?.[0]?.regionName ?? null
+    const selectedAspRegionName =
+      selectedRegion && selectedRegion !== ALL_REGIONS_FILTER
+        ? // The picker's own label first, then the report metadata (which still
+          // names a region whose calls are all closed, so the dropdown has no
+          // entry for it), and only then the bare ASP code — never nothing.
+          aspCodeFilterOptions.find((entry) => entry.aspCode === selectedRegion)
+            ?.regionName ||
+          report?.regionBreakdown?.find(
+            (entry) => entry.aspCode?.toUpperCase() === selectedRegion.toUpperCase(),
+          )?.regionName ||
+          selectedRegion
         : null;
+    const exportRegionName =
+      selectedAspRegionName ??
+      (session?.user?.role === "REGION_ADMIN"
+        ? report?.regionBreakdown?.[0]?.regionName ?? null
+        : null);
     exportReport((r) =>
       void downloadReportAsXlsx(
         r,

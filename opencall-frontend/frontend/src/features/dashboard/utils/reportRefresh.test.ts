@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  isAutoSwitchCandidate,
   retainedAspSelection,
   shouldApplyReportRefresh,
 } from "./reportRefresh";
@@ -84,5 +85,40 @@ describe("retainedAspSelection", () => {
 
   it("ignores breakdown entries with no ASP code", () => {
     expect(retainedAspSelection("ASPS01461", [{ aspCode: null }, { aspCode: "" }])).toBeNull();
+  });
+});
+
+describe("isAutoSwitchCandidate", () => {
+  const SUPER_ADMIN = "";
+  const VELLORE = "6f1c2d3e-region-uuid";
+  const CHENNAI = "9a8b7c6d-region-uuid";
+
+  it("follows an unscoped report from any session", () => {
+    // The worker's and every combined upload: regionId null, all regions inside.
+    // This is the case the auto-switch exists for.
+    expect(
+      isAutoSwitchCandidate({ reportRegionId: null, currentRegionId: SUPER_ADMIN }),
+    ).toBe(true);
+    expect(
+      isAutoSwitchCandidate({ reportRegionId: null, currentRegionId: VELLORE }),
+    ).toBe(true);
+  });
+
+  it("never pulls a multi-region login onto a single-region upload", () => {
+    // The reported bug: a SUPER_ADMIN working across every ASP got moved onto a
+    // region-scoped report mid-shift, which narrowed the table to that one
+    // region and reset the full-screen ASP Code filter to "All ASP Codes".
+    expect(
+      isAutoSwitchCandidate({ reportRegionId: VELLORE, currentRegionId: SUPER_ADMIN }),
+    ).toBe(false);
+  });
+
+  it("follows a scoped report only from a session pinned to that region", () => {
+    expect(
+      isAutoSwitchCandidate({ reportRegionId: VELLORE, currentRegionId: VELLORE }),
+    ).toBe(true);
+    expect(
+      isAutoSwitchCandidate({ reportRegionId: VELLORE, currentRegionId: CHENNAI }),
+    ).toBe(false);
   });
 });

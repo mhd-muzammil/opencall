@@ -16,10 +16,7 @@
 
 import {
   buildScheduledRemark,
-  buildSscPendingRemark,
-  isAutoSscEtaRemark,
   isScheduledStatus,
-  isSscPendingStatus,
   istTodayIso,
 } from "@opencall/shared";
 import { MANUAL_ENTRY_REQUIRED } from "../constants";
@@ -119,87 +116,5 @@ export function scheduledRemarkPreviewValue(
   }
 
   const generated = buildScheduledRemark(input.todayIso ?? istTodayIso());
-  return remark === generated ? null : generated;
-}
-
-// ---------------------------------------------------------------- SSC Pending
-
-/**
- * Live "ETA <case created + 2 days>" auto-remark preview, the SSC-Pending
- * sibling of the scheduling rule above.
- *
- * Mirrors the SERVER rule that fires on save:
- *   open_call_2/backend/src/services/reportRows/reportRowEditService.ts
- *   (applyReportRowManualFieldEdit -> buildSscPendingRemark)
- * Same DRIFT RISK applies: the trigger and the template must stay identical on
- * both sides or the box will disagree with what the save writes.
- */
-export interface SscEtaRemarkTriggerInput {
-  draftMorningStatus: string | number | null | undefined;
-  draftEveningStatus: string | number | null | undefined;
-  persistedMorningStatus: string | number | null | undefined;
-  persistedEveningStatus: string | number | null | undefined;
-}
-
-/**
- * Whether this edit would make the server generate the ETA line: THIS edit
- * moves a status column (Morning or Evening) to SSC Pending from something that
- * was NOT already SSC Pending. Transition-only, exactly like the server's
- * `movedToSscPending`, so re-saving an already-SSC row never regenerates a
- * fresher ETA over a remark the team has since written.
- */
-export function isSscEtaRemarkTriggered(
-  input: SscEtaRemarkTriggerInput,
-): boolean {
-  const setsSscPending = (
-    draft: string | number | null | undefined,
-    persisted: string | number | null | undefined,
-  ): boolean =>
-    isSscPendingStatus(clean(draft)) && !isSscPendingStatus(clean(persisted));
-
-  return (
-    setsSscPending(input.draftMorningStatus, input.persistedMorningStatus) ||
-    setsSscPending(input.draftEveningStatus, input.persistedEveningStatus)
-  );
-}
-
-export interface SscEtaRemarkPreviewInput extends SscEtaRemarkTriggerInput {
-  draftRemark: string | number | null | undefined;
-  persistedRemark?: string | number | null | undefined;
-  /** The row's Case Created Time — the ETA is derived purely from this. */
-  caseCreatedTime: string | number | null | undefined;
-}
-
-/**
- * The value the Current Remarks box should be prefilled with, or null to leave
- * it alone. Same never-clobber-the-user rules as the scheduling preview: only
- * an empty box, the "Manual Entry Required" sentinel, an untouched saved
- * remark, or a previously auto-generated line (either the ETA or a stale
- * "Scheduled on …") is replaced. Returns null when the row has no usable Case
- * Created Time, so the box never shows a half-built "ETA ".
- */
-export function sscEtaRemarkPreviewValue(
-  input: SscEtaRemarkPreviewInput,
-): string | null {
-  if (!isSscEtaRemarkTriggered(input)) {
-    return null;
-  }
-
-  const generated = buildSscPendingRemark(clean(input.caseCreatedTime));
-  if (!generated) {
-    return null;
-  }
-
-  const remark = clean(input.draftRemark);
-  const untouchedThisSession = remark === clean(input.persistedRemark);
-  const replaceable =
-    remark === "" ||
-    untouchedThisSession ||
-    isAutoSscEtaRemark(remark) ||
-    isAutoScheduledRemark(remark);
-  if (!replaceable) {
-    return null;
-  }
-
   return remark === generated ? null : generated;
 }

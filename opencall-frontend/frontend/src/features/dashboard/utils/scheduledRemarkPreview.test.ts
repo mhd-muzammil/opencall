@@ -2,9 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   isAutoScheduledRemark,
   isScheduledRemarkTriggered,
-  isSscEtaRemarkTriggered,
   scheduledRemarkPreviewValue,
-  sscEtaRemarkPreviewValue,
 } from "./scheduledRemarkPreview";
 
 const MANUAL = "Manual Entry Required";
@@ -183,96 +181,5 @@ describe("scheduledRemarkPreviewValue", () => {
     expect(scheduledRemarkPreviewValue({ ...base, todayIso: "2026-07-22" })).toBe(
       "Scheduled on 22nd July",
     );
-  });
-});
-
-describe("sscEtaRemarkPreviewValue — the SSC Pending part ETA", () => {
-  const base = {
-    draftMorningStatus: "SSC Pending",
-    draftEveningStatus: "",
-    persistedMorningStatus: "Scheduled",
-    persistedEveningStatus: "",
-    caseCreatedTime: "2026-07-31",
-  };
-
-  it("previews case created + 2 days as an ordinal date", () => {
-    expect(sscEtaRemarkPreviewValue({ ...base, draftRemark: "" })).toBe(
-      "ETA 2nd August",
-    );
-  });
-
-  it("fires on the Evening column too", () => {
-    expect(
-      sscEtaRemarkPreviewValue({
-        ...base,
-        draftMorningStatus: "Scheduled",
-        draftEveningStatus: "SSC Pending",
-        draftRemark: "",
-      }),
-    ).toBe("ETA 2nd August");
-  });
-
-  it("matches the longer 'SSC Pending → Part Pending' spelling", () => {
-    expect(
-      sscEtaRemarkPreviewValue({
-        ...base,
-        draftMorningStatus: "SSC Pending → Part Pending",
-        draftRemark: "",
-      }),
-    ).toBe("ETA 2nd August");
-  });
-
-  it("is transition-only — an already-SSC row is left alone", () => {
-    expect(
-      sscEtaRemarkPreviewValue({
-        ...base,
-        persistedMorningStatus: "SSC Pending",
-        draftRemark: "",
-      }),
-    ).toBeNull();
-  });
-
-  it("never overwrites text the user typed this session", () => {
-    expect(
-      sscEtaRemarkPreviewValue({ ...base, draftRemark: "part chased with SSC" }),
-    ).toBeNull();
-  });
-
-  it("replaces the placeholder, an untouched saved remark, and a stale auto line", () => {
-    expect(
-      sscEtaRemarkPreviewValue({ ...base, draftRemark: "Manual Entry Required" }),
-    ).toBe("ETA 2nd August");
-    expect(
-      sscEtaRemarkPreviewValue({
-        ...base,
-        draftRemark: "carried forward note",
-        persistedRemark: "carried forward note",
-      }),
-    ).toBe("ETA 2nd August");
-    expect(
-      sscEtaRemarkPreviewValue({ ...base, draftRemark: "Scheduled on 30th July" }),
-    ).toBe("ETA 2nd August");
-    expect(
-      sscEtaRemarkPreviewValue({ ...base, draftRemark: "ETA 28th July" }),
-    ).toBe("ETA 2nd August");
-  });
-
-  it("leaves the box alone when Case Created Time is unusable", () => {
-    expect(
-      sscEtaRemarkPreviewValue({ ...base, caseCreatedTime: "", draftRemark: "" }),
-    ).toBeNull();
-    expect(
-      sscEtaRemarkPreviewValue({
-        ...base,
-        caseCreatedTime: "not a date",
-        draftRemark: "",
-      }),
-    ).toBeNull();
-  });
-
-  it("returns null when the box already shows exactly the generated line", () => {
-    expect(
-      sscEtaRemarkPreviewValue({ ...base, draftRemark: "ETA 2nd August" }),
-    ).toBeNull();
   });
 });

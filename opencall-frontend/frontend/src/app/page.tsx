@@ -1,6 +1,6 @@
 "use client";
 
-import { DAILY_CALL_PLAN_COLUMNS, RTPL_STATUS_OPTIONS, ASP_CODE_REGION_MAP, isScheduledStatus, isSscPendingStatus, type DailyCallPlanColumn } from "@opencall/shared";
+import { DAILY_CALL_PLAN_COLUMNS, RTPL_STATUS_OPTIONS, ASP_CODE_REGION_MAP, isScheduledStatus, type DailyCallPlanColumn } from "@opencall/shared";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { ColumnFilterDropdown } from "../components/ColumnFilterDropdown";
@@ -73,9 +73,7 @@ import {
 } from "../features/dashboard/utils";
 import {
   isScheduledRemarkTriggered,
-  isSscEtaRemarkTriggered,
   scheduledRemarkPreviewValue,
-  sscEtaRemarkPreviewValue,
 } from "../features/dashboard/utils/scheduledRemarkPreview";
 import {
   retainedAspSelection,
@@ -494,25 +492,6 @@ export default function DashboardPage() {
         ...triggerInput,
         draftRemark: currentRemark,
         persistedRemark: editingRow.output["Current Remarks"],
-      });
-      if (preview !== null) {
-        autoRemarkPreviewRef.current = { injected: preview, previous: currentRemark };
-        setDraftOutput((current) => ({ ...current, "Current Remarks": preview }));
-      }
-      return;
-    }
-
-    // Same mechanism for SSC Pending: moving a status column there previews
-    // "ETA <case created + 2 days>" so the team sees when the part is due
-    // before saving. Checked AFTER scheduling because the two triggers are
-    // mutually exclusive by status, and scheduling is the stronger rule (it
-    // also demands an engineer).
-    if (isSscEtaRemarkTriggered(triggerInput)) {
-      const preview = sscEtaRemarkPreviewValue({
-        ...triggerInput,
-        draftRemark: currentRemark,
-        persistedRemark: editingRow.output["Current Remarks"],
-        caseCreatedTime: editingRow.output["Case Created Time"],
       });
       if (preview !== null) {
         autoRemarkPreviewRef.current = { injected: preview, previous: currentRemark };
@@ -2855,21 +2834,6 @@ export default function DashboardPage() {
         if (!("remarks" in values)) {
           values.remarks = patchValue("Current Remarks");
         }
-      }
-
-      // Same rule for an SSC Pending transition. The live preview has been
-      // showing the generated "ETA <case created + 2 days>" line in the Current
-      // Remarks box (see the sscEtaRemarkPreview helper), so whatever the box
-      // holds at save time is what the user agreed to. Without this, a save
-      // that leaves the box exactly as the row already had it omits `remarks`
-      // entirely, and the backend's own movedToSscPending rule then writes the
-      // ETA over a remark the user deliberately kept. An empty box still sends
-      // null, letting the backend write the generated line.
-      const settingSscPending =
-        isSscPendingStatus(values.rtpl_status ?? undefined) ||
-        isSscPendingStatus(values.evening_rtpl_status ?? undefined);
-      if (settingSscPending && !("remarks" in values)) {
-        values.remarks = patchValue("Current Remarks");
       }
 
       // Special-access logins are not `users` rows, so PATCH /report-rows/:id (which is

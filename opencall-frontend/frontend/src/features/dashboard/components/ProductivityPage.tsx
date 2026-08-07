@@ -1,6 +1,7 @@
 // Engineer Productivity dashboard page extracted from app/page.tsx (Phase 6.5) and updated to render as a separate page view.
 import { useState, useMemo, type Dispatch, type SetStateAction } from "react";
 import { downloadEngineerProductivityExcel } from "../../../lib/excelExport";
+import { syncAssignedCasesToPayroll } from "../../../lib/payrollSyncApiClient";
 import { EngineerTargetTab } from "./EngineerTargetTab";
 import { LocationPerformancePanel } from "./LocationPerformancePanel";
 
@@ -21,6 +22,7 @@ export function ProductivityPage({
   loading = false,
   regionsList,
   isSuperAdmin,
+  payrollSyncToken,
   openRecordsWithFilter,
 }: Readonly<{
   selectedRegion: string | null;
@@ -63,6 +65,9 @@ export function ProductivityPage({
   loading?: boolean;
   regionsList: Array<{ aspCode: string; regionName: string; count: number }>;
   isSuperAdmin: boolean;
+  /** Auth token when the viewer may push cases to Payroll (admins only); null
+   * hides the "Sync to Payroll" button. */
+  payrollSyncToken?: string | null;
   openRecordsWithFilter: (args: Readonly<{
     region?: string | null;
     woOtcCode?: string | null;
@@ -82,6 +87,62 @@ export function ProductivityPage({
   // Which tab of this page is showing. "target" renders the self-contained Engineer
   // Target view; everything else on this page is untouched.
   const [activeTab, setActiveTab] = useState<"productivity" | "target">("productivity");
+  const [syncing, setSyncing] = useState(false);
+
+  // Which working date(s) the "Sync to Payroll" button pushes, driven by the
+  // SAME filter the table already shows. Uses the dates that actually have data
+  // (datesList) so history/range/month sync exactly what's visible; "Today"
+  // falls back to today's date even if it has no report yet (harmless no-op).
+  const resolveDatesToSync = (): string[] => {
+    const all = engineerProductivityMetrics.datesList ?? [];
+    const value = selectedProductivityValue;
+    switch (productivityFilterType) {
+      case "Specific Date":
+        return value ? [value] : [];
+      case "Specific Month":
+        return value ? all.filter((d) => d.startsWith(value)) : [];
+      case "Date Range":
+        if (!productivityFromDate || !productivityToDate) return [];
+        return all.filter((d) => d >= productivityFromDate && d <= productivityToDate);
+      case "All Dates":
+        return all;
+      case "Today":
+      default:
+        return [new Date().toISOString().slice(0, 10)];
+    }
+  };
+
+  const handleSyncToPayroll = async () => {
+    if (!payrollSyncToken) return;
+    const dates = resolveDatesToSync();
+    if (dates.length === 0) {
+      window.alert("No date selected to sync.");
+      return;
+    }
+    setSyncing(true);
+    try {
+      let assigned = 0;
+      let skipped = 0;
+      const notes: string[] = [];
+      for (const date of dates) {
+        const res = await syncAssignedCasesToPayroll(payrollSyncToken, date);
+        if (res.payroll) {
+          assigned += res.payroll.assigned;
+          skipped += res.payroll.skipped;
+        } else if (res.message) {
+          notes.push(`${date}: ${res.message}`);
+        }
+      }
+      let summary = `Synced ${assigned} case(s) to Payroll across ${dates.length} day(s).`;
+      if (skipped > 0) summary += ` ${skipped} skipped (engineer not matched in Payroll).`;
+      if (notes.length > 0) summary += `\n\n${notes.slice(0, 6).join("\n")}`;
+      window.alert(summary);
+    } catch (error) {
+      window.alert(`Sync to Payroll failed: ${error instanceof Error ? error.message : String(error)}`);
+    } finally {
+      setSyncing(false);
+    }
+  };
 
   // Filter list locally by search query (checks engineer name or region name)
   const filteredList = useMemo(() => {
@@ -400,6 +461,20 @@ export function ProductivityPage({
           >
             📥 Download Excel
           </button>
+
+          {/* Push the assigned cases in the CURRENT filter view to the Payroll
+              app so each engineer sees them there. Admins only. */}
+          {payrollSyncToken && (
+            <button
+              type="button"
+              disabled={syncing}
+              onClick={() => void handleSyncToPayroll()}
+              style={{ background: "linear-gradient(135deg, #0ea5e9, #0284c7)", borderColor: "#0284c7", display: "inline-flex", alignItems: "center", gap: "6px", color: "#ffffff", minHeight: "36px", padding: "0 14px", fontSize: "13px", opacity: syncing ? 0.6 : 1, cursor: syncing ? "default" : "pointer" }}
+              title="Push these engineers' assigned cases (current filter) into the Payroll app"
+            >
+              {syncing ? "Syncing…" : "📤 Sync to Payroll"}
+            </button>
+          )}
         </div>
       </div>
 

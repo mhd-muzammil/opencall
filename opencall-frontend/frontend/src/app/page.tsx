@@ -5005,6 +5005,13 @@ export default function DashboardPage() {
                         loading={productivityDayLoading}
                         regionsList={report?.regionBreakdown ?? []}
                         isSuperAdmin={session?.user?.role === "SUPER_ADMIN"}
+                        payrollSyncToken={
+                          !isSpecialAccess &&
+                          (session.user.role === "SUPER_ADMIN" ||
+                            session.user.role === "REGION_ADMIN")
+                            ? session.token
+                            : null
+                        }
                         openRecordsWithFilter={openRecordsWithFilter}
                       />
                     )}

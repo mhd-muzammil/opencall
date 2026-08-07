@@ -51,40 +51,41 @@ describe("shouldApplyReportRefresh", () => {
 });
 
 describe("retainedAspSelection", () => {
-  const breakdown = [
-    { aspCode: "ASPS01461" },
-    { aspCode: "ASPS01462" },
-  ];
-
-  it("keeps a selection the incoming report still covers", () => {
-    expect(retainedAspSelection("ASPS01462", breakdown)).toBe("ASPS01462");
+  it("keeps the selection across a report swap", () => {
+    expect(retainedAspSelection("ASPS01462")).toBe("ASPS01462");
   });
 
-  it("drops a selection the incoming report no longer covers", () => {
-    expect(retainedAspSelection("ASPS09999", breakdown)).toBeNull();
-  });
-
-  it("matches case- and whitespace-insensitively", () => {
-    expect(retainedAspSelection("ASPS01461", [{ aspCode: "  asps01461 " }])).toBe(
-      "ASPS01461",
-    );
+  /**
+   * The regression that put this bug back in production.
+   *
+   * The helper used to also require the ASP to appear in the incoming report's
+   * regionBreakdown. The reset effect runs on every reportId change — every
+   * FieldEZ worker cycle, ~15 minutes — and a region-scoped or partial Flex
+   * upload produces a report with no rows for that ASP. The guard then returned
+   * null and the dropdown silently fell back to "All ASP Codes" mid-shift, so
+   * the employee kept working while looking at every region's calls.
+   *
+   * An empty grid under their own ASP is the honest outcome.
+   */
+  it("keeps the selection even when the report carries no rows for it", () => {
+    expect(retainedAspSelection("ASPS09999")).toBe("ASPS09999");
   });
 
   it("treats the all-regions sentinel as no selection", () => {
-    expect(retainedAspSelection("ALL", breakdown)).toBeNull();
+    expect(retainedAspSelection("ALL")).toBeNull();
+  });
+
+  it("honours a custom all-regions sentinel", () => {
+    expect(retainedAspSelection("__ALL__", "__ALL__")).toBeNull();
   });
 
   it("returns null when nothing was selected", () => {
-    expect(retainedAspSelection(null, breakdown)).toBeNull();
+    expect(retainedAspSelection(null)).toBeNull();
   });
 
-  it("returns null for an empty or missing breakdown", () => {
-    expect(retainedAspSelection("ASPS01461", [])).toBeNull();
-    expect(retainedAspSelection("ASPS01461", null)).toBeNull();
-  });
-
-  it("ignores breakdown entries with no ASP code", () => {
-    expect(retainedAspSelection("ASPS01461", [{ aspCode: null }, { aspCode: "" }])).toBeNull();
+  it("returns null for a blank or unusable code", () => {
+    expect(retainedAspSelection("")).toBeNull();
+    expect(retainedAspSelection("   ")).toBeNull();
   });
 });
 

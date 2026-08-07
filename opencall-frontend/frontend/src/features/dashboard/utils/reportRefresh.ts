@@ -13,11 +13,6 @@
 // back to its old status and the full-screen ASP Code filter un-filter itself.
 // These helpers are pure so the rules can be tested without a browser.
 
-/** Anything with an ASP code — the shape of a report's `regionBreakdown` entry. */
-export interface AspScopedEntry {
-  aspCode?: string | null;
-}
-
 /**
  * May the 15s "a newer report was uploaded" poll move this session onto that
  * report?
@@ -102,21 +97,24 @@ export function shouldApplyReportRefresh({
  */
 export function retainedAspSelection(
   previousAspCode: string | null,
-  regionBreakdown: readonly AspScopedEntry[] | null | undefined,
   allValue = "ALL",
 ): string | null {
   if (!previousAspCode || previousAspCode === allValue) {
     return null;
   }
 
-  const target = normalizeAspCode(previousAspCode);
-  if (!target) {
-    return null;
-  }
-
-  const stillPresent = (regionBreakdown ?? []).some(
-    (entry) => normalizeAspCode(entry.aspCode) === target,
-  );
-
-  return stillPresent ? previousAspCode : null;
+  // A concrete ASP selection is kept whatever the incoming report contains.
+  //
+  // This used to also require the ASP to appear in the new report's
+  // regionBreakdown, which quietly reintroduced the bug it was written to fix:
+  // the reset effect runs on every reportId change (~every worker cycle), and a
+  // region-scoped or partial Flex upload produces a report that does not carry
+  // this ASP — so the guard returned null and the dropdown fell back to
+  // "All ASP Codes" mid-shift.
+  //
+  // Un-filtering silently is the worst possible outcome here: the employee goes
+  // on working while looking at every region's calls, believing they are scoped
+  // to their own. An empty grid under a filter that still reads their ASP tells
+  // the truth. Only an explicit change of the dropdown clears the selection.
+  return normalizeAspCode(previousAspCode) ? previousAspCode : null;
 }

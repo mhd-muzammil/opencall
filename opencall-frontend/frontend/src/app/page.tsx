@@ -836,6 +836,11 @@ export default function DashboardPage() {
   const selectedRegionRef = useRef(selectedRegion);
   selectedRegionRef.current = selectedRegion;
 
+  // Who the retained ASP selection belongs to. The reset effect also depends on
+  // `session`, so without this a different user signing in on the same tab would
+  // inherit the previous user's filter.
+  const retainedSelectionUserIdRef = useRef<string | null>(null);
+
   useEffect(() => {
     const isRegionAdmin = session?.user?.role === "REGION_ADMIN";
 
@@ -844,13 +849,24 @@ export default function DashboardPage() {
     // (the FieldEZ worker creates one per changed file, and the special-access
     // poll follows the newest one), so resetting to "All ASP Codes" mid-shift
     // reads as the filter un-filtering itself — worst of all in full screen,
-    // where that dropdown is the only region control there is. Keep the
-    // selection whenever the new report still has rows for it.
-    const retainedRegion = retainedAspSelection(
-      selectedRegionRef.current,
-      report?.regionBreakdown,
-      ALL_REGIONS_FILTER,
-    );
+    // where that dropdown is the only region control there is.
+    //
+    // The selection is kept even when the incoming report carries NO rows for
+    // it. That case is not rare — a region-scoped or partial Flex upload yields
+    // a report without the ASP — and the old "only if the report still covers
+    // it" guard quietly reintroduced the very jump this effect exists to
+    // prevent. An empty grid under the user's own ASP is honest; silently
+    // showing every region's calls while the user believes they are scoped is
+    // not. Only an explicit change of the dropdown clears the selection.
+    const previousSelectionUserId = retainedSelectionUserIdRef.current;
+    const currentUserId = session?.user?.id ?? null;
+    retainedSelectionUserIdRef.current = currentUserId;
+    const isSameUserAsSelection =
+      previousSelectionUserId !== null && previousSelectionUserId === currentUserId;
+
+    const retainedRegion = isSameUserAsSelection
+      ? retainedAspSelection(selectedRegionRef.current, ALL_REGIONS_FILTER)
+      : null;
 
     const initialRegion = retainedRegion
       ? retainedRegion

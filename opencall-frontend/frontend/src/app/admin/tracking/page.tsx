@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import dynamic from "next/dynamic";
 import {
   getEngineerPath,
   getLiveEngineers,
@@ -9,11 +10,18 @@ import {
 } from "../../../lib/payrollTrackingApiClient";
 import { readSession, type ClientSession } from "../../../lib/session";
 
-// Dependency-free live tracking view: reads engineer positions from Payroll (via
-// the OpenCall backend proxy) and refreshes every 30s. Pick any engineer to see
-// their live detail + today's travelled distance. Rows link out to OpenStreetMap
-// (free). An embedded Leaflet map can be added later — see
-// payrollsystem/payroll_frontend/src/components/Tracking/LiveMap.jsx.
+// Leaflet touches `window`, so the map is client-only (no SSR).
+const LiveTrackingMap = dynamic(() => import("../../../components/LiveTrackingMap"), {
+  ssr: false,
+  loading: () => <div style={{ height: "60vh" }} />,
+});
+
+// Live engineer tracking: reads positions from Payroll (via the OpenCall backend
+// proxy) and refreshes every 30s. Shows an embedded free Leaflet + OpenStreetMap
+// map (no API key / billing) with a live marker per engineer, plus a searchable
+// table. Pick any engineer (marker or "Check live") to draw today's path + km.
+// To switch to Google Maps later, swap LiveTrackingMap for a Google-backed map
+// component (needs a billed NEXT_PUBLIC_GOOGLE_MAPS_API_KEY).
 
 const REFRESH_MS = 30_000;
 
@@ -105,6 +113,11 @@ export default function LiveTrackingPage() {
 
   const selected = engineers.find((e) => e.engineer_id === selectedId) ?? null;
 
+  const pathPoints = useMemo<[number, number][]>(
+    () => (path?.points ?? []).map((p) => [p.latitude, p.longitude] as [number, number]),
+    [path],
+  );
+
   return (
     <div style={{ padding: 24 }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12 }}>
@@ -119,6 +132,20 @@ export default function LiveTrackingPage() {
         </p>
       )}
       {error && <p style={{ color: "#dc2626", marginTop: 12 }}>{error}</p>}
+
+      {/* Free live map (Leaflet + OpenStreetMap, no API key/billing). Click a
+          marker to select that engineer and draw today's path. */}
+      <div style={{ marginTop: 16 }}>
+        <LiveTrackingMap
+          engineers={engineers}
+          selectedId={selectedId}
+          pathPoints={pathPoints}
+          onSelect={(id) => setSelectedId(id)}
+        />
+        <p style={{ fontSize: 11, color: "#9ca3af", marginTop: 6 }}>
+          Map © OpenStreetMap contributors — free tiles. Positions refresh every 30s while engineers have the app open.
+        </p>
+      </div>
 
       {/* Pick any engineer to check live */}
       <input

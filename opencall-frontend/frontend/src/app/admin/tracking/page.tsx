@@ -25,14 +25,52 @@ const LiveTrackingMap = dynamic(() => import("../../../components/LiveTrackingMa
 
 const REFRESH_MS = 30_000;
 
-function relativeAge(value: string): string {
-  const ms = Date.now() - new Date(value).getTime();
-  if (Number.isNaN(ms)) return "—";
-  const minutes = Math.floor(ms / 60_000);
+function relativeAge(minutes: number | null): string {
+  if (minutes == null) return "no fix yet";
   if (minutes < 1) return "just now";
   if (minutes < 60) return `${minutes}m ago`;
   const hours = Math.floor(minutes / 60);
   return `${hours}h ago`;
+}
+
+function duration(minutes: number): string {
+  if (minutes < 60) return `${minutes}m`;
+  const h = Math.floor(minutes / 60);
+  const m = minutes % 60;
+  return m ? `${h}h ${m}m` : `${h}h`;
+}
+
+/** On duty is the engineer's declaration; the colour says whether we can
+ *  currently see them. Amber is the case that used to just disappear. */
+function DutyBadge({ stale, lastSeen }: { stale: boolean; lastSeen: number | null }) {
+  const live = !stale;
+  return (
+    <span
+      style={{
+        display: "inline-flex",
+        alignItems: "center",
+        gap: 6,
+        padding: "2px 8px",
+        borderRadius: 999,
+        fontSize: 12,
+        fontWeight: 600,
+        background: live ? "#dcfce7" : "#fef3c7",
+        color: live ? "#15803d" : "#b45309",
+        whiteSpace: "nowrap",
+      }}
+      title={live ? "Sending live position" : "On duty, but the phone has stopped reporting"}
+    >
+      <span
+        style={{
+          width: 7,
+          height: 7,
+          borderRadius: "50%",
+          background: live ? "#22c55e" : "#f59e0b",
+        }}
+      />
+      {live ? "On duty" : `No signal · ${relativeAge(lastSeen)}`}
+    </span>
+  );
 }
 
 function todayStr(): string {
@@ -113,6 +151,12 @@ export default function LiveTrackingPage() {
 
   const selected = engineers.find((e) => e.engineer_id === selectedId) ?? null;
 
+  const totalKm = useMemo(
+    () => engineers.reduce((sum, e) => sum + (e.distance_km ?? 0), 0),
+    [engineers],
+  );
+  const staleCount = useMemo(() => engineers.filter((e) => e.stale).length, [engineers]);
+
   const pathPoints = useMemo<[number, number][]>(
     () => (path?.points ?? []).map((p) => [p.latitude, p.longitude] as [number, number]),
     [path],
@@ -120,9 +164,23 @@ export default function LiveTrackingPage() {
 
   return (
     <div style={{ padding: 24 }}>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
         <h1 style={{ fontSize: 20, fontWeight: 600 }}>Live Engineer Tracking</h1>
-        <span style={{ fontSize: 13, color: "#6b7280" }}>{engineers.length} active</span>
+        {/* The day at a glance: who is out, how many we can actually see, and
+            the total ground covered across everyone on duty. */}
+        <div style={{ display: "flex", gap: 16, fontSize: 13, color: "#6b7280", alignItems: "center" }}>
+          <span>
+            <strong style={{ color: "#111827", fontSize: 15 }}>{engineers.length}</strong> on duty
+          </span>
+          {staleCount > 0 && (
+            <span style={{ color: "#b45309" }}>
+              <strong style={{ fontSize: 15 }}>{staleCount}</strong> no signal
+            </span>
+          )}
+          <span>
+            <strong style={{ color: "#111827", fontSize: 15 }}>{totalKm.toFixed(1)}</strong> km total today
+          </span>
+        </div>
       </div>
 
       {!configured && (
@@ -185,20 +243,37 @@ export default function LiveTrackingPage() {
           </div>
           <div style={{ marginTop: 8, fontSize: 14, color: "#374151", display: "grid", gap: 4 }}>
             <span>Branch: {selected.branch ?? "—"}</span>
+            <span>
+              Duty: <DutyBadge stale={selected.stale} lastSeen={selected.last_seen_minutes} />{" "}
+              since {new Date(selected.duty_started_at).toLocaleTimeString()} (
+              {duration(selected.duty_minutes)})
+            </span>
             <span>Active case: {selected.active_case_number ?? "—"}</span>
             <span>Status: {selected.status || "—"}</span>
-            <span>Last seen: {relativeAge(selected.timestamp)}</span>
+            <span>Last seen: {relativeAge(selected.last_seen_minutes)}</span>
             <span>
-              Position:{" "}
-              <a href={osmLink(selected.latitude, selected.longitude)} target="_blank" rel="noreferrer" style={{ color: "#2563eb" }}>
-                {selected.latitude.toFixed(5)}, {selected.longitude.toFixed(5)}
-              </a>
-              {selected.accuracy != null && (
-                <span style={{ color: "#9ca3af" }}> ±{Math.round(selected.accuracy)}m</span>
+              {selected.stale ? "Last known position: " : "Position: "}
+              {selected.latitude != null && selected.longitude != null ? (
+                <>
+                  <a
+                    href={osmLink(selected.latitude, selected.longitude)}
+                    target="_blank"
+                    rel="noreferrer"
+                    style={{ color: "#2563eb" }}
+                  >
+                    {selected.latitude.toFixed(5)}, {selected.longitude.toFixed(5)}
+                  </a>
+                  {selected.accuracy != null && (
+                    <span style={{ color: "#9ca3af" }}> ±{Math.round(selected.accuracy)}m</span>
+                  )}
+                </>
+              ) : (
+                <span style={{ color: "#9ca3af" }}>no fix yet on this duty</span>
               )}
             </span>
             <span style={{ fontWeight: 600, color: "#1d4ed8" }}>
-              Today travelled: {path ? `${path.total_km} km (${path.count} points)` : "…"}
+              This duty: {selected.distance_km} km
+              {path ? ` · today total ${path.total_km} km (${path.count} points)` : ""}
             </span>
           </div>
         </div>
@@ -209,9 +284,11 @@ export default function LiveTrackingPage() {
           <tr style={{ textAlign: "left", color: "#6b7280", borderBottom: "1px solid #e5e7eb" }}>
             <th style={{ padding: 8 }}>Engineer</th>
             <th style={{ padding: 8 }}>Branch</th>
+            <th style={{ padding: 8 }}>Duty</th>
+            <th style={{ padding: 8 }}>On duty for</th>
+            <th style={{ padding: 8 }}>Distance</th>
             <th style={{ padding: 8 }}>Active case</th>
             <th style={{ padding: 8 }}>Status</th>
-            <th style={{ padding: 8 }}>Last seen</th>
             <th style={{ padding: 8 }}>Location</th>
             <th style={{ padding: 8 }}></th>
           </tr>
@@ -227,14 +304,29 @@ export default function LiveTrackingPage() {
             >
               <td style={{ padding: 8, fontWeight: 500 }}>{e.engineer_name}</td>
               <td style={{ padding: 8 }}>{e.branch ?? "—"}</td>
+              <td style={{ padding: 8 }}>
+                <DutyBadge stale={e.stale} lastSeen={e.last_seen_minutes} />
+              </td>
+              <td style={{ padding: 8 }}>{duration(e.duty_minutes)}</td>
+              <td style={{ padding: 8, fontWeight: 600 }}>{e.distance_km} km</td>
               <td style={{ padding: 8 }}>{e.active_case_number ?? "—"}</td>
               <td style={{ padding: 8 }}>{e.status || "—"}</td>
-              <td style={{ padding: 8 }}>{relativeAge(e.timestamp)}</td>
               <td style={{ padding: 8 }}>
-                <a href={osmLink(e.latitude, e.longitude)} target="_blank" rel="noreferrer" style={{ color: "#2563eb" }}>
-                  {e.latitude.toFixed(4)}, {e.longitude.toFixed(4)}
-                </a>
-                {e.accuracy != null && <span style={{ color: "#9ca3af" }}> ±{Math.round(e.accuracy)}m</span>}
+                {e.latitude != null && e.longitude != null ? (
+                  <>
+                    <a
+                      href={osmLink(e.latitude, e.longitude)}
+                      target="_blank"
+                      rel="noreferrer"
+                      style={{ color: "#2563eb" }}
+                    >
+                      {e.latitude.toFixed(4)}, {e.longitude.toFixed(4)}
+                    </a>
+                    {e.accuracy != null && <span style={{ color: "#9ca3af" }}> ±{Math.round(e.accuracy)}m</span>}
+                  </>
+                ) : (
+                  <span style={{ color: "#9ca3af" }}>waiting for GPS</span>
+                )}
               </td>
               <td style={{ padding: 8 }}>
                 <button
@@ -256,8 +348,10 @@ export default function LiveTrackingPage() {
           ))}
           {filtered.length === 0 && configured && (
             <tr>
-              <td colSpan={7} style={{ padding: 24, textAlign: "center", color: "#9ca3af" }}>
-                {engineers.length === 0 ? "No engineers currently active." : "No match."}
+              <td colSpan={9} style={{ padding: 24, textAlign: "center", color: "#9ca3af" }}>
+                {engineers.length === 0
+                  ? "Nobody is on duty. Engineers appear here as soon as they tap Start Duty in Payroll."
+                  : "No match."}
               </td>
             </tr>
           )}

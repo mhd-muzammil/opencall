@@ -12,6 +12,13 @@ import type { LiveEngineer } from "../lib/payrollTrackingApiClient";
 
 const DEFAULT_CENTER: [number, number] = [13.0827, 80.2707]; // Chennai fallback
 
+export function formatDuration(minutes: number): string {
+  if (minutes < 60) return `${minutes}m`;
+  const h = Math.floor(minutes / 60);
+  const m = minutes % 60;
+  return m ? `${h}h ${m}m` : `${h}h`;
+}
+
 interface Props {
   engineers: LiveEngineer[];
   selectedId: number | null;
@@ -19,8 +26,17 @@ interface Props {
   onSelect: (id: number) => void;
 }
 
+/** On duty with a known position. Someone who has not sent a fix yet is on the
+ *  board but has nothing to plot, so the map skips them. */
+type Plottable = LiveEngineer & { latitude: number; longitude: number };
+
+function hasPosition(e: LiveEngineer): e is Plottable {
+  return e.latitude != null && e.longitude != null;
+}
+
 export default function LiveTrackingMap({ engineers, selectedId, pathPoints, onSelect }: Props) {
-  const first = engineers[0];
+  const plottable = engineers.filter(hasPosition);
+  const first = plottable[0];
   const center: [number, number] = first ? [first.latitude, first.longitude] : DEFAULT_CENTER;
 
   return (
@@ -35,7 +51,7 @@ export default function LiveTrackingMap({ engineers, selectedId, pathPoints, onS
           <Polyline positions={pathPoints} pathOptions={{ color: "#2563eb", weight: 4, opacity: 0.7 }} />
         )}
 
-        {engineers.map((e) => (
+        {plottable.map((e) => (
           <Fragment key={e.engineer_id}>
             {e.accuracy != null && (
               <Circle
@@ -50,8 +66,11 @@ export default function LiveTrackingMap({ engineers, selectedId, pathPoints, onS
               pathOptions={{
                 color: "#fff",
                 weight: 2,
-                fillColor: e.engineer_id === selectedId ? "#16a34a" : "#2563eb",
-                fillOpacity: 1,
+                // Amber = still on duty, but this position is old and the
+                // engineer may have moved since. Green = the one being checked.
+                fillColor:
+                  e.engineer_id === selectedId ? "#16a34a" : e.stale ? "#d97706" : "#2563eb",
+                fillOpacity: e.stale ? 0.65 : 1,
               }}
               eventHandlers={{ click: () => onSelect(e.engineer_id) }}
             >
@@ -77,8 +96,14 @@ export default function LiveTrackingMap({ engineers, selectedId, pathPoints, onS
                       <br />
                     </>
                   ) : null}
-                  <span style={{ color: "#9ca3af" }}>
-                    {new Date(e.timestamp).toLocaleTimeString()}
+                  On duty {formatDuration(e.duty_minutes)} · {e.distance_km} km
+                  <br />
+                  <span style={{ color: e.stale ? "#b45309" : "#9ca3af" }}>
+                    {e.stale
+                      ? `No signal for ${e.last_seen_minutes ?? "?"}m — last seen here`
+                      : e.timestamp
+                        ? new Date(e.timestamp).toLocaleTimeString()
+                        : ""}
                     {e.accuracy != null ? ` · ±${Math.round(e.accuracy)}m` : ""}
                   </span>
                 </div>

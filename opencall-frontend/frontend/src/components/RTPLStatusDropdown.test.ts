@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildStatusGroups, splitStatusGroupsForColumns } from "./RTPLStatusDropdown";
+import { buildPickerGroups, buildStatusGroups, splitStatusGroupsForColumns } from "./RTPLStatusDropdown";
 
 describe("splitStatusGroupsForColumns", () => {
   it("keeps the status picker columns balanced by option count", () => {
@@ -59,5 +59,36 @@ describe("buildStatusGroups", () => {
 
   it("returns an empty array for no statuses", () => {
     expect(buildStatusGroups([])).toEqual([]);
+  });
+});
+
+describe("buildPickerGroups", () => {
+  // The regression this guards. The picker used to substitute the hardcoded
+  // RTPL_STATUS_GROUPS whenever the admin-managed list was empty — which is
+  // every render before the fetch lands, and every render after it fails or
+  // 401s. That put statuses the admin had retired straight back in front of
+  // users, indistinguishable from live ones.
+  it("offers ONLY manual entry when the admin list has not loaded", () => {
+    expect(buildPickerGroups(undefined)).toEqual([
+      { group: "Other", options: ["Custom"] },
+    ]);
+    expect(buildPickerGroups([])).toEqual([
+      { group: "Other", options: ["Custom"] },
+    ]);
+  });
+
+  it("appends the manual-entry group after the admin's own groups", () => {
+    expect(
+      buildPickerGroups([{ group: "General Activity", options: ["Onsite"] }]),
+    ).toEqual([
+      { group: "General Activity", options: ["Onsite"] },
+      { group: "Other", options: ["Custom"] },
+    ]);
+  });
+
+  it("merges into an admin-created 'Other' rather than duplicating it", () => {
+    expect(
+      buildPickerGroups([{ group: "Other", options: ["CX Denied Service"] }]),
+    ).toEqual([{ group: "Other", options: ["CX Denied Service", "Custom"] }]);
   });
 });

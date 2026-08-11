@@ -1,6 +1,6 @@
 "use client";
 
-import { DAILY_CALL_PLAN_COLUMNS, RTPL_STATUS_OPTIONS, ASP_CODE_REGION_MAP, isScheduledStatus, type DailyCallPlanColumn } from "@opencall/shared";
+import { DAILY_CALL_PLAN_COLUMNS, ASP_CODE_REGION_MAP, isScheduledStatus, type DailyCallPlanColumn } from "@opencall/shared";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { ColumnFilterDropdown } from "../components/ColumnFilterDropdown";
@@ -213,6 +213,11 @@ const SOURCE_LABELS: Record<SourceKey, string> = {
 // is surfaced in the stale-status banner at the top of the records page. Backed
 // by row.enriched.current_status_aging.
 const STALE_FLEX_THRESHOLD_DAYS = 2;
+
+// How often to re-read the admin-managed RTPL status vocabulary. It is a few
+// dozen rows, and the cost of it being stale is a picker offering statuses the
+// admin has retired, so a slow poll is the right trade.
+const RTPL_STATUS_REFRESH_MS = 5 * 60 * 1000;
 
 // localStorage key for persisting which records-table columns are hidden.
 const HIDDEN_COLUMNS_STORAGE_KEY = "opencall.records.hiddenColumns";
@@ -451,8 +456,12 @@ export default function DashboardPage() {
   const [rtplStatusGroups, setRtplStatusGroups] = useState<StatusGroup[]>([]);
   // Flat list of known status names (dynamic if loaded, else legacy) — used to
   // decide whether the current value is a custom free-text entry.
-  const rtplStatusFlatOptions: readonly string[] =
-    rtplStatusGroups.length > 0 ? rtplStatusGroups.flatMap((g) => g.options) : RTPL_STATUS_OPTIONS;
+  // No fallback to the hardcoded list: it still names statuses the admin has
+  // retired, so falling back to it treated a retired status as a known option.
+  // Empty simply means "not loaded yet".
+  const rtplStatusFlatOptions: readonly string[] = rtplStatusGroups.flatMap(
+    (g) => g.options,
+  );
   draftOutputRef.current = draftOutput;
 
   // Feature A — live auto-remark preview. The backend writes "Scheduled on
@@ -2122,6 +2131,40 @@ export default function DashboardPage() {
     });
   }
 
+  // Re-reads the admin-managed status vocabulary. Hoisted out of the effect
+  // below so the first load and the refresh timer make the same scoped /
+  // unscoped choice.
+  const refreshRtplStatusGroups = useCallback(() => {
+    if (!session) return;
+    (isSpecialAccess
+      ? getSpecialAccessRtplStatusesDropdown(session.token)
+      : getRtplStatusesDropdown(session.token))
+      .then((res) => {
+        const next = buildStatusGroups(res.statuses);
+        // Swap the array only when the vocabulary actually changed, so a poll
+        // that finds nothing new never re-renders an open picker.
+        setRtplStatusGroups((current) =>
+          JSON.stringify(current) === JSON.stringify(next) ? current : next,
+        );
+      })
+      .catch(handleBackgroundError);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [session?.token, isSpecialAccess]);
+
+  // The status list is curated in the Admin Console while people are signed in.
+  // It used to be fetched once per session and never again, so disabling a
+  // status reached nobody already logged in until they logged out and back in —
+  // with a 12h sliding session that is potentially a whole shift of picking
+  // statuses that had been retired. Re-read it on a slow timer instead.
+  useEffect(() => {
+    if (!session) return;
+    const timer = setInterval(refreshRtplStatusGroups, RTPL_STATUS_REFRESH_MS);
+    return () => {
+      clearInterval(timer);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [session?.token, refreshRtplStatusGroups]);
+
   useEffect(() => {
     if (session) {
       // /report-history is user-only. A special-access credential is not a `users`
@@ -2153,11 +2196,7 @@ export default function DashboardPage() {
         : getEngineersDropdown(session.token))
         .then((res) => setEngineersList(res.engineers))
         .catch(handleBackgroundError);
-      (isSpecialAccess
-        ? getSpecialAccessRtplStatusesDropdown(session.token)
-        : getRtplStatusesDropdown(session.token))
-        .then((res) => setRtplStatusGroups(buildStatusGroups(res.statuses)))
-        .catch(handleBackgroundError);
+      refreshRtplStatusGroups();
       // The user-only /record-layout endpoint 401s for special access; its scoped layout
       // is loaded by the dedicated effect below, so don't fire a call that can only fail
       // and surface an "Operation failed" banner.

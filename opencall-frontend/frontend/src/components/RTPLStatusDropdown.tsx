@@ -4,7 +4,6 @@
 // transform, which needs the React identifier at runtime (same as AppHeader.tsx).
 import React, { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { RTPL_STATUS_GROUPS } from "@opencall/shared";
 import type { DropdownRtplStatus } from "../lib/api/types";
 
 export interface StatusGroup {
@@ -17,9 +16,14 @@ interface RTPLStatusDropdownProps {
   onChange: (value: string) => void;
   manualEntryRequiredLabel: string;
   /**
-   * Dynamic, admin-managed status groups fetched from the API. When omitted the
-   * component falls back to the legacy hardcoded groups so it keeps working if a
-   * caller hasn't been wired up yet.
+   * Admin-managed status groups fetched from the API — the ONLY source of
+   * options. There is deliberately NO fallback to a hardcoded list: the legacy
+   * one still names statuses an admin has since retired, so substituting it
+   * whenever the fetch was slow, failed or 401'd put every retired status back
+   * on screen — which is exactly what "it shows every status again" looked
+   * like. Empty means "not loaded yet": the picker offers Custom Manual Entry
+   * until the real list lands, which is a moment of less choice rather than a
+   * screen full of wrong choices.
    */
   groups?: readonly StatusGroup[];
 }
@@ -43,6 +47,27 @@ export function buildStatusGroups(statuses: readonly DropdownRtplStatus[]): Stat
   return Array.from(byCategory.entries()).map(([group, options]) => ({ group, options }));
 }
 
+/**
+ * The groups the picker renders: the admin-managed list plus the manual-entry
+ * item, merged into an existing "Other" category when the admin created one so
+ * the two cannot collide on a duplicate React key.
+ *
+ * Undefined or empty in means ONLY the manual-entry group out. See the `groups`
+ * prop above for why nothing is substituted.
+ */
+export function buildPickerGroups(
+  groups: readonly StatusGroup[] | undefined,
+): StatusGroup[] {
+  const base = groups ?? [];
+  return base.some((group) => group.group === "Other")
+    ? base.map((group) =>
+        group.group === "Other"
+          ? { group: group.group, options: [...group.options, "Custom"] }
+          : group,
+      )
+    : [...base, { group: "Other", options: ["Custom"] }];
+}
+
 export function splitStatusGroupsForColumns(groups: readonly StatusGroup[]): [StatusGroup[], StatusGroup[]] {
   const columns: [StatusGroup[], StatusGroup[]] = [[], []];
   const weights: [number, number] = [0, 0];
@@ -57,8 +82,7 @@ export function splitStatusGroupsForColumns(groups: readonly StatusGroup[]): [St
 }
 
 export function RTPLStatusDropdown({ value, onChange, manualEntryRequiredLabel, groups }: RTPLStatusDropdownProps) {
-  const baseGroups: readonly StatusGroup[] = groups && groups.length > 0 ? groups : RTPL_STATUS_GROUPS;
-  const flatOptions = baseGroups.flatMap((g) => g.options);
+  const flatOptions = (groups ?? []).flatMap((g) => g.options);
   const [isOpen, setIsOpen] = useState(false);
   // Custom Manual Entry mode: the trigger becomes a blank text input the user
   // types their own status into (nothing is pre-filled).
@@ -147,15 +171,9 @@ export function RTPLStatusDropdown({ value, onChange, manualEntryRequiredLabel, 
     return value;
   };
 
-  // Append the manual-entry "Custom" item, merging into an existing "Other"
-  // category if the admin happens to have created one (avoids duplicate keys).
-  const hasOther = baseGroups.some((g) => g.group === "Other");
-  const statusGroups: StatusGroup[] = hasOther
-    ? baseGroups.map((g) =>
-        g.group === "Other" ? { group: g.group, options: [...g.options, "Custom"] } : g,
-      )
-    : [...baseGroups, { group: "Other", options: ["Custom"] }];
-  const [leftColumnGroups, rightColumnGroups] = splitStatusGroupsForColumns(statusGroups);
+  const [leftColumnGroups, rightColumnGroups] = splitStatusGroupsForColumns(
+    buildPickerGroups(groups),
+  );
 
   if (isCustomEditing) {
     return (

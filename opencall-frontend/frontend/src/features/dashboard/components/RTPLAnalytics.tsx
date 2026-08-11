@@ -31,7 +31,9 @@ import {
 } from "../../../lib/reportDashboardAnalytics";
 import { RTPL_STATUS_OPTIONS, isAttendedOutcomeStatus } from "@opencall/shared";
 
-function calculateKpiMetricsForCardView(
+// Exported for tests: it is a pure function, and the cancellation rules it
+// encodes move numbers people read every morning.
+export function calculateKpiMetricsForCardView(
   rows: ReportRow[],
   rowStatusMap: Record<string, string>,
   isBod: boolean
@@ -80,10 +82,32 @@ function calculateKpiMetricsForCardView(
 
   const getTicketIds = (items: typeof rows) => items.map(r => String(r.output["Ticket ID"] || "").trim());
 
+  // A vanished row Flex reports as "Closed - Canceled" is a cancellation, not a
+  // completed close, whatever our own column says — see isCancelledClosure.
+  //
+  // Gated on the row actually being a closure, deliberately: isCancelledClosure
+  // falls back to a keyword test on our own status when Flex has not reported
+  // yet, which would otherwise sweep up LIVE calls parked at "Under
+  // Cancellation" / "Need to Cancel" — still the engineer's work to do.
+  const wasCancelled = (r: typeof rows[number]): boolean =>
+    r.carryForward.closedSyntheticRow &&
+    isCancelledClosure(
+      r.output as unknown as Record<string, unknown>,
+      getRowStatus(r),
+    );
+
   // Actionable = "Scheduled" + "To Be Scheduled" (shared definition).
-  const actionableRows = active.filter(r => isActionableStatusValue(getRowStatus(r)));
+  // Cancellations are dropped from the WORK lines (Actionable / Scheduled /
+  // Attended): a call Flex took away is not the engineer's plan. They stay in
+  // the population lines (Open Calls) and on the "Closed cancelled" line, which
+  // is where the day still reconciles. Same rule Engineer Productivity applies.
+  const actionableRows = active.filter(
+    r => isActionableStatusValue(getRowStatus(r)) && !wasCancelled(r),
+  );
   // Planned = Scheduled + Engineer Assigned (exact); onsite is its own bucket.
-  const plannedRows = active.filter(r => isPlannedStatusValue(getRowStatus(r)));
+  const plannedRows = active.filter(
+    r => isPlannedStatusValue(getRowStatus(r)) && !wasCancelled(r),
+  );
   const enggOnsiteRows = active.filter(r => isOnsiteStatusValue(getRowStatus(r)));
   const toBeScheduleRows = active.filter(r => matchStatus(r, ["to be scheduled", "assignment pending", "non avl", "missed to schedule"]));
   const cxRescheduleRows = active.filter(r => matchStatus(r, ["cx pending", "reschedule", "cx", "cust delay", "customer delay", "customer pending"]));
@@ -100,14 +124,6 @@ function calculateKpiMetricsForCardView(
   const tradeOpenRows = isBod
     ? rows.filter((r) => isTradeCase(r))
     : rows.filter((r) => !r.carryForward.closedSyntheticRow && isTradeCase(r));
-
-  // A vanished row Flex reports as "Closed - Canceled" is a cancellation, not a
-  // completed close, whatever our own column says — see isCancelledClosure.
-  const wasCancelled = (r: typeof rows[number]) =>
-    isCancelledClosure(
-      r.output as unknown as Record<string, unknown>,
-      getRowStatus(r),
-    );
 
   const closedCancelledRows = closed.filter(wasCancelled);
   const newCallsRows = active.filter((r) => r.comparison?.changeType === "NEW");
@@ -500,11 +516,25 @@ export function RTPLDashboard({
       const trimmed = (value ?? "").trim();
       return !trimmed || trimmed.toLowerCase() === "manual entry required" ? "" : trimmed;
     };
-    const rowsWithStatuses = rtplAnalyticsRows.map((r) => ({
-      ticketId: String(r.output["Ticket ID"] || "").trim(),
-      bodStatus: cleanStatus(String(r.output["RTPL status"] ?? "")),
-      eodStatus: cleanStatus(String(r.output["Evening status"] ?? "")),
-    }));
+    const rowsWithStatuses = rtplAnalyticsRows.map((r) => {
+      const bodStatus = cleanStatus(String(r.output["RTPL status"] ?? ""));
+      const eodStatus = cleanStatus(String(r.output["Evening status"] ?? ""));
+      return {
+        ticketId: String(r.output["Ticket ID"] || "").trim(),
+        bodStatus,
+        eodStatus,
+        // Carried alongside the statuses because the three sets below read the
+        // Morning and Evening columns TOGETHER and so cannot go through
+        // calculateKpiMetricsForCardView, which only ever sees one column.
+        // Evening first (today's word on the call), Morning as the fallback.
+        cancelledClosure:
+          r.carryForward.closedSyntheticRow &&
+          isCancelledClosure(
+            r.output as unknown as Record<string, unknown>,
+            eodStatus || bodStatus,
+          ),
+      };
+    });
 
     const cardBod = rowsWithStatuses.filter((r) => r.bodStatus).length;
     const cardEod = rowsWithStatuses.filter((r) => r.eodStatus).length;
@@ -544,9 +574,14 @@ export function RTPLDashboard({
     // outcomes that mean the visit did NOT take place. For 05-08-2026 that
     // read 110 attended against productivity's 73, the 37 difference being
     // exactly those two buckets.
+    // A call Flex cancelled is not attended work, however our Evening column
+    // reads — the same exclusion the card-view work lines apply just above, and
+    // the one Engineer Productivity applies. It stays on "Closed cancelled".
     const attendedRows = rowsWithStatuses.filter(
       (r) =>
-        isPlannedStatusValue(r.bodStatus) && isAttendedOutcomeStatus(r.eodStatus),
+        !r.cancelledClosure &&
+        isPlannedStatusValue(r.bodStatus) &&
+        isAttendedOutcomeStatus(r.eodStatus),
     );
     const attendedTicketIds = attendedRows.map((r) => r.ticketId);
 
@@ -559,10 +594,13 @@ export function RTPLDashboard({
     // calculateKpiMetricsForCardView, which only ever sees one column.
     const actionableEodRows = rowsWithStatuses.filter(
       (r) =>
-        isActionableStatusValue(r.bodStatus) || isActionableStatusValue(r.eodStatus),
+        !r.cancelledClosure &&
+        (isActionableStatusValue(r.bodStatus) || isActionableStatusValue(r.eodStatus)),
     );
     const plannedEodRows = rowsWithStatuses.filter(
-      (r) => isPlannedStatusValue(r.bodStatus) || isPlannedStatusValue(r.eodStatus),
+      (r) =>
+        !r.cancelledClosure &&
+        (isPlannedStatusValue(r.bodStatus) || isPlannedStatusValue(r.eodStatus)),
     );
 
     const bodBase = calculateKpiMetricsForCardView(rtplAnalyticsRows, bodStatusMap, true);

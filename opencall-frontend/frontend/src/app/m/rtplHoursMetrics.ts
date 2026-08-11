@@ -5,6 +5,7 @@ import {
   isPlannedStatusValue,
   isOnsiteStatusValue,
   isCaseClosedStatusValue,
+  isCancelledClosure,
 } from "../../features/dashboard/utils";
 import type { GeneratedReportResponse } from "../../lib/api/types";
 
@@ -157,7 +158,17 @@ export function calculateRtplHoursMetrics(
     ? rows.filter((r) => isTradeCase(r))
     : rows.filter((r) => !r.carryForward.closedSyntheticRow && isTradeCase(r));
 
-  const closedCancelledRows = closed.filter((r) => matchStatus(r, ["cancel"]));
+  // Flex's verdict decides, not our own column — the shared isCancelledClosure,
+  // the same test RTPL Analytics and the KPI tiles use. The old keyword test read
+  // only our status, so a call Flex cancelled while our column said something
+  // else counted as a completed close here.
+  const wasCancelled = (r: Row): boolean =>
+    isCancelledClosure(
+      r.output as unknown as Record<string, unknown>,
+      getRowStatus(r),
+    );
+
+  const closedCancelledRows = closed.filter(wasCancelled);
   const newCallsRows = active.filter((r) => r.comparison?.changeType === "NEW");
 
   // Closed Calls = an explicit "Case-Closed" status in this column, plus rows that
@@ -166,7 +177,7 @@ export function calculateRtplHoursMetrics(
   // belongs to Closed cancelled only, never both rows.
   const caseClosedRows = [
     ...active.filter((r) => isCaseClosedStatusValue(getRowStatus(r))),
-    ...closed.filter((r) => !matchStatus(r, ["cancel"])),
+    ...closed.filter((r) => !wasCancelled(r)),
   ];
 
   // Attended is an EOD-only outcome; the BOD side stays empty by definition.

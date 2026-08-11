@@ -17,6 +17,7 @@ import {
   isPlannedStatusValue,
   isOnsiteStatusValue,
   isCaseClosedStatusValue,
+  isCancelledClosure,
 } from "../utils";
 
 export function useKpiMetrics(params: {
@@ -110,7 +111,19 @@ export function useKpiMetrics(params: {
       ? rows.filter((r) => r.comparison?.changeType !== "NEW" && isTradeCase(r)).length
       : rows.filter((r) => !r.carryForward.closedSyntheticRow && isTradeCase(r)).length;
 
-    const closedCancelled = closed.filter((r) => matchStatus(r, ["cancel"])).length;
+    // Flex's verdict decides, not our own column. The keyword test this used to
+    // run missed every call Flex cancelled while our status said something else
+    // (a row reading "Customer Pending" with a Flex Status of "Closed - Canceled"
+    // was counted as a completed close), and RTPL Analytics has used the shared
+    // isCancelledClosure since 6f6bae5 — these two tiles never got it, so the
+    // same day read differently depending on which page you opened.
+    const wasCancelled = (r: typeof rows[number]): boolean =>
+      isCancelledClosure(
+        r.output as unknown as Record<string, unknown>,
+        getRowStatus(r),
+      );
+
+    const closedCancelled = closed.filter(wasCancelled).length;
 
     // Closed Calls = an explicit "Case-Closed" / "WO Closed" status, plus rows
     // that closed by vanishing from the day's Flex file — MINUS the vanished
@@ -122,7 +135,7 @@ export function useKpiMetrics(params: {
     // which is why the two disagreed. A cancellation is not a completed close.
     const caseClosed =
       active.filter((r) => isCaseClosedStatusValue(getRowStatus(r))).length +
-      closed.filter((r) => !matchStatus(r, ["cancel"])).length;
+      closed.filter((r) => !wasCancelled(r)).length;
 
     return {
       engineerCount,

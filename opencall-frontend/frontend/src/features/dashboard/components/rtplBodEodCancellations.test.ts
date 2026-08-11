@@ -77,6 +77,14 @@ describe("BOD/EOD — Flex-cancelled calls", () => {
     expect(result.tickets.closedCalls).toEqual(["WO-CLOSED"]);
   });
 
+  it("does not count an engineer present on a cancelled call alone", () => {
+    // An engineer whose only booking was cancelled did not turn up to anything.
+    expect(metrics([cancelled], true).enggPresents).toBe(0);
+    expect(metrics([live], true).enggPresents).toBe(1);
+    // A cancellation alongside a real booking leaves the engineer present once.
+    expect(metrics([live, cancelled], true).enggPresents).toBe(1);
+  });
+
   // The guard that keeps the exclusion narrow: isCancelledClosure falls back to
   // a keyword test on our own status when Flex has not reported, so an OPEN call
   // parked at a cancellation-ish status must survive — it is still work owed.

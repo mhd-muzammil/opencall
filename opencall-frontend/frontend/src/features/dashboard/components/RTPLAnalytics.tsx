@@ -60,12 +60,31 @@ export function calculateKpiMetricsForCardView(
     return (rowStatusMap[ticketId] ?? "").trim();
   };
 
+  // A vanished row Flex reports as "Closed - Canceled" is a cancellation, not a
+  // completed close, whatever our own column says — see isCancelledClosure.
+  //
+  // Gated on the row actually being a closure, deliberately: isCancelledClosure
+  // falls back to a keyword test on our own status when Flex has not reported
+  // yet, which would otherwise sweep up LIVE calls parked at "Under
+  // Cancellation" / "Need to Cancel" — still the engineer's work to do.
+  const wasCancelled = (r: typeof rows[number]): boolean =>
+    r.carryForward.closedSyntheticRow &&
+    isCancelledClosure(
+      r.output as unknown as Record<string, unknown>,
+      getRowStatus(r),
+    );
+
   // Present = the engineer has at least one "Scheduled" call under their name
   // that day; an engineer with no scheduled assignment is absent. So Presents
   // counts unique engineers over the Scheduled rows, not all engineers.
+  //
+  // A call Flex cancelled does not make its engineer present: without this an
+  // engineer whose only booking was cancelled still showed up in the count.
   const isScheduledStatus = (r: typeof rows[number]): boolean =>
     getRowStatus(r).toLowerCase().replace(/[^a-z0-9]+/g, " ").trim() === "scheduled";
-  const scheduledRows = active.filter(isScheduledStatus);
+  const scheduledRows = active.filter(
+    (r) => isScheduledStatus(r) && !wasCancelled(r),
+  );
   const presentEngineers = getUniqueEngineers(scheduledRows);
 
   const matchStatus = (
@@ -81,20 +100,6 @@ export function calculateKpiMetricsForCardView(
   };
 
   const getTicketIds = (items: typeof rows) => items.map(r => String(r.output["Ticket ID"] || "").trim());
-
-  // A vanished row Flex reports as "Closed - Canceled" is a cancellation, not a
-  // completed close, whatever our own column says — see isCancelledClosure.
-  //
-  // Gated on the row actually being a closure, deliberately: isCancelledClosure
-  // falls back to a keyword test on our own status when Flex has not reported
-  // yet, which would otherwise sweep up LIVE calls parked at "Under
-  // Cancellation" / "Need to Cancel" — still the engineer's work to do.
-  const wasCancelled = (r: typeof rows[number]): boolean =>
-    r.carryForward.closedSyntheticRow &&
-    isCancelledClosure(
-      r.output as unknown as Record<string, unknown>,
-      getRowStatus(r),
-    );
 
   // Actionable = "Scheduled" + "To Be Scheduled" (shared definition).
   // Cancellations are dropped from the WORK lines (Actionable / Scheduled /

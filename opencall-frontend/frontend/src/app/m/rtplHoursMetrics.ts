@@ -114,10 +114,26 @@ export function calculateRtplHoursMetrics(
     return (rowStatusMap[ticketId] ?? "").trim();
   };
 
-  // Present = the engineer has at least one "Scheduled" call under their name that day.
+  // Flex's verdict decides, not our own column — the shared isCancelledClosure,
+  // the same test RTPL Analytics and the KPI tiles use. The old keyword test read
+  // only our status, so a call Flex cancelled while our column said something
+  // else counted as a completed close here.
+  //
+  // Gated on the row actually being a closure: the helper falls back to a keyword
+  // test on our own status before Flex reports, which would otherwise sweep up
+  // LIVE calls parked at "Under Cancellation" / "Need to Cancel".
+  const wasCancelled = (r: Row): boolean =>
+    r.carryForward.closedSyntheticRow &&
+    isCancelledClosure(
+      r.output as unknown as Record<string, unknown>,
+      getRowStatus(r),
+    );
+
+  // Present = the engineer has at least one "Scheduled" call under their name that
+  // day. A call Flex cancelled does not make its engineer present.
   const isScheduled = (r: Row): boolean =>
     getRowStatus(r).toLowerCase().replace(/[^a-z0-9]+/g, " ").trim() === "scheduled";
-  const scheduledRows = active.filter(isScheduled);
+  const scheduledRows = active.filter((r) => isScheduled(r) && !wasCancelled(r));
   const presentEngineers = getUniqueEngineers(scheduledRows);
 
   const matchStatus = (r: Row, keywords: string[], excludes: string[] = []): boolean => {
@@ -157,16 +173,6 @@ export function calculateRtplHoursMetrics(
   const tradeOpenRows = isBod
     ? rows.filter((r) => isTradeCase(r))
     : rows.filter((r) => !r.carryForward.closedSyntheticRow && isTradeCase(r));
-
-  // Flex's verdict decides, not our own column — the shared isCancelledClosure,
-  // the same test RTPL Analytics and the KPI tiles use. The old keyword test read
-  // only our status, so a call Flex cancelled while our column said something
-  // else counted as a completed close here.
-  const wasCancelled = (r: Row): boolean =>
-    isCancelledClosure(
-      r.output as unknown as Record<string, unknown>,
-      getRowStatus(r),
-    );
 
   const closedCancelledRows = closed.filter(wasCancelled);
   const newCallsRows = active.filter((r) => r.comparison?.changeType === "NEW");

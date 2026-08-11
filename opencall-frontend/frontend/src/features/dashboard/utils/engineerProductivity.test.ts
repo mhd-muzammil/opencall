@@ -21,6 +21,9 @@ function row(input: {
   flexStatus?: string;
   closedSyntheticRow?: boolean;
   sameDayClosedRow?: boolean;
+  // Presence of the "Flex Status (WIP)" KEY is what marks the closure overlay as
+  // having fired, so it is only added when a test asks for it.
+  flexStatusWip?: string;
 }): ProductivityReportRow {
   return {
     serialNo: nextSerial++,
@@ -31,6 +34,9 @@ function row(input: {
       "Evening status": input.evening ?? "",
       "Work Location": input.workLocation ?? "ASPS01461",
       "Flex Status": input.flexStatus ?? "Open",
+      ...(input.flexStatusWip === undefined
+        ? {}
+        : { "Flex Status (WIP)": input.flexStatusWip }),
     },
     carryForward: {
       closedSyntheticRow: input.closedSyntheticRow ?? false,
@@ -490,5 +496,81 @@ describe("addToProductivityCounts", () => {
       counts.attended + counts.cxReschedule + counts.engineerDelay,
     );
     expect(counts.attended).toBe(4);
+  });
+});
+
+describe("Flex-cancelled closures", () => {
+  // WO-035467782 (SALEM, 2026-08-11): booked to Thamaraiselvan, closed the same
+  // day, and Flex reported it as "Closed - Canceled". Productivity scored it
+  // Assigned 1 / Attended 1 / Closed 1 because resolveDayScopedProductivityBucket
+  // returns CLOSED for ANY same-day closure without asking how it closed.
+  // A cancellation is not the engineer's work, so the row leaves productivity
+  // entirely -- Assigned included.
+  it("drops a cancelled closure completely, Assigned and all", () => {
+    const result = computeEngineerProductivity([
+      row({
+        ticketId: "WO-035467782",
+        engineer: "Thamaraiselvan",
+        morning: "Scheduled",
+        flexStatus: "Closed - Canceled",
+        flexStatusWip: "Scheduled",
+        sameDayClosedRow: true,
+        closedSyntheticRow: true,
+      }),
+    ]);
+
+    expect(result.list).toEqual([]);
+    expect(result.totalAttended).toBe(0);
+  });
+
+  it("still counts a genuine WO-closed same-day closure", () => {
+    const result = computeEngineerProductivity([
+      row({
+        ticketId: "WO-1",
+        engineer: "Thamaraiselvan",
+        morning: "Scheduled",
+        flexStatus: "WO Closed",
+        flexStatusWip: "Scheduled",
+        sameDayClosedRow: true,
+        closedSyntheticRow: true,
+      }),
+    ]);
+
+    expect(result.list).toHaveLength(1);
+    expect(result.list[0]?.assigned).toBe(1);
+    expect(result.list[0]?.closed).toBe(1);
+  });
+
+  // Before Flex reports, our own column is the only signal — the same fallback
+  // the Closed Calls tile uses.
+  it("uses our own status when the closure overlay has not run", () => {
+    const result = computeEngineerProductivity([
+      row({
+        ticketId: "WO-2",
+        engineer: "Thamaraiselvan",
+        morning: "Scheduled",
+        evening: "Closed-cancellation",
+        sameDayClosedRow: true,
+        closedSyntheticRow: true,
+      }),
+    ]);
+
+    expect(result.list).toEqual([]);
+  });
+
+  // The guard that keeps the exclusion narrow: a LIVE call parked at a
+  // cancellation-ish status is still the engineer's to do, so it must survive.
+  it("keeps an open call whose status merely mentions cancelling", () => {
+    const result = computeEngineerProductivity([
+      row({
+        ticketId: "WO-3",
+        engineer: "Thamaraiselvan",
+        morning: "Scheduled",
+        evening: "Need to Cancel",
+      }),
+    ]);
+
+    expect(result.list).toHaveLength(1);
+    expect(result.list[0]?.assigned).toBe(1);
   });
 });

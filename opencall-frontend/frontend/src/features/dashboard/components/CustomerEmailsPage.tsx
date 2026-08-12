@@ -11,6 +11,9 @@ import {
   type InboundEmailRow,
   type MailboxHealth,
 } from "../../../lib/customerEmailApiClient";
+import { EmailBodyView } from "./EmailBodyView";
+import { ComposeModal } from "./ComposeModal";
+import { SentMailPanel } from "./SentMailPanel";
 
 /**
  * Customer Emails — a two-pane mail client: message list on the left, the selected message
@@ -112,6 +115,10 @@ export function CustomerEmailsPage({ token }: Readonly<{ token: string }>) {
   const [regionFilter, setRegionFilter] = useState<string | null>(null);
   /** When on, show only the messages flagged as an escalation or worth a look. */
   const [escalationOnly, setEscalationOnly] = useState(false);
+  // Compose is the one screen that writes outbound mail. It opens only from the button.
+  const [composeOpen, setComposeOpen] = useState(false);
+  // The Sent tab is a separate record set, not another inbox status filter.
+  const [showSent, setShowSent] = useState(false);
 
   // --- Reply state (approval mode). `reply` is the stored draft, the two text fields are
   // the human's working copy; nothing here can send without the Approve & send click.
@@ -367,6 +374,30 @@ It will go out from ${selected?.mailboxEmail ?? ""}. This cannot be undone.`,
           />
           <button
             type="button"
+            onClick={() => setComposeOpen(true)}
+            disabled={mailboxes.length === 0}
+            title={
+              mailboxes.length === 0
+                ? "No region mailbox is configured yet"
+                : "Write a new mail from a region mailbox"
+            }
+            style={{
+              background: "#2563eb",
+              color: "#ffffff",
+              border: "none",
+              borderRadius: "999px",
+              padding: "8px 18px",
+              fontSize: "13px",
+              fontWeight: 700,
+              minHeight: "36px",
+              cursor: mailboxes.length === 0 ? "not-allowed" : "pointer",
+              opacity: mailboxes.length === 0 ? 0.5 : 1,
+            }}
+          >
+            ✉ Compose
+          </button>
+          <button
+            type="button"
             onClick={() => void pollNow()}
             disabled={busy}
             style={{ ...actionBtn, opacity: busy ? 0.6 : 1, cursor: busy ? "not-allowed" : "pointer" }}
@@ -379,11 +410,28 @@ It will go out from ${selected?.mailboxEmail ?? ""}. This cannot be undone.`,
       {/* Tabs + mailbox health */}
       <div style={{ display: "flex", gap: "8px", flexWrap: "wrap", alignItems: "center", marginBottom: "12px" }}>
         {STATUS_TABS.map((t) => (
-          <button key={t.key} type="button" onClick={() => setStatus(t.key)} style={tabBtn(status === t.key)}>
+          <button
+            key={t.key}
+            type="button"
+            onClick={() => {
+              setShowSent(false);
+              setStatus(t.key);
+            }}
+            style={tabBtn(!showSent && status === t.key)}
+          >
             {t.label}
-            {t.key === status ? ` · ${filtered.length}` : ""}
+            {!showSent && t.key === status ? ` · ${filtered.length}` : ""}
           </button>
         ))}
+        {/* Outbound: what this team sent, and who sent it. */}
+        <button
+          type="button"
+          onClick={() => setShowSent(true)}
+          title="Mail sent from OpenCall — Compose and approved replies"
+          style={tabBtn(showSent)}
+        >
+          Sent
+        </button>
         {/* Escalations jump the queue, so they get their own switch. */}
         <button
           type="button"
@@ -488,8 +536,13 @@ It will go out from ${selected?.mailboxEmail ?? ""}. This cannot be undone.`,
         </div>
       ) : null}
 
+      {/* Sent replaces the two-pane client: it is a different shape of record — outbound,
+          with no triage and nothing to reply to. */}
+      {showSent ? <SentMailPanel token={token} /> : null}
+
       {/* Two-pane client */}
       <div
+        hidden={showSent}
         style={{
           display: "grid",
           gridTemplateColumns: "minmax(280px, 380px) minmax(0, 1fr)",
@@ -600,6 +653,11 @@ It will go out from ${selected?.mailboxEmail ?? ""}. This cannot be undone.`,
                         marginTop: "1px",
                       }}
                     >
+                      {r.hasAttachments ? (
+                        <span title="Has an attachment" style={{ marginRight: "5px" }}>
+                          📎
+                        </span>
+                      ) : null}
                       {r.subject || "(no subject)"}
                     </span>
                     <span
@@ -815,19 +873,14 @@ It will go out from ${selected?.mailboxEmail ?? ""}. This cannot be undone.`,
                 </div>
               ) : null}
 
-              {/* Body */}
-              <div
-                style={{
-                  whiteSpace: "pre-wrap",
-                  wordBreak: "break-word",
-                  fontSize: "13.5px",
-                  lineHeight: 1.65,
-                  color: "#1e293b",
-                  fontFamily: "inherit",
-                }}
-              >
-                {selected.bodyText || selected.bodyPreview || "(empty message)"}
-              </div>
+              {/* Body — the sender's own HTML, sandboxed, with their inline pictures put
+                  back and anything remote held until asked. Falls back to plain text. */}
+              <EmailBodyView
+                key={selected.id}
+                token={token}
+                emailId={selected.id}
+                fallbackText={selected.bodyText || selected.bodyPreview}
+              />
 
               {/* --- Reply: APPROVAL MODE ---
                   A draft is only ever a draft until Send is pressed. Nothing on this panel
@@ -1007,6 +1060,16 @@ It will go out from ${selected?.mailboxEmail ?? ""}. This cannot be undone.`,
           )}
         </div>
       </div>
+
+      {composeOpen ? (
+        <ComposeModal
+          token={token}
+          mailboxes={mailboxes}
+          defaultRegion={selected?.regionCode ?? regionFilter}
+          onClose={() => setComposeOpen(false)}
+          onSent={(summary) => setMessage(summary)}
+        />
+      ) : null}
     </section>
   );
 }

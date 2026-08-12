@@ -13,6 +13,8 @@ import {
   isBlankLikeFilterValue,
   filterOptionLabel,
   compareFilterOptionValues,
+  distanceFilterBand,
+  columnFilterValue,
   BLANKS_OPTION_LABEL,
   BLANK_FILTER_VALUE,
   FILTERABLE_COLUMNS,
@@ -739,5 +741,80 @@ describe("blank-like option presentation (Excel-style)", () => {
       "MANUAL ENTRY REQUIRED",
     ]);
     expect(engineer.find((e) => e.value === "MANUAL ENTRY REQUIRED")!.count).toBe(1);
+  });
+});
+
+describe("Distance column filtering", () => {
+  // Distance is the one column whose dropdown is NOT WYSIWYG. The cell shows an
+  // exact "12.9 km · NNE" because that is what a dispatcher reads; the filter
+  // shows four bands because fifty exact values sorted as text (putting
+  // "10.4 km" above "2.6 km") is not a filter anyone can use.
+  it("bands an exact distance cell", () => {
+    expect(distanceFilterBand("2.6 km · NNE")).toBe("0-5 KM");
+    expect(distanceFilterBand("12.9 km · NNE")).toBe("5-15 KM");
+    expect(distanceFilterBand("24.5 km · NNW")).toBe("15-30 KM");
+    expect(distanceFilterBand("51.0 km · NE")).toBe("30+ KM");
+  });
+
+  it("bands a straight-line estimate the same as a routed distance", () => {
+    // Flagged in the cell, but not excluded from a filter for nearby work.
+    expect(distanceFilterBand("~12.9 km · NNE")).toBe("5-15 KM");
+    expect(distanceFilterBand("~2.6 km · NNE")).toBe("0-5 KM");
+  });
+
+  it("treats an unresolved distance as blank", () => {
+    expect(distanceFilterBand("")).toBe(BLANK_FILTER_VALUE);
+    expect(distanceFilterBand(null)).toBe(BLANK_FILTER_VALUE);
+    expect(distanceFilterBand("n/a")).toBe(BLANK_FILTER_VALUE);
+  });
+
+  it("puts a band boundary in the lower band", () => {
+    expect(distanceFilterBand("5.0 km · N")).toBe("0-5 KM");
+    expect(distanceFilterBand("15.0 km · N")).toBe("5-15 KM");
+    expect(distanceFilterBand("30.0 km · N")).toBe("15-30 KM");
+  });
+
+  /**
+   * The load-bearing property. Selected filter values are re-normalized before
+   * they are matched against rows, so a band the normalizer rewrites would never
+   * match anything — the exact shape of the 2026-07-20 "PART PENDING (21)"
+   * dropdown bug, where options named rows they did not select.
+   */
+  it("produces bands that survive re-normalization unchanged", () => {
+    for (const band of ["0-5 KM", "5-15 KM", "15-30 KM", "30+ KM", BLANK_FILTER_VALUE]) {
+      expect(normalizeFilterValue(band)).toBe(band);
+    }
+  });
+
+  it("leaves every other column WYSIWYG", () => {
+    expect(columnFilterValue("Scheduled", "RTPL status")).toBe("SCHEDULED");
+    expect(columnFilterValue("12.9 km · NNE", "Location")).toBe("12.9 KM · NNE");
+  });
+
+  it("selects exactly the rows inside a band", () => {
+    const rows = [
+      { output: { Distance: "2.6 km · NNE" } },
+      { output: { Distance: "12.9 km · NNE" } },
+      { output: { Distance: "24.5 km · NNW" } },
+      { output: { Distance: "" } },
+    ];
+
+    const filtered = applyColumnFilters(rows, { Distance: new Set(["5-15 KM"]) });
+
+    expect(filtered).toHaveLength(1);
+    expect(filtered[0]!.output.Distance).toBe("12.9 km · NNE");
+  });
+
+  it("offers one dropdown entry per band, not per pincode", () => {
+    const rows = [
+      { output: { Distance: "2.6 km · NNE" } },
+      { output: { Distance: "3.4 km · ESE" } },
+      { output: { Distance: "12.9 km · NNE" } },
+    ];
+
+    const options = extractUniqueValues(rows, "Distance");
+
+    expect(options.map((o) => o.value).sort()).toEqual(["0-5 KM", "5-15 KM"]);
+    expect(options.find((o) => o.value === "0-5 KM")!.count).toBe(2);
   });
 });

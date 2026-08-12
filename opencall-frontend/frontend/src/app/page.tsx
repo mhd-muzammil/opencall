@@ -19,6 +19,10 @@ import {
 } from "lucide-react";
 import { useColumnFilters } from "../lib/useColumnFilters";
 import {
+  reportHasDistanceValues,
+  withDistanceAvailability,
+} from "../lib/distanceColumn";
+import {
   MANUAL_ENTRY_REQUIRED,
   CISS_PRODUCT_LINE,
   PRINT_SEGMENT,
@@ -1181,13 +1185,35 @@ export default function DashboardPage() {
   // Base column set/order = the user's saved layout (if any), else the full
   // default. The layout may include raw Excel headers (not just the standard
   // report columns). The session "Columns" toggle (hiddenColumns) hides on top.
+  // Distance exists only for a region whose branch office has coordinates —
+  // today Chennai alone. Elsewhere every cell is blank, so the column is dropped
+  // entirely rather than shown empty. Driven by the report's own data, so the day
+  // another region's office is seeded the column appears with no code change.
+  // See lib/distanceColumn.ts.
+  const reportHasDistance = useMemo(
+    () => reportHasDistanceValues(report?.rows),
+    [report],
+  );
+
+  // What this report can offer at all. The grid and the Columns picker must read
+  // the SAME list, or the picker offers a tick-box for a column that can never
+  // appear.
+  const availableColumns = useMemo<string[]>(
+    () => withDistanceAvailability([...DAILY_CALL_PLAN_COLUMNS], reportHasDistance),
+    [reportHasDistance],
+  );
+
   const visibleColumns = useMemo<string[]>(() => {
     const base: string[] =
       recordLayout && recordLayout.length > 0
         ? recordLayout
         : [...DAILY_CALL_PLAN_COLUMNS];
-    return base.filter((c) => !hiddenColumns.has(c));
-  }, [recordLayout, hiddenColumns]);
+    // Availability is applied to a saved layout too: a layout saved in Chennai
+    // carries "Distance" and would otherwise drag it into a Salem report.
+    return withDistanceAvailability(base, reportHasDistance).filter(
+      (c) => !hiddenColumns.has(c),
+    );
+  }, [recordLayout, hiddenColumns, reportHasDistance]);
 
   // A column is "standard" if it is one of the report's mapped columns; anything
   // else is a raw Excel header rendered read-only from the row's raw Flex data.
@@ -5355,7 +5381,7 @@ export default function DashboardPage() {
                                   </button>
                                 </div>
                                 <div className="columnsMenuList">
-                                  {DAILY_CALL_PLAN_COLUMNS.map((column) => {
+                                  {availableColumns.map((column) => {
                                     const locked = ALWAYS_VISIBLE_COLUMNS.has(column);
                                     const isVisible = !hiddenColumns.has(column);
                                     return (

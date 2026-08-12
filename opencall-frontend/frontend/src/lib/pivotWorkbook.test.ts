@@ -412,9 +412,18 @@ describe("buildPivotWorkbookBytes against the real pivot-template.xlsx", () => {
       }
 
       // Cache forced to refresh and repointed at the exact 9-row extent.
+      //
+      // The expected range is DERIVED from the column list, not hardcoded: this
+      // assertion used to pin "A1:AA9" and broke the day a column was appended,
+      // reporting a pivot bug where there was only a stale literal. Excel
+      // rebuilds the cache fields from this range because refreshOnLoad is set,
+      // so widening it is the correct response to a new column.
       const cache = strFromU8(out[cacheDefPath]!);
+      const lastColumn = columnLetter(DAILY_CALL_PLAN_COLUMNS.length - 1);
       expect(cache).toContain('refreshOnLoad="1"');
-      expect(cache).toMatch(/<worksheetSource\b[^>]*\bref="A1:AA9"/);
+      expect(cache).toMatch(
+        new RegExp(`<worksheetSource\\b[^>]*\\bref="A1:${lastColumn}9"`),
+      );
 
       // Source sheet rewritten with the injected rows.
       const source = strFromU8(out[sourcePath]!);

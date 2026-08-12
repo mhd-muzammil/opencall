@@ -141,6 +141,43 @@ function normalizeFilterState(filters: ColumnFilterState): ColumnFilterState {
 }
 
 /**
+ * The Distance column's filter value.
+ *
+ * The cell shows an exact figure ("12.9 km · NNE") because that is what a
+ * dispatcher reads. Filtering on it directly would be useless: column filters
+ * match exact strings, so every pincode becomes its own dropdown entry — roughly
+ * fifty for Chennai alone — sorted as text, which puts "10.4 km" above "2.6 km".
+ *
+ * Banding collapses that to four choices that answer the actual question: can
+ * one engineer add this call to a run, or is it a trip of its own.
+ */
+export function distanceFilterBand(raw: unknown): string {
+  // A leading tilde marks a straight-line estimate ("~12.9 km"). It bands
+  // exactly like a routed value — the dispatcher filtering for nearby work wants
+  // the estimated ones in the results too, flagged but not excluded.
+  const km = Number.parseFloat(String(raw ?? "").trim().replace(/^~/, ""));
+
+  if (!Number.isFinite(km)) {
+    return BLANK_FILTER_VALUE;
+  }
+  if (km <= 5) return "0-5 KM";
+  if (km <= 15) return "5-15 KM";
+  if (km <= 30) return "15-30 KM";
+
+  return "30+ KM";
+}
+
+/**
+ * Value a column is filtered and grouped by. Identical to the displayed value
+ * for every column except Distance, which bands (see above).
+ */
+export function columnFilterValue(raw: unknown, column: string): string {
+  return column === "Distance"
+    ? distanceFilterBand(raw)
+    : normalizeFilterValue(raw);
+}
+
+/**
  * Extract unique values (+ counts) for a single column from the given rows.
  * Returns entries sorted alphabetically by value, blank-like values last.
  */
@@ -150,7 +187,7 @@ export function extractUniqueValues<
   const counts = new Map<string, number>();
 
   for (const row of rows) {
-    const normalised = normalizeFilterValue(row.output[column]);
+    const normalised = columnFilterValue(row.output[column], column);
     counts.set(normalised, (counts.get(normalised) ?? 0) + 1);
   }
 
@@ -274,7 +311,7 @@ export function buildCascadedUniqueValuesMap<
 
       if (
         selected.size === 0 ||
-        !selected.has(normalizeFilterValue(row.output[col]))
+        !selected.has(columnFilterValue(row.output[col], col))
       ) {
         if (failedColumn !== null) {
           failedMoreThanOne = true;
@@ -291,7 +328,7 @@ export function buildCascadedUniqueValuesMap<
       // Passes everything except `failedColumn`'s own filter → visible only
       // in `failedColumn`'s dropdown (whose own filter is excluded).
       const counts = countsByColumn.get(failedColumn)!;
-      const value = normalizeFilterValue(row.output[failedColumn]);
+      const value = columnFilterValue(row.output[failedColumn], failedColumn);
       counts.set(value, (counts.get(value) ?? 0) + 1);
       continue;
     }
@@ -299,7 +336,7 @@ export function buildCascadedUniqueValuesMap<
     // Passes all active filters → visible in every column's dropdown.
     for (const col of FILTERABLE_COLUMNS) {
       const counts = countsByColumn.get(col)!;
-      const value = normalizeFilterValue(row.output[col]);
+      const value = columnFilterValue(row.output[col], col);
       counts.set(value, (counts.get(value) ?? 0) + 1);
     }
   }
@@ -357,7 +394,7 @@ export function rowPassesFilters<
       return false;
     }
 
-    const normalised = normalizeFilterValue(row.output[column]);
+    const normalised = columnFilterValue(row.output[column], column);
 
     if (!selected.has(normalised)) {
       return false;

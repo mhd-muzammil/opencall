@@ -6,6 +6,7 @@ import {
   formatMoney,
   formatQuotationDate,
 } from "../../../lib/quotationFormat";
+import { quotationTotals, resolveLineItems } from "../../../lib/quotationTotals";
 import {
   QUOTATION_LOGO_DATA_URL,
   QUOTATION_QR_DATA_URL,
@@ -30,10 +31,15 @@ export function QuotationPrint({
   const signUrl = images?.sign ?? QUOTATION_SIGN_DATA_URL;
   const logoUrl = images?.logo ?? QUOTATION_LOGO_DATA_URL;
 
-  const sgst = (q.baseAmount * q.sgstPercent) / 100;
-  const cgst = (q.baseAmount * q.cgstPercent) / 100;
-  const totalTax = sgst + cgst;
-  const total = q.baseAmount + totalTax;
+  // Shared with both create forms, so the sheet can never disagree with the form that
+  // produced it. `resolveLineItems` also covers a quotation raised before line items
+  // existed, which would otherwise print blank.
+  const items = resolveLineItems(q);
+  const { subtotal, sgst, cgst, totalTax, total } = quotationTotals(
+    items,
+    q.sgstPercent,
+    q.cgstPercent,
+  );
 
   const border = "1px solid #000";
   const cell: React.CSSProperties = {
@@ -117,12 +123,16 @@ export function QuotationPrint({
           </tr>
         </thead>
         <tbody>
-          <tr>
-            <td style={{ ...cell, textAlign: "center" }}>
-              {q.serviceDescription || "Service Charge of HP Printer having details as"}
-            </td>
-            <td style={{ ...cell, textAlign: "right" }}>{formatMoney(q.baseAmount)}</td>
-          </tr>
+          {/* One priced row per line item, then a single unit table listing all of them.
+              A one-item quotation prints exactly as it always did. */}
+          {items.map((item, index) => (
+            <tr key={index}>
+              <td style={{ ...cell, textAlign: "center" }}>
+                {item.serviceDescription || "Service Charge of HP Printer having details as"}
+              </td>
+              <td style={{ ...cell, textAlign: "right" }}>{formatMoney(item.baseAmount)}</td>
+            </tr>
+          ))}
           <tr>
             <td style={{ ...cell, padding: 0 }}>
               <table style={{ width: "100%", borderCollapse: "collapse" }}>
@@ -134,11 +144,14 @@ export function QuotationPrint({
                   </tr>
                 </thead>
                 <tbody>
-                  <tr>
-                    <td style={cell}>{q.productDescription || "-"}</td>
-                    <td style={cell}>{q.modelNo || "-"}</td>
-                    <td style={cell}>{q.serialNo || "-"}</td>
-                  </tr>
+                  {items.map((item, index) => (
+                    <tr key={index}>
+                      <td style={cell}>{item.productDescription || "-"}</td>
+                      <td style={cell}>{item.modelNo || "-"}</td>
+                      <td style={cell}>{item.serialNo || "-"}</td>
+                    </tr>
+                  ))}
+                  {/* Keeps the block from collapsing onto the totals on a short sheet. */}
                   <tr><td style={{ ...cell, height: "42px" }} colSpan={3} /></tr>
                 </tbody>
               </table>
@@ -147,7 +160,7 @@ export function QuotationPrint({
           </tr>
           <tr>
             <td style={{ ...cell, fontWeight: 700 }}>Total Amount</td>
-            <td style={{ ...cell, textAlign: "right" }}>{formatMoney(q.baseAmount)}</td>
+            <td style={{ ...cell, textAlign: "right" }}>{formatMoney(subtotal)}</td>
           </tr>
           <tr>
             <td style={cell}>SGST @ {q.sgstPercent} %</td>

@@ -10,9 +10,19 @@ import {
   listQuotations,
   type CreateQuotationInput,
   type Quotation,
+  type QuotationLineItem,
 } from "../../../lib/quotationApiClient";
 import { formatMoney } from "../../../lib/quotationFormat";
+import { quotationTotals } from "../../../lib/quotationTotals";
 import { QuotationPrint } from "../../../features/dashboard/components/QuotationPrint";
+
+const EMPTY_LINE_ITEM: QuotationLineItem = {
+  serviceDescription: "",
+  productDescription: "",
+  modelNo: "",
+  serialNo: "",
+  baseAmount: 0,
+};
 
 const EMPTY_FORM: CreateQuotationInput = {
   quotationDate: "",
@@ -25,11 +35,8 @@ const EMPTY_FORM: CreateQuotationInput = {
   customerPincode: "",
   customerPhone: "",
   customerEmail: "",
-  serviceDescription: "",
-  productDescription: "",
-  modelNo: "",
-  serialNo: "",
-  baseAmount: 0,
+  // A quotation always has at least one priced row; the form starts on it.
+  lineItems: [{ ...EMPTY_LINE_ITEM }],
   sgstPercent: 9,
   cgstPercent: 9,
 };
@@ -93,6 +100,23 @@ export default function MobileQuotationsPage() {
   const set = (patch: Partial<CreateQuotationInput>) =>
     setForm((f) => ({ ...f, ...patch }));
 
+  const setLineItem = (index: number, patch: Partial<QuotationLineItem>) =>
+    setForm((f) => ({
+      ...f,
+      lineItems: f.lineItems.map((item, i) => (i === index ? { ...item, ...patch } : item)),
+    }));
+
+  const addLineItem = () =>
+    setForm((f) => ({ ...f, lineItems: [...f.lineItems, { ...EMPTY_LINE_ITEM }] }));
+
+  /** Removing the last row would leave a quotation with nothing on it, so one always stays. */
+  const removeLineItem = (index: number) =>
+    setForm((f) =>
+      f.lineItems.length <= 1
+        ? f
+        : { ...f, lineItems: f.lineItems.filter((_, i) => i !== index) },
+    );
+
   async function handleAutofill() {
     if (!session) return;
     if (!form.caseId && !form.orderNumber) {
@@ -120,6 +144,9 @@ export default function MobileQuotationsPage() {
         customerPincode: data.customerPincode,
         customerPhone: data.customerPhone,
         customerEmail: data.customerEmail,
+      });
+      // Auto-fill describes the ONE unit the case is about: first row only.
+      setLineItem(0, {
         productDescription: data.productDescription,
         modelNo: data.modelNo,
         serialNo: data.serialNo,
@@ -138,8 +165,8 @@ export default function MobileQuotationsPage() {
       setMessage("Customer name is required.");
       return;
     }
-    if (!(form.baseAmount > 0)) {
-      setMessage("Enter a base amount greater than 0.");
+    if (!(subtotal > 0)) {
+      setMessage("Enter an amount greater than 0 on at least one line item.");
       return;
     }
     setSaving(true);
@@ -156,9 +183,13 @@ export default function MobileQuotationsPage() {
     }
   }
 
-  const sgst = (form.baseAmount * form.sgstPercent) / 100;
-  const cgst = (form.baseAmount * form.cgstPercent) / 100;
-  const total = form.baseAmount + sgst + cgst;
+  // Shared with the printed sheet, so the form can never show a different number from the
+  // document it produces.
+  const { subtotal, sgst, cgst, total } = quotationTotals(
+    form.lineItems,
+    form.sgstPercent,
+    form.cgstPercent,
+  );
 
   if (!allowed) {
     return (
@@ -325,29 +356,92 @@ export default function MobileQuotationsPage() {
               />
             </div>
 
-            <div className="mSectionTitle">Line item</div>
-            <div className="mCard">
-              <Text
-                label="Service Description"
-                value={form.serviceDescription}
-                onChange={(v) => set({ serviceDescription: v })}
-              />
-              <Text
-                label="Product Description"
-                value={form.productDescription}
-                onChange={(v) => set({ productDescription: v })}
-              />
-              <Text label="Model No" value={form.modelNo} onChange={(v) => set({ modelNo: v })} />
-              <Text label="Serial No" value={form.serialNo} onChange={(v) => set({ serialNo: v })} />
+            <div className="mSectionTitle">
+              Line items ({form.lineItems.length})
             </div>
+            {form.lineItems.map((item, index) => (
+              <div className="mCard" key={index} style={{ marginBottom: 10 }}>
+                <div
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 10,
+                    marginBottom: 8,
+                    fontSize: 12,
+                    fontWeight: 700,
+                    color: "var(--m-muted, #64748b)",
+                  }}
+                >
+                  <span>Item {index + 1}</span>
+                  {form.lineItems.length > 1 && (
+                    <button
+                      type="button"
+                      onClick={() => removeLineItem(index)}
+                      aria-label={`Remove item ${index + 1}`}
+                      style={{
+                        marginLeft: "auto",
+                        background: "#ffffff",
+                        color: "#b91c1c",
+                        border: "1px solid #fecaca",
+                        borderRadius: 8,
+                        padding: "2px 12px",
+                        fontSize: 12,
+                        fontWeight: 600,
+                        minHeight: 30,
+                      }}
+                    >
+                      × Remove
+                    </button>
+                  )}
+                </div>
+                <Text
+                  label="Service Description"
+                  value={item.serviceDescription}
+                  onChange={(v) => setLineItem(index, { serviceDescription: v })}
+                />
+                <Text
+                  label="Product Description"
+                  value={item.productDescription}
+                  onChange={(v) => setLineItem(index, { productDescription: v })}
+                />
+                <Text
+                  label="Model No"
+                  value={item.modelNo}
+                  onChange={(v) => setLineItem(index, { modelNo: v })}
+                />
+                <Text
+                  label="Serial No"
+                  value={item.serialNo}
+                  onChange={(v) => setLineItem(index, { serialNo: v })}
+                />
+                <Num
+                  label="Amount *"
+                  value={item.baseAmount}
+                  onChange={(v) => setLineItem(index, { baseAmount: v })}
+                />
+              </div>
+            ))}
+
+            <button
+              type="button"
+              onClick={addLineItem}
+              style={{
+                width: "100%",
+                background: "#ffffff",
+                color: "#2563eb",
+                border: "1px dashed #93c5fd",
+                borderRadius: 10,
+                padding: "10px 16px",
+                fontSize: 13,
+                fontWeight: 700,
+                minHeight: 42,
+              }}
+            >
+              + Add line item
+            </button>
 
             <div className="mSectionTitle">Amount</div>
             <div className="mCard">
-              <Num
-                label="Base Amount *"
-                value={form.baseAmount}
-                onChange={(v) => set({ baseAmount: v })}
-              />
               <Num label="SGST %" value={form.sgstPercent} onChange={(v) => set({ sgstPercent: v })} />
               <Num label="CGST %" value={form.cgstPercent} onChange={(v) => set({ cgstPercent: v })} />
 
@@ -361,6 +455,7 @@ export default function MobileQuotationsPage() {
                   fontSize: 13,
                 }}
               >
+                <Line label="Subtotal" value={formatMoney(subtotal)} />
                 <Line label="SGST" value={formatMoney(sgst)} />
                 <Line label="CGST" value={formatMoney(cgst)} />
                 <Line label="Total" value={formatMoney(total)} strong />

@@ -6,9 +6,19 @@ import {
   listQuotations,
   type CreateQuotationInput,
   type Quotation,
+  type QuotationLineItem,
 } from "../../../lib/quotationApiClient";
 import { formatMoney } from "../../../lib/quotationFormat";
+import { quotationTotals } from "../../../lib/quotationTotals";
 import { QuotationPrint } from "./QuotationPrint";
+
+const EMPTY_LINE_ITEM: QuotationLineItem = {
+  serviceDescription: "",
+  productDescription: "",
+  modelNo: "",
+  serialNo: "",
+  baseAmount: 0,
+};
 
 const EMPTY_FORM: CreateQuotationInput = {
   quotationDate: "",
@@ -21,11 +31,8 @@ const EMPTY_FORM: CreateQuotationInput = {
   customerPincode: "",
   customerPhone: "",
   customerEmail: "",
-  serviceDescription: "",
-  productDescription: "",
-  modelNo: "",
-  serialNo: "",
-  baseAmount: 0,
+  // A quotation always has at least one row; the form starts on it.
+  lineItems: [{ ...EMPTY_LINE_ITEM }],
   sgstPercent: 9,
   cgstPercent: 9,
 };
@@ -68,6 +75,23 @@ export function QuotationsPage({ token }: Readonly<{ token: string }>) {
 
   const set = (patch: Partial<CreateQuotationInput>) => setForm((f) => ({ ...f, ...patch }));
 
+  const setLineItem = (index: number, patch: Partial<QuotationLineItem>) =>
+    setForm((f) => ({
+      ...f,
+      lineItems: f.lineItems.map((item, i) => (i === index ? { ...item, ...patch } : item)),
+    }));
+
+  const addLineItem = () =>
+    setForm((f) => ({ ...f, lineItems: [...f.lineItems, { ...EMPTY_LINE_ITEM }] }));
+
+  /** Removing the last row would leave a quotation with nothing on it, so one always stays. */
+  const removeLineItem = (index: number) =>
+    setForm((f) =>
+      f.lineItems.length <= 1
+        ? f
+        : { ...f, lineItems: f.lineItems.filter((_, i) => i !== index) },
+    );
+
   async function handleAutofill() {
     if (!form.caseId && !form.orderNumber) {
       setMessage("Enter a Case ID or Order Number to auto-fill.");
@@ -94,6 +118,10 @@ export function QuotationsPage({ token }: Readonly<{ token: string }>) {
         customerPincode: data.customerPincode,
         customerPhone: data.customerPhone,
         customerEmail: data.customerEmail,
+      });
+      // Auto-fill describes the ONE unit the case is about, so it lands on the first row
+      // and leaves any rows already typed below it alone.
+      setLineItem(0, {
         productDescription: data.productDescription,
         modelNo: data.modelNo,
         serialNo: data.serialNo,
@@ -111,8 +139,8 @@ export function QuotationsPage({ token }: Readonly<{ token: string }>) {
       setMessage("Customer name is required.");
       return;
     }
-    if (!(form.baseAmount > 0)) {
-      setMessage("Enter a base amount greater than 0.");
+    if (!(subtotal > 0)) {
+      setMessage("Enter an amount greater than 0 on at least one line item.");
       return;
     }
     setSaving(true);
@@ -129,9 +157,13 @@ export function QuotationsPage({ token }: Readonly<{ token: string }>) {
     }
   }
 
-  const sgst = (form.baseAmount * form.sgstPercent) / 100;
-  const cgst = (form.baseAmount * form.cgstPercent) / 100;
-  const total = form.baseAmount + sgst + cgst;
+  // Shared with the printed sheet, so the form can never show a different number from the
+  // document it produces.
+  const { subtotal, sgst, cgst, total } = quotationTotals(
+    form.lineItems,
+    form.sgstPercent,
+    form.cgstPercent,
+  );
 
   const field: React.CSSProperties = {
     width: "100%",
@@ -239,24 +271,135 @@ export function QuotationsPage({ token }: Readonly<{ token: string }>) {
             <Text label="Pincode" value={form.customerPincode} onChange={(v) => set({ customerPincode: v })} />
           </div>
 
-          <div style={{ marginTop: "16px", fontWeight: 700, fontSize: "13px" }}>Line item</div>
-          <div style={grid2}>
-            <Text label="Service Description" value={form.serviceDescription} onChange={(v) => set({ serviceDescription: v })} />
-            <Text label="Product Description" value={form.productDescription} onChange={(v) => set({ productDescription: v })} />
-            <Text label="Model No" value={form.modelNo} onChange={(v) => set({ modelNo: v })} />
-            <Text label="Serial No" value={form.serialNo} onChange={(v) => set({ serialNo: v })} />
+          {/* Line items — one priced row each, added and removed freely. */}
+          <div
+            style={{
+              marginTop: "16px",
+              display: "flex",
+              alignItems: "center",
+              gap: "10px",
+              fontWeight: 700,
+              fontSize: "13px",
+            }}
+          >
+            <span>Line items</span>
+            <span style={{ fontWeight: 500, color: "#94a3b8", fontSize: "12px" }}>
+              {form.lineItems.length} item{form.lineItems.length === 1 ? "" : "s"}
+            </span>
           </div>
 
-          <div style={{ marginTop: "16px", fontWeight: 700, fontSize: "13px" }}>Amount</div>
+          {form.lineItems.map((item, index) => (
+            <div
+              key={index}
+              style={{
+                marginTop: "10px",
+                padding: "12px 14px",
+                borderRadius: "10px",
+                border: "1px solid var(--border-color, #e2e8f0)",
+                background: "var(--panel-soft-bg, #fbfcfe)",
+              }}
+            >
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "10px",
+                  marginBottom: "8px",
+                }}
+              >
+                <span style={{ fontSize: "12px", fontWeight: 700, color: "#64748b" }}>
+                  Item {index + 1}
+                </span>
+                {form.lineItems.length > 1 && (
+                  <button
+                    type="button"
+                    onClick={() => removeLineItem(index)}
+                    aria-label={`Remove item ${index + 1}`}
+                    style={{
+                      marginLeft: "auto",
+                      background: "#ffffff",
+                      color: "#b91c1c",
+                      border: "1px solid #fecaca",
+                      borderRadius: "8px",
+                      padding: "2px 12px",
+                      fontSize: "12px",
+                      fontWeight: 600,
+                      minHeight: "28px",
+                      cursor: "pointer",
+                    }}
+                  >
+                    × Remove
+                  </button>
+                )}
+              </div>
+
+              <div style={grid2}>
+                <Text
+                  label="Service Description"
+                  value={item.serviceDescription}
+                  onChange={(v) => setLineItem(index, { serviceDescription: v })}
+                />
+                <Text
+                  label="Product Description"
+                  value={item.productDescription}
+                  onChange={(v) => setLineItem(index, { productDescription: v })}
+                />
+                <Text
+                  label="Model No"
+                  value={item.modelNo}
+                  onChange={(v) => setLineItem(index, { modelNo: v })}
+                />
+                <Text
+                  label="Serial No"
+                  value={item.serialNo}
+                  onChange={(v) => setLineItem(index, { serialNo: v })}
+                />
+                <div>
+                  <label style={label}>Amount (₹) *</label>
+                  <input
+                    style={field}
+                    type="number"
+                    min={0}
+                    value={item.baseAmount || ""}
+                    onChange={(e) =>
+                      setLineItem(index, { baseAmount: Number(e.target.value) || 0 })
+                    }
+                  />
+                </div>
+              </div>
+            </div>
+          ))}
+
+          <button
+            type="button"
+            onClick={addLineItem}
+            style={{
+              marginTop: "10px",
+              background: "#ffffff",
+              color: "#2563eb",
+              border: "1px dashed #93c5fd",
+              borderRadius: "10px",
+              padding: "8px 16px",
+              fontSize: "13px",
+              fontWeight: 700,
+              minHeight: "38px",
+              cursor: "pointer",
+            }}
+          >
+            + Add line item
+          </button>
+
+          <div style={{ marginTop: "18px", fontWeight: 700, fontSize: "13px" }}>Amount</div>
           <div style={grid2}>
             <div>
-              <label style={label}>Base Amount (₹) *</label>
+              <label style={label}>Subtotal (₹)</label>
               <input
-                style={field}
-                type="number"
-                min={0}
-                value={form.baseAmount || ""}
-                onChange={(e) => set({ baseAmount: Number(e.target.value) || 0 })}
+                style={{ ...field, background: "#f1f5f9", fontWeight: 700 }}
+                value={formatMoney(subtotal)}
+                readOnly
+                // Derived from the rows above; typing here would let the printed sheet
+                // disagree with the items it lists.
+                aria-readonly="true"
               />
             </div>
             <div>

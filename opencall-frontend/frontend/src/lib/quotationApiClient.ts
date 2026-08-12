@@ -1,6 +1,15 @@
 import { WEB_API_BASE_URL } from "./api/webApiClient";
 import { readJson } from "./api/http";
 
+/** One priced row on a quotation. A quotation always has at least one. */
+export interface QuotationLineItem {
+  serviceDescription: string;
+  productDescription: string;
+  modelNo: string;
+  serialNo: string;
+  baseAmount: number;
+}
+
 export interface Quotation {
   id: string;
   quotationNo: string;
@@ -14,6 +23,11 @@ export interface Quotation {
   customerPincode: string;
   customerPhone: string;
   customerEmail: string;
+  /**
+   * Mirrors of the FIRST line item, kept by the server so anything written before line
+   * items existed still reads correctly. `baseAmount` is the SUBTOTAL of every item, which
+   * is why the list's Total column needs no change.
+   */
   serviceDescription: string;
   productDescription: string;
   modelNo: string;
@@ -23,6 +37,8 @@ export interface Quotation {
   cgstPercent: number;
   createdBy: string;
   createdAt: string;
+  /** Every priced row, in entry order. This is what the form and the printed sheet read. */
+  lineItems: QuotationLineItem[];
 }
 
 export interface QuotationAutofill {
@@ -51,11 +67,9 @@ export interface CreateQuotationInput {
   customerPincode: string;
   customerPhone: string;
   customerEmail: string;
-  serviceDescription: string;
-  productDescription: string;
-  modelNo: string;
-  serialNo: string;
-  baseAmount: number;
+  /** One or more priced rows. The server sums them into the quotation's subtotal. */
+  lineItems: QuotationLineItem[];
+  /** One pair for the whole quotation, applied to the subtotal. */
   sgstPercent: number;
   cgstPercent: number;
 }

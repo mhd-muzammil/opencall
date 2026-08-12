@@ -1,0 +1,1012 @@
+import { useCallback, useEffect, useMemo, useState } from "react";
+import {
+  getCustomerEmails,
+  pollCustomerEmails,
+  setCustomerEmailStatus,
+  generateCustomerEmailReply,
+  getCustomerEmailReply,
+  saveCustomerEmailReply,
+  sendCustomerEmailReply,
+  type EmailReply,
+  type InboundEmailRow,
+  type MailboxHealth,
+} from "../../../lib/customerEmailApiClient";
+
+/**
+ * Customer Emails — a two-pane mail client: message list on the left, the selected message
+ * on the right, the way Gmail and Outlook read.
+ *
+ * REPLIES RUN IN APPROVAL MODE. A draft can be generated from the call's live status and
+ * edited, but it only leaves the building when a human presses Approve & send and confirms.
+ * Nothing on this page sends by itself, and machine-generated / no-reply senders cannot be
+ * replied to at all — that is how auto-responder loops start.
+ */
+
+const STATUS_TABS = [
+  { key: "NEW", label: "Inbox" },
+  { key: "REVIEWED", label: "Reviewed" },
+  { key: "IGNORED", label: "Ignored" },
+  { key: "ALL", label: "All mail" },
+] as const;
+
+const MATCH_STYLE: Record<string, { bg: string; fg: string; label: string }> = {
+  HIGH: { bg: "#dcfce7", fg: "#166534", label: "WO matched" },
+  LOW: { bg: "#fef3c7", fg: "#92400e", label: "Sender matched" },
+  NONE: { bg: "#f1f5f9", fg: "#64748b", label: "No match" },
+};
+
+/**
+ * Escalation styling. HIGH means the sender explicitly named it an escalation (HP calls it
+ * an "Elevation") or threatened legal action — that is what a coordinator picks up first.
+ * WATCH is only impatient wording.
+ */
+const ESCALATION_STYLE: Record<string, { bg: string; fg: string; label: string; icon: string }> = {
+  HIGH: { bg: "#fee2e2", fg: "#991b1b", label: "Escalation", icon: "🔴" },
+  WATCH: { bg: "#ffedd5", fg: "#9a3412", label: "Needs a look", icon: "🟠" },
+};
+
+const REGION_TINT: Record<string, string> = {
+  CHENNAI: "#6366f1",
+  SALEM: "#0ea5e9",
+  HOSUR: "#f59e0b",
+  VELLORE: "#10b981",
+  KANCHIPURAM: "#ec4899",
+};
+
+function initials(name: string, email: string): string {
+  const source = (name || email || "?").trim();
+  const parts = source.split(/[\s.@_-]+/).filter(Boolean);
+  return ((parts[0]?.[0] ?? "?") + (parts[1]?.[0] ?? "")).toUpperCase();
+}
+
+/** Date for the list row: "11 Aug", with the year once it is not this one. */
+function listDate(iso: string): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "";
+  const sameYear = d.getFullYear() === new Date().getFullYear();
+  return new Intl.DateTimeFormat("en-GB", {
+    timeZone: "Asia/Kolkata",
+    day: "2-digit",
+    month: "short",
+    ...(sameYear ? {} : { year: "2-digit" }),
+  }).format(d);
+}
+
+/** 12-hour clock, as everyone here reads it: "6:50 pm". */
+function listClock(iso: string): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "";
+  return new Intl.DateTimeFormat("en-IN", {
+    timeZone: "Asia/Kolkata",
+    hour: "numeric",
+    minute: "2-digit",
+    hour12: true,
+  }).format(d);
+}
+
+function fullTime(iso: string): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return iso;
+  return new Intl.DateTimeFormat("en-IN", {
+    timeZone: "Asia/Kolkata",
+    weekday: "short",
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+    hour12: true,
+  }).format(d);
+}
+
+export function CustomerEmailsPage({ token }: Readonly<{ token: string }>) {
+  const [status, setStatus] = useState<(typeof STATUS_TABS)[number]["key"]>("NEW");
+  const [rows, setRows] = useState<InboundEmailRow[]>([]);
+  const [mailboxes, setMailboxes] = useState<MailboxHealth[]>([]);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [message, setMessage] = useState<string | null>(null);
+  const [search, setSearch] = useState("");
+  /** Region to show, or null for every region. Filtered client-side off the loaded page. */
+  const [regionFilter, setRegionFilter] = useState<string | null>(null);
+  /** When on, show only the messages flagged as an escalation or worth a look. */
+  const [escalationOnly, setEscalationOnly] = useState(false);
+
+  // --- Reply state (approval mode). `reply` is the stored draft, the two text fields are
+  // the human's working copy; nothing here can send without the Approve & send click.
+  const [reply, setReply] = useState<EmailReply | null>(null);
+  const [draftSubject, setDraftSubject] = useState("");
+  const [draftText, setDraftText] = useState("");
+  const [replyBusy, setReplyBusy] = useState(false);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    try {
+      const res = await getCustomerEmails(token, { status, limit: 200 });
+      setRows(res.rows);
+      setMailboxes(res.mailboxes);
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Failed to load customer emails");
+    } finally {
+      setLoading(false);
+    }
+  }, [token, status]);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  /** Mail in the chosen region only — the region chips count against this, not the filter. */
+  const inRegion = useMemo(
+    () =>
+      regionFilter
+        ? rows.filter((r) => r.regionCode.toUpperCase() === regionFilter)
+        : rows,
+    [rows, regionFilter],
+  );
+
+  const filtered = useMemo(() => {
+    const needle = search.trim().toLowerCase();
+    let list = escalationOnly
+      ? inRegion.filter((r) => r.escalationLevel !== "NONE")
+      : inRegion;
+    if (needle) {
+      list = list.filter((r) =>
+        [r.fromEmail, r.fromName, r.subject, r.bodyPreview, r.matchedTicketId, r.regionCode]
+          .join(" ")
+          .toLowerCase()
+          .includes(needle),
+      );
+    }
+    // Escalations first, then newest — the whole point of the flag is that it jumps the queue.
+    return [...list].sort((a, b) => {
+      const rank = (v: string) => (v === "HIGH" ? 0 : v === "WATCH" ? 1 : 2);
+      return rank(a.escalationLevel) - rank(b.escalationLevel) ||
+        b.receivedAt.localeCompare(a.receivedAt);
+    });
+  }, [inRegion, search, escalationOnly]);
+
+  const escalationCount = useMemo(
+    () => inRegion.filter((r) => r.escalationLevel !== "NONE").length,
+    [inRegion],
+  );
+
+  /** How many messages each region has in the current status tab. */
+  const regionCounts = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const r of rows) {
+      const key = r.regionCode.toUpperCase();
+      counts.set(key, (counts.get(key) ?? 0) + 1);
+    }
+    return counts;
+  }, [rows]);
+
+  // Keep a selection: default to the newest, and never leave a dead id selected.
+  useEffect(() => {
+    if (filtered.length === 0) {
+      setSelectedId(null);
+    } else if (!selectedId || !filtered.some((r) => r.id === selectedId)) {
+      setSelectedId(filtered[0]!.id);
+    }
+  }, [filtered, selectedId]);
+
+  const selected = filtered.find((r) => r.id === selectedId) ?? null;
+
+  // Load whatever draft exists whenever a different message is opened.
+  useEffect(() => {
+    if (!selectedId) {
+      setReply(null);
+      setDraftSubject("");
+      setDraftText("");
+      return;
+    }
+    let cancelled = false;
+    void getCustomerEmailReply(token, selectedId)
+      .then((r) => {
+        if (cancelled) return;
+        setReply(r);
+        setDraftSubject(r?.subject ?? "");
+        setDraftText(r?.body ?? "");
+      })
+      .catch(() => {
+        if (!cancelled) setReply(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [token, selectedId]);
+
+  /** Build a draft from the call's live status. Does not send. */
+  async function makeDraft() {
+    if (!selectedId) return;
+    setReplyBusy(true);
+    setMessage(null);
+    try {
+      const r = await generateCustomerEmailReply(token, selectedId);
+      setReply(r);
+      setDraftSubject(r.subject);
+      setDraftText(r.body);
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Could not draft a reply");
+    } finally {
+      setReplyBusy(false);
+    }
+  }
+
+  /** Keep the edits without sending. */
+  async function saveOnly() {
+    if (!selectedId) return;
+    setReplyBusy(true);
+    try {
+      setReply(await saveCustomerEmailReply(token, selectedId, { subject: draftSubject, body: draftText }));
+      setMessage("Draft saved — nothing has been sent.");
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Could not save the draft");
+    } finally {
+      setReplyBusy(false);
+    }
+  }
+
+  /** The only path that emails the customer, and it needs this explicit confirmation. */
+  async function approveAndSend() {
+    if (!selectedId || !reply) return;
+    const ok = window.confirm(
+      `Send this reply to ${reply.toEmail}?
+
+It will go out from ${selected?.mailboxEmail ?? ""}. This cannot be undone.`,
+    );
+    if (!ok) return;
+    setReplyBusy(true);
+    setMessage(null);
+    try {
+      await saveCustomerEmailReply(token, selectedId, { subject: draftSubject, body: draftText });
+      const sent = await sendCustomerEmailReply(token, selectedId);
+      setReply(sent);
+      setMessage(`Reply sent to ${sent.toEmail}.`);
+      void load();
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Send failed");
+    } finally {
+      setReplyBusy(false);
+    }
+  }
+
+  async function triage(id: string, next: "REVIEWED" | "IGNORED") {
+    try {
+      await setCustomerEmailStatus(token, id, next);
+      await load();
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Failed to update");
+    }
+  }
+
+  async function pollNow() {
+    setBusy(true);
+    setMessage(null);
+    try {
+      const res = await pollCustomerEmails(token);
+      const stored = res.results.reduce((s, r) => s + r.stored, 0);
+      const errs = res.results.filter((r) => r.error);
+      setMessage(
+        stored > 0 ? `${stored} new message(s).` : "No new mail." +
+          (errs.length ? ` Errors: ${errs.map((e) => `${e.mailbox}: ${e.error}`).join("; ")}` : ""),
+      );
+      await load();
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Check failed");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  const tabBtn = (active: boolean): React.CSSProperties => ({
+    padding: "7px 16px",
+    minHeight: "34px",
+    borderRadius: "999px",
+    border: `1px solid ${active ? "#4f46e5" : "#e5e7eb"}`,
+    background: active ? "#4f46e5" : "#ffffff",
+    color: active ? "#ffffff" : "#475569",
+    fontSize: "13px",
+    fontWeight: 600,
+    cursor: "pointer",
+    whiteSpace: "nowrap",
+  });
+
+  const actionBtn: React.CSSProperties = {
+    padding: "7px 14px",
+    minHeight: "34px",
+    borderRadius: "8px",
+    border: "1px solid #e2e8f0",
+    background: "#ffffff",
+    color: "#334155",
+    fontSize: "13px",
+    fontWeight: 600,
+    cursor: "pointer",
+    whiteSpace: "nowrap",
+  };
+
+  return (
+    <section style={{ minWidth: 0, maxWidth: "100%" }}>
+      {/* Header */}
+      <div
+        style={{
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "flex-start",
+          flexWrap: "wrap",
+          gap: "12px",
+          marginBottom: "14px",
+        }}
+      >
+        <div>
+          <h2 style={{ margin: 0, fontSize: "19px", fontWeight: 700, letterSpacing: "-0.01em" }}>
+            Customer Emails
+          </h2>
+          <p style={{ margin: "3px 0 0 0", fontSize: "12px", color: "#64748b" }}>
+            Mail arriving in the region mailboxes, matched to a call. Read-only — nothing is
+            ever sent from this screen.
+          </p>
+        </div>
+        <div style={{ display: "flex", gap: "8px", alignItems: "center", flexWrap: "wrap" }}>
+          <input
+            type="search"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Search mail…"
+            style={{
+              padding: "8px 14px",
+              minHeight: "36px",
+              borderRadius: "999px",
+              border: "1px solid #e2e8f0",
+              background: "#f8fafc",
+              fontSize: "13px",
+              minWidth: "240px",
+              color: "#334155",
+            }}
+          />
+          <button
+            type="button"
+            onClick={() => void pollNow()}
+            disabled={busy}
+            style={{ ...actionBtn, opacity: busy ? 0.6 : 1, cursor: busy ? "not-allowed" : "pointer" }}
+          >
+            {busy ? "Checking…" : "↻ Check now"}
+          </button>
+        </div>
+      </div>
+
+      {/* Tabs + mailbox health */}
+      <div style={{ display: "flex", gap: "8px", flexWrap: "wrap", alignItems: "center", marginBottom: "12px" }}>
+        {STATUS_TABS.map((t) => (
+          <button key={t.key} type="button" onClick={() => setStatus(t.key)} style={tabBtn(status === t.key)}>
+            {t.label}
+            {t.key === status ? ` · ${filtered.length}` : ""}
+          </button>
+        ))}
+        {/* Escalations jump the queue, so they get their own switch. */}
+        <button
+          type="button"
+          onClick={() => setEscalationOnly((v) => !v)}
+          title="Show only messages flagged as an escalation"
+          style={{
+            padding: "7px 16px",
+            minHeight: "34px",
+            borderRadius: "999px",
+            border: `1px solid ${escalationOnly ? "#dc2626" : escalationCount > 0 ? "#fecaca" : "#e5e7eb"}`,
+            background: escalationOnly ? "#dc2626" : escalationCount > 0 ? "#fef2f2" : "#ffffff",
+            color: escalationOnly ? "#ffffff" : escalationCount > 0 ? "#991b1b" : "#94a3b8",
+            fontSize: "13px",
+            fontWeight: 700,
+            cursor: "pointer",
+            whiteSpace: "nowrap",
+          }}
+        >
+          ⚠ Escalations · {escalationCount}
+        </button>
+      </div>
+
+      {/* Region filter. Each chip is also the mailbox health light: green when the last
+          poll succeeded, red when it errored (hover for the reason). */}
+      <div style={{ display: "flex", gap: "6px", flexWrap: "wrap", alignItems: "center", marginBottom: "12px" }}>
+        <span style={{ fontSize: "11px", fontWeight: 700, color: "#94a3b8", letterSpacing: "0.04em", marginRight: "2px" }}>
+          REGION
+        </span>
+        <button
+          type="button"
+          onClick={() => setRegionFilter(null)}
+          style={{
+            padding: "5px 12px",
+            minHeight: "30px",
+            borderRadius: "999px",
+            border: `1px solid ${regionFilter === null ? "#4f46e5" : "#e2e8f0"}`,
+            background: regionFilter === null ? "#eef2ff" : "#ffffff",
+            color: regionFilter === null ? "#3730a3" : "#475569",
+            fontSize: "11px",
+            fontWeight: 700,
+            cursor: "pointer",
+          }}
+        >
+          All regions · {rows.length}
+        </button>
+        {mailboxes.map((m) => {
+          const code = (m.regionCode || m.email).toUpperCase();
+          const active = regionFilter === code;
+          const tint = REGION_TINT[code] ?? "#64748b";
+          return (
+            <button
+              key={m.email}
+              type="button"
+              // Clicking the active chip clears the filter, so it works as a toggle.
+              onClick={() => setRegionFilter(active ? null : code)}
+              title={
+                m.lastError
+                  ? `${m.email}\nLast poll failed: ${m.lastError}`
+                  : `${m.email}\nIngesting mail received after ${fullTime(m.ingestFrom)}${m.lastPolledAt ? `\nLast checked ${fullTime(m.lastPolledAt)}` : ""}`
+              }
+              style={{
+                padding: "5px 12px",
+                minHeight: "30px",
+                borderRadius: "999px",
+                background: active ? tint : m.lastError ? "#fef2f2" : "#ffffff",
+                color: active ? "#ffffff" : m.lastError ? "#991b1b" : "#475569",
+                fontSize: "11px",
+                fontWeight: 700,
+                border: `1px solid ${active ? tint : m.lastError ? "#fecaca" : "#e2e8f0"}`,
+                cursor: "pointer",
+              }}
+            >
+              <span
+                style={{
+                  display: "inline-block",
+                  width: "6px",
+                  height: "6px",
+                  borderRadius: "50%",
+                  marginRight: "6px",
+                  background: m.lastError ? "#dc2626" : active ? "#ffffff" : "#22c55e",
+                }}
+              />
+              {m.regionCode || m.email} · {regionCounts.get(code) ?? 0}
+            </button>
+          );
+        })}
+      </div>
+
+      {message ? (
+        <div
+          style={{
+            marginBottom: "12px",
+            padding: "9px 14px",
+            borderRadius: "10px",
+            background: "#eff6ff",
+            border: "1px solid #bfdbfe",
+            fontSize: "13px",
+            color: "#1e40af",
+          }}
+        >
+          {message}
+        </div>
+      ) : null}
+
+      {/* Two-pane client */}
+      <div
+        style={{
+          display: "grid",
+          gridTemplateColumns: "minmax(280px, 380px) minmax(0, 1fr)",
+          gap: "0",
+          border: "1px solid #e2e8f0",
+          borderRadius: "14px",
+          overflow: "hidden",
+          minHeight: "560px",
+          background: "#ffffff",
+          minWidth: 0,
+        }}
+      >
+        {/* ── List ── */}
+        <div style={{ borderRight: "1px solid #e2e8f0", overflowY: "auto", maxHeight: "72vh", minWidth: 0 }}>
+          {loading && filtered.length === 0 ? (
+            <div style={{ padding: "28px", textAlign: "center", color: "#94a3b8", fontSize: "13px" }}>
+              Loading…
+            </div>
+          ) : null}
+          {!loading && filtered.length === 0 ? (
+            <div style={{ padding: "28px", textAlign: "center", color: "#94a3b8", fontSize: "13px" }}>
+              No mail here. Only messages arriving from now on are ingested — the mailbox
+              history is deliberately left untouched.
+            </div>
+          ) : null}
+
+          {filtered.map((r) => {
+            const active = r.id === selectedId;
+            const tint = REGION_TINT[r.regionCode.toUpperCase()] ?? "#64748b";
+            const conf = MATCH_STYLE[r.matchConfidence] ?? MATCH_STYLE.NONE!;
+            return (
+              <button
+                key={r.id}
+                type="button"
+                onClick={() => setSelectedId(r.id)}
+                style={{
+                  width: "100%",
+                  display: "block",
+                  textAlign: "left",
+                  padding: "12px 14px",
+                  minHeight: "auto",
+                  border: "none",
+                  borderBottom: "1px solid #f1f5f9",
+                  borderLeft: `3px solid ${active ? tint : "transparent"}`,
+                  background: active ? "#f8fafc" : "#ffffff",
+                  cursor: "pointer",
+                  borderRadius: 0,
+                  fontWeight: 400,
+                }}
+              >
+                <div style={{ display: "flex", gap: "10px", alignItems: "flex-start", minWidth: 0 }}>
+                  <span
+                    style={{
+                      flex: "0 0 auto",
+                      width: "32px",
+                      height: "32px",
+                      borderRadius: "50%",
+                      background: tint,
+                      color: "#ffffff",
+                      fontSize: "12px",
+                      fontWeight: 700,
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                    }}
+                  >
+                    {initials(r.fromName, r.fromEmail)}
+                  </span>
+                  <span style={{ minWidth: 0, flex: 1 }}>
+                    <span style={{ display: "flex", justifyContent: "space-between", gap: "8px" }}>
+                      <span
+                        style={{
+                          fontSize: "13px",
+                          fontWeight: r.status === "NEW" ? 700 : 500,
+                          color: "#0f172a",
+                          overflow: "hidden",
+                          textOverflow: "ellipsis",
+                          whiteSpace: "nowrap",
+                        }}
+                      >
+                        {r.fromName || r.fromEmail}
+                      </span>
+                      {/* Date over time, both compact, so the column stays narrow. */}
+                      <span
+                        style={{
+                          fontSize: "10.5px",
+                          color: "#94a3b8",
+                          whiteSpace: "nowrap",
+                          textAlign: "right",
+                          lineHeight: 1.35,
+                          flex: "0 0 auto",
+                        }}
+                      >
+                        {listDate(r.receivedAt)}
+                        <br />
+                        {listClock(r.receivedAt)}
+                      </span>
+                    </span>
+                    <span
+                      style={{
+                        display: "block",
+                        fontSize: "13px",
+                        fontWeight: r.status === "NEW" ? 600 : 400,
+                        color: "#1e293b",
+                        overflow: "hidden",
+                        textOverflow: "ellipsis",
+                        whiteSpace: "nowrap",
+                        marginTop: "1px",
+                      }}
+                    >
+                      {r.subject || "(no subject)"}
+                    </span>
+                    <span
+                      style={{
+                        display: "block",
+                        fontSize: "12px",
+                        color: "#94a3b8",
+                        overflow: "hidden",
+                        textOverflow: "ellipsis",
+                        whiteSpace: "nowrap",
+                        marginTop: "1px",
+                      }}
+                    >
+                      {r.bodyPreview}
+                    </span>
+                    <span style={{ display: "flex", gap: "6px", marginTop: "6px", flexWrap: "wrap", alignItems: "center" }}>
+                      {ESCALATION_STYLE[r.escalationLevel] ? (
+                        <span
+                          title={r.escalationReasons.split(" | ").join("\n")}
+                          style={{
+                            fontSize: "10px",
+                            fontWeight: 800,
+                            padding: "1px 7px",
+                            borderRadius: "999px",
+                            background: ESCALATION_STYLE[r.escalationLevel]!.bg,
+                            color: ESCALATION_STYLE[r.escalationLevel]!.fg,
+                          }}
+                        >
+                          {ESCALATION_STYLE[r.escalationLevel]!.icon}{" "}
+                          {ESCALATION_STYLE[r.escalationLevel]!.label}
+                        </span>
+                      ) : null}
+                      <span style={{ fontSize: "10px", fontWeight: 700, color: tint }}>
+                        {r.regionCode}
+                      </span>
+                      <span
+                        style={{
+                          fontSize: "10px",
+                          fontWeight: 700,
+                          padding: "1px 7px",
+                          borderRadius: "999px",
+                          background: conf.bg,
+                          color: conf.fg,
+                        }}
+                      >
+                        {r.matchedTicketId || conf.label}
+                      </span>
+                      {r.isAutoReply ? (
+                        <span style={{ fontSize: "10px", fontWeight: 700, color: "#9a3412" }}>auto</span>
+                      ) : null}
+                    </span>
+                  </span>
+                </div>
+              </button>
+            );
+          })}
+        </div>
+
+        {/* ── Reading pane ── */}
+        <div style={{ overflowY: "auto", maxHeight: "72vh", minWidth: 0 }}>
+          {!selected ? (
+            <div style={{ padding: "60px 28px", textAlign: "center", color: "#94a3b8", fontSize: "13px" }}>
+              Select a message to read it.
+            </div>
+          ) : (
+            <div style={{ padding: "22px 26px", minWidth: 0 }}>
+              <h3
+                style={{
+                  margin: "0 0 14px 0",
+                  fontSize: "19px",
+                  fontWeight: 700,
+                  color: "#0f172a",
+                  lineHeight: 1.35,
+                  wordBreak: "break-word",
+                }}
+              >
+                {selected.subject || "(no subject)"}
+              </h3>
+
+              <div style={{ display: "flex", gap: "12px", alignItems: "flex-start", marginBottom: "16px" }}>
+                <span
+                  style={{
+                    flex: "0 0 auto",
+                    width: "40px",
+                    height: "40px",
+                    borderRadius: "50%",
+                    background: REGION_TINT[selected.regionCode.toUpperCase()] ?? "#64748b",
+                    color: "#ffffff",
+                    fontSize: "14px",
+                    fontWeight: 700,
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                  }}
+                >
+                  {initials(selected.fromName, selected.fromEmail)}
+                </span>
+                <div style={{ minWidth: 0, flex: 1 }}>
+                  <div style={{ fontSize: "14px", fontWeight: 700, color: "#0f172a" }}>
+                    {selected.fromName || selected.fromEmail}
+                  </div>
+                  <div style={{ fontSize: "12px", color: "#64748b", wordBreak: "break-all" }}>
+                    {selected.fromEmail} → {selected.mailboxEmail}
+                  </div>
+                  <div style={{ fontSize: "12px", color: "#94a3b8", marginTop: "2px" }}>
+                    {fullTime(selected.receivedAt)}
+                  </div>
+                </div>
+                <div style={{ display: "flex", gap: "6px", flexWrap: "wrap", justifyContent: "flex-end" }}>
+                  {selected.status !== "REVIEWED" ? (
+                    <button type="button" onClick={() => void triage(selected.id, "REVIEWED")} style={actionBtn}>
+                      ✓ Reviewed
+                    </button>
+                  ) : null}
+                  {selected.status !== "IGNORED" ? (
+                    <button type="button" onClick={() => void triage(selected.id, "IGNORED")} style={actionBtn}>
+                      Ignore
+                    </button>
+                  ) : null}
+                </div>
+              </div>
+
+              {/* Matched call */}
+              <div
+                style={{
+                  display: "flex",
+                  gap: "8px",
+                  flexWrap: "wrap",
+                  alignItems: "center",
+                  padding: "10px 14px",
+                  borderRadius: "10px",
+                  background: "#f8fafc",
+                  border: "1px solid #e2e8f0",
+                  marginBottom: "18px",
+                }}
+              >
+                <span
+                  style={{
+                    fontSize: "11px",
+                    fontWeight: 700,
+                    padding: "3px 10px",
+                    borderRadius: "999px",
+                    background: (MATCH_STYLE[selected.matchConfidence] ?? MATCH_STYLE.NONE!).bg,
+                    color: (MATCH_STYLE[selected.matchConfidence] ?? MATCH_STYLE.NONE!).fg,
+                  }}
+                >
+                  {(MATCH_STYLE[selected.matchConfidence] ?? MATCH_STYLE.NONE!).label}
+                </span>
+                {selected.matchedTicketId ? (
+                  <span style={{ fontSize: "13px", fontWeight: 700, color: "#0f172a" }}>
+                    {selected.matchedTicketId}
+                    {selected.matchedCaseId ? (
+                      <span style={{ color: "#64748b", fontWeight: 400 }}> · case {selected.matchedCaseId}</span>
+                    ) : null}
+                  </span>
+                ) : (
+                  <span style={{ fontSize: "12px", color: "#64748b" }}>
+                    Not linked to a call — no WO number quoted and the sender is not a known contact.
+                  </span>
+                )}
+                <span style={{ marginLeft: "auto", fontSize: "11px", color: "#94a3b8", fontWeight: 600 }}>
+                  {selected.regionCode}
+                </span>
+              </div>
+
+              {/* Escalation banner — says WHY it was flagged, so the judgement is auditable
+                  rather than a mystery badge. */}
+              {ESCALATION_STYLE[selected.escalationLevel] ? (
+                <div
+                  style={{
+                    padding: "12px 16px",
+                    borderRadius: "10px",
+                    background: ESCALATION_STYLE[selected.escalationLevel]!.bg,
+                    border: `1px solid ${ESCALATION_STYLE[selected.escalationLevel]!.fg}33`,
+                    marginBottom: "14px",
+                  }}
+                >
+                  <div
+                    style={{
+                      fontSize: "13px",
+                      fontWeight: 800,
+                      color: ESCALATION_STYLE[selected.escalationLevel]!.fg,
+                      marginBottom: selected.escalationReasons ? "4px" : 0,
+                    }}
+                  >
+                    {ESCALATION_STYLE[selected.escalationLevel]!.icon}{" "}
+                    {selected.escalationLevel === "HIGH"
+                      ? "Escalation — handle this first"
+                      : "Worth a look"}
+                  </div>
+                  {selected.escalationReasons ? (
+                    <div style={{ fontSize: "12px", color: ESCALATION_STYLE[selected.escalationLevel]!.fg }}>
+                      {selected.escalationReasons.split(" | ").join(" · ")}
+                    </div>
+                  ) : null}
+                </div>
+              ) : null}
+
+              {selected.isAutoReply ? (
+                <div
+                  style={{
+                    padding: "8px 14px",
+                    borderRadius: "10px",
+                    background: "#fff7ed",
+                    border: "1px solid #fed7aa",
+                    color: "#9a3412",
+                    fontSize: "12px",
+                    marginBottom: "14px",
+                  }}
+                >
+                  Machine-generated / no-reply sender — this one is barred from any future
+                  auto-reply.
+                </div>
+              ) : null}
+
+              {/* Body */}
+              <div
+                style={{
+                  whiteSpace: "pre-wrap",
+                  wordBreak: "break-word",
+                  fontSize: "13.5px",
+                  lineHeight: 1.65,
+                  color: "#1e293b",
+                  fontFamily: "inherit",
+                }}
+              >
+                {selected.bodyText || selected.bodyPreview || "(empty message)"}
+              </div>
+
+              {/* --- Reply: APPROVAL MODE ---
+                  A draft is only ever a draft until Send is pressed. Nothing on this panel
+                  fires automatically, and machine mail cannot be replied to at all. */}
+              <div
+                style={{
+                  marginTop: "22px",
+                  paddingTop: "18px",
+                  borderTop: "1px solid #e5e7eb",
+                }}
+              >
+                {selected.isAutoReply ? (
+                  <div style={{ fontSize: "12px", color: "#9a3412", fontWeight: 600 }}>
+                    Reply disabled — machine-generated / no-reply sender.
+                  </div>
+                ) : reply?.status === "SENT" ? (
+                  <div
+                    style={{
+                      padding: "12px 14px",
+                      borderRadius: "10px",
+                      background: "#dcfce7",
+                      border: "1px solid #86efac",
+                      fontSize: "12.5px",
+                      color: "#166534",
+                    }}
+                  >
+                    <strong>Reply sent</strong>
+                    {reply.sentAt ? ` · ${fullTime(reply.sentAt)}` : ""} · to {reply.toEmail}
+                    <div style={{ whiteSpace: "pre-wrap", marginTop: "8px", color: "#14532d" }}>
+                      {reply.body}
+                    </div>
+                  </div>
+                ) : (
+                  <>
+                    <div
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        gap: "8px",
+                        flexWrap: "wrap",
+                        marginBottom: "10px",
+                      }}
+                    >
+                      <span style={{ fontSize: "12px", fontWeight: 800, color: "#334155" }}>
+                        Reply
+                      </span>
+                      <span
+                        style={{
+                          fontSize: "10.5px",
+                          fontWeight: 700,
+                          padding: "2px 8px",
+                          borderRadius: "999px",
+                          background: "#eef2ff",
+                          color: "#3730a3",
+                        }}
+                      >
+                        Approval required — nothing sends on its own
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => void makeDraft()}
+                        disabled={replyBusy}
+                        style={{
+                          marginLeft: "auto",
+                          padding: "5px 12px",
+                          minHeight: "30px",
+                          borderRadius: "8px",
+                          border: "1px solid #d1d5db",
+                          background: "#ffffff",
+                          color: "#374151",
+                          fontSize: "12px",
+                          fontWeight: 600,
+                          cursor: replyBusy ? "not-allowed" : "pointer",
+                        }}
+                      >
+                        {reply ? "Regenerate draft" : "Draft a reply"}
+                      </button>
+                    </div>
+
+                    {reply ? (
+                      <>
+                        <div style={{ fontSize: "11.5px", color: "#64748b", marginBottom: "6px" }}>
+                          To <strong>{reply.toEmail}</strong> · from{" "}
+                          <strong>{selected.mailboxEmail}</strong>
+                        </div>
+                        <input
+                          value={draftSubject}
+                          onChange={(e) => setDraftSubject(e.target.value)}
+                          placeholder="Subject"
+                          style={{
+                            width: "100%",
+                            padding: "8px 10px",
+                            borderRadius: "8px",
+                            border: "1px solid #d1d5db",
+                            fontSize: "13px",
+                            color: "#1e293b",
+                            marginBottom: "8px",
+                          }}
+                        />
+                        <textarea
+                          value={draftText}
+                          onChange={(e) => setDraftText(e.target.value)}
+                          rows={12}
+                          style={{
+                            width: "100%",
+                            padding: "10px 12px",
+                            borderRadius: "8px",
+                            border: "1px solid #d1d5db",
+                            fontSize: "13px",
+                            lineHeight: 1.6,
+                            color: "#1e293b",
+                            resize: "vertical",
+                            fontFamily: "inherit",
+                          }}
+                        />
+                        {reply.status === "FAILED" && reply.error ? (
+                          <div style={{ fontSize: "12px", color: "#991b1b", marginTop: "6px" }}>
+                            Last send failed: {reply.error}
+                          </div>
+                        ) : null}
+                        <div
+                          style={{
+                            display: "flex",
+                            justifyContent: "flex-end",
+                            gap: "8px",
+                            marginTop: "10px",
+                          }}
+                        >
+                          <button
+                            type="button"
+                            onClick={() => void saveOnly()}
+                            disabled={replyBusy}
+                            style={{
+                              padding: "8px 16px",
+                              minHeight: "36px",
+                              borderRadius: "8px",
+                              border: "1px solid #d1d5db",
+                              background: "#ffffff",
+                              color: "#374151",
+                              fontSize: "13px",
+                              fontWeight: 600,
+                              cursor: replyBusy ? "not-allowed" : "pointer",
+                            }}
+                          >
+                            Save draft
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => void approveAndSend()}
+                            disabled={replyBusy || !draftText.trim()}
+                            style={{
+                              padding: "8px 18px",
+                              minHeight: "36px",
+                              borderRadius: "8px",
+                              border: "1px solid #16a34a",
+                              background: replyBusy || !draftText.trim() ? "#86efac" : "#16a34a",
+                              color: "#ffffff",
+                              fontSize: "13px",
+                              fontWeight: 700,
+                              cursor: replyBusy || !draftText.trim() ? "not-allowed" : "pointer",
+                            }}
+                          >
+                            {replyBusy ? "Working…" : "✓ Approve & send"}
+                          </button>
+                        </div>
+                      </>
+                    ) : (
+                      <div style={{ fontSize: "12px", color: "#94a3b8" }}>
+                        No draft yet. “Draft a reply” fills one from this call’s live status —
+                        you can edit it before anything is sent.
+                      </div>
+                    )}
+                  </>
+                )}
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+    </section>
+  );
+}

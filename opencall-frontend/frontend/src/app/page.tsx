@@ -101,6 +101,7 @@ import {
   FlexDashboard,
   VendorDashboard,
   RenewalPipelinePage,
+  CustomerEmailsPage,
   CaseTypeCards,
   CustomerSegmentCards,
   RTPLPivotTable,
@@ -245,6 +246,7 @@ const WORKSPACE_VIEWS = [
   "admin-engineers",
   "admin-rtpl-statuses",
   "warranty",
+  "customer-emails",
   "renewal-pipeline",
   "vendor-dashboard",
 ] as const;
@@ -4439,6 +4441,22 @@ export default function DashboardPage() {
               </button>
             )}
 
+          {/* Customer Emails — mail arriving in the region mailboxes, matched to a call.
+              Read-only: nothing is ever sent from this screen. */}
+          {(session.user.role === "SUPER_ADMIN" ||
+            session.user.role === "REGION_ADMIN") &&
+            canSeeSection("customer-emails") && (
+              <button
+                type="button"
+                className={`sidebarItem ${workspaceView === "customer-emails" ? "active" : ""}`}
+                onClick={() => setWorkspaceView("customer-emails")}
+              >
+                <span className="sidebarIcon">
+                  <ScrollText size={18} strokeWidth={2} /> <span className="sidebarText">Customer Emails</span>
+                </span>
+              </button>
+            )}
+
           {/* Renewal Pipeline — AMC leads derived from the warranty data we already have.
               Same audience as Warranty Lookup; the API region-scopes what a REGION_ADMIN
               sees. Its own section (not inside Warranty Lookup) because this is sales
@@ -4698,6 +4716,13 @@ export default function DashboardPage() {
                   the app, so without this the panel grows past its grid track and
                   `.mainLayoutContent` — which wraps the header too — scrolls sideways
                   instead of the table's own scroll container. */}
+              {/* Customer Emails — its own data, no generated report needed. */}
+              {workspaceView === "customer-emails" ? (
+                <section className="panel reportPanel" style={{ minWidth: 0 }}>
+                  <CustomerEmailsPage token={session.token} />
+                </section>
+              ) : null}
+
               {workspaceView === "renewal-pipeline" ? (
                 <section className="panel reportPanel" style={{ minWidth: 0 }}>
                   <RenewalPipelinePage token={session.token} />
@@ -4707,6 +4732,7 @@ export default function DashboardPage() {
               {report &&
               workspaceView !== "warranty" &&
               workspaceView !== "renewal-pipeline" &&
+              workspaceView !== "customer-emails" &&
               workspaceView !== "parts-catalog" &&
               workspaceView !== "quotations" ? (
                 <section className="panel reportPanel">

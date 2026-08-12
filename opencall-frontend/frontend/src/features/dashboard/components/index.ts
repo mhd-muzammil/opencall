@@ -26,8 +26,4 @@ export * from "./PartsCatalogPage";
 export * from "./QuotationsPage";
 export * from "./VendorDashboard";
 export * from "./RenewalPipelinePage";
-
-
-
-
-
+export * from "./CustomerEmailsPage";

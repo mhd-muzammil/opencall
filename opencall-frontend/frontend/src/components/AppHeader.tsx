@@ -6,7 +6,7 @@ import type {
   RuntimeHealthResponse,
 } from "../lib/apiClient";
 
-export type WorkspaceView = "overview" | "closed-calls" | "records" | "record-format" | "parts-catalog" | "quotations" | "rtpl" | "rtpl-dashboard" | "pivot" | "flex" | "productivity" | "tn-view-status" | "sla-tat" | "flex-eod-bod" | "admin-engineers" | "admin-rtpl-statuses" | "warranty" | "renewal-pipeline" | "vendor-dashboard";
+export type WorkspaceView = "overview" | "closed-calls" | "records" | "record-format" | "parts-catalog" | "quotations" | "rtpl" | "rtpl-dashboard" | "pivot" | "flex" | "productivity" | "tn-view-status" | "sla-tat" | "flex-eod-bod" | "admin-engineers" | "admin-rtpl-statuses" | "warranty" | "customer-emails" | "renewal-pipeline" | "vendor-dashboard";
 
 export const HEADER_COMPACT_STORAGE_KEY = "opencall.headerCompact";
 
@@ -148,6 +148,8 @@ export function AppHeader({
         return "RTPL Statuses";
       case "warranty":
         return "HP Warranty Lookup";
+      case "customer-emails":
+        return "Customer Emails";
       case "renewal-pipeline":
         return "Renewal Pipeline";
       default:
@@ -187,6 +189,8 @@ export function AppHeader({
         return "Administration / RTPL Statuses";
       case "warranty":
         return "Data & Operations / Warranty Lookup";
+      case "customer-emails":
+        return "Data & Operations / Customer Emails";
       case "renewal-pipeline":
         return "Data & Operations / Renewal Pipeline";
       default:

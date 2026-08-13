@@ -55,13 +55,15 @@ function dayLabel(date: string): string {
 }
 
 const arrowStyle: React.CSSProperties = {
-  width: 30,
+  minWidth: 54,
   height: 30,
   borderRadius: 8,
   border: "1px solid #bfdbfe",
   background: "#fff",
   cursor: "pointer",
-  fontSize: 16,
+  fontSize: 13,
+  fontWeight: 600,
+  color: "#1d4ed8",
   lineHeight: 1,
 };
 
@@ -277,7 +279,12 @@ export default function LiveTrackingPage() {
     });
   }, [engineers, query, stateFilter]);
 
-  const selected = engineers.find((e) => e.engineer_id === selectedId) ?? null;
+  // The null check is load-bearing: an engineer Payroll cannot match has
+  // engineer_id null, so comparing against a null selectedId matched the first
+  // unlinked engineer and the panel opened on its own — and Clear, which sets
+  // selectedId back to null, could never close it.
+  const selected =
+    selectedId == null ? null : engineers.find((e) => e.engineer_id === selectedId) ?? null;
 
   const onDutyCount = useMemo(
     () => engineers.filter((e) => e.state === "on_duty").length,
@@ -520,8 +527,10 @@ export default function LiveTrackingPage() {
               flexWrap: "wrap",
             }}
           >
+            {/* Plain words, not chevron glyphs — ‹ and › rendered as empty
+                boxes in the console's font, so the buttons looked broken. */}
             <button onClick={() => shiftDay(-1)} style={arrowStyle} title="Previous day">
-              ‹
+              Prev
             </button>
             <strong style={{ fontSize: 14, minWidth: 110, textAlign: "center" }}>
               {dayLabel(dayDate)}
@@ -532,7 +541,7 @@ export default function LiveTrackingPage() {
               style={{ ...arrowStyle, opacity: dayDate >= todayStr() ? 0.35 : 1 }}
               title="Next day"
             >
-              ›
+              Next
             </button>
             <input
               type="date"

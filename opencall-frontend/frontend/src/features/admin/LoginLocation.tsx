@@ -147,8 +147,13 @@ function osmEmbedUrl(lat: number, lon: number): string {
   const bbox = `${lon - d},${lat - d},${lon + d},${lat + d}`;
   return `https://www.openstreetmap.org/export/embed.html?bbox=${bbox}&layer=mapnik&marker=${lat},${lon}`;
 }
-function osmLargeUrl(lat: number, lon: number): string {
-  return `https://www.openstreetmap.org/?mlat=${lat}&mlon=${lon}#map=11/${lat}/${lon}`;
+/**
+ * The "open it properly" link. A plain Google Maps URL — no API key, no billing —
+ * since that is the map worth landing in. The small embed above stays on
+ * OpenStreetMap, which is the only embed that needs no key.
+ */
+function largeMapUrl(lat: number, lon: number): string {
+  return `https://www.google.com/maps/search/?api=1&query=${lat},${lon}`;
 }
 
 /** Live map pinned at a login's approximate (city-level, IP-derived) location. */
@@ -192,7 +197,7 @@ function LocationMap({
               </small>
             </div>
             <a
-              href={osmLargeUrl(info.lat as number, info.lon as number)}
+              href={largeMapUrl(info.lat as number, info.lon as number)}
               target="_blank"
               rel="noreferrer"
               style={{ fontSize: 13 }}

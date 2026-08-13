@@ -77,8 +77,14 @@ function todayStr(): string {
   return new Date().toISOString().slice(0, 10);
 }
 
-function osmLink(lat: number, lon: number): string {
-  return `https://www.openstreetmap.org/?mlat=${lat}&mlon=${lon}#map=17/${lat}/${lon}`;
+/**
+ * A plain Google Maps link — no API key, no billing. Clicking a coordinate is
+ * how someone goes and finds an engineer, so it opens the map with the better
+ * Indian coverage (and the Maps app on a phone). The embedded map below still
+ * draws on OpenStreetMap tiles, the only tile source that needs no key.
+ */
+function mapsLink(lat: number, lon: number): string {
+  return `https://www.google.com/maps/search/?api=1&query=${lat},${lon}`;
 }
 
 export default function LiveTrackingPage() {
@@ -256,7 +262,7 @@ export default function LiveTrackingPage() {
               {selected.latitude != null && selected.longitude != null ? (
                 <>
                   <a
-                    href={osmLink(selected.latitude, selected.longitude)}
+                    href={mapsLink(selected.latitude, selected.longitude)}
                     target="_blank"
                     rel="noreferrer"
                     style={{ color: "#2563eb" }}
@@ -315,7 +321,7 @@ export default function LiveTrackingPage() {
                 {e.latitude != null && e.longitude != null ? (
                   <>
                     <a
-                      href={osmLink(e.latitude, e.longitude)}
+                      href={mapsLink(e.latitude, e.longitude)}
                       target="_blank"
                       rel="noreferrer"
                       style={{ color: "#2563eb" }}

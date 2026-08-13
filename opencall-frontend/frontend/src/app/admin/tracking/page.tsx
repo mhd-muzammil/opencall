@@ -98,7 +98,7 @@ const EVENT_COLOR: Record<string, string> = {
  */
 function DutyBadge({ row }: { row: RosterEngineer }) {
   const [background, color, dot, text, title] =
-    row.state === "unlinked"
+    row.state === "unmatched"
       ? [
           "#fee2e2",
           "#b91c1c",

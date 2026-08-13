@@ -50,8 +50,10 @@ export interface RosterEngineer {
   engineer_id: number | null;
   engineer_name: string;
   branch: string | null;
-  linked: boolean;
-  state: "on_duty" | "checked_out" | "absent" | "unlinked";
+  // The Payroll record the name resolved to, when the two spellings differ.
+  payroll_name: string | null;
+  matched: boolean;
+  state: "on_duty" | "checked_out" | "absent" | "unmatched";
   on_duty: boolean;
   duty_started_at: string | null;
   duty_ended_at: string | null;

@@ -38,6 +38,49 @@ export interface LiveEngineersResult {
   engineers: LiveEngineer[];
 }
 
+/** One engineer's whole day: where they went, how far, and where they stood still. */
+export interface EngineerDayStop {
+  latitude: number;
+  longitude: number;
+  arrived_at: string;
+  left_at: string;
+  minutes: number;
+  fixes: number;
+  case_id: number | null;
+  case_number: string | null;
+}
+
+export interface EngineerDayEvent {
+  at: string;
+  type: string;
+  label: string;
+  minutes?: number;
+  latitude?: number;
+  longitude?: number;
+  case_number?: string | null;
+}
+
+export interface EngineerDay {
+  engineer_id: number;
+  engineer_name: string;
+  branch: string | null;
+  date: string;
+  total_km: number;
+  duty_minutes: number;
+  first_seen: string | null;
+  last_seen: string | null;
+  stop_count: number;
+  stops: EngineerDayStop[];
+  events: EngineerDayEvent[];
+  points: Array<{
+    latitude: number;
+    longitude: number;
+    timestamp: string;
+    accuracy: number | null;
+    status: string;
+  }>;
+}
+
 export interface TrackPath {
   count: number;
   total_km: number;
@@ -79,6 +122,19 @@ export async function getEngineerPath(
     cache: "no-store",
   });
   return readJson<TrackPath>(response);
+}
+
+export async function getEngineerDay(
+  token: string,
+  engineerId: number,
+  date?: string,
+): Promise<EngineerDay> {
+  const qs = date ? `?date=${encodeURIComponent(date)}` : "";
+  const response = await fetch(url(`/api/v1/payroll-tracking/day/engineer/${engineerId}${qs}`), {
+    headers: authHeaders(token),
+    cache: "no-store",
+  });
+  return readJson<EngineerDay>(response);
 }
 
 export async function getCasePath(token: string, caseId: number): Promise<TrackPath> {

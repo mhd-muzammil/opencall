@@ -19,10 +19,19 @@ export function formatDuration(minutes: number): string {
   return m ? `${h}h ${m}m` : `${h}h`;
 }
 
+/** A place the engineer stood still long enough for it to mean something. */
+export interface StopMarker {
+  latitude: number;
+  longitude: number;
+  minutes: number;
+  label: string;
+}
+
 interface Props {
   engineers: LiveEngineer[];
   selectedId: number | null;
   pathPoints: [number, number][];
+  stops?: StopMarker[];
   onSelect: (id: number) => void;
 }
 
@@ -34,7 +43,13 @@ function hasPosition(e: LiveEngineer): e is Plottable {
   return e.latitude != null && e.longitude != null;
 }
 
-export default function LiveTrackingMap({ engineers, selectedId, pathPoints, onSelect }: Props) {
+export default function LiveTrackingMap({
+  engineers,
+  selectedId,
+  pathPoints,
+  stops = [],
+  onSelect,
+}: Props) {
   const plottable = engineers.filter(hasPosition);
   const first = plottable[0];
   const center: [number, number] = first ? [first.latitude, first.longitude] : DEFAULT_CENTER;
@@ -50,6 +65,26 @@ export default function LiveTrackingMap({ engineers, selectedId, pathPoints, onS
         {pathPoints.length > 1 && (
           <Polyline positions={pathPoints} pathOptions={{ color: "#2563eb", weight: 4, opacity: 0.7 }} />
         )}
+
+        {/* Where they stood still. Drawn under the live markers and sized by how
+            long they were there, so a long visit is obvious against a short one. */}
+        {stops.map((stop, i) => (
+          <CircleMarker
+            key={`stop-${i}`}
+            center={[stop.latitude, stop.longitude]}
+            radius={Math.min(16, 7 + Math.round(stop.minutes / 10))}
+            pathOptions={{
+              color: "#b45309",
+              weight: 2,
+              fillColor: "#f59e0b",
+              fillOpacity: 0.75,
+            }}
+          >
+            <Popup>
+              <div style={{ fontSize: 13 }}>{stop.label}</div>
+            </Popup>
+          </CircleMarker>
+        ))}
 
         {plottable.map((e) => (
           <Fragment key={e.engineer_id}>

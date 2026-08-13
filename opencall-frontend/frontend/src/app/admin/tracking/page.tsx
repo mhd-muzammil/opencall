@@ -3,10 +3,10 @@
 import { useEffect, useMemo, useState } from "react";
 import dynamic from "next/dynamic";
 import {
-  getEngineerPath,
+  getEngineerDay,
   getLiveEngineers,
+  type EngineerDay,
   type LiveEngineer,
-  type TrackPath,
 } from "../../../lib/payrollTrackingApiClient";
 import { readSession, type ClientSession } from "../../../lib/session";
 
@@ -39,6 +39,54 @@ function duration(minutes: number): string {
   const m = minutes % 60;
   return m ? `${h}h ${m}m` : `${h}h`;
 }
+
+function clock(iso: string): string {
+  return new Date(iso).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+}
+
+function dayLabel(date: string): string {
+  if (date === todayStr()) return "Today";
+  const d = new Date(`${date}T00:00:00`);
+  const yesterday = new Date();
+  yesterday.setDate(yesterday.getDate() - 1);
+  if (date === yesterday.toISOString().slice(0, 10)) return "Yesterday";
+  return d.toLocaleDateString([], { day: "numeric", month: "short", year: "numeric" });
+}
+
+const arrowStyle: React.CSSProperties = {
+  width: 30,
+  height: 30,
+  borderRadius: 8,
+  border: "1px solid #bfdbfe",
+  background: "#fff",
+  cursor: "pointer",
+  fontSize: 16,
+  lineHeight: 1,
+};
+
+/** One headline number, the way Lystloc puts duration / distance / stops up top. */
+function Stat({ label, value }: { label: string; value: string }) {
+  return (
+    <div>
+      <div style={{ fontSize: 18, fontWeight: 700, color: "#111827" }}>{value}</div>
+      <div style={{ fontSize: 11, color: "#6b7280", textTransform: "uppercase", letterSpacing: 0.4 }}>
+        {label}
+      </div>
+    </div>
+  );
+}
+
+// Each kind of timeline entry gets its own colour, so the shape of a day reads
+// at a glance: green starts, red ends, amber standing still, blue case work.
+const EVENT_COLOR: Record<string, string> = {
+  duty_start: "#16a34a",
+  duty_end: "#dc2626",
+  stop: "#d97706",
+  assigned: "#6b7280",
+  started: "#2563eb",
+  reached: "#0891b2",
+  completed: "#16a34a",
+};
 
 /** On duty is the engineer's declaration; the colour says whether we can
  *  currently see them. Amber is the case that used to just disappear. */
@@ -93,9 +141,11 @@ export default function LiveTrackingPage() {
   const [configured, setConfigured] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  // Which engineer the admin is checking + their day path/km.
+  // Which engineer the admin is checking, and which day of theirs.
   const [selectedId, setSelectedId] = useState<number | null>(null);
-  const [path, setPath] = useState<TrackPath | null>(null);
+  const [day, setDay] = useState<EngineerDay | null>(null);
+  const [dayDate, setDayDate] = useState(todayStr());
+  const [dayLoading, setDayLoading] = useState(false);
   const [query, setQuery] = useState("");
 
   useEffect(() => {
@@ -124,25 +174,49 @@ export default function LiveTrackingPage() {
     };
   }, [session]);
 
-  // When an engineer is checked, pull their today path + km (refreshes with list).
+  // The checked engineer's whole day: route, distance, time on duty, stops and
+  // timeline. Only TODAY keeps polling — a past day is finished, so re-fetching
+  // it every 30s would just churn.
   useEffect(() => {
     if (!session || selectedId == null) {
-      setPath(null);
+      setDay(null);
       return;
     }
     let active = true;
     const load = () => {
-      getEngineerPath(session.token, selectedId, todayStr())
-        .then((p) => active && setPath(p))
-        .catch(() => active && setPath(null));
+      getEngineerDay(session.token, selectedId, dayDate)
+        .then((d) => {
+          if (!active) return;
+          setDay(d);
+          setDayLoading(false);
+        })
+        .catch(() => {
+          if (!active) return;
+          setDay(null);
+          setDayLoading(false);
+        });
     };
+    setDayLoading(true);
     load();
+    if (dayDate !== todayStr()) {
+      return () => {
+        active = false;
+      };
+    }
     const t = setInterval(load, REFRESH_MS);
     return () => {
       active = false;
       clearInterval(t);
     };
-  }, [session, selectedId, engineers.length]);
+  }, [session, selectedId, dayDate, engineers.length]);
+
+  const shiftDay = (days: number) => {
+    const d = new Date(`${dayDate}T00:00:00`);
+    d.setDate(d.getDate() + days);
+    const next = d.toISOString().slice(0, 10);
+    // Never walk into the future — there is nothing recorded there.
+    if (next <= todayStr()) setDayDate(next);
+  };
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -164,8 +238,20 @@ export default function LiveTrackingPage() {
   const staleCount = useMemo(() => engineers.filter((e) => e.stale).length, [engineers]);
 
   const pathPoints = useMemo<[number, number][]>(
-    () => (path?.points ?? []).map((p) => [p.latitude, p.longitude] as [number, number]),
-    [path],
+    () => (day?.points ?? []).map((p) => [p.latitude, p.longitude] as [number, number]),
+    [day],
+  );
+  const stopMarkers = useMemo(
+    () =>
+      (day?.stops ?? []).map((s) => ({
+        latitude: s.latitude,
+        longitude: s.longitude,
+        minutes: s.minutes,
+        label: `${clock(s.arrived_at)} · stopped ${duration(s.minutes)}${
+          s.case_number ? ` · ${s.case_number}` : ""
+        }`,
+      })),
+    [day],
   );
 
   return (
@@ -204,6 +290,7 @@ export default function LiveTrackingPage() {
           engineers={engineers}
           selectedId={selectedId}
           pathPoints={pathPoints}
+          stops={stopMarkers}
           onSelect={(id) => setSelectedId(id)}
         />
         <p style={{ fontSize: 11, color: "#9ca3af", marginTop: 6 }}>
@@ -279,9 +366,118 @@ export default function LiveTrackingPage() {
             </span>
             <span style={{ fontWeight: 600, color: "#1d4ed8" }}>
               This duty: {selected.distance_km} km
-              {path ? ` · today total ${path.total_km} km (${path.count} points)` : ""}
             </span>
           </div>
+
+          {/* The day itself: pick a date, read the three numbers, then read the
+              timeline top to bottom the way the day happened. */}
+          <div
+            style={{
+              marginTop: 16,
+              paddingTop: 12,
+              borderTop: "1px solid #bfdbfe",
+              display: "flex",
+              alignItems: "center",
+              gap: 8,
+              flexWrap: "wrap",
+            }}
+          >
+            <button onClick={() => shiftDay(-1)} style={arrowStyle} title="Previous day">
+              ‹
+            </button>
+            <strong style={{ fontSize: 14, minWidth: 110, textAlign: "center" }}>
+              {dayLabel(dayDate)}
+            </strong>
+            <button
+              onClick={() => shiftDay(1)}
+              disabled={dayDate >= todayStr()}
+              style={{ ...arrowStyle, opacity: dayDate >= todayStr() ? 0.35 : 1 }}
+              title="Next day"
+            >
+              ›
+            </button>
+            <input
+              type="date"
+              value={dayDate}
+              max={todayStr()}
+              onChange={(e) => e.target.value && setDayDate(e.target.value)}
+              style={{ padding: "6px 10px", border: "1px solid #bfdbfe", borderRadius: 8, fontSize: 13 }}
+            />
+            {dayLoading && <span style={{ fontSize: 12, color: "#6b7280" }}>loading…</span>}
+          </div>
+
+          {day && (
+            <>
+              <div style={{ display: "flex", gap: 24, marginTop: 12, flexWrap: "wrap" }}>
+                <Stat label="Duration" value={duration(day.duty_minutes)} />
+                <Stat label="Distance" value={`${day.total_km} km`} />
+                <Stat label="Stops" value={String(day.stop_count)} />
+                <Stat
+                  label="Seen"
+                  value={
+                    day.first_seen && day.last_seen
+                      ? `${clock(day.first_seen)} – ${clock(day.last_seen)}`
+                      : "—"
+                  }
+                />
+              </div>
+
+              {day.events.length === 0 ? (
+                <p style={{ marginTop: 12, fontSize: 13, color: "#6b7280" }}>
+                  Nothing recorded on this day — no duty was started and no position came in.
+                </p>
+              ) : (
+                <ol
+                  style={{
+                    marginTop: 12,
+                    maxHeight: 260,
+                    overflowY: "auto",
+                    listStyle: "none",
+                    padding: 0,
+                    display: "grid",
+                    gap: 8,
+                  }}
+                >
+                  {day.events.map((e, i) => (
+                    <li key={`${e.at}-${i}`} style={{ display: "flex", gap: 10, fontSize: 13 }}>
+                      <span style={{ color: "#6b7280", minWidth: 62, fontVariantNumeric: "tabular-nums" }}>
+                        {clock(e.at)}
+                      </span>
+                      <span
+                        style={{
+                          width: 8,
+                          height: 8,
+                          borderRadius: "50%",
+                          marginTop: 5,
+                          flexShrink: 0,
+                          background: EVENT_COLOR[e.type] ?? "#6b7280",
+                        }}
+                      />
+                      <span style={{ color: "#111827" }}>
+                        {e.label}
+                        {e.case_number && (
+                          <span style={{ color: "#6b7280" }}> · {e.case_number}</span>
+                        )}
+                        {e.latitude != null && e.longitude != null && (
+                          <>
+                            {" "}
+                            <a
+                              href={mapsLink(e.latitude, e.longitude)}
+                              target="_blank"
+                              rel="noreferrer"
+                              style={{ color: "#2563eb" }}
+                            >
+                              view on map
+                            </a>
+                          </>
+                        )}
+                      </span>
+                    </li>
+                  ))}
+                </ol>
+              )}
+            </>
+          )}
         </div>
       )}
 

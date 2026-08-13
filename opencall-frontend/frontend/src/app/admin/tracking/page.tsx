@@ -96,7 +96,15 @@ const EVENT_COLOR: Record<string, string> = {
  */
 function DutyBadge({ row }: { row: RosterEngineer }) {
   const [background, color, dot, text, title] =
-    row.state === "absent"
+    row.state === "unlinked"
+      ? [
+          "#fee2e2",
+          "#b91c1c",
+          "#ef4444",
+          "Not in Payroll",
+          "In the Add Engineers register but no matching Payroll employee — their cases are being skipped. Add an alias or onboard them.",
+        ]
+      : row.state === "absent"
       ? ["#f3f4f6", "#6b7280", "#9ca3af", "Not on duty", "No duty started on this day"]
       : row.state === "checked_out"
         ? [
@@ -281,8 +289,15 @@ export default function LiveTrackingPage() {
   );
   const staleCount = useMemo(() => engineers.filter((e) => e.stale).length, [engineers]);
   // Only people actually out get a live marker; a finished shift would otherwise
-  // leave a pin sitting where they were hours ago.
-  const liveOnMap = useMemo(() => engineers.filter((e) => e.state === "on_duty"), [engineers]);
+  // leave a pin sitting where they were hours ago. An unlinked engineer has no
+  // Payroll id and no position, so they never reach the map.
+  const liveOnMap = useMemo(
+    () =>
+      engineers
+        .filter((e) => e.state === "on_duty" && e.engineer_id != null)
+        .map((e) => ({ ...e, engineer_id: e.engineer_id as number })),
+    [engineers],
+  );
 
   const pathPoints = useMemo<[number, number][]>(
     () => (day?.points ?? []).map((p) => [p.latitude, p.longitude] as [number, number]),
@@ -654,19 +669,29 @@ export default function LiveTrackingPage() {
                 )}
               </td>
               <td style={{ padding: 8 }}>
+                {/* Nothing to open for an engineer Payroll cannot match — there
+                    is no day recorded against them. */}
                 <button
-                  onClick={() => setSelectedId(e.engineer_id)}
+                  onClick={() => e.engineer_id != null && setSelectedId(e.engineer_id)}
+                  disabled={e.engineer_id == null}
+                  title={e.engineer_id == null ? "No matching Payroll employee" : undefined}
                   style={{
                     padding: "4px 10px",
                     fontSize: 13,
-                    border: "1px solid #2563eb",
+                    border: "1px solid",
+                    borderColor: e.engineer_id == null ? "#d1d5db" : "#2563eb",
                     borderRadius: 6,
                     background: e.engineer_id === selectedId ? "#2563eb" : "#fff",
-                    color: e.engineer_id === selectedId ? "#fff" : "#2563eb",
-                    cursor: "pointer",
+                    color:
+                      e.engineer_id == null
+                        ? "#9ca3af"
+                        : e.engineer_id === selectedId
+                          ? "#fff"
+                          : "#2563eb",
+                    cursor: e.engineer_id == null ? "not-allowed" : "pointer",
                   }}
                 >
-                  {e.engineer_id === selectedId ? "Checking" : "Check live"}
+                  {e.engineer_id === selectedId ? "Checking" : "View day"}
                 </button>
               </td>
             </tr>

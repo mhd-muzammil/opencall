@@ -44,10 +44,14 @@ export interface LiveEngineersResult {
  * be opened.
  */
 export interface RosterEngineer {
-  engineer_id: number;
+  // Payroll's employee id, and null when Payroll has no matching record — the
+  // engineer is in OpenCall's register but cannot be resolved on the other side,
+  // which is the same reason their cases get skipped.
+  engineer_id: number | null;
   engineer_name: string;
   branch: string | null;
-  state: "on_duty" | "checked_out" | "absent";
+  linked: boolean;
+  state: "on_duty" | "checked_out" | "absent" | "unlinked";
   on_duty: boolean;
   duty_started_at: string | null;
   duty_ended_at: string | null;

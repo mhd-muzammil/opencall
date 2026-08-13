@@ -8,7 +8,8 @@ import {
   type EngineerDay,
   type RosterEngineer,
 } from "../../../lib/payrollTrackingApiClient";
-import { readSession, type ClientSession } from "../../../lib/session";
+import { clearSession, readSession, type ClientSession } from "../../../lib/session";
+import { isApiAuthError } from "../../../lib/api/http";
 
 // Leaflet touches `window`, so the map is client-only (no SSR).
 const LiveTrackingMap = dynamic(() => import("../../../components/LiveTrackingMap"), {
@@ -156,6 +157,10 @@ export default function LiveTrackingPage() {
   const [engineers, setEngineers] = useState<RosterEngineer[]>([]);
   const [configured, setConfigured] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  // An expired login is not a tracking problem, and "Bearer token has expired"
+  // over an empty board reads as one. Tracked apart so it gets its own message
+  // and a way out.
+  const [sessionExpired, setSessionExpired] = useState(false);
 
   // Which engineer the admin is checking, and which day of theirs.
   const [selectedId, setSelectedId] = useState<number | null>(null);
@@ -172,7 +177,7 @@ export default function LiveTrackingPage() {
   // The board: EVERY engineer for the chosen day, not only those out right now,
   // so a finished shift can still be opened. Only today keeps polling.
   useEffect(() => {
-    if (!session) return;
+    if (!session || sessionExpired) return;
     let active = true;
     const load = () => {
       getRoster(session.token, dayDate)
@@ -182,7 +187,16 @@ export default function LiveTrackingPage() {
           setEngineers(res.engineers);
           setError(null);
         })
-        .catch((e) => active && setError(e instanceof Error ? e.message : "Failed to load"));
+        .catch((e) => {
+          if (!active) return;
+          if (isApiAuthError(e)) {
+            // Stop polling: every retry would fail the same way.
+            setSessionExpired(true);
+            setError(null);
+            return;
+          }
+          setError(e instanceof Error ? e.message : "Failed to load");
+        });
     };
     load();
     if (dayDate !== todayStr()) {
@@ -195,7 +209,7 @@ export default function LiveTrackingPage() {
       active = false;
       clearInterval(t);
     };
-  }, [session, dayDate]);
+  }, [session, dayDate, sessionExpired]);
 
   // The checked engineer's whole day: route, distance, time on duty, stops and
   // timeline. Only TODAY keeps polling — a past day is finished, so re-fetching
@@ -309,13 +323,53 @@ export default function LiveTrackingPage() {
         </div>
       </div>
 
-      {!configured && (
+      {/* Says which of the two it is. An expired login and an unconfigured
+          integration both leave an empty board, and they need opposite actions. */}
+      {sessionExpired && (
+        <div
+          style={{
+            marginTop: 12,
+            padding: "12px 16px",
+            borderRadius: 10,
+            background: "#fef3c7",
+            border: "1px solid #fcd34d",
+            color: "#92400e",
+            display: "flex",
+            alignItems: "center",
+            gap: 12,
+            flexWrap: "wrap",
+          }}
+        >
+          <span>
+            <strong>Your login has expired.</strong> Nothing is wrong with tracking — sign in again
+            and the board fills straight back up.
+          </span>
+          <button
+            onClick={() => {
+              clearSession();
+              window.location.replace("/");
+            }}
+            style={{
+              padding: "6px 14px",
+              borderRadius: 8,
+              border: "1px solid #b45309",
+              background: "#b45309",
+              color: "#fff",
+              fontWeight: 600,
+              cursor: "pointer",
+            }}
+          >
+            Sign in again
+          </button>
+        </div>
+      )}
+      {!configured && !sessionExpired && (
         <p style={{ color: "#b45309", marginTop: 12 }}>
           Payroll integration is not configured. Set PAYROLL_API_URL / PAYROLL_API_USER /
           PAYROLL_API_PASSWORD in the OpenCall backend environment.
         </p>
       )}
-      {error && <p style={{ color: "#dc2626", marginTop: 12 }}>{error}</p>}
+      {error && !sessionExpired && <p style={{ color: "#dc2626", marginTop: 12 }}>{error}</p>}
 
       {/* Free live map (Leaflet + OpenStreetMap, no API key/billing). Click a
           marker to select that engineer and draw today's path. */}

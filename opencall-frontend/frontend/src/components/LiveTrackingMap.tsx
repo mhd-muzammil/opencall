@@ -3,7 +3,26 @@
 import { Fragment } from "react";
 import { MapContainer, TileLayer, CircleMarker, Popup, Polyline, Circle } from "react-leaflet";
 import "leaflet/dist/leaflet.css";
-import type { LiveEngineer } from "../lib/payrollTrackingApiClient";
+/**
+ * Only what the map draws. Declared here rather than reusing LiveEngineer so the
+ * component accepts a roster row too — both carry these fields, and the map has
+ * no business requiring the ones it never reads.
+ */
+export interface MapEngineer {
+  engineer_id: number;
+  engineer_name: string;
+  branch: string | null;
+  latitude: number | null;
+  longitude: number | null;
+  accuracy: number | null;
+  stale: boolean;
+  duty_minutes: number;
+  distance_km: number;
+  last_seen_minutes: number | null;
+  status: string;
+  timestamp: string | null;
+  active_case_number: string | null;
+}
 
 // Free embedded map (Leaflet + OpenStreetMap, no API key / billing) for the
 // live engineer tracking view. Must be dynamically imported with { ssr: false }
@@ -28,7 +47,7 @@ export interface StopMarker {
 }
 
 interface Props {
-  engineers: LiveEngineer[];
+  engineers: MapEngineer[];
   selectedId: number | null;
   pathPoints: [number, number][];
   stops?: StopMarker[];
@@ -37,9 +56,9 @@ interface Props {
 
 /** On duty with a known position. Someone who has not sent a fix yet is on the
  *  board but has nothing to plot, so the map skips them. */
-type Plottable = LiveEngineer & { latitude: number; longitude: number };
+type Plottable = MapEngineer & { latitude: number; longitude: number };
 
-function hasPosition(e: LiveEngineer): e is Plottable {
+function hasPosition(e: MapEngineer): e is Plottable {
   return e.latitude != null && e.longitude != null;
 }
 

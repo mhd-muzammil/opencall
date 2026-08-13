@@ -4,9 +4,9 @@ import { useEffect, useMemo, useState } from "react";
 import dynamic from "next/dynamic";
 import {
   getEngineerDay,
-  getLiveEngineers,
+  getRoster,
   type EngineerDay,
-  type LiveEngineer,
+  type RosterEngineer,
 } from "../../../lib/payrollTrackingApiClient";
 import { readSession, type ClientSession } from "../../../lib/session";
 
@@ -88,10 +88,33 @@ const EVENT_COLOR: Record<string, string> = {
   completed: "#16a34a",
 };
 
-/** On duty is the engineer's declaration; the colour says whether we can
- *  currently see them. Amber is the case that used to just disappear. */
-function DutyBadge({ stale, lastSeen }: { stale: boolean; lastSeen: number | null }) {
-  const live = !stale;
+/**
+ * Where an engineer stands, in one chip. Three states, not two: on duty and
+ * reporting, on duty but the phone has gone quiet (amber — the case that used to
+ * make them vanish from the board), and finished for the day.
+ */
+function DutyBadge({ row }: { row: RosterEngineer }) {
+  const [background, color, dot, text, title] =
+    row.state === "absent"
+      ? ["#f3f4f6", "#6b7280", "#9ca3af", "Not on duty", "No duty started on this day"]
+      : row.state === "checked_out"
+        ? [
+            "#e0e7ff",
+            "#4338ca",
+            "#6366f1",
+            `Checked out${row.duty_ended_at ? ` · ${clock(row.duty_ended_at)}` : ""}`,
+            row.auto_closed ? "Auto-closed — they never tapped Stop Duty" : "Shift finished",
+          ]
+        : row.stale
+          ? [
+              "#fef3c7",
+              "#b45309",
+              "#f59e0b",
+              `No signal · ${relativeAge(row.last_seen_minutes)}`,
+              "On duty, but the phone has stopped reporting",
+            ]
+          : ["#dcfce7", "#15803d", "#22c55e", "On duty", "Sending live position"];
+
   return (
     <span
       style={{
@@ -102,21 +125,14 @@ function DutyBadge({ stale, lastSeen }: { stale: boolean; lastSeen: number | nul
         borderRadius: 999,
         fontSize: 12,
         fontWeight: 600,
-        background: live ? "#dcfce7" : "#fef3c7",
-        color: live ? "#15803d" : "#b45309",
+        background,
+        color,
         whiteSpace: "nowrap",
       }}
-      title={live ? "Sending live position" : "On duty, but the phone has stopped reporting"}
+      title={title}
     >
-      <span
-        style={{
-          width: 7,
-          height: 7,
-          borderRadius: "50%",
-          background: live ? "#22c55e" : "#f59e0b",
-        }}
-      />
-      {live ? "On duty" : `No signal · ${relativeAge(lastSeen)}`}
+      <span style={{ width: 7, height: 7, borderRadius: "50%", background: dot }} />
+      {text}
     </span>
   );
 }
@@ -137,7 +153,7 @@ function mapsLink(lat: number, lon: number): string {
 
 export default function LiveTrackingPage() {
   const [session, setSession] = useState<ClientSession | null>(null);
-  const [engineers, setEngineers] = useState<LiveEngineer[]>([]);
+  const [engineers, setEngineers] = useState<RosterEngineer[]>([]);
   const [configured, setConfigured] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -147,17 +163,19 @@ export default function LiveTrackingPage() {
   const [dayDate, setDayDate] = useState(todayStr());
   const [dayLoading, setDayLoading] = useState(false);
   const [query, setQuery] = useState("");
+  const [stateFilter, setStateFilter] = useState<"all" | "on_duty" | "off">("all");
 
   useEffect(() => {
     setSession(readSession());
   }, []);
 
-  // Poll the live list.
+  // The board: EVERY engineer for the chosen day, not only those out right now,
+  // so a finished shift can still be opened. Only today keeps polling.
   useEffect(() => {
     if (!session) return;
     let active = true;
     const load = () => {
-      getLiveEngineers(session.token)
+      getRoster(session.token, dayDate)
         .then((res) => {
           if (!active) return;
           setConfigured(res.configured);
@@ -167,12 +185,17 @@ export default function LiveTrackingPage() {
         .catch((e) => active && setError(e instanceof Error ? e.message : "Failed to load"));
     };
     load();
+    if (dayDate !== todayStr()) {
+      return () => {
+        active = false;
+      };
+    }
     const t = setInterval(load, REFRESH_MS);
     return () => {
       active = false;
       clearInterval(t);
     };
-  }, [session]);
+  }, [session, dayDate]);
 
   // The checked engineer's whole day: route, distance, time on duty, stops and
   // timeline. Only TODAY keeps polling — a past day is finished, so re-fetching
@@ -220,22 +243,32 @@ export default function LiveTrackingPage() {
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
-    if (!q) return engineers;
-    return engineers.filter(
-      (e) =>
+    return engineers.filter((e) => {
+      if (stateFilter === "on_duty" && e.state !== "on_duty") return false;
+      if (stateFilter === "off" && e.state === "on_duty") return false;
+      if (!q) return true;
+      return (
         e.engineer_name.toLowerCase().includes(q) ||
         (e.branch ?? "").toLowerCase().includes(q) ||
-        (e.active_case_number ?? "").toLowerCase().includes(q),
-    );
-  }, [engineers, query]);
+        (e.active_case_number ?? "").toLowerCase().includes(q)
+      );
+    });
+  }, [engineers, query, stateFilter]);
 
   const selected = engineers.find((e) => e.engineer_id === selectedId) ?? null;
 
+  const onDutyCount = useMemo(
+    () => engineers.filter((e) => e.state === "on_duty").length,
+    [engineers],
+  );
   const totalKm = useMemo(
     () => engineers.reduce((sum, e) => sum + (e.distance_km ?? 0), 0),
     [engineers],
   );
   const staleCount = useMemo(() => engineers.filter((e) => e.stale).length, [engineers]);
+  // Only people actually out get a live marker; a finished shift would otherwise
+  // leave a pin sitting where they were hours ago.
+  const liveOnMap = useMemo(() => engineers.filter((e) => e.state === "on_duty"), [engineers]);
 
   const pathPoints = useMemo<[number, number][]>(
     () => (day?.points ?? []).map((p) => [p.latitude, p.longitude] as [number, number]),
@@ -262,7 +295,8 @@ export default function LiveTrackingPage() {
             the total ground covered across everyone on duty. */}
         <div style={{ display: "flex", gap: 16, fontSize: 13, color: "#6b7280", alignItems: "center" }}>
           <span>
-            <strong style={{ color: "#111827", fontSize: 15 }}>{engineers.length}</strong> on duty
+            <strong style={{ color: "#111827", fontSize: 15 }}>{onDutyCount}</strong> on duty
+            <span style={{ color: "#9ca3af" }}> of {engineers.length}</span>
           </span>
           {staleCount > 0 && (
             <span style={{ color: "#b45309" }}>
@@ -270,7 +304,7 @@ export default function LiveTrackingPage() {
             </span>
           )}
           <span>
-            <strong style={{ color: "#111827", fontSize: 15 }}>{totalKm.toFixed(1)}</strong> km total today
+            <strong style={{ color: "#111827", fontSize: 15 }}>{totalKm.toFixed(1)}</strong> km total
           </span>
         </div>
       </div>
@@ -287,7 +321,7 @@ export default function LiveTrackingPage() {
           marker to select that engineer and draw today's path. */}
       <div style={{ marginTop: 16 }}>
         <LiveTrackingMap
-          engineers={engineers}
+          engineers={liveOnMap}
           selectedId={selectedId}
           pathPoints={pathPoints}
           stops={stopMarkers}
@@ -298,7 +332,36 @@ export default function LiveTrackingPage() {
         </p>
       </div>
 
-      {/* Pick any engineer to check live */}
+      {/* Pick ANY engineer — on duty, finished, or never started. The whole point
+          of the roster is that a shift ending does not take someone off the board. */}
+      <div style={{ display: "flex", gap: 8, marginTop: 16, flexWrap: "wrap", alignItems: "center" }}>
+        {(
+          [
+            ["all", `All ${engineers.length}`],
+            ["on_duty", `On duty ${onDutyCount}`],
+            ["off", `Off duty ${engineers.length - onDutyCount}`],
+          ] as const
+        ).map(([value, label]) => (
+          <button
+            key={value}
+            onClick={() => setStateFilter(value)}
+            style={{
+              padding: "6px 14px",
+              borderRadius: 999,
+              fontSize: 13,
+              fontWeight: 600,
+              cursor: "pointer",
+              border: "1px solid",
+              borderColor: stateFilter === value ? "#2563eb" : "#d1d5db",
+              background: stateFilter === value ? "#2563eb" : "#fff",
+              color: stateFilter === value ? "#fff" : "#374151",
+            }}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+
       <input
         placeholder="Search engineer / branch / case…"
         value={query}
@@ -337,9 +400,15 @@ export default function LiveTrackingPage() {
           <div style={{ marginTop: 8, fontSize: 14, color: "#374151", display: "grid", gap: 4 }}>
             <span>Branch: {selected.branch ?? "—"}</span>
             <span>
-              Duty: <DutyBadge stale={selected.stale} lastSeen={selected.last_seen_minutes} />{" "}
-              since {new Date(selected.duty_started_at).toLocaleTimeString()} (
-              {duration(selected.duty_minutes)})
+              Duty: <DutyBadge row={selected} />
+              {selected.duty_started_at && (
+                <>
+                  {" "}
+                  {clock(selected.duty_started_at)}
+                  {selected.duty_ended_at ? ` – ${clock(selected.duty_ended_at)}` : " onwards"} (
+                  {duration(selected.duty_minutes)})
+                </>
+              )}
             </span>
             <span>Active case: {selected.active_case_number ?? "—"}</span>
             <span>Status: {selected.status || "—"}</span>
@@ -507,7 +576,7 @@ export default function LiveTrackingPage() {
               <td style={{ padding: 8, fontWeight: 500 }}>{e.engineer_name}</td>
               <td style={{ padding: 8 }}>{e.branch ?? "—"}</td>
               <td style={{ padding: 8 }}>
-                <DutyBadge stale={e.stale} lastSeen={e.last_seen_minutes} />
+                <DutyBadge row={e} />
               </td>
               <td style={{ padding: 8 }}>{duration(e.duty_minutes)}</td>
               <td style={{ padding: 8, fontWeight: 600 }}>{e.distance_km} km</td>
@@ -552,8 +621,8 @@ export default function LiveTrackingPage() {
             <tr>
               <td colSpan={9} style={{ padding: 24, textAlign: "center", color: "#9ca3af" }}>
                 {engineers.length === 0
-                  ? "Nobody is on duty. Engineers appear here as soon as they tap Start Duty in Payroll."
-                  : "No match."}
+                  ? "No engineers found. Every active employee appears here once Payroll is reachable."
+                  : "No match for this filter."}
               </td>
             </tr>
           )}

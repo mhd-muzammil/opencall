@@ -38,6 +38,38 @@ export interface LiveEngineersResult {
   engineers: LiveEngineer[];
 }
 
+/**
+ * One row per engineer for a day, in whatever state they are. Unlike the live
+ * list this keeps someone who has finished their shift, so their day can still
+ * be opened.
+ */
+export interface RosterEngineer {
+  engineer_id: number;
+  engineer_name: string;
+  branch: string | null;
+  state: "on_duty" | "checked_out" | "absent";
+  on_duty: boolean;
+  duty_started_at: string | null;
+  duty_ended_at: string | null;
+  duty_minutes: number;
+  auto_closed: boolean;
+  distance_km: number;
+  stale: boolean;
+  last_seen_minutes: number | null;
+  latitude: number | null;
+  longitude: number | null;
+  accuracy: number | null;
+  status: string;
+  timestamp: string | null;
+  active_case_id: number | null;
+  active_case_number: string | null;
+}
+
+export interface RosterResult {
+  configured: boolean;
+  engineers: RosterEngineer[];
+}
+
 /** One engineer's whole day: where they went, how far, and where they stood still. */
 export interface EngineerDayStop {
   latitude: number;
@@ -122,6 +154,15 @@ export async function getEngineerPath(
     cache: "no-store",
   });
   return readJson<TrackPath>(response);
+}
+
+export async function getRoster(token: string, date?: string): Promise<RosterResult> {
+  const qs = date ? `?date=${encodeURIComponent(date)}` : "";
+  const response = await fetch(url(`/api/v1/payroll-tracking/roster${qs}`), {
+    headers: authHeaders(token),
+    cache: "no-store",
+  });
+  return readJson<RosterResult>(response);
 }
 
 export async function getEngineerDay(

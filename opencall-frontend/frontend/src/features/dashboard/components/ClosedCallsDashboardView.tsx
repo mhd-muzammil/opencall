@@ -355,10 +355,13 @@ export function ClosedCallsDashboardView({
   summaryToken,
 }: Readonly<ClosedCallsDashboardViewProps>) {
   const [searchQuery, setSearchQuery] = useState("");
-  // Case Closed Date range filter (YYYY-MM-DD from the date inputs). When either bound
-  // is set, rows without a Case Closed Date, or outside the range, are hidden.
-  const [closedFrom, setClosedFrom] = useState("");
-  const [closedTo, setClosedTo] = useState("");
+  // The page-wide period (YYYY-MM-DD bounds, "" = unbounded). ONE filter on purpose:
+  // the badge, the KPI cards, the region cards, the Flex comparison lines and the
+  // records table all read this same range, so no two numbers on the page can answer
+  // for different periods. Defaults to today — what the page is opened to check; the
+  // presets reach the bill cycle and the whole ledger in one click.
+  const [periodFrom, setPeriodFrom] = useState(todayIsoDate);
+  const [periodTo, setPeriodTo] = useState(todayIsoDate);
   const [importing, setImporting] = useState(false);
   const [importMessage, setImportMessage] = useState<string | null>(null);
   const closureFileInputRef = React.useRef<HTMLInputElement | null>(null);
@@ -369,15 +372,6 @@ export function ClosedCallsDashboardView({
   // per-month payload is kept so the month dropdown can rescope the cards with no refetch.
   const [closureSummary, setClosureSummary] = useState<import("../../../lib/closureDateApiClient").ClosureDateSummary | null>(null);
   const [rawSummary, setRawSummary] = useState<import("../../../lib/flexRawApiClient").FlexRawSummary | null>(null);
-  // Day-precise date range for the comparison counts, typed into date inputs. Each is ""
-  // (unbounded) or a "YYYY-MM-DD" value. Both empty = all dates.
-  //
-  // Defaults to TODAY, not all dates: the closure store keeps every closure Flex has ever
-  // reported, so an unbounded count answers "how many since the import began" (6,129) when
-  // what this page is read for is "how many today". The presets and the two date inputs
-  // still reach any other period, all dates included.
-  const [comparisonFrom, setComparisonFrom] = useState(todayIsoDate);
-  const [comparisonTo, setComparisonTo] = useState(todayIsoDate);
   const [rawSyncing, setRawSyncing] = useState(false);
   const [rawSyncMessage, setRawSyncMessage] = useState<string | null>(null);
   // The record-list drill-down opened from a card's "FieldEZ data closure" / "Raw data closures".
@@ -433,11 +427,11 @@ export function ClosedCallsDashboardView({
 
   // Normalised date bounds — a reversed From/To is swapped so order never matters.
   const [dateLo, dateHi] = useMemo(() => {
-    if (comparisonFrom && comparisonTo && comparisonFrom > comparisonTo) {
-      return [comparisonTo, comparisonFrom];
+    if (periodFrom && periodTo && periodFrom > periodTo) {
+      return [periodTo, periodFrom];
     }
-    return [comparisonFrom, comparisonTo];
-  }, [comparisonFrom, comparisonTo]);
+    return [periodFrom, periodTo];
+  }, [periodFrom, periodTo]);
   const rangeActive = Boolean(dateLo || dateHi);
 
   // Raw data only has month granularity, so a date range maps to the months it spans.
@@ -453,21 +447,99 @@ export function ClosedCallsDashboardView({
     };
   }, [monthLo, monthHi]);
 
-  // Date-input bounds — first day of the earliest month to the last day of the latest.
-  // Never earlier than today at the top end: the range defaults to today, and on a
-  // morning where Flex has reported nothing yet the latest imported month can still be
-  // last month, which would flag the default value as out of range.
-  const [minDate, maxDate] = useMemo(() => {
-    if (comparisonMonths.length === 0) return ["", ""];
-    const asc = [...comparisonMonths].sort();
-    const earliest = asc[0]!;
-    const latest = asc[asc.length - 1]!;
-    const [ly, lm] = latest.split("-").map(Number);
-    const lastDay = new Date(ly!, lm!, 0).getDate();
-    const hi = `${latest}-${String(lastDay).padStart(2, "0")}`;
+  /**
+   * The bill cycle today falls in — the 25th of one month through the 24th of the next,
+   * the convention closures are invoiced under. Read off the IST calendar day so the
+   * cycle rolls over at midnight IST, not UTC.
+   */
+  const currentBillCycle = useMemo(() => billCycleFor(todayIsoDate()), []);
+
+  /**
+   * Which cycle the "Bill cycle" scope shows. The ledger holds many months, so the
+   * toggle alone could only ever answer for the current one; this is the month picker
+   * that sits beside it. Keyed by end month ("2026-08" = 25 Jul → 24 Aug).
+   */
+  const [cycleKey, setCycleKey] = useState(() => currentBillCycle.key);
+
+  /**
+   * Selectable cycles: every one from the current cycle back to the oldest closure the
+   * page can count, so a month with data is never missing from the list. Capped at two
+   * years, and at six cycles while nothing has loaded yet.
+   */
+  const billCycleOptions = useMemo(() => {
+    let earliestIso: string | null = null;
+    for (const row of closedRows) {
+      const iso = caseClosedIsoOf((row.output ?? {}) as Record<string, unknown>);
+      if (!iso) continue;
+      if (earliestIso === null || iso < earliestIso) earliestIso = iso;
+    }
+    const monthsAsc = [...comparisonMonths].sort();
+    const earliestMonth = monthsAsc[0];
+    const earliestKeys = [
+      earliestIso ? billCycleFor(earliestIso).key : null,
+      earliestMonth ? billCycleFor(`${earliestMonth}-01`).key : null,
+    ].filter((k): k is string => k !== null);
+    const earliestKey = earliestKeys.length ? earliestKeys.sort()[0]! : null;
+    // A future-dated Case Closed Date (they happen) would otherwise leave the current
+    // cycle as the only option — fall back to the six-cycle default instead.
+    const floorKey =
+      earliestKey && earliestKey < currentBillCycle.key ? earliestKey : null;
+
+    const options: BillCycle[] = [];
+    let key = currentBillCycle.key;
+    for (let i = 0; i < 24; i += 1) {
+      options.push(billCycleForKey(key));
+      if (floorKey ? key <= floorKey : i >= 5) break;
+      key = prevMonthKey(key);
+    }
+    return options;
+  }, [closedRows, comparisonMonths, currentBillCycle]);
+
+  const billCycle = useMemo(
+    () => billCycleOptions.find((c) => c.key === cycleKey) ?? currentBillCycle,
+    [billCycleOptions, cycleKey, currentBillCycle],
+  );
+  const isCurrentCycle = billCycle.key === currentBillCycle.key;
+
+  // Which preset the period currently matches — drives the chip states AND which
+  // counting rule the cards use (see `rowInPeriod`).
+  const periodPreset = useMemo<"today" | "cycle" | "all" | "custom">(() => {
+    if (!dateLo && !dateHi) return "all";
     const today = todayIsoDate();
-    return [`${earliest}-01`, hi > today ? hi : today];
-  }, [comparisonMonths]);
+    if (dateLo === today && dateHi === today) return "today";
+    if (dateLo === billCycle.fromIso && dateHi === billCycle.toIso) return "cycle";
+    return "custom";
+  }, [dateLo, dateHi, billCycle]);
+
+  /** Human name for the active period — the KPI scope line says it out loud. */
+  const periodLabel = useMemo(() => {
+    if (periodPreset === "today") return "today";
+    if (periodPreset === "cycle") return `${billCycle.monthLabel} bill cycle (${billCycle.label})`;
+    if (periodPreset === "all") return "all dates";
+    return formatRangeLabel(dateLo, dateHi, formatDateKey, "all dates");
+  }, [periodPreset, billCycle, dateLo, dateHi]);
+
+  /**
+   * Whether a closed row falls inside the selected period — THE page-wide predicate.
+   * The records table, the outcome splits and the card counts all go through here, so
+   * every number on the page answers for the same set of rows.
+   *
+   * "Today" keeps the report-day rule (sameDayClosedRow) instead of comparing Case
+   * Closed Date strings: it is the rule the "Closed today" headline has always used,
+   * and it still counts a closure Flex reported late with a back-dated Case Closed
+   * Date. Every other period goes by Case Closed Date.
+   */
+  const rowInPeriod = useMemo(() => {
+    return (row: ReportRow): boolean => {
+      if (!rangeActive) return true;
+      if (periodPreset === "today") return row.carryForward.sameDayClosedRow === true;
+      const iso = caseClosedIsoOf((row.output ?? {}) as Record<string, unknown>);
+      if (!iso) return false;
+      if (dateLo && iso < dateLo) return false;
+      if (dateHi && iso > dateHi) return false;
+      return true;
+    };
+  }, [rangeActive, periodPreset, dateLo, dateHi]);
 
   // Closure is day-precise: when a date range is active the monthly byAspMonth cannot
   // answer a mid-month boundary, so a scoped summary is fetched for the exact range.
@@ -707,8 +779,6 @@ export function ClosedCallsDashboardView({
   }, [closedRegionBreakdown]);
 
   // Total calls (Closed + Active WIP)
-  // Closed count that the cards reflect — the date-filtered count when a range is set,
-  // otherwise the full total. Defined below `dateFilterActive`/`filteredClosedRows`.
   const totalCallsCount = overallClosedCount + totalActiveWipCount;
 
   // Filtered closed rows based on selected region and search query
@@ -728,14 +798,9 @@ export function ClosedCallsDashboardView({
         }
       }
 
-      // Case Closed Date range filter. The value is DD-MM-YYYY; convert to YYYY-MM-DD
-      // for a lexical comparison against the (already YYYY-MM-DD) date-input bounds.
-      if (closedFrom || closedTo) {
-        const iso = caseClosedIsoOf(output);
-        if (!iso) return false; // no closed date → excluded once a bound is set
-        if (closedFrom && iso < closedFrom) return false;
-        if (closedTo && iso > closedTo) return false;
-      }
+      // Period filter — the same predicate the cards use, so the table always lists
+      // exactly the rows the numbers above it counted.
+      if (!rowInPeriod(row)) return false;
 
       // Search query filter
       if (!searchQuery.trim()) return true;
@@ -766,7 +831,7 @@ export function ClosedCallsDashboardView({
         accountName.includes(query)
       );
     });
-  }, [closedRows, selectedRegion, searchQuery, closedFrom, closedTo]);
+  }, [closedRows, selectedRegion, searchQuery, rowInPeriod]);
 
   const dateInputStyle: React.CSSProperties = {
     padding: "7px 10px",
@@ -784,33 +849,32 @@ export function ClosedCallsDashboardView({
     [closedRows],
   );
 
-  // Closed share % — uses the date-filtered closed count when a range is applied.
-  const shareClosed =
-    closedFrom || closedTo ? filteredClosedRows.length : overallClosedCount;
+  // Closed share % — follows the period (all dates = the whole ledger).
+  const shareClosed = rangeActive ? filteredClosedRows.length : overallClosedCount;
   const closedPercentage =
     totalCallsCount > 0 ? ((shareClosed / totalCallsCount) * 100).toFixed(1) : "0.0";
 
-  // When a Closed Date range is applied, the counts follow what the table shows
-  // (filteredClosedRows), so the stat cards + region cards move with the filter.
-  const dateFilterActive = Boolean(closedFrom || closedTo);
+  // A hand-typed range that matches no preset — counts then come from the generic
+  // Case-Closed-Date scan below instead of the today/cycle/all-time fast paths.
+  const customRange = periodPreset === "custom";
 
-  // Per-region closed count for the active Closed Date range (ignores the region
-  // selection so every region card still shows its own date-filtered number). Only
-  // computed while a range is set; otherwise the cards use the full breakdown counts.
+  // Per-region closed count for a custom period (ignores the region selection so every
+  // region card still shows its own number for the range). Only computed for a custom
+  // range; the preset periods have dedicated maps.
   const dateFilteredCountByAsp = useMemo(() => {
     const counts = new Map<string, number>();
-    if (!dateFilterActive) return counts;
+    if (!customRange) return counts;
     for (const row of closedRows) {
       const output = (row.output ?? {}) as Record<string, unknown>;
       const iso = caseClosedIsoOf(output);
       if (!iso) continue;
-      if (closedFrom && iso < closedFrom) continue;
-      if (closedTo && iso > closedTo) continue;
+      if (dateLo && iso < dateLo) continue;
+      if (dateHi && iso > dateHi) continue;
       const asp = getRowAspCode(output);
       counts.set(asp, (counts.get(asp) ?? 0) + 1);
     }
     return counts;
-  }, [closedRows, dateFilterActive, closedFrom, closedTo]);
+  }, [closedRows, customRange, dateLo, dateHi]);
 
   // Total across all regions for the active range (the ALL card's number).
   const dateFilteredTotal = useMemo(() => {
@@ -830,68 +894,6 @@ export function ClosedCallsDashboardView({
     return counts;
   }, [closedRows]);
 
-  /**
-   * The bill cycle today falls in — the 25th of one month through the 24th of the next,
-   * the convention closures are invoiced under. Read off the IST calendar day so the
-   * cycle rolls over at midnight IST, not UTC.
-   */
-  const currentBillCycle = useMemo(() => billCycleFor(todayIsoDate()), []);
-
-  /**
-   * Which cycle the "Bill cycle" scope shows. The ledger holds many months, so the
-   * toggle alone could only ever answer for the current one; this is the month picker
-   * that sits beside it. Keyed by end month ("2026-08" = 25 Jul → 24 Aug).
-   */
-  const [cycleKey, setCycleKey] = useState(() => currentBillCycle.key);
-
-  /**
-   * Selectable cycles: every one from the current cycle back to the oldest closure the
-   * page can count, so a month with data is never missing from the list. Capped at two
-   * years, and at six cycles while nothing has loaded yet.
-   */
-  const billCycleOptions = useMemo(() => {
-    let earliestIso: string | null = null;
-    for (const row of closedRows) {
-      const iso = caseClosedIsoOf((row.output ?? {}) as Record<string, unknown>);
-      if (!iso) continue;
-      if (earliestIso === null || iso < earliestIso) earliestIso = iso;
-    }
-    const monthsAsc = [...comparisonMonths].sort();
-    const earliestMonth = monthsAsc[0];
-    const earliestKeys = [
-      earliestIso ? billCycleFor(earliestIso).key : null,
-      earliestMonth ? billCycleFor(`${earliestMonth}-01`).key : null,
-    ].filter((k): k is string => k !== null);
-    const earliestKey = earliestKeys.length ? earliestKeys.sort()[0]! : null;
-    // A future-dated Case Closed Date (they happen) would otherwise leave the current
-    // cycle as the only option — fall back to the six-cycle default instead.
-    const floorKey =
-      earliestKey && earliestKey < currentBillCycle.key ? earliestKey : null;
-
-    const options: BillCycle[] = [];
-    let key = currentBillCycle.key;
-    for (let i = 0; i < 24; i += 1) {
-      options.push(billCycleForKey(key));
-      if (floorKey ? key <= floorKey : i >= 5) break;
-      key = prevMonthKey(key);
-    }
-    return options;
-  }, [closedRows, comparisonMonths, currentBillCycle]);
-
-  const billCycle = useMemo(
-    () => billCycleOptions.find((c) => c.key === cycleKey) ?? currentBillCycle,
-    [billCycleOptions, cycleKey, currentBillCycle],
-  );
-  const isCurrentCycle = billCycle.key === currentBillCycle.key;
-
-  // Which preset the comparison date inputs currently match (drives the chip states).
-  const comparisonPreset = useMemo<"today" | "cycle" | "all" | "custom">(() => {
-    if (!dateLo && !dateHi) return "all";
-    const today = todayIsoDate();
-    if (dateLo === today && dateHi === today) return "today";
-    if (dateLo === billCycle.fromIso && dateHi === billCycle.toIso) return "cycle";
-    return "custom";
-  }, [dateLo, dateHi, billCycle]);
 
   /**
    * Raw data is stored per month, so anything narrower than whole months still reports
@@ -932,37 +934,30 @@ export function ClosedCallsDashboardView({
   }, [cycleCountByAsp]);
 
   /**
-   * Which closed count the cards show. "today" is the default because that is what
-   * this page is read for; the whole ledger is still one click away.
-   */
-  const [countScope, setCountScope] = useState<"today" | "all" | "cycle">("today");
-
-  /**
    * The number ONE card shows — the ALL card (aspCode "") or a single region.
    *
    * A single resolver on purpose: the ALL card used to show today's closures while
    * every region card showed its all-time ledger, so the parts never summed to the
-   * whole (4 vs 563 + 464 + 292 + 291 + 264). An explicit Closed-date range still
-   * outranks the toggle, since that is a narrower question the user just asked.
+   * whole (4 vs 563 + 464 + 292 + 291 + 264). Every branch answers for the period
+   * `rowInPeriod` describes — only the lookup differs.
    */
   const closedCountFor = useMemo(() => {
     return (aspCode: string, allTimeCount: number): number => {
-      if (dateFilterActive) {
-        return aspCode ? dateFilteredCountByAsp.get(aspCode) ?? 0 : dateFilteredTotal;
-      }
-      if (countScope === "today") {
+      if (periodPreset === "today") {
         return aspCode ? closedTodayCountByAsp.get(aspCode) ?? 0 : closedTodayCount;
       }
-      if (countScope === "cycle") {
+      if (periodPreset === "cycle") {
         return aspCode ? cycleCountByAsp.get(aspCode) ?? 0 : cycleTotal;
+      }
+      if (periodPreset === "custom") {
+        return aspCode ? dateFilteredCountByAsp.get(aspCode) ?? 0 : dateFilteredTotal;
       }
       return allTimeCount;
     };
   }, [
-    dateFilterActive,
+    periodPreset,
     dateFilteredCountByAsp,
     dateFilteredTotal,
-    countScope,
     closedTodayCountByAsp,
     closedTodayCount,
     cycleCountByAsp,
@@ -997,26 +992,7 @@ export function ClosedCallsDashboardView({
 
   React.useEffect(() => {
     setLedgerPage(0);
-  }, [selectedRegion, closedFrom, closedTo, searchQuery]);
-
-  /** Whether a closed row belongs to the period the cards are currently showing. */
-  const rowInScope = useMemo(() => {
-    return (row: ReportRow): boolean => {
-      if (dateFilterActive) {
-        const iso = caseClosedIsoOf((row.output ?? {}) as Record<string, unknown>);
-        if (!iso) return false;
-        if (closedFrom && iso < closedFrom) return false;
-        if (closedTo && iso > closedTo) return false;
-        return true;
-      }
-      if (countScope === "today") return row.carryForward.sameDayClosedRow === true;
-      if (countScope === "cycle") {
-        const iso = caseClosedIsoOf((row.output ?? {}) as Record<string, unknown>);
-        return iso !== null && iso >= billCycle.fromIso && iso <= billCycle.toIso;
-      }
-      return true;
-    };
-  }, [dateFilterActive, closedFrom, closedTo, countScope, billCycle]);
+  }, [selectedRegion, dateLo, dateHi, searchQuery]);
 
   /**
    * Completed vs cancelled, per region and overall.
@@ -1032,7 +1008,7 @@ export function ClosedCallsDashboardView({
   const closedOutcomeByAsp = useMemo(() => {
     const counts = new Map<string, { closed: number; cancelled: number }>();
     for (const row of closedRows) {
-      if (!rowInScope(row)) continue;
+      if (!rowInPeriod(row)) continue;
       const output = (row.output ?? {}) as Record<string, unknown>;
       if (!hasFlexClosureOutcome(output)) continue;
       const outcome = classifyFlexClosureOutcome(output["Flex Status"]);
@@ -1043,7 +1019,7 @@ export function ClosedCallsDashboardView({
       counts.set(asp, entry);
     }
     return counts;
-  }, [closedRows, rowInScope]);
+  }, [closedRows, rowInPeriod]);
 
   const closedOutcomeFor = useMemo(() => {
     return (
@@ -1070,7 +1046,7 @@ export function ClosedCallsDashboardView({
   const activeRegionStats = useMemo(() => {
     if (!selectedRegion || selectedRegion === "ALL") {
       return {
-        closed: dateFilterActive ? filteredClosedRows.length : overallClosedCount,
+        closed: rangeActive ? filteredClosedRows.length : overallClosedCount,
         wip: totalActiveWipCount,
         label: "All Operational Regions",
       };
@@ -1080,8 +1056,9 @@ export function ClosedCallsDashboardView({
       (item) => item.aspCode.toUpperCase() === targetUpper || item.regionName.toUpperCase() === targetUpper
     );
     return {
-      // Date filter always narrows to the visible rows; otherwise use the region total.
-      closed: dateFilterActive
+      // Any period narrower than all-dates follows the visible rows; otherwise the
+      // region's all-time total.
+      closed: rangeActive
         ? filteredClosedRows.length
         : match
           ? match.closedCount
@@ -1089,7 +1066,7 @@ export function ClosedCallsDashboardView({
       wip: match ? match.activeCount : 0,
       label: match ? `${match.regionName} (${match.aspCode})` : selectedRegion,
     };
-  }, [selectedRegion, overallClosedCount, totalActiveWipCount, closedRegionBreakdown, filteredClosedRows.length, dateFilterActive]);
+  }, [selectedRegion, overallClosedCount, totalActiveWipCount, closedRegionBreakdown, filteredClosedRows.length, rangeActive]);
 
   // Handle Exporting Closed Calls to Excel
   const handleExportClosedCalls = () => {
@@ -1149,9 +1126,11 @@ export function ClosedCallsDashboardView({
               }}
             >
               ✓{" "}
-              {dateFilterActive
+              {periodPreset === "custom"
                 ? `${formatNumber(dateFilteredTotal)} Closed in range`
-                : `${formatNumber(closedTodayCount)} Closed today · ${formatNumber(overallClosedCount)} all time`}
+                : periodPreset === "cycle"
+                  ? `${formatNumber(cycleTotal)} Closed in ${billCycle.monthLabel} cycle · ${formatNumber(overallClosedCount)} all time`
+                  : `${formatNumber(closedTodayCount)} Closed today · ${formatNumber(overallClosedCount)} all time`}
             </span>
           </div>
           <h2 style={{ fontSize: "22px", fontWeight: "800", color: "var(--heading-color, #111827)", margin: "6px 0 2px 0" }}>
@@ -1227,34 +1206,105 @@ export function ClosedCallsDashboardView({
             📋 Open Records Table
           </button>
 
-          {/* Closed Date range filter — drives the cards, region cards AND the table */}
+          {/* THE period filter — one range that scopes the badge, the KPI cards, the
+              region cards, the Flex comparison lines and the records table below.
+              Typing dates makes a custom range; the presets are the three periods the
+              page is actually read for, and Bill cycle brings its own month picker. */}
           <div style={{ display: "flex", alignItems: "flex-end", gap: "8px", flexWrap: "wrap" }}>
             <div style={{ display: "flex", flexDirection: "column" }}>
               <label style={{ fontSize: "10px", fontWeight: 600, color: "#6b7280", marginBottom: "3px" }}>Closed from</label>
-              <input type="date" value={closedFrom} onChange={(e) => setClosedFrom(e.target.value)} style={dateInputStyle} />
+              <input type="date" value={periodFrom} onChange={(e) => setPeriodFrom(e.target.value)} style={dateInputStyle} />
             </div>
             <div style={{ display: "flex", flexDirection: "column" }}>
               <label style={{ fontSize: "10px", fontWeight: 600, color: "#6b7280", marginBottom: "3px" }}>Closed to</label>
-              <input type="date" value={closedTo} onChange={(e) => setClosedTo(e.target.value)} style={dateInputStyle} />
+              <input type="date" value={periodTo} onChange={(e) => setPeriodTo(e.target.value)} style={dateInputStyle} />
             </div>
-            {(closedFrom || closedTo) && (
-              <button
-                type="button"
-                onClick={() => { setClosedFrom(""); setClosedTo(""); }}
-                style={{
-                  padding: "8px 12px",
-                  fontSize: "12px",
-                  fontWeight: 600,
-                  borderRadius: "8px",
-                  border: "1px solid #d1d5db",
-                  background: "#f9fafb",
-                  color: "#374151",
-                  cursor: "pointer",
-                  whiteSpace: "nowrap",
-                }}
-              >
-                Clear dates
-              </button>
+            <div
+              style={{
+                display: "inline-flex",
+                borderRadius: "8px",
+                border: "1px solid var(--border-color, #e5e7eb)",
+                overflow: "hidden",
+              }}
+            >
+              {(
+                [
+                  { key: "today", label: "Today", title: "Calls closed today — and what Flex reported for today" },
+                  {
+                    key: "cycle",
+                    label: "Bill cycle",
+                    title: `Calls closed in one bill cycle (25th → 24th) — pick the month beside this button. Showing ${billCycle.monthLabel}: ${billCycle.label}`,
+                  },
+                  { key: "all", label: "All dates", title: "Every closed call in the ledger" },
+                ] as const
+              ).map((preset) => (
+                <button
+                  key={preset.key}
+                  type="button"
+                  title={preset.title}
+                  onClick={() => {
+                    if (preset.key === "today") {
+                      const today = todayIsoDate();
+                      setPeriodFrom(today);
+                      setPeriodTo(today);
+                    } else if (preset.key === "cycle") {
+                      setPeriodFrom(billCycle.fromIso);
+                      setPeriodTo(billCycle.toIso);
+                    } else {
+                      setPeriodFrom("");
+                      setPeriodTo("");
+                    }
+                  }}
+                  style={{
+                    padding: "7px 12px",
+                    fontSize: "12px",
+                    fontWeight: 700,
+                    border: "none",
+                    background: periodPreset === preset.key ? "#10b981" : "var(--card-bg, #ffffff)",
+                    color: periodPreset === preset.key ? "#ffffff" : "#6b7280",
+                    cursor: "pointer",
+                    whiteSpace: "nowrap",
+                  }}
+                >
+                  {preset.label}
+                </button>
+              ))}
+            </div>
+            {/* Which cycle "Bill cycle" means. The ledger spans many months, so the
+                preset on its own could only ever answer for the current one. */}
+            {periodPreset === "cycle" && (
+              <div style={{ display: "flex", flexDirection: "column" }}>
+                <label
+                  htmlFor="bill-cycle-month"
+                  style={{ fontSize: "10px", fontWeight: 600, marginBottom: "3px", color: "#6b7280" }}
+                >
+                  Bill cycle month
+                </label>
+                <select
+                  id="bill-cycle-month"
+                  value={billCycle.key}
+                  onChange={(e) => {
+                    setCycleKey(e.target.value);
+                    const cycle = billCycleForKey(e.target.value);
+                    setPeriodFrom(cycle.fromIso);
+                    setPeriodTo(cycle.toIso);
+                  }}
+                  title="Each cycle runs from the 25th to the 24th and is named after the month it ends in"
+                  style={{
+                    ...dateInputStyle,
+                    fontWeight: 600,
+                    background: "var(--card-bg, #ffffff)",
+                    cursor: "pointer",
+                  }}
+                >
+                  {billCycleOptions.map((cycle) => (
+                    <option key={cycle.key} value={cycle.key}>
+                      {cycle.monthLabel} ({cycle.label})
+                      {cycle.key === currentBillCycle.key ? " · current" : ""}
+                    </option>
+                  ))}
+                </select>
+              </div>
             )}
           </div>
         </div>
@@ -1287,7 +1337,7 @@ export function ClosedCallsDashboardView({
             {formatNumber(activeRegionStats.closed)}
           </div>
           <div style={{ fontSize: "12px", color: "#6b7280", marginTop: "4px" }}>
-            Scope: {activeRegionStats.label}
+            Scope: {activeRegionStats.label} · {periodLabel}
           </div>
         </div>
 
@@ -1367,160 +1417,8 @@ export function ClosedCallsDashboardView({
             </p>
           </div>
           <div style={{ display: "flex", alignItems: "flex-end", gap: "12px", flexWrap: "wrap" }}>
-            {/* Today / All time. Every card follows this, so the region numbers always
-                sum to the ALL card. Hidden while a Closed-date range is set, because
-                that range already decides the period and would silently outrank it. */}
-            {!dateFilterActive && (
-              <div
-                style={{
-                  display: "inline-flex",
-                  borderRadius: "8px",
-                  border: "1px solid var(--border-color, #e5e7eb)",
-                  overflow: "hidden",
-                }}
-              >
-                {(
-                  [
-                    { key: "today", label: "Today" },
-                    { key: "cycle", label: "Bill cycle" },
-                    { key: "all", label: "All time" },
-                  ] as const
-                ).map((option) => {
-                  const active = countScope === option.key;
-                  return (
-                    <button
-                      key={option.key}
-                      type="button"
-                      onClick={() => setCountScope(option.key)}
-                      title={
-                        option.key === "today"
-                          ? "Calls that closed on this report's day"
-                          : option.key === "cycle"
-                            ? `Calls closed in one bill cycle (25th → 24th) — pick the month beside this button. Showing ${billCycle.monthLabel}: ${billCycle.label}`
-                            : "Every call ever closed — the whole ledger"
-                      }
-                      style={{
-                        padding: "6px 12px",
-                        fontSize: "12px",
-                        fontWeight: 700,
-                        border: "none",
-                        background: active ? "#10b981" : "var(--card-bg, #ffffff)",
-                        color: active ? "#ffffff" : "#6b7280",
-                        cursor: "pointer",
-                      }}
-                    >
-                      {option.label}
-                    </button>
-                  );
-                })}
-              </div>
-            )}
-            {/* Which cycle "Bill cycle" means. The ledger spans many months, so the
-                toggle on its own could only ever answer for the current one. Appears
-                with the scope so picking the scope and picking the month is one move. */}
-            {!dateFilterActive && countScope === "cycle" && (
-              <div style={{ display: "flex", flexDirection: "column" }}>
-                <label
-                  htmlFor="bill-cycle-month"
-                  style={{ fontSize: "10px", fontWeight: 600, marginBottom: "3px", color: "#6b7280" }}
-                >
-                  Bill cycle month
-                </label>
-                <select
-                  id="bill-cycle-month"
-                  value={billCycle.key}
-                  onChange={(e) => setCycleKey(e.target.value)}
-                  title="Each cycle runs from the 25th to the 24th and is named after the month it ends in"
-                  style={{
-                    ...dateInputStyle,
-                    fontWeight: 600,
-                    background: "var(--card-bg, #ffffff)",
-                    cursor: "pointer",
-                  }}
-                >
-                  {billCycleOptions.map((cycle) => (
-                    <option key={cycle.key} value={cycle.key}>
-                      {cycle.monthLabel} ({cycle.label})
-                      {cycle.key === currentBillCycle.key ? " · current" : ""}
-                    </option>
-                  ))}
-                </select>
-              </div>
-            )}
-            {/* Comparison date range (typed) for the Closure-import / Raw-data-closed
-                lines. Closure filters by exact date; raw uses the months the range spans.
-                Defaults to today — the presets jump to the selected bill cycle or back to
-                the whole store. Only rendered once one of those sources has data. */}
-            {comparisonMonths.length > 0 && (
-              <div style={{ display: "flex", alignItems: "flex-end", gap: "8px", fontSize: "12px", color: "#6b7280", flexWrap: "wrap" }}>
-                <div style={{ display: "flex", flexDirection: "column" }}>
-                  <label style={{ fontSize: "10px", fontWeight: 600, marginBottom: "3px" }}>Comparison from</label>
-                  <input
-                    type="date"
-                    value={comparisonFrom}
-                    min={minDate || undefined}
-                    max={maxDate || undefined}
-                    onChange={(e) => setComparisonFrom(e.target.value)}
-                    style={dateInputStyle}
-                  />
-                </div>
-                <div style={{ display: "flex", flexDirection: "column" }}>
-                  <label style={{ fontSize: "10px", fontWeight: 600, marginBottom: "3px" }}>Comparison to</label>
-                  <input
-                    type="date"
-                    value={comparisonTo}
-                    min={minDate || undefined}
-                    max={maxDate || undefined}
-                    onChange={(e) => setComparisonTo(e.target.value)}
-                    style={dateInputStyle}
-                  />
-                </div>
-                <div style={{ display: "inline-flex", borderRadius: "8px", border: "1px solid var(--border-color, #e5e7eb)", overflow: "hidden" }}>
-                  {(
-                    [
-                      { key: "today", label: "Today", title: "Closures Flex reported for today" },
-                      {
-                        key: "cycle",
-                        label: "Bill cycle",
-                        title: `Closures across the ${billCycle.monthLabel} bill cycle (${billCycle.label})`,
-                      },
-                      { key: "all", label: "All dates", title: "Every closure in the store" },
-                    ] as const
-                  ).map((preset) => (
-                    <button
-                      key={preset.key}
-                      type="button"
-                      title={preset.title}
-                      onClick={() => {
-                        if (preset.key === "today") {
-                          const today = todayIsoDate();
-                          setComparisonFrom(today);
-                          setComparisonTo(today);
-                        } else if (preset.key === "cycle") {
-                          setComparisonFrom(billCycle.fromIso);
-                          setComparisonTo(billCycle.toIso);
-                        } else {
-                          setComparisonFrom("");
-                          setComparisonTo("");
-                        }
-                      }}
-                      style={{
-                        padding: "7px 10px",
-                        fontSize: "11px",
-                        fontWeight: 700,
-                        border: "none",
-                        background: comparisonPreset === preset.key ? "#7c3aed" : "var(--card-bg, #ffffff)",
-                        color: comparisonPreset === preset.key ? "#ffffff" : "#6b7280",
-                        cursor: "pointer",
-                        whiteSpace: "nowrap",
-                      }}
-                    >
-                      {preset.label}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            )}
+            {/* The period is chosen once, in the page header — every number on these
+                cards follows it, so the parts always sum to the ALL card. */}
             {selectedRegion && selectedRegion !== "ALL" && (
               <button
                 type="button"
@@ -1573,15 +1471,15 @@ export function ClosedCallsDashboardView({
               {formatNumber(closedCountFor("", overallClosedCount))}
             </div>
             <div style={{ fontSize: "11px", color: "#6b7280" }}>
-              {dateFilterActive
+              {periodPreset === "custom"
                 ? `${formatNumber(totalActiveWipCount)} active WIP`
-                : countScope === "today"
+                : periodPreset === "today"
                   ? `${formatNumber(cycleTotal)} bill cycle · ${formatNumber(overallClosedCount)} all time · ${formatNumber(totalActiveWipCount)} active WIP`
-                  : countScope === "cycle"
+                  : periodPreset === "cycle"
                     ? `${formatNumber(closedTodayCount)} closed today · ${formatNumber(overallClosedCount)} all time · ${formatNumber(totalActiveWipCount)} active WIP`
                     : `${formatNumber(closedTodayCount)} closed today · ${formatNumber(cycleTotal)} bill cycle · ${formatNumber(totalActiveWipCount)} active WIP`}
             </div>
-            {!dateFilterActive && (countScope === "cycle" || !isCurrentCycle) && (
+            {(periodPreset === "cycle" || (periodPreset !== "custom" && !isCurrentCycle)) && (
               <div style={{ fontSize: "10px", color: "#9ca3af", marginTop: "2px" }}>
                 Bill cycle {billCycle.monthLabel} · {billCycle.label}
                 {isCurrentCycle ? "" : " (past cycle)"}
@@ -1630,13 +1528,13 @@ export function ClosedCallsDashboardView({
                 </div>
                 <div style={{ fontSize: "11px", color: "#6b7280" }}>
                   {entry.aspCode} | {formatNumber(entry.activeCount)} WIP
-                  {!dateFilterActive && countScope === "today"
+                  {periodPreset === "today"
                     ? ` · ${formatNumber(cycleCountByAsp.get(entry.aspCode) ?? 0)} cycle · ${formatNumber(entry.closedCount)} all time`
                     : ""}
-                  {!dateFilterActive && countScope === "cycle"
+                  {periodPreset === "cycle"
                     ? ` · ${formatNumber(closedTodayCountByAsp.get(entry.aspCode) ?? 0)} today · ${formatNumber(entry.closedCount)} all time`
                     : ""}
-                  {!dateFilterActive && countScope === "all"
+                  {periodPreset === "all"
                     ? ` · ${formatNumber(closedTodayCountByAsp.get(entry.aspCode) ?? 0)} today · ${formatNumber(cycleCountByAsp.get(entry.aspCode) ?? 0)} cycle`
                     : ""}
                 </div>

@@ -38,6 +38,14 @@ export interface FlexRawSummary {
   byAsp: FlexRawAspCount[];
   byAspMonth: FlexRawAspMonthCount[];
   months: string[];
+  /**
+   * True when the requested from/to range was actually applied day-precise
+   * against each row's WO Closed date. An older backend (or a not-yet-migrated
+   * table) omits it — the caller must then fall back to month-level mapping.
+   */
+  dayPrecise?: boolean;
+  /** Closed rows with no usable close date — invisible to ANY day range. */
+  undatedClosed?: number;
 }
 
 function url(path: string): string {
@@ -56,8 +64,15 @@ export async function syncFlexRawData(token: string): Promise<FlexRawSyncResult>
   return readJson<FlexRawSyncResult>(response);
 }
 
-export async function getFlexRawSummary(token: string): Promise<FlexRawSummary> {
-  const response = await fetch(url("/api/v1/flex-raw/summary"), {
+export async function getFlexRawSummary(
+  token: string,
+  params: { from?: string; to?: string } = {},
+): Promise<FlexRawSummary> {
+  const qs = new URLSearchParams();
+  if (params.from) qs.set("from", params.from);
+  if (params.to) qs.set("to", params.to);
+  const query = qs.toString();
+  const response = await fetch(url(`/api/v1/flex-raw/summary${query ? `?${query}` : ""}`), {
     headers: { Authorization: `Bearer ${token}` },
     cache: "no-store",
   });
@@ -70,6 +85,8 @@ export interface FlexRawRecordRow {
   workLocation: string;
   callStatus: string;
   month: string;
+  /** WO Closed date ("YYYY-MM-DD"); null/absent on rows or backends without one. */
+  closedOn?: string | null;
 }
 
 export interface FlexRawRecordList {
@@ -80,12 +97,22 @@ export interface FlexRawRecordList {
 /** The raw records behind a "Raw data closures" count (defaults to closed status). */
 export async function getFlexRawRecords(
   token: string,
-  params: { asp?: string; from?: string; to?: string; status?: string },
+  params: {
+    asp?: string;
+    from?: string;
+    to?: string;
+    /** Day bounds on the WO Closed date — stricter than the month bounds. */
+    dateFrom?: string;
+    dateTo?: string;
+    status?: string;
+  },
 ): Promise<FlexRawRecordList> {
   const qs = new URLSearchParams();
   if (params.asp) qs.set("asp", params.asp);
   if (params.from) qs.set("from", params.from);
   if (params.to) qs.set("to", params.to);
+  if (params.dateFrom) qs.set("dateFrom", params.dateFrom);
+  if (params.dateTo) qs.set("dateTo", params.dateTo);
   if (params.status !== undefined) qs.set("status", params.status);
   const response = await fetch(url(`/api/v1/flex-raw/records?${qs.toString()}`), {
     headers: { Authorization: `Bearer ${token}` },

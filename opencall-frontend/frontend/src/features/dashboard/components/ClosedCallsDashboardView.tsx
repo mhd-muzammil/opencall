@@ -566,6 +566,34 @@ export function ClosedCallsDashboardView({
     };
   }, [summaryToken, rangeActive, dateLo, dateHi, summaryNonce]);
 
+  // Raw closures, same idea: a scoped summary asks the backend to count by each
+  // row's WO Closed date. Only a response that CONFIRMS day precision is kept
+  // (`dayPrecise`) — an older backend answers month-level, and treating that as
+  // day-filtered would show a month's closures as one day's.
+  const [rawScoped, setRawScoped] =
+    useState<import("../../../lib/flexRawApiClient").FlexRawSummary | null>(null);
+  React.useEffect(() => {
+    if (!summaryToken || !rangeActive) {
+      setRawScoped(null);
+      return;
+    }
+    let cancelled = false;
+    void (async () => {
+      try {
+        const { getFlexRawSummary } = await import("../../../lib/flexRawApiClient");
+        const scoped = await getFlexRawSummary(summaryToken, { from: dateLo, to: dateHi });
+        if (!cancelled) setRawScoped(scoped.dayPrecise ? scoped : null);
+      } catch {
+        // Month-level fallback keeps working on a transient failure.
+        if (!cancelled) setRawScoped(null);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [summaryToken, rangeActive, dateLo, dateHi, summaryNonce]);
+  const rawDayPrecise = rangeActive && rawScoped?.dayPrecise === true;
+
   // Per-ASP closure count. Day-precise via the scoped summary when a range is active,
   // otherwise the full all-dates summary. aspCode "" is the "All Regions" rollup (which
   // includes closure dates with no matched region).
@@ -663,9 +691,14 @@ export function ClosedCallsDashboardView({
     closureDataAgeMs !== null &&
     closureDataAgeMs > CLOSURE_SYNC_STALE_AFTER_MS;
 
-  // Per-ASP raw CLOSED count for the range (month-mapped) or all months.
+  // Per-ASP raw CLOSED count: day-precise via the scoped summary when the
+  // backend confirmed it, else month-mapped for the range, else all months.
   const rawClosedFor = useMemo(() => {
     return (aspCode: string): number | null => {
+      if (rawDayPrecise && rawScoped) {
+        if (aspCode === "") return rawScoped.closed;
+        return rawScoped.byAsp.find((e) => e.aspCode === aspCode)?.closed ?? 0;
+      }
       if (!rawSummary) return null;
       if (!rangeActive) {
         if (aspCode === "") return rawSummary.closed;
@@ -675,7 +708,7 @@ export function ClosedCallsDashboardView({
         .filter((e) => inMonthRange(e.month) && (aspCode === "" || e.aspCode === aspCode))
         .reduce((sum, e) => sum + e.closed, 0);
     };
-  }, [rawSummary, rangeActive, inMonthRange]);
+  }, [rawSummary, rawScoped, rawDayPrecise, rangeActive, inMonthRange]);
 
   async function handleSyncRawData() {
     if (!closureImportToken) return;
@@ -902,6 +935,15 @@ export function ClosedCallsDashboardView({
    */
   const rawScopeNote = useMemo(() => {
     if (!rangeActive) return null;
+    // Day precision confirmed: the count answers the exact dates picked. The
+    // only caveat left is rows whose source date was junk — said out loud so a
+    // low number reads as "some rows are undatable", not "data is missing".
+    if (rawDayPrecise) {
+      const undated = rawScoped?.undatedClosed ?? 0;
+      return undated > 0
+        ? `${formatNumber(undated)} closures undated — outside any date range`
+        : null;
+    }
     const lastDayOf = (month: string) => {
       const [y, m] = month.split("-").map(Number);
       const day = new Date(Date.UTC(y!, m!, 0)).getUTCDate();
@@ -912,7 +954,7 @@ export function ClosedCallsDashboardView({
       (!monthHi || dateHi === lastDayOf(monthHi));
     if (wholeMonths) return null;
     return `whole of ${formatRangeLabel(monthLo, monthHi, formatMonthKey, "all months")} — raw data is month-level`;
-  }, [rangeActive, monthLo, monthHi, dateLo, dateHi]);
+  }, [rangeActive, rawDayPrecise, rawScoped, monthLo, monthHi, dateLo, dateHi]);
 
   // Per-region closed count inside the selected bill cycle, by Case Closed Date.
   const cycleCountByAsp = useMemo(() => {
@@ -2284,6 +2326,8 @@ export function ClosedCallsDashboardView({
           closureTo={dateHi}
           rawMonthFrom={monthLo}
           rawMonthTo={monthHi}
+          rawDateFrom={rawDayPrecise ? dateLo : ""}
+          rawDateTo={rawDayPrecise ? dateHi : ""}
           regionLabel={drill.label}
           onClose={() => setDrill(null)}
         />
@@ -2298,7 +2342,8 @@ export function ClosedCallsDashboardView({
  * own data so opening it never blocks the cards.
  */
 function RecordsDrillModal({
-  token, kind, aspCode, closureFrom, closureTo, rawMonthFrom, rawMonthTo, regionLabel, onClose,
+  token, kind, aspCode, closureFrom, closureTo, rawMonthFrom, rawMonthTo,
+  rawDateFrom, rawDateTo, regionLabel, onClose,
 }: Readonly<{
   token: string;
   kind: "closure" | "raw";
@@ -2306,9 +2351,16 @@ function RecordsDrillModal({
   /** Day-precise date bounds ("YYYY-MM-DD") used for the closure records. */
   closureFrom: string;
   closureTo: string;
-  /** Month bounds ("YYYY-MM") used for the raw records (raw has no day granularity). */
+  /** Month bounds ("YYYY-MM") used for the raw records when day bounds are off. */
   rawMonthFrom: string;
   rawMonthTo: string;
+  /**
+   * Day bounds ("YYYY-MM-DD") on the raw records' WO Closed date. Set only when
+   * the card's count was confirmed day-precise, so the list always shows exactly
+   * the rows the number counted.
+   */
+  rawDateFrom: string;
+  rawDateTo: string;
   regionLabel: string;
   onClose: () => void;
 }>) {
@@ -2342,7 +2394,18 @@ function RecordsDrillModal({
           setTotal(res.total);
         } else {
           const { getFlexRawRecords } = await import("../../../lib/flexRawApiClient");
-          const res = await getFlexRawRecords(token, { asp: aspCode, from: rawMonthFrom, to: rawMonthTo, status: "closed" });
+          const dayScoped = rawDateFrom !== "" || rawDateTo !== "";
+          // Day bounds replace the month bounds outright — they are stricter,
+          // and the month filter would additionally drop rows with a blank
+          // Month cell that the day count legitimately included.
+          const res = await getFlexRawRecords(token, {
+            asp: aspCode,
+            from: dayScoped ? "" : rawMonthFrom,
+            to: dayScoped ? "" : rawMonthTo,
+            dateFrom: rawDateFrom,
+            dateTo: rawDateTo,
+            status: "closed",
+          });
           if (cancelled) return;
           setRows(
             res.rows.map((r) => ({
@@ -2350,6 +2413,7 @@ function RecordsDrillModal({
               "Case ID": r.caseId || "-",
               "Work Location": r.workLocation || "-",
               "Call Status": r.callStatus || "-",
+              Closed: r.closedOn ? formatDateKey(r.closedOn) : "-",
               Month: r.month ? formatMonthKey(r.month) : "-",
             })),
           );
@@ -2364,7 +2428,7 @@ function RecordsDrillModal({
     return () => {
       cancelled = true;
     };
-  }, [token, kind, aspCode, closureFrom, closureTo, rawMonthFrom, rawMonthTo]);
+  }, [token, kind, aspCode, closureFrom, closureTo, rawMonthFrom, rawMonthTo, rawDateFrom, rawDateTo]);
 
   const columns = rows[0] ? Object.keys(rows[0]) : [];
   const filtered = useMemo(() => {
@@ -2374,11 +2438,14 @@ function RecordsDrillModal({
   }, [rows, search]);
 
   const title = kind === "closure" ? "FieldEZ data closure" : "Raw data closures";
-  // Closure shows the exact date range typed; raw shows the months it maps to.
+  // Closure and day-scoped raw show the exact dates picked; month-scoped raw
+  // shows the months the range mapped to.
   const rangeLabel =
     kind === "closure"
       ? formatRangeLabel(closureFrom, closureTo, formatDateKey, "All dates")
-      : formatRangeLabel(rawMonthFrom, rawMonthTo, formatMonthKey, "All months");
+      : rawDateFrom || rawDateTo
+        ? formatRangeLabel(rawDateFrom, rawDateTo, formatDateKey, "All dates")
+        : formatRangeLabel(rawMonthFrom, rawMonthTo, formatMonthKey, "All months");
   const scope = `${regionLabel} · ${rangeLabel}`;
 
   if (typeof document === "undefined") return null;

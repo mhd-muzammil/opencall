@@ -1,5 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { bucketOf, countBuckets, filterRoster, isInBucket } from "./rosterBuckets";
+import {
+  bucketOf,
+  countBuckets,
+  filterRoster,
+  isInBucket,
+  isRowSelected,
+  rosterRowKey,
+} from "./rosterBuckets";
 import type { RosterEngineer } from "./payrollTrackingApiClient";
 
 function row(overrides: Partial<RosterEngineer> & Pick<RosterEngineer, "engineer_name" | "state">) {
@@ -117,5 +124,76 @@ describe("isInBucket", () => {
     for (const state of ["on_duty", "checked_out", "absent", "unmatched"] as const) {
       expect(isInBucket({ state }, "all")).toBe(true);
     }
+  });
+});
+
+describe("rosterRowKey", () => {
+  // The real defect: every unmatched engineer has engineer_id null, so keying the
+  // row on it gave thirteen rows the SAME key. React could not tell them apart,
+  // left their DOM rows behind when the list was filtered, and stacked a fresh
+  // copy on every 30s refresh — three sets of the same twelve names under a tab
+  // whose label said 1.
+  it("gives every row a distinct key even when Payroll matched none of them", () => {
+    const unmatchedBoard = [
+      "Jeeva Salem",
+      "kannan",
+      "Lava Kumar",
+      "lingeswaran",
+      "Mohan",
+      "Perumal",
+      "Prasanth",
+      "Santhosh",
+      "SUNTECH",
+      "Vijayakumar",
+      "Vijayakumar Arakonam",
+      "VijayaKumar Egmore",
+    ].map((engineer_name) => row({ engineer_name, state: "unmatched", engineer_id: null }));
+
+    const keys = unmatchedBoard.map((r, i) => rosterRowKey(r, i));
+    expect(new Set(keys).size).toBe(unmatchedBoard.length);
+    // The old key for all twelve of these.
+    expect(keys).not.toContain("null");
+  });
+
+  it("stays distinct when the register holds the same name twice", () => {
+    const twins = [
+      row({ engineer_name: "Vijayakumar", state: "unmatched", engineer_id: null }),
+      row({ engineer_name: "Vijayakumar", state: "unmatched", engineer_id: null }),
+    ];
+    const keys = twins.map((r, i) => rosterRowKey(r, i));
+    expect(new Set(keys).size).toBe(2);
+  });
+
+  it("keeps keys unique across a mixed board", () => {
+    const keys = BOARD.map((r, i) => rosterRowKey(r, i));
+    expect(new Set(keys).size).toBe(BOARD.length);
+  });
+});
+
+describe("isRowSelected", () => {
+  it("selects nothing while nothing is selected, even for unmatched rows", () => {
+    // null === null used to be true, so every unmatched row rendered as
+    // "Checking" and sat highlighted with no engineer chosen at all.
+    for (const r of BOARD) expect(isRowSelected(r, null)).toBe(false);
+  });
+
+  it("never selects an engineer Payroll could not match", () => {
+    expect(isRowSelected({ engineer_id: null }, 91)).toBe(false);
+  });
+
+  it("selects exactly the row whose Payroll id was chosen", () => {
+    expect(isRowSelected({ engineer_id: 91 }, 91)).toBe(true);
+    expect(isRowSelected({ engineer_id: 92 }, 91)).toBe(false);
+  });
+
+  it("selects at most one row on a whole board", () => {
+    const board = [
+      row({ engineer_name: "Praveen", state: "on_duty", engineer_id: 91 }),
+      row({ engineer_name: "Arun", state: "checked_out", engineer_id: 92 }),
+      row({ engineer_name: "kannan", state: "unmatched", engineer_id: null }),
+      row({ engineer_name: "Mohan", state: "unmatched", engineer_id: null }),
+    ];
+    expect(board.filter((r) => isRowSelected(r, 91))).toHaveLength(1);
+    expect(board.filter((r) => isRowSelected(r, null))).toHaveLength(0);
   });
 });

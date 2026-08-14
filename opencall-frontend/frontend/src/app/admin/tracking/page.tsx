@@ -10,7 +10,13 @@ import {
 } from "../../../lib/payrollTrackingApiClient";
 import { clearSession, readSession, type ClientSession } from "../../../lib/session";
 import { isApiAuthError } from "../../../lib/api/http";
-import { countBuckets, filterRoster, type RosterBucket } from "../../../lib/rosterBuckets";
+import {
+  countBuckets,
+  filterRoster,
+  isRowSelected,
+  rosterRowKey,
+  type RosterBucket,
+} from "../../../lib/rosterBuckets";
 
 // Leaflet touches `window`, so the map is client-only (no SSR).
 const LiveTrackingMap = dynamic(() => import("../../../components/LiveTrackingMap"), {
@@ -651,12 +657,12 @@ export default function LiveTrackingPage() {
           </tr>
         </thead>
         <tbody>
-          {filtered.map((e) => (
+          {filtered.map((e, index) => (
             <tr
-              key={e.engineer_id}
+              key={rosterRowKey(e, index)}
               style={{
                 borderBottom: "1px solid #f3f4f6",
-                background: e.engineer_id === selectedId ? "#eff6ff" : undefined,
+                background: isRowSelected(e, selectedId) ? "#eff6ff" : undefined,
               }}
             >
               <td style={{ padding: 8, fontWeight: 500 }}>{e.engineer_name}</td>
@@ -698,17 +704,17 @@ export default function LiveTrackingPage() {
                     border: "1px solid",
                     borderColor: e.engineer_id == null ? "#d1d5db" : "#2563eb",
                     borderRadius: 6,
-                    background: e.engineer_id === selectedId ? "#2563eb" : "#fff",
+                    background: isRowSelected(e, selectedId) ? "#2563eb" : "#fff",
                     color:
                       e.engineer_id == null
                         ? "#9ca3af"
-                        : e.engineer_id === selectedId
+                        : isRowSelected(e, selectedId)
                           ? "#fff"
                           : "#2563eb",
                     cursor: e.engineer_id == null ? "not-allowed" : "pointer",
                   }}
                 >
-                  {e.engineer_id === selectedId ? "Checking" : "View day"}
+                  {isRowSelected(e, selectedId) ? "Checking" : "View day"}
                 </button>
               </td>
             </tr>

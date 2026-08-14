@@ -148,8 +148,20 @@ function DutyBadge({ row }: { row: RosterEngineer }) {
   );
 }
 
+/**
+ * Today in IST, which is the day Payroll and the plan both count in.
+ *
+ * toISOString() gives the UTC date, and between midnight and 05:30 IST that is
+ * still YESTERDAY — so an engineer on duty at 2am was asked about the wrong day
+ * and came back absent, with their whole night's work missing from the board.
+ */
 function todayStr(): string {
-  return new Date().toISOString().slice(0, 10);
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Kolkata",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(new Date());
 }
 
 /**

@@ -10,6 +10,7 @@ import {
 } from "../../../lib/payrollTrackingApiClient";
 import { clearSession, readSession, type ClientSession } from "../../../lib/session";
 import { isApiAuthError } from "../../../lib/api/http";
+import { countBuckets, filterRoster, type RosterBucket } from "../../../lib/rosterBuckets";
 
 // Leaflet touches `window`, so the map is client-only (no SSR).
 const LiveTrackingMap = dynamic(() => import("../../../components/LiveTrackingMap"), {
@@ -190,7 +191,7 @@ export default function LiveTrackingPage() {
   const [dayDate, setDayDate] = useState(todayStr());
   const [dayLoading, setDayLoading] = useState(false);
   const [query, setQuery] = useState("");
-  const [stateFilter, setStateFilter] = useState<"all" | "on_duty" | "off">("all");
+  const [stateFilter, setStateFilter] = useState<RosterBucket>("all");
 
   useEffect(() => {
     setSession(readSession());
@@ -277,19 +278,14 @@ export default function LiveTrackingPage() {
     if (next <= todayStr()) setDayDate(next);
   };
 
-  const filtered = useMemo(() => {
-    const q = query.trim().toLowerCase();
-    return engineers.filter((e) => {
-      if (stateFilter === "on_duty" && e.state !== "on_duty") return false;
-      if (stateFilter === "off" && e.state === "on_duty") return false;
-      if (!q) return true;
-      return (
-        e.engineer_name.toLowerCase().includes(q) ||
-        (e.branch ?? "").toLowerCase().includes(q) ||
-        (e.active_case_number ?? "").toLowerCase().includes(q)
-      );
-    });
-  }, [engineers, query, stateFilter]);
+  // Bucketing lives in lib/rosterBuckets so the tab labels and the rows they show
+  // are computed by the same code — they used to be two hand-written conditions
+  // that could disagree, and did: "On duty 1" listed everyone Payroll could not match.
+  const filtered = useMemo(
+    () => filterRoster(engineers, stateFilter, query),
+    [engineers, query, stateFilter],
+  );
+  const bucketCounts = useMemo(() => countBuckets(engineers), [engineers]);
 
   // The null check is load-bearing: an engineer Payroll cannot match has
   // engineer_id null, so comparing against a null selectedId matched the first
@@ -298,10 +294,7 @@ export default function LiveTrackingPage() {
   const selected =
     selectedId == null ? null : engineers.find((e) => e.engineer_id === selectedId) ?? null;
 
-  const onDutyCount = useMemo(
-    () => engineers.filter((e) => e.state === "on_duty").length,
-    [engineers],
-  );
+  const onDutyCount = bucketCounts.on_duty;
   const totalKm = useMemo(
     () => engineers.reduce((sum, e) => sum + (e.distance_km ?? 0), 0),
     [engineers],
@@ -421,15 +414,18 @@ export default function LiveTrackingPage() {
       </div>
 
       {/* Pick ANY engineer — on duty, finished, or never started. The whole point
-          of the roster is that a shift ending does not take someone off the board. */}
+          of the roster is that a shift ending does not take someone off the board.
+          "Not in Payroll" is a separate tab because it is a data problem to fix,
+          not a duty state: those engineers' cases are being skipped entirely. */}
       <div style={{ display: "flex", gap: 8, marginTop: 16, flexWrap: "wrap", alignItems: "center" }}>
         {(
           [
-            ["all", `All ${engineers.length}`],
-            ["on_duty", `On duty ${onDutyCount}`],
-            ["off", `Off duty ${engineers.length - onDutyCount}`],
+            ["all", `All ${bucketCounts.all}`, "#2563eb"],
+            ["on_duty", `On duty ${bucketCounts.on_duty}`, "#2563eb"],
+            ["off", `Off duty ${bucketCounts.off}`, "#2563eb"],
+            ["unmatched", `Not in Payroll ${bucketCounts.unmatched}`, "#dc2626"],
           ] as const
-        ).map(([value, label]) => (
+        ).map(([value, label, accent]) => (
           <button
             key={value}
             onClick={() => setStateFilter(value)}
@@ -440,9 +436,9 @@ export default function LiveTrackingPage() {
               fontWeight: 600,
               cursor: "pointer",
               border: "1px solid",
-              borderColor: stateFilter === value ? "#2563eb" : "#d1d5db",
-              background: stateFilter === value ? "#2563eb" : "#fff",
-              color: stateFilter === value ? "#fff" : "#374151",
+              borderColor: stateFilter === value ? accent : "#d1d5db",
+              background: stateFilter === value ? accent : "#fff",
+              color: stateFilter === value ? "#fff" : value === "unmatched" ? "#b91c1c" : "#374151",
             }}
           >
             {label}
@@ -722,7 +718,9 @@ export default function LiveTrackingPage() {
               <td colSpan={9} style={{ padding: 24, textAlign: "center", color: "#9ca3af" }}>
                 {engineers.length === 0
                   ? "No engineers found. Every active employee appears here once Payroll is reachable."
-                  : "No match for this filter."}
+                  : stateFilter === "unmatched" && !query.trim()
+                    ? "Every engineer in the register is matched in Payroll — no cases are being skipped."
+                    : "No match for this filter."}
               </td>
             </tr>
           )}

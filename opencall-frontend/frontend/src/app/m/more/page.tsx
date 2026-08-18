@@ -24,6 +24,11 @@ interface Item {
    * only when that section is granted. Region admins never see them.
    */
   superAdminOrSection?: string;
+  /**
+   * Roles allowed to open an Admin Console page, copied from that console's own nav so the
+   * app can never offer a page the web would refuse.
+   */
+  adminRoles?: readonly ("SUPER_ADMIN" | "REGION_ADMIN")[];
   group: string;
 }
 
@@ -53,14 +58,27 @@ const ITEMS: Item[] = [
   { href: "/m/engineers", label: "Engineers", icon: "👷", group: "Admin" },
   { href: "/m/vendor", label: "Vendor Dashboard", icon: "🤝", superAdminOnly: true, group: "Admin" },
   { href: "/m/rtpl-statuses", label: "RTPL Statuses", icon: "🏷️", superAdminOnly: true, group: "Admin" },
+
+  // Admin Console — the desktop pages, opened in the same WebView. Roles mirror
+  // src/app/admin/layout.tsx exactly.
+  { href: "/admin/users", label: "Users", icon: "👤", adminRoles: ["SUPER_ADMIN"], group: "Admin console" },
+  { href: "/admin/special-access", label: "Special Access", icon: "🔐", adminRoles: ["SUPER_ADMIN"], group: "Admin console" },
+  { href: "/admin/monitoring", label: "Monitoring", icon: "📡", adminRoles: ["SUPER_ADMIN"], group: "Admin console" },
+  { href: "/admin/rca", label: "RCA Tracker", icon: "🔎", adminRoles: ["SUPER_ADMIN", "REGION_ADMIN"], group: "Admin console" },
+  { href: "/admin/activity", label: "Activity Feed", icon: "📜", adminRoles: ["SUPER_ADMIN", "REGION_ADMIN"], group: "Admin console" },
+  { href: "/admin/tracking", label: "Live Tracking", icon: "📍", adminRoles: ["SUPER_ADMIN", "REGION_ADMIN"], group: "Admin console" },
 ];
 
-const GROUP_ORDER = ["Dashboards", "Data & Operations", "Admin"] as const;
+const GROUP_ORDER = ["Dashboards", "Data & Operations", "Admin", "Admin console"] as const;
 
 export default function MobileMorePage() {
   const { session, signOut } = useMobileSession();
 
   const items = ITEMS.filter((i) => {
+    if (i.adminRoles) {
+      const role = session?.user.role;
+      return role === "SUPER_ADMIN" || (role === "REGION_ADMIN" && i.adminRoles.includes(role));
+    }
     if (i.superAdminOnly) return isSuperAdminSession(session);
     if (i.superAdminOrSection) {
       return (

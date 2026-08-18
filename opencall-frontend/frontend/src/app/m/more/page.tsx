@@ -45,9 +45,14 @@ const ITEMS: Item[] = [
   { href: "/m/warranty", label: "Warranty Lookup", icon: "🛡️", section: "warranty", group: "Data & Operations" },
   { href: "/m/parts", label: "Parts Catalog", icon: "🔩", superAdminOrSection: "parts-catalog", group: "Data & Operations" },
   { href: "/m/quotations", label: "Quotations", icon: "📄", superAdminOrSection: "quotations", group: "Data & Operations" },
+  { href: "/m/emails", label: "Customer Emails", icon: "✉️", section: "customer-emails", group: "Data & Operations" },
+  { href: "/m/renewal", label: "Renewal Pipeline", icon: "🔄", section: "renewal-pipeline", group: "Data & Operations" },
+  { href: "/m/record-format", label: "Record Format", icon: "🧾", section: "record-format", group: "Data & Operations" },
 
   // Admin
   { href: "/m/engineers", label: "Engineers", icon: "👷", group: "Admin" },
+  { href: "/m/vendor", label: "Vendor Dashboard", icon: "🤝", superAdminOnly: true, group: "Admin" },
+  { href: "/m/rtpl-statuses", label: "RTPL Statuses", icon: "🏷️", superAdminOnly: true, group: "Admin" },
 ];
 
 const GROUP_ORDER = ["Dashboards", "Data & Operations", "Admin"] as const;

@@ -259,6 +259,7 @@ export function QuotationsPage({ token }: Readonly<{ token: string }>) {
                   <th style={th}>Quotation #</th>
                   <th style={th}>Date</th>
                   <th style={th}>Customer</th>
+                  <th style={th}>Email</th>
                   <th style={th}>Case ID</th>
                   <th style={th}>WO</th>
                   <th style={th}>Total</th>
@@ -267,9 +268,9 @@ export function QuotationsPage({ token }: Readonly<{ token: string }>) {
               </thead>
               <tbody>
                 {loading ? (
-                  <tr><td colSpan={7} style={{ ...td, textAlign: "center", padding: "26px", color: "#6b7280" }}>Loading…</td></tr>
+                  <tr><td colSpan={8} style={{ ...td, textAlign: "center", padding: "26px", color: "#6b7280" }}>Loading…</td></tr>
                 ) : items.length === 0 ? (
-                  <tr><td colSpan={7} style={{ ...td, textAlign: "center", padding: "26px", color: "#6b7280" }}>No quotations yet.</td></tr>
+                  <tr><td colSpan={8} style={{ ...td, textAlign: "center", padding: "26px", color: "#6b7280" }}>No quotations yet.</td></tr>
                 ) : (
                   items.map((q) => {
                     const t = q.baseAmount * (1 + (q.sgstPercent + q.cgstPercent) / 100);
@@ -278,6 +279,7 @@ export function QuotationsPage({ token }: Readonly<{ token: string }>) {
                         <td style={{ ...td, fontWeight: 600 }}>{q.quotationNo}</td>
                         <td style={td}>{q.quotationDate}</td>
                         <td style={td}>{q.customerName}</td>
+                        <td style={td}>{q.customerEmail || "-"}</td>
                         <td style={td}>{q.caseId || "-"}</td>
                         <td style={td}>{q.orderNumber || "-"}</td>
                         <td style={td}>₹{formatMoney(t)}</td>

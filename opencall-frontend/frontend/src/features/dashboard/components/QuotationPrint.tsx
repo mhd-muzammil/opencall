@@ -111,7 +111,10 @@ export function QuotationPrint({
         {q.customerState ? <div>{q.customerState}</div> : null}
         {q.customerPincode ? <div>{q.customerPincode}</div> : null}
         {q.customerPhone ? <div>{q.customerPhone}</div> : null}
-        {q.customerEmail ? <div>{q.customerEmail}</div> : null}
+        {/* The email is deliberately NOT printed. It is held so the office can reach the
+            customer and so the list can be searched by it, not so it appears on a document
+            that goes back to them — they know their own address. It stays on the list
+            screen only. */}
       </div>
 
       {/* Line-item table */}

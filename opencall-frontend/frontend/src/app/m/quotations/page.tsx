@@ -335,6 +335,11 @@ export default function MobileQuotationsPage() {
                           </span>
                         </div>
                         <div className="mRow__meta">{q.customerName || "-"}</div>
+                        {q.customerEmail ? (
+                          <div className="mRow__meta" style={{ marginTop: 2 }}>
+                            {q.customerEmail}
+                          </div>
+                        ) : null}
                         <div className="mRow__meta" style={{ marginTop: 2 }}>
                           {q.quotationDate} · Case {q.caseId || "-"} · WO {q.orderNumber || "-"}
                         </div>

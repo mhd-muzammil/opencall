@@ -4726,9 +4726,17 @@ export default function DashboardPage() {
                 </section>
               ) : null}
 
-              {/* Quotations — its own data (independent of a generated report). */}
+              {/* Quotations — its own data (independent of a generated report).
+                  `minWidth: 0` for the same reason as Renewal Pipeline and Customer Emails
+                  below: `.panel` is a grid item of `.mainGrid` and so defaults to
+                  `min-width: auto`, which refuses to shrink below its content. The
+                  quotations table grew past a laptop's width when the Email column was
+                  added, and without this the panel pushes past its grid track and
+                  `.mainLayoutContent` — which wraps the page header — scrolls sideways
+                  instead of the table's own scroll container. That is why the title
+                  scrolled out of view and the sticky actions column stuck to nothing. */}
               {workspaceView === "quotations" ? (
-                <section className="panel reportPanel">
+                <section className="panel reportPanel" style={{ minWidth: 0 }}>
                   <QuotationsPage token={session.token} />
                 </section>
               ) : null}

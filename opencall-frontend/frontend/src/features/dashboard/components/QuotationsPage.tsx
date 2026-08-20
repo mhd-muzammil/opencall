@@ -225,7 +225,12 @@ export function QuotationsPage({ token }: Readonly<{ token: string }>) {
   const label: React.CSSProperties = { fontSize: "12px", fontWeight: 600, marginBottom: "4px", display: "block" };
 
   return (
-    <section style={{ padding: "8px 4px" }}>
+    // `.panel` is a CSS grid whose items default to `min-width: auto`, so without an
+    // explicit `minWidth: 0` this section refuses to shrink below the table's intrinsic
+    // width — the panel widens instead and the WHOLE PAGE scrolls sideways (taking the
+    // page header with it) rather than the table's own scroll container. Same fix as
+    // RenewalPipelinePage, which has the other wide table in the app.
+    <section style={{ padding: "8px 4px", minWidth: 0, maxWidth: "100%" }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "16px", flexWrap: "wrap", gap: "10px" }}>
         <h2 style={{ margin: 0, fontSize: "18px", fontWeight: 700 }}>Quotations</h2>
         {mode === "list" ? (
@@ -252,7 +257,15 @@ export function QuotationsPage({ token }: Readonly<{ token: string }>) {
             placeholder="Search quotation no, customer, Case ID, WO…"
             style={{ ...field, maxWidth: "360px", marginBottom: "14px" }}
           />
-          <div style={{ overflowX: "auto", border: "1px solid var(--border-color, #e5e7eb)", borderRadius: "8px" }}>
+          <div
+            style={{
+              overflowX: "auto",
+              minWidth: 0,
+              maxWidth: "100%",
+              border: "1px solid var(--border-color, #e5e7eb)",
+              borderRadius: "8px",
+            }}
+          >
             <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "13px" }}>
               <thead>
                 <tr style={{ background: "var(--th-bg, #f3f4f6)" }}>

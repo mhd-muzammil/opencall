@@ -12,6 +12,7 @@ import {
   sendCustomerEmailReply,
   setCustomerEmailStatus,
   type EmailReply,
+  type InboundEmailCount,
   type InboundEmailRow,
   type MailboxHealth,
 } from "../../../lib/customerEmailApiClient";
@@ -113,6 +114,7 @@ export default function MobileCustomerEmailsPage() {
   // pulling more than a page is felt sooner, not later.
   const [hasMore, setHasMore] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
+  const [counts, setCounts] = useState<InboundEmailCount[]>([]);
 
   const load = useCallback(async () => {
     if (!token || !allowed) return;
@@ -121,6 +123,7 @@ export default function MobileCustomerEmailsPage() {
       const res = await getCustomerEmails(token, { status, limit: PAGE_SIZE });
       setRows(res.rows);
       setMailboxes(res.mailboxes);
+      setCounts(res.counts ?? []);
       setHasMore(res.rows.length === PAGE_SIZE);
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Could not load mail");
@@ -186,19 +189,54 @@ export default function MobileCustomerEmailsPage() {
     });
   }, [inRegion, search, escalationOnly]);
 
-  const escalationCount = useMemo(
-    () => inRegion.filter((r) => r.escalationLevel !== "NONE").length,
-    [inRegion],
+  // Header tallies come from the server, counted over everything stored — the list holds
+  // one page, so counting rows made every total sit at the page size and never move. Same
+  // reasoning, and same shape, as the desktop reader.
+  //
+  // `counts` is optional: mid-deploy the app may still reach an API that does not send it,
+  // and a header of zeroes reads worse than a page-shaped one, so each tally falls back.
+  const serverCounts = counts.length > 0;
+
+  const countsForStatus = useMemo(
+    () => (status === "ALL" ? counts : counts.filter((c) => c.status === status)),
+    [counts, status],
   );
 
   const regionCounts = useMemo(() => {
-    const counts = new Map<string, number>();
+    const map = new Map<string, number>();
+    if (serverCounts) {
+      for (const c of countsForStatus) {
+        const key = c.regionCode.toUpperCase();
+        map.set(key, (map.get(key) ?? 0) + c.total);
+      }
+      return map;
+    }
     for (const r of rows) {
       const key = r.regionCode.toUpperCase();
-      counts.set(key, (counts.get(key) ?? 0) + 1);
+      map.set(key, (map.get(key) ?? 0) + 1);
     }
-    return counts;
-  }, [rows]);
+    return map;
+  }, [serverCounts, countsForStatus, rows]);
+
+  const totalForStatus = useMemo(
+    () => (serverCounts ? countsForStatus.reduce((n, c) => n + c.total, 0) : rows.length),
+    [serverCounts, countsForStatus, rows.length],
+  );
+
+  const statusTotals = useMemo(() => {
+    const map = new Map<string, number>();
+    for (const c of counts) map.set(c.status, (map.get(c.status) ?? 0) + c.total);
+    map.set("ALL", counts.reduce((n, c) => n + c.total, 0));
+    return map;
+  }, [counts]);
+
+  const escalationCount = useMemo(() => {
+    if (!serverCounts) return inRegion.filter((r) => r.escalationLevel !== "NONE").length;
+    const scoped = regionFilter
+      ? countsForStatus.filter((c) => c.regionCode.toUpperCase() === regionFilter)
+      : countsForStatus;
+    return scoped.reduce((n, c) => n + c.escalations, 0);
+  }, [serverCounts, countsForStatus, regionFilter, inRegion]);
 
   const open = openId ? (rows.find((r) => r.id === openId) ?? null) : null;
 
@@ -518,6 +556,7 @@ export default function MobileCustomerEmailsPage() {
               }}
             >
               {t.label}
+              {!showSent ? ` · ${statusTotals.get(t.key) ?? 0}` : ""}
             </button>
           ))}
           <button
@@ -546,7 +585,7 @@ export default function MobileCustomerEmailsPage() {
                 className={`mChip ${regionFilter === null ? "mChip--good" : ""}`}
                 onClick={() => setRegionFilter(null)}
               >
-                All · {rows.length}
+                All · {totalForStatus}
               </button>
               {mailboxes.map((m) => {
                 const code = (m.regionCode || m.email).toUpperCase();

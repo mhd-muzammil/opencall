@@ -61,9 +61,23 @@ export interface MailboxHealth {
   lastError: string;
 }
 
+/**
+ * How much mail is held at one status in one region — counted over everything stored, not
+ * over the page that came back with it. The header's tallies are about the mailbox; the
+ * rows are only what is currently on screen.
+ */
+export interface InboundEmailCount {
+  status: string;
+  regionCode: string;
+  total: number;
+  escalations: number;
+}
+
 export interface CustomerEmailsResponse {
   rows: InboundEmailRow[];
   mailboxes: MailboxHealth[];
+  /** Absent from an older API; treat as empty and fall back to counting rows. */
+  counts?: InboundEmailCount[];
 }
 
 function authHeaders(token: string): HeadersInit {

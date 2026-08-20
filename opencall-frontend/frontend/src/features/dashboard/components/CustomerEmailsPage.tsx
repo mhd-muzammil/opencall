@@ -8,6 +8,7 @@ import {
   saveCustomerEmailReply,
   sendCustomerEmailReply,
   type EmailReply,
+  type InboundEmailCount,
   type InboundEmailRow,
   type MailboxHealth,
 } from "../../../lib/customerEmailApiClient";
@@ -141,6 +142,7 @@ export function CustomerEmailsPage({ token }: Readonly<{ token: string }>) {
   // sake of mail nobody scrolls to.
   const [hasMore, setHasMore] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
+  const [counts, setCounts] = useState<InboundEmailCount[]>([]);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -148,6 +150,7 @@ export function CustomerEmailsPage({ token }: Readonly<{ token: string }>) {
       const res = await getCustomerEmails(token, { status, limit: PAGE_SIZE });
       setRows(res.rows);
       setMailboxes(res.mailboxes);
+      setCounts(res.counts ?? []);
       // A short page means the end; a full one only means there may be more.
       setHasMore(res.rows.length === PAGE_SIZE);
     } catch (error) {
@@ -213,20 +216,65 @@ export function CustomerEmailsPage({ token }: Readonly<{ token: string }>) {
     });
   }, [inRegion, search, escalationOnly]);
 
-  const escalationCount = useMemo(
-    () => inRegion.filter((r) => r.escalationLevel !== "NONE").length,
-    [inRegion],
+  // ── Header tallies ──────────────────────────────────────────────────────────────────
+  //
+  // Counted by the server over everything stored, not by counting the rows on screen. The
+  // list holds one page, so row-counting made every total sit at the page size and stay
+  // there — a mailbox of 743 reported 200 whatever arrived, which reads as a limit on what
+  // is kept rather than on what is shown.
+  //
+  // `counts` is optional on the response: during a deploy the browser may still be talking
+  // to an API that does not send it, and a header of zeroes would be worse than a page-
+  // shaped one. Absent, each tally falls back to the old row-derived number.
+  const serverCounts = counts.length > 0;
+
+  /** Counts narrowed to the status tab showing; "ALL" spans every status. */
+  const countsForStatus = useMemo(
+    () => (status === "ALL" ? counts : counts.filter((c) => c.status === status)),
+    [counts, status],
   );
 
-  /** How many messages each region has in the current status tab. */
   const regionCounts = useMemo(() => {
-    const counts = new Map<string, number>();
+    const map = new Map<string, number>();
+    if (serverCounts) {
+      for (const c of countsForStatus) {
+        const key = c.regionCode.toUpperCase();
+        map.set(key, (map.get(key) ?? 0) + c.total);
+      }
+      return map;
+    }
     for (const r of rows) {
       const key = r.regionCode.toUpperCase();
-      counts.set(key, (counts.get(key) ?? 0) + 1);
+      map.set(key, (map.get(key) ?? 0) + 1);
     }
-    return counts;
-  }, [rows]);
+    return map;
+  }, [serverCounts, countsForStatus, rows]);
+
+  /** Everything at the status showing, across the regions this login may see. */
+  const totalForStatus = useMemo(
+    () =>
+      serverCounts
+        ? countsForStatus.reduce((n, c) => n + c.total, 0)
+        : rows.length,
+    [serverCounts, countsForStatus, rows.length],
+  );
+
+  /** Totals per status tab, so each tab says how much is behind it. */
+  const statusTotals = useMemo(() => {
+    const map = new Map<string, number>();
+    for (const c of counts) map.set(c.status, (map.get(c.status) ?? 0) + c.total);
+    map.set("ALL", counts.reduce((n, c) => n + c.total, 0));
+    return map;
+  }, [counts]);
+
+  // Follows the region chip, since the escalation filter narrows whatever is showing.
+  const escalationCount = useMemo(() => {
+    if (!serverCounts) return inRegion.filter((r) => r.escalationLevel !== "NONE").length;
+    const scoped = regionFilter
+      ? countsForStatus.filter((c) => c.regionCode.toUpperCase() === regionFilter)
+      : countsForStatus;
+    return scoped.reduce((n, c) => n + c.escalations, 0);
+  }, [serverCounts, countsForStatus, regionFilter, inRegion]);
 
   // Keep a selection: default to the newest, and never leave a dead id selected.
   useEffect(() => {
@@ -459,7 +507,7 @@ It will go out from ${selected?.mailboxEmail ?? ""}. This cannot be undone.`,
             style={tabBtn(!showSent && status === t.key)}
           >
             {t.label}
-            {!showSent && t.key === status ? ` · ${filtered.length}` : ""}
+            {!showSent ? ` · ${statusTotals.get(t.key) ?? 0}` : ""}
           </button>
         ))}
         {/* Outbound: what this team sent, and who sent it. */}
@@ -514,7 +562,7 @@ It will go out from ${selected?.mailboxEmail ?? ""}. This cannot be undone.`,
             cursor: "pointer",
           }}
         >
-          All regions · {rows.length}
+          All regions · {totalForStatus}
         </button>
         {mailboxes.map((m) => {
           const code = (m.regionCode || m.email).toUpperCase();

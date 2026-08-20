@@ -263,7 +263,7 @@ export function QuotationsPage({ token }: Readonly<{ token: string }>) {
                   <th style={th}>Case ID</th>
                   <th style={th}>WO</th>
                   <th style={th}>Total</th>
-                  <th style={{ ...th, textAlign: "center" }}>PDF</th>
+                  <th style={{ ...th, ...stickyActions, background: "var(--th-bg, #f3f4f6)" }}>PDF</th>
                 </tr>
               </thead>
               <tbody>
@@ -279,11 +279,13 @@ export function QuotationsPage({ token }: Readonly<{ token: string }>) {
                         <td style={{ ...td, fontWeight: 600 }}>{q.quotationNo}</td>
                         <td style={td}>{q.quotationDate}</td>
                         <td style={td}>{q.customerName}</td>
-                        <td style={td}>{q.customerEmail || "-"}</td>
+                        <td style={tdEmail} title={q.customerEmail || undefined}>
+                          {q.customerEmail || "-"}
+                        </td>
                         <td style={td}>{q.caseId || "-"}</td>
                         <td style={td}>{q.orderNumber || "-"}</td>
                         <td style={td}>₹{formatMoney(t)}</td>
-                        <td style={{ ...td, textAlign: "center", whiteSpace: "nowrap" }}>
+                        <td style={{ ...td, ...stickyActions }}>
                           <button type="button" onClick={() => setPrinting(q)} style={linkBtn}>View / Print</button>
                           <span style={{ color: "#d1d5db", margin: "0 6px" }}>|</span>
                           <button type="button" onClick={() => startEdit(q)} style={linkBtn}>Edit</button>
@@ -592,6 +594,38 @@ const grid2: React.CSSProperties = {
 };
 const th: React.CSSProperties = { padding: "10px 12px", fontWeight: 700, textAlign: "left", borderBottom: "1px solid #e5e7eb", whiteSpace: "nowrap" };
 const td: React.CSSProperties = { padding: "8px 12px", borderBottom: "1px solid #f0f1f4", whiteSpace: "nowrap" };
+/**
+ * The email cell. Capped and clipped rather than left to size itself: a full address is
+ * wider than every other column put together, and letting it set the table's width pushed
+ * the actions off the right edge on a laptop screen. `title` keeps the whole address one
+ * hover away.
+ */
+const tdEmail: React.CSSProperties = {
+  ...td,
+  maxWidth: "190px",
+  overflow: "hidden",
+  textOverflow: "ellipsis",
+};
+
+/**
+ * The actions column, pinned to the right edge.
+ *
+ * The table scrolls sideways when the window is narrow, and View / Print and Edit are the
+ * only cells anyone reaches for — a row whose actions have scrolled out of sight reads as
+ * a row with no actions, which is how the Edit button appeared to be missing in production
+ * while it was there all along. Sticky keeps them in view at any width.
+ */
+const stickyActions: React.CSSProperties = {
+  position: "sticky",
+  right: 0,
+  zIndex: 1,
+  textAlign: "center",
+  whiteSpace: "nowrap",
+  // Opaque, or the row's text scrolls visibly underneath it.
+  background: "var(--card-bg, #ffffff)",
+  boxShadow: "-6px 0 6px -6px rgba(15, 23, 42, 0.18)",
+};
+
 const primaryBtn: React.CSSProperties = { padding: "9px 16px", fontSize: "13px", fontWeight: 600, borderRadius: "8px", border: "none", background: "#4f46e5", color: "#fff", cursor: "pointer" };
 const secondaryBtn: React.CSSProperties = { padding: "9px 16px", fontSize: "13px", fontWeight: 600, borderRadius: "8px", border: "1px solid #d1d5db", background: "#f9fafb", color: "#374151", cursor: "pointer" };
 const linkBtn: React.CSSProperties = { background: "none", border: "none", color: "#2563eb", fontWeight: 600, cursor: "pointer", fontSize: "13px", textDecoration: "underline" };

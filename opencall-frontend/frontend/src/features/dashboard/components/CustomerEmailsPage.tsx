@@ -48,6 +48,14 @@ const ESCALATION_STYLE: Record<string, { bg: string; fg: string; label: string; 
   WATCH: { bg: "#ffedd5", fg: "#9a3412", label: "Needs a look", icon: "🟠" },
 };
 
+/**
+ * Rows per page, in the list and in each "load older" after it.
+ *
+ * Sized to fill the pane a few screens deep without pulling a whole mailbox: every row
+ * carries its full body text, so the cost of a page is real.
+ */
+const PAGE_SIZE = 200;
+
 const REGION_TINT: Record<string, string> = {
   CHENNAI: "#6366f1",
   SALEM: "#0ea5e9",
@@ -127,18 +135,49 @@ export function CustomerEmailsPage({ token }: Readonly<{ token: string }>) {
   const [draftText, setDraftText] = useState("");
   const [replyBusy, setReplyBusy] = useState(false);
 
+  // Nothing is ever deleted, so the mailbox only grows; the list shows a page of it and
+  // fetches the next on request. Every row carries its full body text, which is why this is
+  // paged rather than simply raised — one big number would make every open slow for the
+  // sake of mail nobody scrolls to.
+  const [hasMore, setHasMore] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
+
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const res = await getCustomerEmails(token, { status, limit: 200 });
+      const res = await getCustomerEmails(token, { status, limit: PAGE_SIZE });
       setRows(res.rows);
       setMailboxes(res.mailboxes);
+      // A short page means the end; a full one only means there may be more.
+      setHasMore(res.rows.length === PAGE_SIZE);
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Failed to load customer emails");
     } finally {
       setLoading(false);
     }
   }, [token, status]);
+
+  const loadMore = useCallback(async () => {
+    setLoadingMore(true);
+    try {
+      const res = await getCustomerEmails(token, {
+        status,
+        limit: PAGE_SIZE,
+        offset: rows.length,
+      });
+      // Mail can arrive between one page and the next, which shifts everything down by one
+      // and would otherwise re-show the row that fell across the boundary.
+      setRows((prev) => {
+        const held = new Set(prev.map((r) => r.id));
+        return [...prev, ...res.rows.filter((r) => !held.has(r.id))];
+      });
+      setHasMore(res.rows.length === PAGE_SIZE);
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Failed to load older mail");
+    } finally {
+      setLoadingMore(false);
+    }
+  }, [token, status, rows.length]);
 
   useEffect(() => {
     void load();
@@ -714,6 +753,37 @@ It will go out from ${selected?.mailboxEmail ?? ""}. This cannot be undone.`,
               </button>
             );
           })}
+
+          {/* Older mail is stored, just not loaded — nothing here is ever deleted. The
+              button reads against `rows`, not `filtered`, because the region and search
+              filters run over what has been loaded: a filter that shows nothing may still
+              have matches in the pages below. */}
+          {hasMore && !loading ? (
+            <div style={{ padding: "14px", textAlign: "center" }}>
+              <button
+                type="button"
+                onClick={() => void loadMore()}
+                disabled={loadingMore}
+                style={{
+                  padding: "8px 18px",
+                  borderRadius: "999px",
+                  border: "1px solid #cbd5e1",
+                  background: loadingMore ? "#f1f5f9" : "#ffffff",
+                  color: "#334155",
+                  fontSize: "12px",
+                  fontWeight: 600,
+                  cursor: loadingMore ? "default" : "pointer",
+                }}
+              >
+                {loadingMore ? "Loading…" : `Load older mail (${rows.length} shown)`}
+              </button>
+            </div>
+          ) : null}
+          {!hasMore && rows.length > PAGE_SIZE ? (
+            <div style={{ padding: "14px", textAlign: "center", color: "#94a3b8", fontSize: "12px" }}>
+              That is all {rows.length} messages.
+            </div>
+          ) : null}
         </div>
 
         {/* ── Reading pane ── */}

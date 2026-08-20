@@ -72,11 +72,14 @@ function authHeaders(token: string): HeadersInit {
 
 export async function getCustomerEmails(
   token: string,
-  params: { status?: string; limit?: number } = {},
+  params: { status?: string; limit?: number; offset?: number } = {},
 ): Promise<CustomerEmailsResponse> {
   const qs = new URLSearchParams();
   if (params.status) qs.set("status", params.status);
   if (params.limit) qs.set("limit", String(params.limit));
+  // Only when asked for. Omitted means the newest page, which is what every existing
+  // caller wants and what the server assumes.
+  if (params.offset) qs.set("offset", String(params.offset));
   const suffix = qs.toString() ? `?${qs.toString()}` : "";
   const response = await fetch(`${WEB_API_BASE_URL}/api/v1/customer-emails${suffix}`, {
     headers: authHeaders(token),

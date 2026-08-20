@@ -78,6 +78,9 @@ function when(iso: string): string {
   return `${date} · ${clock}`;
 }
 
+/** Rows per page — the same page size the desktop reader uses. */
+const PAGE_SIZE = 200;
+
 export default function MobileCustomerEmailsPage() {
   const { session } = useMobileSession();
   const token = session?.token ?? "";
@@ -105,19 +108,48 @@ export default function MobileCustomerEmailsPage() {
   const [replyBusy, setReplyBusy] = useState(false);
   const [replyOpen, setReplyOpen] = useState(false);
 
+  // Paged for the same reason as the desktop reader: nothing is ever deleted, so the
+  // mailbox only grows, and each row carries its full body text. On a phone the cost of
+  // pulling more than a page is felt sooner, not later.
+  const [hasMore, setHasMore] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
+
   const load = useCallback(async () => {
     if (!token || !allowed) return;
     setLoading(true);
     try {
-      const res = await getCustomerEmails(token, { status, limit: 200 });
+      const res = await getCustomerEmails(token, { status, limit: PAGE_SIZE });
       setRows(res.rows);
       setMailboxes(res.mailboxes);
+      setHasMore(res.rows.length === PAGE_SIZE);
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Could not load mail");
     } finally {
       setLoading(false);
     }
   }, [token, allowed, status]);
+
+  const loadMore = useCallback(async () => {
+    if (!token || !allowed) return;
+    setLoadingMore(true);
+    try {
+      const res = await getCustomerEmails(token, {
+        status,
+        limit: PAGE_SIZE,
+        offset: rows.length,
+      });
+      // Mail arriving between pages shifts the boundary; drop what is already held.
+      setRows((prev) => {
+        const held = new Set(prev.map((r) => r.id));
+        return [...prev, ...res.rows.filter((r) => !held.has(r.id))];
+      });
+      setHasMore(res.rows.length === PAGE_SIZE);
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Could not load older mail");
+    } finally {
+      setLoadingMore(false);
+    }
+  }, [token, allowed, status, rows.length]);
 
   useEffect(() => {
     void load();
@@ -598,8 +630,21 @@ export default function MobileCustomerEmailsPage() {
                     </button>
                   );
                 })}
+                {hasMore ? (
+                  <button
+                    type="button"
+                    className="mRow mCenter"
+                    onClick={() => void loadMore()}
+                    disabled={loadingMore}
+                  >
+                    {loadingMore ? "Loading…" : `Load older mail (${rows.length} shown)`}
+                  </button>
+                ) : null}
               </div>
             )}
+            {!hasMore && rows.length > PAGE_SIZE ? (
+              <div className="mCard mMuted">That is all {rows.length} messages.</div>
+            ) : null}
           </>
         )}
       </main>

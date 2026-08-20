@@ -61,6 +61,32 @@ export interface MailboxHealth {
   lastError: string;
 }
 
+/** Mail held against one work order, for the marker on a report row. */
+export interface InboundEmailWoSummary {
+  ticketId: string;
+  total: number;
+  escalations: number;
+  lastReceivedAt: string;
+}
+
+/**
+ * Which work orders have mail against them.
+ *
+ * One request for the whole report rather than one per row: a report is hundreds of rows
+ * and the answer for most is "none", so the reader takes this list and turns it into a
+ * lookup.
+ */
+export async function getCustomerEmailWoSummary(
+  token: string,
+): Promise<InboundEmailWoSummary[]> {
+  const response = await fetch(
+    `${WEB_API_BASE_URL}/api/v1/customer-emails/wo-summary`,
+    { headers: authHeaders(token), cache: "no-store" },
+  );
+  const data = await readJson<{ rows: InboundEmailWoSummary[] }>(response);
+  return data.rows;
+}
+
 /**
  * How much mail is held at one status in one region — counted over everything stored, not
  * over the page that came back with it. The header's tallies are about the mailbox; the
@@ -86,7 +112,7 @@ function authHeaders(token: string): HeadersInit {
 
 export async function getCustomerEmails(
   token: string,
-  params: { status?: string; limit?: number; offset?: number } = {},
+  params: { status?: string; limit?: number; offset?: number; ticketId?: string } = {},
 ): Promise<CustomerEmailsResponse> {
   const qs = new URLSearchParams();
   if (params.status) qs.set("status", params.status);
@@ -94,6 +120,9 @@ export async function getCustomerEmails(
   // Only when asked for. Omitted means the newest page, which is what every existing
   // caller wants and what the server assumes.
   if (params.offset) qs.set("offset", String(params.offset));
+  // One work order's mail only — filtered on the server, so mail older than the current
+  // page is still found.
+  if (params.ticketId) qs.set("ticketId", params.ticketId);
   const suffix = qs.toString() ? `?${qs.toString()}` : "";
   const response = await fetch(`${WEB_API_BASE_URL}/api/v1/customer-emails${suffix}`, {
     headers: authHeaders(token),

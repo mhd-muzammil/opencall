@@ -116,11 +116,24 @@ export default function MobileCustomerEmailsPage() {
   const [loadingMore, setLoadingMore] = useState(false);
   const [counts, setCounts] = useState<InboundEmailCount[]>([]);
 
+  // Opened from a case row's ✉ marker: show that work order's mail only. Read off
+  // `window.location` in an effect rather than through useSearchParams, which would need
+  // a Suspense boundary around this whole screen to keep the build static.
+  const [ticketFilter, setTicketFilter] = useState<string | null>(null);
+  useEffect(() => {
+    const value = new URLSearchParams(window.location.search).get("ticketId");
+    setTicketFilter(value && value.trim() ? value.trim() : null);
+  }, []);
+
   const load = useCallback(async () => {
     if (!token || !allowed) return;
     setLoading(true);
     try {
-      const res = await getCustomerEmails(token, { status, limit: PAGE_SIZE });
+      const res = await getCustomerEmails(token, {
+        status,
+        limit: PAGE_SIZE,
+        ...(ticketFilter ? { ticketId: ticketFilter } : {}),
+      });
       setRows(res.rows);
       setMailboxes(res.mailboxes);
       setCounts(res.counts ?? []);
@@ -130,7 +143,7 @@ export default function MobileCustomerEmailsPage() {
     } finally {
       setLoading(false);
     }
-  }, [token, allowed, status]);
+  }, [token, allowed, status, ticketFilter]);
 
   const loadMore = useCallback(async () => {
     if (!token || !allowed) return;
@@ -140,6 +153,7 @@ export default function MobileCustomerEmailsPage() {
         status,
         limit: PAGE_SIZE,
         offset: rows.length,
+        ...(ticketFilter ? { ticketId: ticketFilter } : {}),
       });
       // Mail arriving between pages shifts the boundary; drop what is already held.
       setRows((prev) => {
@@ -152,7 +166,7 @@ export default function MobileCustomerEmailsPage() {
     } finally {
       setLoadingMore(false);
     }
-  }, [token, allowed, status, rows.length]);
+  }, [token, allowed, status, rows.length, ticketFilter]);
 
   useEffect(() => {
     void load();
@@ -544,6 +558,22 @@ export default function MobileCustomerEmailsPage() {
         }
       />
       <main className="mMain">
+        {ticketFilter ? (
+          <div className="mCard" style={{ marginBottom: 12, fontSize: 12.5 }}>
+            Showing mail for <strong>{ticketFilter}</strong> only.{" "}
+            <button
+              type="button"
+              className="mChip"
+              style={{ marginLeft: 6 }}
+              onClick={() => {
+                setTicketFilter(null);
+                window.history.replaceState(null, "", "/m/emails");
+              }}
+            >
+              Show all
+            </button>
+          </div>
+        ) : null}
         <div className="mSegment">
           {STATUS_TABS.map((t) => (
             <button

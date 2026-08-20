@@ -3,6 +3,10 @@
 import { DAILY_CALL_PLAN_COLUMNS, ASP_CODE_REGION_MAP, isScheduledStatus, type DailyCallPlanColumn } from "@opencall/shared";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
+import {
+  getCustomerEmailWoSummary,
+  type InboundEmailWoSummary,
+} from "../lib/customerEmailApiClient";
 import { ColumnFilterDropdown } from "../components/ColumnFilterDropdown";
 import { AppHeader, closeOpenDetailsOnOutsideClick } from "../components/AppHeader";
 import { HistoryDrawer } from "../components/HistoryDrawer";
@@ -682,6 +686,33 @@ export default function DashboardPage() {
   // Whether the stale-Flex-Status "View all" details modal is open.
   const [isStaleModalOpen, setIsStaleModalOpen] = useState(false);
   const [workspaceView, setWorkspaceView] = useState<WorkspaceView>("overview");
+
+  // --- Mail against a work order -------------------------------------------------------
+  //
+  // Which WOs the customer has written about, keyed by ticket id, so a report row can say
+  // so without a request of its own. Fetched once per visit to the records table rather
+  // than per row: a report is hundreds of rows and most have no mail at all.
+  const [woMail, setWoMail] = useState<Map<string, InboundEmailWoSummary>>(new Map());
+  // Set from a row's marker; the emails view reads it and shows that WO's mail only.
+  const [mailTicketFilter, setMailTicketFilter] = useState<string | null>(null);
+
+  useEffect(() => {
+    // Only for the table that shows it. A failure leaves the map empty, which simply
+    // means no markers — a report must not fail to render because the mailbox is down.
+    if (workspaceView !== "records" || !session?.token) return;
+    let cancelled = false;
+    void getCustomerEmailWoSummary(session.token)
+      .then((rows) => {
+        if (cancelled) return;
+        setWoMail(new Map(rows.map((r) => [r.ticketId.toUpperCase(), r])));
+      })
+      .catch(() => {
+        /* markers are an extra; the report stands without them */
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [workspaceView, session?.token]);
   // Restore the last-used view after mount (kept out of the useState initializer
   // to avoid an SSR/hydration mismatch — matches the hiddenColumns pattern).
   const hasRestoredWorkspaceViewRef = useRef(false);
@@ -4129,17 +4160,62 @@ export default function DashboardPage() {
                           ) : (
                             <span className="cellValueWrap">
                               {column === "Ticket ID" ? (
-                                <button
-                                  type="button"
-                                  className="ticketIdLink"
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    startModalEditing(row);
-                                  }}
-                                  title="Click to view/edit order form"
-                                >
-                                  {String(value ?? "")}
-                                </button>
+                                (() => {
+                                  const ticket = String(value ?? "");
+                                  const mail = woMail.get(ticket.trim().toUpperCase());
+                                  return (
+                                    <span style={{ whiteSpace: "nowrap" }}>
+                                      <button
+                                        type="button"
+                                        className="ticketIdLink"
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          startModalEditing(row);
+                                        }}
+                                        title="Click to view/edit order form"
+                                      >
+                                        {ticket}
+                                      </button>
+                                      {/* The customer has written about this case. Red when
+                                          one of those messages was flagged an escalation —
+                                          that is the one a coordinator should open first. */}
+                                      {mail ? (
+                                        <button
+                                          type="button"
+                                          onClick={(e) => {
+                                            e.stopPropagation();
+                                            setMailTicketFilter(ticket);
+                                            setWorkspaceView("customer-emails");
+                                          }}
+                                          title={
+                                            `${mail.total} mail${mail.total === 1 ? "" : "s"} for this WO` +
+                                            (mail.escalations > 0
+                                              ? ` · ${mail.escalations} escalation${mail.escalations === 1 ? "" : "s"}`
+                                              : "") +
+                                            ` · last ${new Date(mail.lastReceivedAt).toLocaleString("en-IN", { timeZone: "Asia/Kolkata", day: "2-digit", month: "short", hour: "numeric", minute: "2-digit", hour12: true })}` +
+                                            " — click to read"
+                                          }
+                                          style={{
+                                            marginLeft: 6,
+                                            padding: "0 6px",
+                                            borderRadius: 999,
+                                            border: "1px solid",
+                                            borderColor: mail.escalations > 0 ? "#fecaca" : "#bfdbfe",
+                                            background: mail.escalations > 0 ? "#fef2f2" : "#eff6ff",
+                                            color: mail.escalations > 0 ? "#991b1b" : "#1d4ed8",
+                                            fontSize: 10.5,
+                                            fontWeight: 700,
+                                            lineHeight: "16px",
+                                            cursor: "pointer",
+                                            verticalAlign: "middle",
+                                          }}
+                                        >
+                                          ✉ {mail.total}
+                                        </button>
+                                      ) : null}
+                                    </span>
+                                  );
+                                })()
                               ) : column === "Part" ? (
                                 // The backend joins the received (RCV_SPARE) part
                                 // descriptions with " / " and appends a muted
@@ -4475,7 +4551,10 @@ export default function DashboardPage() {
               <button
                 type="button"
                 className={`sidebarItem ${workspaceView === "customer-emails" ? "active" : ""}`}
-                onClick={() => setWorkspaceView("customer-emails")}
+                onClick={() => {
+                  setMailTicketFilter(null);
+                  setWorkspaceView("customer-emails");
+                }}
               >
                 <span className="sidebarIcon">
                   <ScrollText size={18} strokeWidth={2} /> <span className="sidebarText">Customer Emails</span>
@@ -4753,7 +4832,11 @@ export default function DashboardPage() {
               {/* Customer Emails — its own data, no generated report needed. */}
               {workspaceView === "customer-emails" ? (
                 <section className="panel reportPanel" style={{ minWidth: 0 }}>
-                  <CustomerEmailsPage token={session.token} />
+                  <CustomerEmailsPage
+                    token={session.token}
+                    {...(mailTicketFilter ? { ticketFilter: mailTicketFilter } : {})}
+                    onClearTicketFilter={() => setMailTicketFilter(null)}
+                  />
                 </section>
               ) : null}
 
@@ -5185,6 +5268,7 @@ export default function DashboardPage() {
                   {workspaceView === "records" && (
                     <div className="recordsArea" ref={recordsAreaRef}>
                       <RTPLDashboard
+                        woMail={woMail}
                         rtplAnalyticsDate={rtplAnalyticsDate}
                         setRtplAnalyticsDate={setRtplAnalyticsDate}
                         rtplAnalyticsRows={rtplAnalyticsRows}

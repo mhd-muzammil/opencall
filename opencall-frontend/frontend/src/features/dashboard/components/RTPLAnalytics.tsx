@@ -203,7 +203,15 @@ export function RTPLDashboard({
   onDownloadBodEod,
   hideTimeCards = false,
   loading = false,
+  woMail,
 }: Readonly<{
+  /**
+   * Mail held against a work order, keyed by upper-cased ticket id. Handed down rather
+   * than fetched here — the records workspace already has it for the row markers, and a
+   * second request would be a second request for the same answer. Absent simply means no
+   * mail card, which is what a caller that does not have it gets.
+   */
+  woMail?: Map<string, { total: number; escalations: number }>;
   rtplAnalyticsDate: string;
   setRtplAnalyticsDate: Dispatch<SetStateAction<string>>;
   rtplAnalyticsRows: ReportRow[];
@@ -439,6 +447,33 @@ export function RTPLDashboard({
   //
   // EOD (End of Day):
   //   - Always the current live RTPL status from row.output — updates as edits happen.
+  /**
+   * Cases on this screen the customer has written about.
+   *
+   * Counted over `rtplAnalyticsRows`, so it follows the date, region and case-scope the
+   * cards already follow — "how many of THESE have mail", not how many exist anywhere.
+   * The ticket ids come along so the card can hand the records table exactly the rows it
+   * counted, the same way the status cards do.
+   */
+  const mailMetric = useMemo(() => {
+    if (!woMail || woMail.size === 0) {
+      return { count: 0, escalations: 0, mails: 0, ticketIds: [] as string[] };
+    }
+    const ticketIds: string[] = [];
+    let escalations = 0;
+    let mails = 0;
+    for (const row of rtplAnalyticsRows) {
+      const ticket = String(row.output["Ticket ID"] ?? "").trim();
+      if (!ticket) continue;
+      const held = woMail.get(ticket.toUpperCase());
+      if (!held) continue;
+      ticketIds.push(ticket);
+      mails += held.total;
+      if (held.escalations > 0) escalations += 1;
+    }
+    return { count: ticketIds.length, escalations, mails, ticketIds };
+  }, [woMail, rtplAnalyticsRows]);
+
   const rowStatusesList = rtplAnalyticsRows.map((row) => {
     const ticketId = String(row.output["Ticket ID"] || "").trim();
 
@@ -818,6 +853,53 @@ export function RTPLDashboard({
               </button>
             ) : null,
           )}
+          {/* Cases the customer has written about. First in the grid because it is about
+              somebody waiting on an answer, which outranks a status count. Clicking hands
+              the records table the exact tickets counted, like the cards beside it. */}
+          {mailMetric.count > 0 ? (
+            <button
+              className="rtplMetricCard"
+              type="button"
+              onClick={() =>
+                openRecordsWithFilter({
+                  region:
+                    selectedRtplRegion === ALL_REGIONS_FILTER
+                      ? null
+                      : selectedRtplRegion,
+                  ticketIds: mailMetric.ticketIds,
+                })
+              }
+              title={
+                `${mailMetric.count} of these cases have customer mail (${mailMetric.mails} message${mailMetric.mails === 1 ? "" : "s"})` +
+                (mailMetric.escalations > 0
+                  ? ` · ${mailMetric.escalations} with an escalation`
+                  : "") +
+                " — click to see just those rows"
+              }
+            >
+              <span>
+                ✉ Customer Mail
+                {/* On its own line and in words. Appended to the label it read as
+                    "Customer Mail · 3" against a value of 14, and neither number
+                    explained itself. */}
+                {mailMetric.escalations > 0 ? (
+                  <span
+                    style={{
+                      display: "block",
+                      marginTop: 2,
+                      fontSize: "10.5px",
+                      fontWeight: 700,
+                      color: "#b91c1c",
+                    }}
+                  >
+                    {mailMetric.escalations} escalation
+                    {mailMetric.escalations === 1 ? "" : "s"}
+                  </span>
+                ) : null}
+              </span>
+              <strong>{mailMetric.count}</strong>
+            </button>
+          ) : null}
           {openStatusMetrics.map((metric, metricIndex) => (
             <button
               className="rtplMetricCard"

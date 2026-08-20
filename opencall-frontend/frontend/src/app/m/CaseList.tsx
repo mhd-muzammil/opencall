@@ -1,6 +1,10 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import {
+  getCustomerEmailWoSummary,
+  type InboundEmailWoSummary,
+} from "../../lib/customerEmailApiClient";
 import type { GeneratedReportResponse } from "../../lib/api/types";
 import type { ClientSession } from "../../lib/session";
 import { EditCaseSheet } from "./EditCaseSheet";
@@ -35,6 +39,26 @@ export function CaseList({
   onSaved?: () => void;
 }>) {
   const [search, setSearch] = useState("");
+
+  // Which work orders the customer has written about, so a case row can say so. One
+  // request for the whole list, not one per row; a failure just means no markers.
+  const [woMail, setWoMail] = useState<Map<string, InboundEmailWoSummary>>(new Map());
+  useEffect(() => {
+    const token = session?.token;
+    if (!token) return;
+    let cancelled = false;
+    void getCustomerEmailWoSummary(token)
+      .then((summaries) => {
+        if (cancelled) return;
+        setWoMail(new Map(summaries.map((m) => [m.ticketId.toUpperCase(), m])));
+      })
+      .catch(() => {
+        /* markers are an extra; the list stands without them */
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [session?.token]);
   const [selected, setSelected] = useState<Row | null>(null);
   const [editing, setEditing] = useState<Row | null>(null);
 
@@ -88,15 +112,17 @@ export function CaseList({
           {visible.map((row) => {
             const status = val(row, "RTPL status") || val(row, "Flex Status");
             const aging = val(row, "WIP aging");
+            const ticket = val(row, "Ticket ID");
+            const mail = ticket ? woMail.get(ticket.trim().toUpperCase()) : undefined;
             return (
+              <div key={row.id ?? row.serialNo}>
               <button
-                key={row.id ?? row.serialNo}
                 type="button"
                 className="mRow"
                 onClick={() => setSelected(row)}
               >
                 <div className="mRow__top">
-                  <span className="mRow__title">{val(row, "Ticket ID") || "—"}</span>
+                  <span className="mRow__title">{ticket || "—"}</span>
                   {aging && <span className="mChip">{aging}d</span>}
                 </div>
                 <div className="mRow__meta">
@@ -107,6 +133,19 @@ export function CaseList({
                   {val(row, "Location") ? ` · ${val(row, "Location")}` : ""}
                 </div>
               </button>
+              {mail ? (
+                <div style={{ display: "flex", justifyContent: "flex-end", padding: "0 14px 10px" }}>
+                  <a
+                    className={`mChip ${mail.escalations > 0 ? "mChip--danger" : ""}`}
+                    href={`/m/emails?ticketId=${encodeURIComponent(ticket)}`}
+                    style={{ textDecoration: "none" }}
+                  >
+                    ✉ {mail.total} mail{mail.total === 1 ? "" : "s"}
+                    {mail.escalations > 0 ? " · escalation" : ""}
+                  </a>
+                </div>
+              ) : null}
+              </div>
             );
           })}
         </div>

@@ -111,7 +111,16 @@ function fullTime(iso: string): string {
   }).format(d);
 }
 
-export function CustomerEmailsPage({ token }: Readonly<{ token: string }>) {
+export function CustomerEmailsPage({
+  token,
+  ticketFilter,
+  onClearTicketFilter,
+}: Readonly<{
+  token: string;
+  /** Opened from a report row's envelope marker: show only that work order's mail. */
+  ticketFilter?: string;
+  onClearTicketFilter?: () => void;
+}>) {
   const [status, setStatus] = useState<(typeof STATUS_TABS)[number]["key"]>("NEW");
   const [rows, setRows] = useState<InboundEmailRow[]>([]);
   const [mailboxes, setMailboxes] = useState<MailboxHealth[]>([]);
@@ -147,7 +156,11 @@ export function CustomerEmailsPage({ token }: Readonly<{ token: string }>) {
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const res = await getCustomerEmails(token, { status, limit: PAGE_SIZE });
+      const res = await getCustomerEmails(token, {
+        status,
+        limit: PAGE_SIZE,
+        ...(ticketFilter ? { ticketId: ticketFilter } : {}),
+      });
       setRows(res.rows);
       setMailboxes(res.mailboxes);
       setCounts(res.counts ?? []);
@@ -158,7 +171,7 @@ export function CustomerEmailsPage({ token }: Readonly<{ token: string }>) {
     } finally {
       setLoading(false);
     }
-  }, [token, status]);
+  }, [token, status, ticketFilter]);
 
   const loadMore = useCallback(async () => {
     setLoadingMore(true);
@@ -167,6 +180,7 @@ export function CustomerEmailsPage({ token }: Readonly<{ token: string }>) {
         status,
         limit: PAGE_SIZE,
         offset: rows.length,
+        ...(ticketFilter ? { ticketId: ticketFilter } : {}),
       });
       // Mail can arrive between one page and the next, which shifts everything down by one
       // and would otherwise re-show the row that fell across the boundary.
@@ -180,7 +194,7 @@ export function CustomerEmailsPage({ token }: Readonly<{ token: string }>) {
     } finally {
       setLoadingMore(false);
     }
-  }, [token, status, rows.length]);
+  }, [token, status, rows.length, ticketFilter]);
 
   useEffect(() => {
     void load();
@@ -606,6 +620,48 @@ It will go out from ${selected?.mailboxEmail ?? ""}. This cannot be undone.`,
           );
         })}
       </div>
+
+      {/* A filtered inbox that does not say it is filtered reads as an empty one — this is
+          opened from a report row, so the reader arrives without having chosen the filter
+          themselves and needs both the reason and the way out. */}
+      {ticketFilter ? (
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: "10px",
+            marginBottom: "12px",
+            padding: "9px 14px",
+            borderRadius: "10px",
+            background: "#eef2ff",
+            border: "1px solid #c7d2fe",
+            fontSize: "13px",
+            color: "#3730a3",
+          }}
+        >
+          <span>
+            Showing mail for <strong>{ticketFilter}</strong> only.
+          </span>
+          {onClearTicketFilter ? (
+            <button
+              type="button"
+              onClick={onClearTicketFilter}
+              style={{
+                marginLeft: "auto",
+                background: "none",
+                border: "none",
+                color: "#4338ca",
+                fontWeight: 700,
+                cursor: "pointer",
+                textDecoration: "underline",
+                fontSize: "12px",
+              }}
+            >
+              Show all mail
+            </button>
+          ) : null}
+        </div>
+      ) : null}
 
       {message ? (
         <div

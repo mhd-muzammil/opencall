@@ -7,6 +7,7 @@ import { canSeeMobileSection, isSuperAdminSession, useMobileSession } from "../s
 import {
   autofillQuotation,
   createQuotation,
+  updateQuotation,
   listQuotations,
   type CreateQuotationInput,
   type Quotation,
@@ -57,7 +58,10 @@ export default function MobileQuotationsPage() {
   const allowed =
     isSuperAdminSession(session) || canSeeMobileSection(session, "quotations");
 
-  const [mode, setMode] = useState<"list" | "create">("list");
+  const [mode, setMode] = useState<"list" | "create" | "edit">("list");
+  // The quotation being corrected. Its id is where the save goes; its number is shown on
+  // the form because an edit does NOT reissue it.
+  const [editing, setEditing] = useState<Quotation | null>(null);
   const [items, setItems] = useState<Quotation[]>([]);
   const [search, setSearch] = useState("");
   const [debounced, setDebounced] = useState("");
@@ -159,6 +163,43 @@ export default function MobileQuotationsPage() {
     }
   }
 
+  /**
+   * Load a quotation back into the form. A quotation raised before line items existed
+   * carries its single priced row only in the flat fields, so fall back to those rather
+   * than open an empty sheet on an old one. Same rule as the web reader.
+   */
+  function startEdit(q: Quotation) {
+    setEditing(q);
+    setMessage(null);
+    setForm({
+      quotationDate: q.quotationDate,
+      caseId: q.caseId,
+      orderNumber: q.orderNumber,
+      customerName: q.customerName,
+      customerAddress: q.customerAddress,
+      customerCity: q.customerCity,
+      customerState: q.customerState,
+      customerPincode: q.customerPincode,
+      customerPhone: q.customerPhone,
+      customerEmail: q.customerEmail,
+      lineItems:
+        q.lineItems && q.lineItems.length > 0
+          ? q.lineItems.map((item) => ({ ...item }))
+          : [
+              {
+                serviceDescription: q.serviceDescription,
+                productDescription: q.productDescription,
+                modelNo: q.modelNo,
+                serialNo: q.serialNo,
+                baseAmount: q.baseAmount,
+              },
+            ],
+      sgstPercent: q.sgstPercent,
+      cgstPercent: q.cgstPercent,
+    });
+    setMode("edit");
+  }
+
   async function handleSave() {
     if (!session) return;
     if (!form.customerName.trim()) {
@@ -172,10 +213,13 @@ export default function MobileQuotationsPage() {
     setSaving(true);
     setMessage(null);
     try {
-      const created = await createQuotation(session.token, form);
+      const saved = editing
+        ? await updateQuotation(session.token, editing.id, form)
+        : await createQuotation(session.token, form);
       setForm({ ...EMPTY_FORM, quotationDate: todayIso() });
+      setEditing(null);
       setMode("list");
-      setPrinting(created); // open the print view straight away, same as the web
+      setPrinting(saved); // open the print view straight away, same as the web
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Save failed");
     } finally {
@@ -208,7 +252,7 @@ export default function MobileQuotationsPage() {
     <>
       <AppBar
         title="Quotations"
-        subtitle={mode === "list" ? `${items.length} saved` : "New quotation"}
+        subtitle={mode === "list" ? `${items.length} saved` : editing ? `Editing ${editing.quotationNo}` : "New quotation"}
         back
         action={
           mode === "list" ? (
@@ -218,6 +262,8 @@ export default function MobileQuotationsPage() {
               aria-label="New quotation"
               onClick={() => {
                 setMessage(null);
+                setEditing(null);
+                setForm({ ...EMPTY_FORM, quotationDate: todayIso() });
                 setMode("create");
               }}
             >
@@ -230,6 +276,8 @@ export default function MobileQuotationsPage() {
               aria-label="Back to list"
               onClick={() => {
                 setMessage(null);
+                setEditing(null);
+                setForm({ ...EMPTY_FORM, quotationDate: todayIso() });
                 setMode("list");
               }}
             >
@@ -272,25 +320,41 @@ export default function MobileQuotationsPage() {
                 {items.map((q) => {
                   const t = q.baseAmount * (1 + (q.sgstPercent + q.cgstPercent) / 100);
                   return (
-                    <button
-                      key={q.id}
-                      type="button"
-                      className="mRow"
-                      onClick={() => setPrinting(q)}
-                    >
-                      <div className="mRow__top">
-                        <span className="mRow__title" style={{ fontWeight: 750 }}>
-                          {q.quotationNo}
-                        </span>
-                        <span style={{ fontSize: 14, fontWeight: 800, flexShrink: 0 }}>
-                          {formatMoney(t)}
-                        </span>
+                    <div key={q.id}>
+                      <button
+                        type="button"
+                        className="mRow"
+                        onClick={() => setPrinting(q)}
+                      >
+                        <div className="mRow__top">
+                          <span className="mRow__title" style={{ fontWeight: 750 }}>
+                            {q.quotationNo}
+                          </span>
+                          <span style={{ fontSize: 14, fontWeight: 800, flexShrink: 0 }}>
+                            {formatMoney(t)}
+                          </span>
+                        </div>
+                        <div className="mRow__meta">{q.customerName || "-"}</div>
+                        <div className="mRow__meta" style={{ marginTop: 2 }}>
+                          {q.quotationDate} · Case {q.caseId || "-"} · WO {q.orderNumber || "-"}
+                        </div>
+                      </button>
+                      <div
+                        style={{
+                          display: "flex",
+                          justifyContent: "flex-end",
+                          padding: "0 14px 10px",
+                        }}
+                      >
+                        <button
+                          type="button"
+                          className="mChip"
+                          onClick={() => startEdit(q)}
+                        >
+                          Edit
+                        </button>
                       </div>
-                      <div className="mRow__meta">{q.customerName || "-"}</div>
-                      <div className="mRow__meta" style={{ marginTop: 2 }}>
-                        {q.quotationDate} · Case {q.caseId || "-"} · WO {q.orderNumber || "-"}
-                      </div>
-                    </button>
+                    </div>
                   );
                 })}
               </div>
@@ -469,7 +533,7 @@ export default function MobileQuotationsPage() {
               disabled={saving}
               onClick={() => void handleSave()}
             >
-              {saving ? "Saving…" : "Save & Print"}
+              {saving ? "Saving…" : editing ? "Save changes" : "Save & Print"}
             </button>
             <button
               type="button"

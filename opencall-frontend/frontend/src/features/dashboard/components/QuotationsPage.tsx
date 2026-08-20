@@ -3,6 +3,7 @@ import { createPortal } from "react-dom";
 import {
   autofillQuotation,
   createQuotation,
+  updateQuotation,
   listQuotations,
   type CreateQuotationInput,
   type Quotation,
@@ -43,7 +44,10 @@ function todayIso(): string {
 }
 
 export function QuotationsPage({ token }: Readonly<{ token: string }>) {
-  const [mode, setMode] = useState<"list" | "create">("list");
+  const [mode, setMode] = useState<"list" | "create" | "edit">("list");
+  // The quotation being corrected. Its id is what the save goes to, and its number is
+  // shown on the form so it is obvious the sheet is not being reissued under a new one.
+  const [editing, setEditing] = useState<Quotation | null>(null);
 
   // List state
   const [items, setItems] = useState<Quotation[]>([]);
@@ -134,6 +138,45 @@ export function QuotationsPage({ token }: Readonly<{ token: string }>) {
     }
   }
 
+  /**
+   * Load a quotation back into the form.
+   *
+   * `lineItems` is what the form edits, and a quotation raised before line items existed
+   * has its single priced row only in the flat fields — so fall back to those rather than
+   * open an empty sheet on an old quotation.
+   */
+  function startEdit(q: Quotation) {
+    setEditing(q);
+    setMessage(null);
+    setForm({
+      quotationDate: q.quotationDate,
+      caseId: q.caseId,
+      orderNumber: q.orderNumber,
+      customerName: q.customerName,
+      customerAddress: q.customerAddress,
+      customerCity: q.customerCity,
+      customerState: q.customerState,
+      customerPincode: q.customerPincode,
+      customerPhone: q.customerPhone,
+      customerEmail: q.customerEmail,
+      lineItems:
+        q.lineItems && q.lineItems.length > 0
+          ? q.lineItems.map((item) => ({ ...item }))
+          : [
+              {
+                serviceDescription: q.serviceDescription,
+                productDescription: q.productDescription,
+                modelNo: q.modelNo,
+                serialNo: q.serialNo,
+                baseAmount: q.baseAmount,
+              },
+            ],
+      sgstPercent: q.sgstPercent,
+      cgstPercent: q.cgstPercent,
+    });
+    setMode("edit");
+  }
+
   async function handleSave() {
     if (!form.customerName.trim()) {
       setMessage("Customer name is required.");
@@ -146,10 +189,16 @@ export function QuotationsPage({ token }: Readonly<{ token: string }>) {
     setSaving(true);
     setMessage(null);
     try {
-      const created = await createQuotation(token, form);
+      const saved = editing
+        ? await updateQuotation(token, editing.id, form)
+        : await createQuotation(token, form);
       setForm({ ...EMPTY_FORM, quotationDate: todayIso() });
+      setEditing(null);
       setMode("list");
-      setPrinting(created); // open the print view straight away
+      // Reload so the list shows the corrected figures rather than the ones it fetched
+      // before the edit; creating does not need this because the list refetches anyway.
+      if (editing) void load();
+      setPrinting(saved); // open the print view straight away
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Save failed");
     } finally {
@@ -180,11 +229,11 @@ export function QuotationsPage({ token }: Readonly<{ token: string }>) {
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "16px", flexWrap: "wrap", gap: "10px" }}>
         <h2 style={{ margin: 0, fontSize: "18px", fontWeight: 700 }}>Quotations</h2>
         {mode === "list" ? (
-          <button type="button" onClick={() => { setMode("create"); setMessage(null); }} style={primaryBtn}>
+          <button type="button" onClick={() => { setEditing(null); setForm({ ...EMPTY_FORM, quotationDate: todayIso() }); setMode("create"); setMessage(null); }} style={primaryBtn}>
             + New Quotation
           </button>
         ) : (
-          <button type="button" onClick={() => { setMode("list"); setMessage(null); }} style={secondaryBtn}>
+          <button type="button" onClick={() => { setEditing(null); setForm({ ...EMPTY_FORM, quotationDate: todayIso() }); setMode("list"); setMessage(null); }} style={secondaryBtn}>
             ← Back to list
           </button>
         )}
@@ -232,8 +281,10 @@ export function QuotationsPage({ token }: Readonly<{ token: string }>) {
                         <td style={td}>{q.caseId || "-"}</td>
                         <td style={td}>{q.orderNumber || "-"}</td>
                         <td style={td}>₹{formatMoney(t)}</td>
-                        <td style={{ ...td, textAlign: "center" }}>
+                        <td style={{ ...td, textAlign: "center", whiteSpace: "nowrap" }}>
                           <button type="button" onClick={() => setPrinting(q)} style={linkBtn}>View / Print</button>
+                          <span style={{ color: "#d1d5db", margin: "0 6px" }}>|</span>
+                          <button type="button" onClick={() => startEdit(q)} style={linkBtn}>Edit</button>
                         </td>
                       </tr>
                     );
@@ -245,6 +296,32 @@ export function QuotationsPage({ token }: Readonly<{ token: string }>) {
         </>
       ) : (
         <div style={{ maxWidth: "820px" }}>
+          {/* Which sheet is being corrected. Shown because the running number does NOT
+              change on an edit — the customer's copy still carries this one, and someone
+              editing needs to see that they are altering an issued document. */}
+          {editing ? (
+            <div
+              style={{
+                marginBottom: "16px",
+                padding: "10px 14px",
+                borderRadius: "8px",
+                background: "#fffbeb",
+                border: "1px solid #fde68a",
+                fontSize: "13px",
+                color: "#92400e",
+              }}
+            >
+              Editing <strong>{editing.quotationNo}</strong> — the quotation number stays the
+              same.
+              {editing.updatedAt ? (
+                <span style={{ color: "#a16207" }}>
+                  {" "}Last edited {editing.updatedAt.slice(0, 10)}
+                  {editing.updatedBy ? ` by ${editing.updatedBy}` : ""}.
+                </span>
+              ) : null}
+            </div>
+          ) : null}
+
           {/* Auto-fill row */}
           <div style={{ display: "flex", gap: "10px", alignItems: "flex-end", flexWrap: "wrap", marginBottom: "16px" }}>
             <div style={{ flex: "1 1 200px" }}>
@@ -420,7 +497,11 @@ export function QuotationsPage({ token }: Readonly<{ token: string }>) {
 
           <div style={{ marginTop: "20px", display: "flex", gap: "10px", alignItems: "center", flexWrap: "wrap" }}>
             <button type="button" onClick={() => void handleSave()} disabled={saving} style={primaryBtn}>
-              {saving ? "Saving…" : "Save & generate quotation"}
+              {saving
+                ? "Saving…"
+                : editing
+                  ? "Save changes"
+                  : "Save & generate quotation"}
             </button>
             <button type="button" onClick={() => { setMode("list"); setMessage(null); }} style={secondaryBtn}>
               Cancel

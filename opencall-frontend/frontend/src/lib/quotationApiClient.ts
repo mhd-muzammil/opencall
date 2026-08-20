@@ -37,6 +37,9 @@ export interface Quotation {
   cgstPercent: number;
   createdBy: string;
   createdAt: string;
+  /** Null until the sheet has been corrected — an unedited quotation has no edit to show. */
+  updatedAt?: string | null;
+  updatedBy?: string;
   /** Every priced row, in entry order. This is what the form and the printed sheet read. */
   lineItems: QuotationLineItem[];
 }
@@ -109,6 +112,28 @@ export async function createQuotation(
     headers: authHeaders(token),
     body: JSON.stringify(input),
   });
+  return readJson<Quotation>(response);
+}
+
+/**
+ * Correct a quotation that already exists.
+ *
+ * Same body as creating one — the edit form is the create form with the values in it — and
+ * the running number is not reissued, so the customer's copy still matches.
+ */
+export async function updateQuotation(
+  token: string,
+  id: string,
+  input: CreateQuotationInput,
+): Promise<Quotation> {
+  const response = await fetch(
+    `${WEB_API_BASE_URL}/api/v1/quotations/${encodeURIComponent(id)}`,
+    {
+      method: "PUT",
+      headers: authHeaders(token),
+      body: JSON.stringify(input),
+    },
+  );
   return readJson<Quotation>(response);
 }
 

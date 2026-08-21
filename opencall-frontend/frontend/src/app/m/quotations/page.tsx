@@ -460,6 +460,18 @@ export default function MobileQuotationsPage() {
                             <option value="DECLINED">Declined</option>
                           </select>
                         ) : null}
+                        {/* Straight to what the customer wrote. A link rather than a
+                            button because it leaves this screen, and highlighted once a
+                            reply has landed — that is when it needs reading. */}
+                        {q.orderNumber ? (
+                          <a
+                            className={`mChip ${q.replySeenAt ? "mChip--danger" : ""}`}
+                            href={`/m/emails?ticketId=${encodeURIComponent(q.orderNumber)}`}
+                            style={{ textDecoration: "none" }}
+                          >
+                            {q.replySeenAt ? "✉ Read reply" : "✉ Mail"}
+                          </a>
+                        ) : null}
                         <button type="button" className="mChip" onClick={() => startSend(q)}>
                           {q.sentAt ? "Re-send" : "Send"}
                         </button>

@@ -47,7 +47,20 @@ function todayIso(): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 }
 
-export function QuotationsPage({ token }: Readonly<{ token: string }>) {
+export function QuotationsPage({
+  token,
+  onOpenMail,
+}: Readonly<{
+  token: string;
+  /**
+   * Open Customer Emails on this quotation's work order.
+   *
+   * A callback rather than navigation from here: the reader is one panel inside the
+   * workspace and does not own which panel is showing. Absent — on the phone, or wherever
+   * there is no inbox to switch to — the link simply is not offered.
+   */
+  onOpenMail?: (ticketId: string) => void;
+}>) {
   const [mode, setMode] = useState<"list" | "create" | "edit">("list");
   // The quotation being corrected. Its id is what the save goes to, and its number is
   // shown on the form so it is obvious the sheet is not being reissued under a new one.
@@ -522,6 +535,31 @@ export function QuotationsPage({ token }: Readonly<{ token: string }>) {
                           <button type="button" onClick={() => startSend(q)} style={linkBtn}>
                             {q.sentAt ? "Re-send" : "Send"}
                           </button>
+                          {/* Straight to what the customer actually wrote. Offered only
+                              when there is a work order to filter the inbox by, and
+                              highlighted once a reply has landed — that is the moment
+                              somebody needs to read it rather than guess at the badge. */}
+                          {onOpenMail && q.orderNumber ? (
+                            <>
+                              <span style={{ color: "#d1d5db", margin: "0 6px" }}>|</span>
+                              <button
+                                type="button"
+                                onClick={() => onOpenMail(q.orderNumber)}
+                                title={
+                                  q.replySeenAt
+                                    ? `Customer replied ${q.replySeenAt.slice(0, 10)} — read it`
+                                    : "Open this work order's mail"
+                                }
+                                style={{
+                                  ...linkBtn,
+                                  color: q.replySeenAt ? "#b91c1c" : linkBtn.color,
+                                  fontWeight: q.replySeenAt ? 800 : linkBtn.fontWeight,
+                                }}
+                              >
+                                {q.replySeenAt ? "✉ Read reply" : "✉ Mail"}
+                              </button>
+                            </>
+                          ) : null}
                         </td>
                       </tr>
                     );

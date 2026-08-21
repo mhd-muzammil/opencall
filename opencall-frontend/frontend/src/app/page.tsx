@@ -4816,7 +4816,13 @@ export default function DashboardPage() {
                   scrolled out of view and the sticky actions column stuck to nothing. */}
               {workspaceView === "quotations" ? (
                 <section className="panel reportPanel" style={{ minWidth: 0 }}>
-                  <QuotationsPage token={session.token} />
+                  <QuotationsPage
+                    token={session.token}
+                    onOpenMail={(ticketId) => {
+                      setMailTicketFilter(ticketId);
+                      setWorkspaceView("customer-emails");
+                    }}
+                  />
                 </section>
               ) : null}
 

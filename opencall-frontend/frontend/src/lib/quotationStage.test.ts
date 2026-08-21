@@ -30,7 +30,7 @@ describe("quotationStage", () => {
     expect(quotationStage(make({ sentAt: daysAgo(1) })).stage).toBe("SENT");
   });
 
-  it("becomes Waiting once it has gone quiet", () => {
+  it("stays No reply once it has gone quiet, but urgently", () => {
     const view = quotationStage(make({ sentAt: daysAgo(OVERDUE_DAYS) }));
     expect(view.stage).toBe("WAITING");
     expect(view.needsAttention).toBe(true);

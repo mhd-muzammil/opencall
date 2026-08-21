@@ -10,7 +10,12 @@ import type { Quotation } from "./quotationApiClient";
  *
  * The order below is the order they are tested in, and that order is the design: a settled
  * quotation is settled no matter what else is true of it, and a customer who has written
- * back is not "waiting" however long ago it went out.
+ * back is not waiting however long ago it went out.
+ *
+ * THE LABELS ARE THE HEADER'S WORDS, exactly. Every row reads Created, No reply, Replied,
+ * Paid or Rejected, and each of those is a box you can click to see the rows behind it. A
+ * row saying something no box counts — "Waiting", where the header offered "No reply" — is
+ * how a reader ends up unable to reconcile the two and trusting neither.
  */
 
 export type QuotationStage =
@@ -57,7 +62,7 @@ export function quotationStage(quotation: Quotation): StageView {
     return { stage: "PAID", label: "Paid", bg: "#dcfce7", fg: "#166534", needsAttention: false };
   }
   if (status === "DECLINED") {
-    return { stage: "DECLINED", label: "Declined", bg: "#f1f5f9", fg: "#64748b", needsAttention: false };
+    return { stage: "DECLINED", label: "Rejected", bg: "#f1f5f9", fg: "#64748b", needsAttention: false };
   }
 
   // Never sent from here. Not a failure — plenty are handed over on WhatsApp, at the
@@ -94,10 +99,14 @@ export function quotationStage(quotation: Quotation): StageView {
     };
   }
 
+  // Sent and nothing back. One WORD for both, because the header has one box for it —
+  // a row reading "Waiting" that no box counts is the mismatch this vocabulary exists to
+  // stop. The ageing still shows, and past three days it turns urgent; that is a matter of
+  // emphasis, not of being a different thing.
   const days = daysSince(quotation.sentAt) ?? 0;
   if (days >= OVERDUE_DAYS) {
-    return { stage: "WAITING", label: "Waiting", bg: "#ffedd5", fg: "#9a3412", needsAttention: true };
+    return { stage: "WAITING", label: "No reply", bg: "#ffedd5", fg: "#9a3412", needsAttention: true };
   }
 
-  return { stage: "SENT", label: "Sent", bg: "#dbeafe", fg: "#1d4ed8", needsAttention: false };
+  return { stage: "SENT", label: "No reply", bg: "#dbeafe", fg: "#1d4ed8", needsAttention: false };
 }

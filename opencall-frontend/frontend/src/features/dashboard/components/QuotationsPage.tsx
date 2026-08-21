@@ -27,6 +27,7 @@ const TILE_LABELS: Record<string, string> = {
   NO_REPLY: "no reply",
   PAID: "paid",
   NOT_PAID: "not paid",
+  REJECTED: "rejected",
 };
 
 /** Still owed. The first four boxes describe where an OPEN quotation has got to. */
@@ -49,6 +50,9 @@ const TILE_TESTS: Record<string, (q: Quotation) => boolean> = {
   NO_REPLY: (q) => isOpen(q) && Boolean(q.sentAt) && !q.replySeenAt,
   PAID: (q) => q.paymentStatus === "PAID",
   NOT_PAID: isOpen,
+  // The customer said no. Settled like Paid — nothing is owed and nobody should chase it —
+  // so it leaves the open stages and is not counted as money outstanding either.
+  REJECTED: (q) => q.paymentStatus === "DECLINED",
 };
 import { getCustomerEmails, type MailboxHealth } from "../../../lib/customerEmailApiClient";
 
@@ -417,6 +421,7 @@ export function QuotationsPage({
             const noReply = count("NO_REPLY");
             const paid = count("PAID");
             const notPaid = count("NOT_PAID");
+            const rejected = count("REJECTED");
 
             const tiles = [
               { key: "CREATED", label: "Created", value: String(created), hint: "not sent, still unpaid", fg: "#475569" },
@@ -425,6 +430,7 @@ export function QuotationsPage({
               { key: "NO_REPLY", label: "No reply", value: String(noReply), hint: "sent, nothing heard", fg: noReply > 0 ? "#9a3412" : "#94a3b8" },
               { key: "PAID", label: "Paid", value: String(paid), hint: `₹${formatMoney(paidValue)} collected`, fg: "#166534" },
               { key: "NOT_PAID", label: "Not paid", value: String(notPaid), hint: `₹${formatMoney(owedValue)} outstanding`, fg: notPaid > 0 ? "#b91c1c" : "#94a3b8" },
+              { key: "REJECTED", label: "Rejected", value: String(rejected), hint: "customer said no", fg: "#64748b" },
             ];
             return (
               <div

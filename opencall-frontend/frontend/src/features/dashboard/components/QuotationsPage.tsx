@@ -343,37 +343,42 @@ export function QuotationsPage({
           {/* What the section is actually for: not how many quotations exist, but how many
               are out with a customer, how many came back, and how many have gone quiet. */}
           {(() => {
-            // Counted off the same stages the rows show, so a tile and the rows under it
-            // can never disagree about what a quotation is doing.
-            const views = items.map((q) => quotationStage(q));
-            const count = (stage: string) => views.filter((v) => v.stage === stage).length;
+            // Six boxes, read left to right, one question each. The one they replace
+            // asked several at once — "check payment" held sent and unsent, answered and
+            // unanswered together, so a number that large told nobody what to do next.
+            //
+            // Replied and No reply span sent and unsent alike. A reply is a reply however
+            // the customer came by the quotation, and scoping them to what went out from
+            // here would read zero on a list where most were handed over another way.
             const paidValue = items
               .filter((q) => q.paymentStatus === "PAID")
               .reduce(
                 (sum, q) => sum + q.baseAmount * (1 + (q.sgstPercent + q.cgstPercent) / 100),
                 0,
               );
+            const owedValue = items
+              .filter((q) => (q.paymentStatus ?? "PENDING") === "PENDING")
+              .reduce(
+                (sum, q) => sum + q.baseAmount * (1 + (q.sgstPercent + q.cgstPercent) / 100),
+                0,
+              );
 
-            // "The customer has said something about paying" — whether the quotation was
-            // ever sent from here or not. Counting only the sent ones read as zero while
-            // forty rows on the same screen asked to be checked, because a quotation
-            // handed over another way stays at Created however clearly its customer
-            // replied. The rows were right; the tile was measuring the wrong thing.
-            const check = views.filter(
-              (v) => v.stage === "REPLIED" || (v.stage === "CREATED" && v.needsAttention),
+            const created = items.filter((q) => !q.sentAt).length;
+            const sent = items.filter((q) => q.sentAt).length;
+            const replied = items.filter((q) => q.replySeenAt).length;
+            const noReply = items.filter((q) => !q.replySeenAt).length;
+            const paid = items.filter((q) => q.paymentStatus === "PAID").length;
+            const notPaid = items.filter(
+              (q) => (q.paymentStatus ?? "PENDING") === "PENDING",
             ).length;
-            // Created is the quiet ones only, or a flagged quotation would be counted twice.
-            const created = views.filter(
-              (v) => v.stage === "CREATED" && !v.needsAttention,
-            ).length;
-            const waiting = count("WAITING");
 
             const tiles = [
-              { label: "Created", value: String(created), hint: "not sent, nothing heard", fg: "#475569" },
-              { label: "Sent", value: String(count("SENT")), hint: `waiting under ${OVERDUE_DAYS} days`, fg: "#1d4ed8" },
-              { label: "Waiting", value: String(waiting), hint: `quiet ${OVERDUE_DAYS}+ days`, fg: waiting > 0 ? "#9a3412" : "#94a3b8" },
-              { label: "Check payment", value: String(check), hint: "customer replied — read it", fg: check > 0 ? "#b91c1c" : "#94a3b8" },
-              { label: "Paid", value: String(count("PAID")), hint: `₹${formatMoney(paidValue)} collected`, fg: "#166534" },
+              { label: "Created", value: String(created), hint: "not sent from here", fg: "#475569" },
+              { label: "Sent", value: String(sent), hint: "mailed to the customer", fg: "#1d4ed8" },
+              { label: "Replied", value: String(replied), hint: "customer wrote back", fg: replied > 0 ? "#b91c1c" : "#94a3b8" },
+              { label: "No reply", value: String(noReply), hint: "nothing heard yet", fg: "#9a3412" },
+              { label: "Paid", value: String(paid), hint: `₹${formatMoney(paidValue)} collected`, fg: "#166534" },
+              { label: "Not paid", value: String(notPaid), hint: `₹${formatMoney(owedValue)} outstanding`, fg: notPaid > 0 ? "#b91c1c" : "#94a3b8" },
             ];
             return (
               <div

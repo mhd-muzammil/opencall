@@ -501,6 +501,50 @@ export function QuotationsPage({ token }: Readonly<{ token: string }>) {
                                   >
                                     {days === 0 ? "today" : `${days}d`}
                                   </span>
+                                  {/* Set by the watcher, not by anyone here. Said plainly
+                                      because a status nobody remembers setting is one
+                                      nobody trusts — and the reasons are what make the
+                                      select above an informed correction rather than a
+                                      guess. */}
+                                  {q.paymentSource === "AUTO" ? (
+                                    <span
+                                      title={`Marked automatically from the customer's reply — ${q.paymentSignalReasons || "payment confirmed"}. Change it above if that is wrong.`}
+                                      style={{
+                                        fontSize: "10px",
+                                        fontWeight: 700,
+                                        padding: "1px 6px",
+                                        borderRadius: "999px",
+                                        background: "#ede9fe",
+                                        color: "#5b21b6",
+                                      }}
+                                    >
+                                      auto
+                                    </span>
+                                  ) : null}
+                                  {/* Payment-shaped, not enough to act on. This is the one
+                                      that needs eyes on it. */}
+                                  {q.paymentStatus !== "PAID" && q.paymentSignal === "WEAK" ? (
+                                    <span
+                                      title={`Customer replied — ${q.paymentSignalReasons}. Open Customer Emails to check, then set the status.`}
+                                      style={{
+                                        fontSize: "10px",
+                                        fontWeight: 700,
+                                        padding: "1px 6px",
+                                        borderRadius: "999px",
+                                        background: "#fef2f2",
+                                        color: "#b91c1c",
+                                      }}
+                                    >
+                                      🔔 check payment
+                                    </span>
+                                  ) : q.paymentStatus !== "PAID" && q.replySeenAt ? (
+                                    <span
+                                      title={`Customer replied ${q.replySeenAt.slice(0, 10)}`}
+                                      style={{ fontSize: "10px", fontWeight: 700, color: "#1d4ed8" }}
+                                    >
+                                      replied
+                                    </span>
+                                  ) : null}
                                 </span>
                               );
                             })()

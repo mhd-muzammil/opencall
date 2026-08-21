@@ -52,6 +52,15 @@ export interface Quotation {
   paidAt?: string | null;
   paidBy?: string;
   paymentNote?: string;
+  /** 'MANUAL' | 'AUTO' — a person's call, or one inferred from the customer's reply. */
+  paymentSource?: string;
+  /** The reply that earned the status, so the badge can say why. */
+  paymentEvidenceEmailId?: string | null;
+  /** Any reply at all. Null while the customer has said nothing. */
+  replySeenAt?: string | null;
+  /** 'NONE' | 'WEAK' | 'STRONG' — WEAK still needs a person to look. */
+  paymentSignal?: string;
+  paymentSignalReasons?: string;
   /** Every priced row, in entry order. This is what the form and the printed sheet read. */
   lineItems: QuotationLineItem[];
 }

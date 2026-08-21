@@ -438,12 +438,22 @@ export default function MobileQuotationsPage() {
                               ? "sent today"
                               : `${daysSince(q.sentAt)}d ago`}
                             {q.sendCount && q.sendCount > 1 ? ` · ${q.sendCount}×` : ""}
+                            {q.paymentSource === "AUTO" ? " · auto" : ""}
                           </div>
                         ) : (
                           <div className="mRow__meta" style={{ marginTop: 2, color: "#94a3b8" }}>
                             Not sent
                           </div>
                         )}
+                        {/* Payment-shaped but not conclusive: the one that needs eyes. */}
+                        {q.sentAt && q.paymentStatus !== "PAID" && q.paymentSignal === "WEAK" ? (
+                          <div
+                            className="mRow__meta"
+                            style={{ marginTop: 2, fontWeight: 700, color: "#b91c1c" }}
+                          >
+                            🔔 Customer replied — check payment
+                          </div>
+                        ) : null}
                       </button>
                       <div
                         style={{

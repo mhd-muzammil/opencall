@@ -14,6 +14,7 @@ import {
 import { formatMoney } from "../../../lib/quotationFormat";
 import { quotationTotals } from "../../../lib/quotationTotals";
 import { QuotationPrint } from "./QuotationPrint";
+import { quotationStage, daysSince, OVERDUE_DAYS } from "../../../lib/quotationStage";
 import { getCustomerEmails, type MailboxHealth } from "../../../lib/customerEmailApiClient";
 
 const EMPTY_LINE_ITEM: QuotationLineItem = {
@@ -39,30 +40,6 @@ const EMPTY_FORM: CreateQuotationInput = {
   lineItems: [{ ...EMPTY_LINE_ITEM }],
   sgstPercent: 9,
   cgstPercent: 9,
-};
-
-/**
- * Whole days since a quotation went out.
- *
- * Counted from the FIRST send, not the last: it answers "how long has the customer had
- * this", and a follow-up must not make a fortnight-old quotation look like it went out
- * yesterday. Recomputed on every render, so it is right without anything having to update
- * it — which is what makes the ageing look after itself.
- */
-function daysSince(iso: string | null | undefined): number | null {
-  if (!iso) return null;
-  const then = new Date(iso).getTime();
-  if (Number.isNaN(then)) return null;
-  return Math.max(0, Math.floor((Date.now() - then) / 86_400_000));
-}
-
-/** Sent this long ago with no answer is what the follow-up count is counting. */
-const OVERDUE_DAYS = 3;
-
-const PAYMENT_STYLE: Record<string, { label: string; bg: string; fg: string }> = {
-  PENDING: { label: "Awaiting payment", bg: "#fef3c7", fg: "#92400e" },
-  PAID: { label: "Paid", bg: "#dcfce7", fg: "#166534" },
-  DECLINED: { label: "Declined", bg: "#f1f5f9", fg: "#64748b" },
 };
 
 function todayIso(): string {
@@ -353,19 +330,24 @@ export function QuotationsPage({ token }: Readonly<{ token: string }>) {
           {/* What the section is actually for: not how many quotations exist, but how many
               are out with a customer, how many came back, and how many have gone quiet. */}
           {(() => {
-            const sent = items.filter((q) => q.sentAt);
-            const paid = sent.filter((q) => q.paymentStatus === "PAID");
-            const waiting = sent.filter((q) => (q.paymentStatus ?? "PENDING") === "PENDING");
-            const overdue = waiting.filter((q) => (daysSince(q.sentAt) ?? 0) >= OVERDUE_DAYS);
-            const paidValue = paid.reduce(
-              (sum, q) => sum + q.baseAmount * (1 + (q.sgstPercent + q.cgstPercent) / 100),
-              0,
-            );
+            // Counted by the same stages the rows show, so a tile and the rows under it
+            // can never disagree about what a quotation is doing.
+            const stages = items.map((q) => quotationStage(q).stage);
+            const count = (stage: string) => stages.filter((s) => s === stage).length;
+            const paidValue = items
+              .filter((q) => q.paymentStatus === "PAID")
+              .reduce(
+                (sum, q) => sum + q.baseAmount * (1 + (q.sgstPercent + q.cgstPercent) / 100),
+                0,
+              );
+            const replied = count("REPLIED");
+            const waiting = count("WAITING");
             const tiles = [
-              { label: "Shared", value: String(sent.length), hint: `of ${items.length} quotations`, fg: "#334155" },
-              { label: "Paid", value: String(paid.length), hint: `₹${formatMoney(paidValue)} collected`, fg: "#166534" },
-              { label: "Awaiting payment", value: String(waiting.length), hint: "sent, no answer yet", fg: "#92400e" },
-              { label: `Quiet ${OVERDUE_DAYS}+ days`, value: String(overdue.length), hint: "worth a follow-up", fg: overdue.length > 0 ? "#b91c1c" : "#94a3b8" },
+              { label: "Created", value: String(count("CREATED")), hint: "not sent yet", fg: "#475569" },
+              { label: "Sent", value: String(count("SENT")), hint: `waiting under ${OVERDUE_DAYS} days`, fg: "#1d4ed8" },
+              { label: "Waiting", value: String(waiting), hint: `quiet ${OVERDUE_DAYS}+ days`, fg: waiting > 0 ? "#9a3412" : "#94a3b8" },
+              { label: "Replied", value: String(replied), hint: "read it and settle", fg: replied > 0 ? "#b91c1c" : "#94a3b8" },
+              { label: "Paid", value: String(count("PAID")), hint: `₹${formatMoney(paidValue)} collected`, fg: "#166534" },
             ];
             return (
               <div
@@ -450,16 +432,17 @@ export function QuotationsPage({ token }: Readonly<{ token: string }>) {
                         <td style={td}>{q.orderNumber || "-"}</td>
                         <td style={td}>₹{formatMoney(t)}</td>
                         <td style={td}>
-                          {!q.sentAt ? (
-                            <span style={{ color: "#94a3b8", fontSize: "12px" }}>Not sent</span>
-                          ) : (
-                            (() => {
-                              const days = daysSince(q.sentAt) ?? 0;
-                              const style =
-                                PAYMENT_STYLE[q.paymentStatus ?? "PENDING"] ?? PAYMENT_STYLE.PENDING!;
-                              const chasing = q.paymentStatus !== "PAID" && days >= OVERDUE_DAYS;
-                              return (
-                                <span style={{ display: "inline-flex", alignItems: "center", gap: "6px" }}>
+                          {(() => {
+                            const view = quotationStage(q);
+                            const days = daysSince(q.sentAt);
+                            return (
+                              <span style={{ display: "inline-flex", alignItems: "center", gap: "6px" }}>
+                                {/* The stage IS the select. A quotation that has been sent
+                                    can be settled by hand from here, and the option showing
+                                    is where it has got to — "Sent", "Waiting", "Replied" are
+                                    all still awaiting payment, so they are one option wearing
+                                    the name of the moment. */}
+                                {q.sentAt ? (
                                   <select
                                     value={q.paymentStatus ?? "PENDING"}
                                     onChange={(e) =>
@@ -472,6 +455,7 @@ export function QuotationsPage({ token }: Readonly<{ token: string }>) {
                                       `Sent ${days === 0 ? "today" : `${days} day${days === 1 ? "" : "s"} ago`}` +
                                       (q.sendCount && q.sendCount > 1 ? ` · ${q.sendCount} times` : "") +
                                       (q.sentTo ? ` · to ${q.sentTo}` : "") +
+                                      (q.replySeenAt ? ` · replied ${q.replySeenAt.slice(0, 10)}` : "") +
                                       (q.paidAt ? ` · paid ${q.paidAt.slice(0, 10)}` : "")
                                     }
                                     style={{
@@ -480,75 +464,64 @@ export function QuotationsPage({ token }: Readonly<{ token: string }>) {
                                       padding: "2px 6px",
                                       borderRadius: "999px",
                                       border: "1px solid transparent",
-                                      background: style.bg,
-                                      color: style.fg,
+                                      background: view.bg,
+                                      color: view.fg,
                                       cursor: "pointer",
                                     }}
                                   >
-                                    <option value="PENDING">Awaiting payment</option>
+                                    <option value="PENDING">{view.label}</option>
                                     <option value="PAID">Paid</option>
                                     <option value="DECLINED">Declined</option>
                                   </select>
-                                  {/* The ageing is the whole point of tracking the send: it
-                                      is what turns "we quoted them" into "they have had it
-                                      a week and said nothing". */}
+                                ) : (
+                                  // Never sent from here. Nothing to settle, so nothing to
+                                  // choose — most quotations are printed and handed over.
                                   <span
                                     style={{
                                       fontSize: "11px",
-                                      fontWeight: chasing ? 700 : 400,
-                                      color: chasing ? "#b91c1c" : "#94a3b8",
+                                      fontWeight: 700,
+                                      padding: "3px 9px",
+                                      borderRadius: "999px",
+                                      background: view.bg,
+                                      color: view.fg,
+                                    }}
+                                  >
+                                    {view.label}
+                                  </span>
+                                )}
+                                {days !== null ? (
+                                  <span
+                                    style={{
+                                      fontSize: "11px",
+                                      fontWeight: view.needsAttention ? 700 : 400,
+                                      color: view.needsAttention ? "#b91c1c" : "#94a3b8",
                                     }}
                                   >
                                     {days === 0 ? "today" : `${days}d`}
                                   </span>
-                                  {/* Set by the watcher, not by anyone here. Said plainly
-                                      because a status nobody remembers setting is one
-                                      nobody trusts — and the reasons are what make the
-                                      select above an informed correction rather than a
-                                      guess. */}
-                                  {q.paymentSource === "AUTO" ? (
-                                    <span
-                                      title={`Marked automatically from the customer's reply — ${q.paymentSignalReasons || "payment confirmed"}. Change it above if that is wrong.`}
-                                      style={{
-                                        fontSize: "10px",
-                                        fontWeight: 700,
-                                        padding: "1px 6px",
-                                        borderRadius: "999px",
-                                        background: "#ede9fe",
-                                        color: "#5b21b6",
-                                      }}
-                                    >
-                                      auto
-                                    </span>
-                                  ) : null}
-                                  {/* Payment-shaped, not enough to act on. This is the one
-                                      that needs eyes on it. */}
-                                  {q.paymentStatus !== "PAID" && q.paymentSignal === "WEAK" ? (
-                                    <span
-                                      title={`Customer replied — ${q.paymentSignalReasons}. Open Customer Emails to check, then set the status.`}
-                                      style={{
-                                        fontSize: "10px",
-                                        fontWeight: 700,
-                                        padding: "1px 6px",
-                                        borderRadius: "999px",
-                                        background: "#fef2f2",
-                                        color: "#b91c1c",
-                                      }}
-                                    >
-                                      🔔 check payment
-                                    </span>
-                                  ) : q.paymentStatus !== "PAID" && q.replySeenAt ? (
-                                    <span
-                                      title={`Customer replied ${q.replySeenAt.slice(0, 10)}`}
-                                      style={{ fontSize: "10px", fontWeight: 700, color: "#1d4ed8" }}
-                                    >
-                                      replied
-                                    </span>
-                                  ) : null}
-                                </span>
-                              );
-                            })()
-                          )}
+                                ) : null}
+                                {/* Set by the watcher, not by anyone here. Said plainly
+                                    because a status nobody remembers setting is one nobody
+                                    trusts, and the reasons are what make the select above an
+                                    informed correction rather than a guess. */}
+                                {q.paymentSource === "AUTO" ? (
+                                  <span
+                                    title={`Marked automatically from the customer's reply — ${q.paymentSignalReasons || "payment confirmed"}. Change it above if that is wrong.`}
+                                    style={{
+                                      fontSize: "10px",
+                                      fontWeight: 700,
+                                      padding: "1px 6px",
+                                      borderRadius: "999px",
+                                      background: "#ede9fe",
+                                      color: "#5b21b6",
+                                    }}
+                                  >
+                                    auto
+                                  </span>
+                                ) : null}
+                              </span>
+                            );
+                          })()}
                         </td>
                         <td style={{ ...td, ...stickyActions }}>
                           <button type="button" onClick={() => setPrinting(q)} style={linkBtn}>View / Print</button>

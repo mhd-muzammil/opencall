@@ -16,6 +16,7 @@ import {
   type QuotationLineItem,
 } from "../../../lib/quotationApiClient";
 import { formatMoney } from "../../../lib/quotationFormat";
+import { quotationStage, daysSince } from "../../../lib/quotationStage";
 import { getCustomerEmails, type MailboxHealth } from "../../../lib/customerEmailApiClient";
 import { quotationTotals } from "../../../lib/quotationTotals";
 import { QuotationPrint } from "../../../features/dashboard/components/QuotationPrint";
@@ -26,22 +27,6 @@ const EMPTY_LINE_ITEM: QuotationLineItem = {
   modelNo: "",
   serialNo: "",
   baseAmount: 0,
-};
-
-/** Whole days since the FIRST send — a follow-up must not reset the customer's clock. */
-function daysSince(iso: string | null | undefined): number | null {
-  if (!iso) return null;
-  const then = new Date(iso).getTime();
-  if (Number.isNaN(then)) return null;
-  return Math.max(0, Math.floor((Date.now() - then) / 86_400_000));
-}
-
-const OVERDUE_DAYS = 3;
-
-const PAYMENT_LABEL: Record<string, string> = {
-  PENDING: "Awaiting payment",
-  PAID: "Paid",
-  DECLINED: "Declined",
 };
 
 const EMPTY_FORM: CreateQuotationInput = {
@@ -425,15 +410,10 @@ export default function MobileQuotationsPage() {
                             style={{
                               marginTop: 2,
                               fontWeight: 700,
-                              color:
-                                q.paymentStatus === "PAID"
-                                  ? "#166534"
-                                  : (daysSince(q.sentAt) ?? 0) >= OVERDUE_DAYS
-                                    ? "#b91c1c"
-                                    : "#92400e",
+                              color: quotationStage(q).fg,
                             }}
                           >
-                            {PAYMENT_LABEL[q.paymentStatus ?? "PENDING"]} ·{" "}
+                            {quotationStage(q).label} ·{" "}
                             {daysSince(q.sentAt) === 0
                               ? "sent today"
                               : `${daysSince(q.sentAt)}d ago`}
@@ -442,7 +422,7 @@ export default function MobileQuotationsPage() {
                           </div>
                         ) : (
                           <div className="mRow__meta" style={{ marginTop: 2, color: "#94a3b8" }}>
-                            Not sent
+                            {quotationStage(q).label}
                           </div>
                         )}
                         {/* Payment-shaped but not conclusive: the one that needs eyes. */}

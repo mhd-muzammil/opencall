@@ -40,6 +40,18 @@ export interface Quotation {
   /** Null until the sheet has been corrected — an unedited quotation has no edit to show. */
   updatedAt?: string | null;
   updatedBy?: string;
+  /** Null until mailed from here. Not "sent and undated" — absent means never sent. */
+  sentAt?: string | null;
+  sentTo?: string;
+  sentBy?: string;
+  /** Every send including follow-ups, so "chased three times" is visible. */
+  sendCount?: number;
+  lastSentAt?: string | null;
+  /** 'PENDING' | 'PAID' | 'DECLINED' */
+  paymentStatus?: string;
+  paidAt?: string | null;
+  paidBy?: string;
+  paymentNote?: string;
   /** Every priced row, in entry order. This is what the form and the printed sheet read. */
   lineItems: QuotationLineItem[];
 }
@@ -130,6 +142,45 @@ export async function updateQuotation(
     `${WEB_API_BASE_URL}/api/v1/quotations/${encodeURIComponent(id)}`,
     {
       method: "PUT",
+      headers: authHeaders(token),
+      body: JSON.stringify(input),
+    },
+  );
+  return readJson<Quotation>(response);
+}
+
+/**
+ * Mail the quotation to the customer, from a region mailbox.
+ *
+ * `to` is optional: absent means the address on the quotation. `note` rides above the sheet
+ * in the same message, for the covering line someone wants to add.
+ */
+export async function sendQuotation(
+  token: string,
+  id: string,
+  input: { regionCode: string; to?: string; note?: string },
+): Promise<Quotation> {
+  const response = await fetch(
+    `${WEB_API_BASE_URL}/api/v1/quotations/${encodeURIComponent(id)}/send`,
+    {
+      method: "POST",
+      headers: authHeaders(token),
+      body: JSON.stringify(input),
+    },
+  );
+  return readJson<Quotation>(response);
+}
+
+/** Record what the customer did about it. A person's call, never inferred from a reply. */
+export async function setQuotationPayment(
+  token: string,
+  id: string,
+  input: { status: "PENDING" | "PAID" | "DECLINED"; note?: string },
+): Promise<Quotation> {
+  const response = await fetch(
+    `${WEB_API_BASE_URL}/api/v1/quotations/${encodeURIComponent(id)}/payment`,
+    {
+      method: "PATCH",
       headers: authHeaders(token),
       body: JSON.stringify(input),
     },

@@ -4,6 +4,8 @@ import {
   autofillQuotation,
   createQuotation,
   updateQuotation,
+  sendQuotation,
+  setQuotationPayment,
   listQuotations,
   type CreateQuotationInput,
   type Quotation,
@@ -12,6 +14,7 @@ import {
 import { formatMoney } from "../../../lib/quotationFormat";
 import { quotationTotals } from "../../../lib/quotationTotals";
 import { QuotationPrint } from "./QuotationPrint";
+import { getCustomerEmails, type MailboxHealth } from "../../../lib/customerEmailApiClient";
 
 const EMPTY_LINE_ITEM: QuotationLineItem = {
   serviceDescription: "",
@@ -38,6 +41,30 @@ const EMPTY_FORM: CreateQuotationInput = {
   cgstPercent: 9,
 };
 
+/**
+ * Whole days since a quotation went out.
+ *
+ * Counted from the FIRST send, not the last: it answers "how long has the customer had
+ * this", and a follow-up must not make a fortnight-old quotation look like it went out
+ * yesterday. Recomputed on every render, so it is right without anything having to update
+ * it — which is what makes the ageing look after itself.
+ */
+function daysSince(iso: string | null | undefined): number | null {
+  if (!iso) return null;
+  const then = new Date(iso).getTime();
+  if (Number.isNaN(then)) return null;
+  return Math.max(0, Math.floor((Date.now() - then) / 86_400_000));
+}
+
+/** Sent this long ago with no answer is what the follow-up count is counting. */
+const OVERDUE_DAYS = 3;
+
+const PAYMENT_STYLE: Record<string, { label: string; bg: string; fg: string }> = {
+  PENDING: { label: "Awaiting payment", bg: "#fef3c7", fg: "#92400e" },
+  PAID: { label: "Paid", bg: "#dcfce7", fg: "#166534" },
+  DECLINED: { label: "Declined", bg: "#f1f5f9", fg: "#64748b" },
+};
+
 function todayIso(): string {
   const d = new Date();
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
@@ -48,6 +75,79 @@ export function QuotationsPage({ token }: Readonly<{ token: string }>) {
   // The quotation being corrected. Its id is what the save goes to, and its number is
   // shown on the form so it is obvious the sheet is not being reissued under a new one.
   const [editing, setEditing] = useState<Quotation | null>(null);
+
+  // --- Sending, and what came back ------------------------------------------------------
+  //
+  // The mailbox list comes from Customer Emails, because that is where the region mailboxes
+  // are configured and a quotation must go out from the same address the customer already
+  // corresponds with — a reply landing in an inbox nobody reads is worse than not sending.
+  const [mailboxes, setMailboxes] = useState<MailboxHealth[]>([]);
+  const [sending, setSending] = useState<Quotation | null>(null);
+  const [sendTo, setSendTo] = useState("");
+  const [sendRegion, setSendRegion] = useState("");
+  const [sendNote, setSendNote] = useState("");
+  const [sendBusy, setSendBusy] = useState(false);
+
+  useEffect(() => {
+    // One row is enough — the mailboxes ride along with any page of the inbox, and there
+    // is no lighter endpoint for them. A failure just leaves Send asking for a mailbox.
+    void getCustomerEmails(token, { limit: 1 })
+      .then((res) => setMailboxes(res.mailboxes))
+      .catch(() => {
+        /* Send will say it needs a mailbox */
+      });
+  }, [token]);
+
+  function startSend(q: Quotation) {
+    setSending(q);
+    setSendTo(q.customerEmail || "");
+    setSendNote("");
+    setSendRegion(mailboxes[0]?.regionCode ?? "");
+    setMessage(null);
+  }
+
+  async function handleSend() {
+    if (!sending) return;
+    if (!sendRegion) {
+      setMessage("Choose which mailbox to send from.");
+      return;
+    }
+    if (!sendTo.trim()) {
+      setMessage("Enter the customer's email address.");
+      return;
+    }
+    setSendBusy(true);
+    setMessage(null);
+    try {
+      await sendQuotation(token, sending.id, {
+        regionCode: sendRegion,
+        to: sendTo.trim(),
+        note: sendNote.trim(),
+      });
+      setSending(null);
+      setMessage(`Quotation sent to ${sendTo.trim()}.`);
+      void load();
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Send failed");
+    } finally {
+      setSendBusy(false);
+    }
+  }
+
+  /**
+   * What the customer did about it — set by the person looking at their reply, never read
+   * out of it. A screenshot of a transfer, a part payment and a refusal all look alike to
+   * a parser, and guessing wrong marks an unpaid quotation paid.
+   */
+  async function handlePayment(q: Quotation, status: "PENDING" | "PAID" | "DECLINED") {
+    setMessage(null);
+    try {
+      await setQuotationPayment(token, q.id, { status });
+      void load();
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Could not update payment");
+    }
+  }
 
   // List state
   const [items, setItems] = useState<Quotation[]>([]);
@@ -250,6 +350,56 @@ export function QuotationsPage({ token }: Readonly<{ token: string }>) {
 
       {mode === "list" ? (
         <>
+          {/* What the section is actually for: not how many quotations exist, but how many
+              are out with a customer, how many came back, and how many have gone quiet. */}
+          {(() => {
+            const sent = items.filter((q) => q.sentAt);
+            const paid = sent.filter((q) => q.paymentStatus === "PAID");
+            const waiting = sent.filter((q) => (q.paymentStatus ?? "PENDING") === "PENDING");
+            const overdue = waiting.filter((q) => (daysSince(q.sentAt) ?? 0) >= OVERDUE_DAYS);
+            const paidValue = paid.reduce(
+              (sum, q) => sum + q.baseAmount * (1 + (q.sgstPercent + q.cgstPercent) / 100),
+              0,
+            );
+            const tiles = [
+              { label: "Shared", value: String(sent.length), hint: `of ${items.length} quotations`, fg: "#334155" },
+              { label: "Paid", value: String(paid.length), hint: `₹${formatMoney(paidValue)} collected`, fg: "#166534" },
+              { label: "Awaiting payment", value: String(waiting.length), hint: "sent, no answer yet", fg: "#92400e" },
+              { label: `Quiet ${OVERDUE_DAYS}+ days`, value: String(overdue.length), hint: "worth a follow-up", fg: overdue.length > 0 ? "#b91c1c" : "#94a3b8" },
+            ];
+            return (
+              <div
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))",
+                  gap: "10px",
+                  marginBottom: "14px",
+                }}
+              >
+                {tiles.map((tile) => (
+                  <div
+                    key={tile.label}
+                    style={{
+                      padding: "10px 14px",
+                      borderRadius: "10px",
+                      border: "1px solid var(--border-color, #e5e7eb)",
+                      background: "var(--card-bg, #ffffff)",
+                      minWidth: 0,
+                    }}
+                  >
+                    <div style={{ fontSize: "11px", fontWeight: 700, color: "#64748b", textTransform: "uppercase", letterSpacing: "0.02em" }}>
+                      {tile.label}
+                    </div>
+                    <div style={{ fontSize: "22px", fontWeight: 800, color: tile.fg, lineHeight: 1.2 }}>
+                      {tile.value}
+                    </div>
+                    <div style={{ fontSize: "11px", color: "#94a3b8" }}>{tile.hint}</div>
+                  </div>
+                ))}
+              </div>
+            );
+          })()}
+
           <input
             type="search"
             value={search}
@@ -276,14 +426,15 @@ export function QuotationsPage({ token }: Readonly<{ token: string }>) {
                   <th style={th}>Case ID</th>
                   <th style={th}>WO</th>
                   <th style={th}>Total</th>
+                  <th style={th}>Status</th>
                   <th style={{ ...th, ...stickyActions, background: "var(--th-bg, #f3f4f6)" }}>PDF</th>
                 </tr>
               </thead>
               <tbody>
                 {loading ? (
-                  <tr><td colSpan={8} style={{ ...td, textAlign: "center", padding: "26px", color: "#6b7280" }}>Loading…</td></tr>
+                  <tr><td colSpan={9} style={{ ...td, textAlign: "center", padding: "26px", color: "#6b7280" }}>Loading…</td></tr>
                 ) : items.length === 0 ? (
-                  <tr><td colSpan={8} style={{ ...td, textAlign: "center", padding: "26px", color: "#6b7280" }}>No quotations yet.</td></tr>
+                  <tr><td colSpan={9} style={{ ...td, textAlign: "center", padding: "26px", color: "#6b7280" }}>No quotations yet.</td></tr>
                 ) : (
                   items.map((q) => {
                     const t = q.baseAmount * (1 + (q.sgstPercent + q.cgstPercent) / 100);
@@ -298,10 +449,71 @@ export function QuotationsPage({ token }: Readonly<{ token: string }>) {
                         <td style={td}>{q.caseId || "-"}</td>
                         <td style={td}>{q.orderNumber || "-"}</td>
                         <td style={td}>₹{formatMoney(t)}</td>
+                        <td style={td}>
+                          {!q.sentAt ? (
+                            <span style={{ color: "#94a3b8", fontSize: "12px" }}>Not sent</span>
+                          ) : (
+                            (() => {
+                              const days = daysSince(q.sentAt) ?? 0;
+                              const style =
+                                PAYMENT_STYLE[q.paymentStatus ?? "PENDING"] ?? PAYMENT_STYLE.PENDING!;
+                              const chasing = q.paymentStatus !== "PAID" && days >= OVERDUE_DAYS;
+                              return (
+                                <span style={{ display: "inline-flex", alignItems: "center", gap: "6px" }}>
+                                  <select
+                                    value={q.paymentStatus ?? "PENDING"}
+                                    onChange={(e) =>
+                                      void handlePayment(
+                                        q,
+                                        e.target.value as "PENDING" | "PAID" | "DECLINED",
+                                      )
+                                    }
+                                    title={
+                                      `Sent ${days === 0 ? "today" : `${days} day${days === 1 ? "" : "s"} ago`}` +
+                                      (q.sendCount && q.sendCount > 1 ? ` · ${q.sendCount} times` : "") +
+                                      (q.sentTo ? ` · to ${q.sentTo}` : "") +
+                                      (q.paidAt ? ` · paid ${q.paidAt.slice(0, 10)}` : "")
+                                    }
+                                    style={{
+                                      fontSize: "11px",
+                                      fontWeight: 700,
+                                      padding: "2px 6px",
+                                      borderRadius: "999px",
+                                      border: "1px solid transparent",
+                                      background: style.bg,
+                                      color: style.fg,
+                                      cursor: "pointer",
+                                    }}
+                                  >
+                                    <option value="PENDING">Awaiting payment</option>
+                                    <option value="PAID">Paid</option>
+                                    <option value="DECLINED">Declined</option>
+                                  </select>
+                                  {/* The ageing is the whole point of tracking the send: it
+                                      is what turns "we quoted them" into "they have had it
+                                      a week and said nothing". */}
+                                  <span
+                                    style={{
+                                      fontSize: "11px",
+                                      fontWeight: chasing ? 700 : 400,
+                                      color: chasing ? "#b91c1c" : "#94a3b8",
+                                    }}
+                                  >
+                                    {days === 0 ? "today" : `${days}d`}
+                                  </span>
+                                </span>
+                              );
+                            })()
+                          )}
+                        </td>
                         <td style={{ ...td, ...stickyActions }}>
                           <button type="button" onClick={() => setPrinting(q)} style={linkBtn}>View / Print</button>
                           <span style={{ color: "#d1d5db", margin: "0 6px" }}>|</span>
                           <button type="button" onClick={() => startEdit(q)} style={linkBtn}>Edit</button>
+                          <span style={{ color: "#d1d5db", margin: "0 6px" }}>|</span>
+                          <button type="button" onClick={() => startSend(q)} style={linkBtn}>
+                            {q.sentAt ? "Re-send" : "Send"}
+                          </button>
                         </td>
                       </tr>
                     );
@@ -531,6 +743,98 @@ export function QuotationsPage({ token }: Readonly<{ token: string }>) {
       )}
 
       {printing && <PrintOverlay q={printing} onClose={() => setPrinting(null)} />}
+
+      {/* Send. Shown as a small form rather than a one-click action because all three
+          fields matter: which mailbox it leaves from decides where the reply lands, the
+          address may not be the one on the sheet, and a covering line is usually wanted. */}
+      {sending ? (
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-label={`Send ${sending.quotationNo}`}
+          style={{
+            position: "fixed",
+            inset: 0,
+            background: "rgba(15, 23, 42, 0.45)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            zIndex: 1000,
+            padding: "20px",
+          }}
+          onClick={() => (sendBusy ? null : setSending(null))}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              background: "var(--card-bg, #ffffff)",
+              borderRadius: "12px",
+              padding: "22px 24px",
+              width: "min(460px, 100%)",
+              maxHeight: "90vh",
+              overflowY: "auto",
+            }}
+          >
+            <h3 style={{ margin: "0 0 4px 0", fontSize: "16px", fontWeight: 700 }}>
+              Send {sending.quotationNo}
+            </h3>
+            <p style={{ margin: "0 0 16px 0", fontSize: "12px", color: "#64748b" }}>
+              {sending.sentAt
+                ? `Already sent ${daysSince(sending.sentAt)} day(s) ago${sending.sendCount && sending.sendCount > 1 ? ` · ${sending.sendCount} times` : ""}. This sends it again.`
+                : "The quotation goes out as the body of the mail, from the region mailbox."}
+            </p>
+
+            <label style={label}>From mailbox</label>
+            <select
+              value={sendRegion}
+              onChange={(e) => setSendRegion(e.target.value)}
+              style={{ ...field, marginBottom: "12px" }}
+            >
+              <option value="">Choose a mailbox…</option>
+              {mailboxes.map((m) => (
+                <option key={m.email} value={m.regionCode}>
+                  {m.regionCode} — {m.email}
+                </option>
+              ))}
+            </select>
+
+            <label style={label}>To</label>
+            <input
+              style={{ ...field, marginBottom: "12px" }}
+              value={sendTo}
+              onChange={(e) => setSendTo(e.target.value)}
+              placeholder="customer@example.com"
+            />
+
+            <label style={label}>Covering note (optional)</label>
+            <textarea
+              style={{ ...field, marginBottom: "16px", minHeight: "80px", resize: "vertical" }}
+              value={sendNote}
+              onChange={(e) => setSendNote(e.target.value)}
+              placeholder="Anything you want to say above the quotation…"
+            />
+
+            <div style={{ display: "flex", gap: "10px", justifyContent: "flex-end" }}>
+              <button
+                type="button"
+                onClick={() => setSending(null)}
+                disabled={sendBusy}
+                style={secondaryBtn}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => void handleSend()}
+                disabled={sendBusy}
+                style={primaryBtn}
+              >
+                {sendBusy ? "Sending…" : "Send to customer"}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </section>
   );
 }

@@ -8,12 +8,15 @@ import {
   autofillQuotation,
   createQuotation,
   updateQuotation,
+  sendQuotation,
+  setQuotationPayment,
   listQuotations,
   type CreateQuotationInput,
   type Quotation,
   type QuotationLineItem,
 } from "../../../lib/quotationApiClient";
 import { formatMoney } from "../../../lib/quotationFormat";
+import { getCustomerEmails, type MailboxHealth } from "../../../lib/customerEmailApiClient";
 import { quotationTotals } from "../../../lib/quotationTotals";
 import { QuotationPrint } from "../../../features/dashboard/components/QuotationPrint";
 
@@ -23,6 +26,22 @@ const EMPTY_LINE_ITEM: QuotationLineItem = {
   modelNo: "",
   serialNo: "",
   baseAmount: 0,
+};
+
+/** Whole days since the FIRST send — a follow-up must not reset the customer's clock. */
+function daysSince(iso: string | null | undefined): number | null {
+  if (!iso) return null;
+  const then = new Date(iso).getTime();
+  if (Number.isNaN(then)) return null;
+  return Math.max(0, Math.floor((Date.now() - then) / 86_400_000));
+}
+
+const OVERDUE_DAYS = 3;
+
+const PAYMENT_LABEL: Record<string, string> = {
+  PENDING: "Awaiting payment",
+  PAID: "Paid",
+  DECLINED: "Declined",
 };
 
 const EMPTY_FORM: CreateQuotationInput = {
@@ -62,6 +81,61 @@ export default function MobileQuotationsPage() {
   // The quotation being corrected. Its id is where the save goes; its number is shown on
   // the form because an edit does NOT reissue it.
   const [editing, setEditing] = useState<Quotation | null>(null);
+
+  // Sending goes through the region mailbox Customer Emails uses, so a reply lands in the
+  // inbox the office already reads.
+  const [mailboxes, setMailboxes] = useState<MailboxHealth[]>([]);
+  const [sending, setSending] = useState<Quotation | null>(null);
+  const [sendRegion, setSendRegion] = useState("");
+  const [sendTo, setSendTo] = useState("");
+  const [sendBusy, setSendBusy] = useState(false);
+
+  useEffect(() => {
+    if (!session?.token) return;
+    void getCustomerEmails(session.token, { limit: 1 })
+      .then((res) => setMailboxes(res.mailboxes))
+      .catch(() => {
+        /* Send will ask for a mailbox */
+      });
+  }, [session?.token]);
+
+  function startSend(q: Quotation) {
+    setSending(q);
+    setSendTo(q.customerEmail || "");
+    setSendRegion(mailboxes[0]?.regionCode ?? "");
+    setMessage(null);
+  }
+
+  async function handleSend() {
+    if (!sending || !session) return;
+    if (!sendRegion) return setMessage("Choose which mailbox to send from.");
+    if (!sendTo.trim()) return setMessage("Enter the customer's email address.");
+    setSendBusy(true);
+    setMessage(null);
+    try {
+      await sendQuotation(session.token, sending.id, {
+        regionCode: sendRegion,
+        to: sendTo.trim(),
+      });
+      setSending(null);
+      setMessage(`Sent to ${sendTo.trim()}.`);
+      void load();
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Send failed");
+    } finally {
+      setSendBusy(false);
+    }
+  }
+
+  async function handlePayment(q: Quotation, status: "PENDING" | "PAID" | "DECLINED") {
+    if (!session) return;
+    try {
+      await setQuotationPayment(session.token, q.id, { status });
+      void load();
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Could not update payment");
+    }
+  }
   const [items, setItems] = useState<Quotation[]>([]);
   const [search, setSearch] = useState("");
   const [debounced, setDebounced] = useState("");
@@ -343,14 +417,62 @@ export default function MobileQuotationsPage() {
                         <div className="mRow__meta" style={{ marginTop: 2 }}>
                           {q.quotationDate} · Case {q.caseId || "-"} · WO {q.orderNumber || "-"}
                         </div>
+                        {/* Sent when, and what came back. The ageing is what turns "we
+                            quoted them" into "they have had it a week and said nothing". */}
+                        {q.sentAt ? (
+                          <div
+                            className="mRow__meta"
+                            style={{
+                              marginTop: 2,
+                              fontWeight: 700,
+                              color:
+                                q.paymentStatus === "PAID"
+                                  ? "#166534"
+                                  : (daysSince(q.sentAt) ?? 0) >= OVERDUE_DAYS
+                                    ? "#b91c1c"
+                                    : "#92400e",
+                            }}
+                          >
+                            {PAYMENT_LABEL[q.paymentStatus ?? "PENDING"]} ·{" "}
+                            {daysSince(q.sentAt) === 0
+                              ? "sent today"
+                              : `${daysSince(q.sentAt)}d ago`}
+                            {q.sendCount && q.sendCount > 1 ? ` · ${q.sendCount}×` : ""}
+                          </div>
+                        ) : (
+                          <div className="mRow__meta" style={{ marginTop: 2, color: "#94a3b8" }}>
+                            Not sent
+                          </div>
+                        )}
                       </button>
                       <div
                         style={{
                           display: "flex",
                           justifyContent: "flex-end",
+                          gap: 8,
+                          flexWrap: "wrap",
                           padding: "0 14px 10px",
                         }}
                       >
+                        {q.sentAt ? (
+                          <select
+                            className="mChip"
+                            value={q.paymentStatus ?? "PENDING"}
+                            onChange={(e) =>
+                              void handlePayment(
+                                q,
+                                e.target.value as "PENDING" | "PAID" | "DECLINED",
+                              )
+                            }
+                          >
+                            <option value="PENDING">Awaiting payment</option>
+                            <option value="PAID">Paid</option>
+                            <option value="DECLINED">Declined</option>
+                          </select>
+                        ) : null}
+                        <button type="button" className="mChip" onClick={() => startSend(q)}>
+                          {q.sentAt ? "Re-send" : "Send"}
+                        </button>
                         <button
                           type="button"
                           className="mChip"
@@ -556,6 +678,64 @@ export default function MobileQuotationsPage() {
       </main>
 
       {printing && <PrintOverlay q={printing} onClose={() => setPrinting(null)} />}
+
+      {/* Send. A sheet rather than a one-tap action: which mailbox it leaves from decides
+          where the reply lands, and the address may not be the one on the quotation. */}
+      {sending ? (
+        <div className="mSheetBackdrop" onClick={() => !sendBusy && setSending(null)}>
+          <div className="mSheet" onClick={(e) => e.stopPropagation()}>
+            <div className="mSheet__grip" />
+            <div className="mSheet__title">Send {sending.quotationNo}</div>
+            <div className="mMuted" style={{ fontSize: 12.5, marginBottom: 12 }}>
+              {sending.sentAt
+                ? `Already sent ${daysSince(sending.sentAt)}d ago. This sends it again.`
+                : "Goes out as the body of the mail, from the region mailbox."}
+            </div>
+
+            <label className="mLabel">From mailbox</label>
+            <select
+              className="mSelect"
+              value={sendRegion}
+              onChange={(e) => setSendRegion(e.target.value)}
+              style={{ marginBottom: 10 }}
+            >
+              <option value="">Choose a mailbox…</option>
+              {mailboxes.map((m) => (
+                <option key={m.email} value={m.regionCode}>
+                  {m.regionCode} — {m.email}
+                </option>
+              ))}
+            </select>
+
+            <label className="mLabel">To</label>
+            <input
+              className="mInput"
+              value={sendTo}
+              onChange={(e) => setSendTo(e.target.value)}
+              placeholder="customer@example.com"
+              style={{ marginBottom: 14 }}
+            />
+
+            <button
+              type="button"
+              className="mBtn"
+              disabled={sendBusy}
+              onClick={() => void handleSend()}
+            >
+              {sendBusy ? "Sending…" : "Send to customer"}
+            </button>
+            <button
+              type="button"
+              className="mBtn mBtn--ghost"
+              style={{ marginTop: 8 }}
+              disabled={sendBusy}
+              onClick={() => setSending(null)}
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      ) : null}
     </>
   );
 }

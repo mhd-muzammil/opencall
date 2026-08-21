@@ -15,6 +15,28 @@ import { formatMoney } from "../../../lib/quotationFormat";
 import { quotationTotals } from "../../../lib/quotationTotals";
 import { QuotationPrint } from "./QuotationPrint";
 import { quotationStage, daysSince, OVERDUE_DAYS } from "../../../lib/quotationStage";
+
+/**
+ * One test per header box, written once so the count and the rows behind it cannot drift.
+ * A tile that says 38 and a list that shows 41 is worse than either being wrong alone.
+ */
+const TILE_LABELS: Record<string, string> = {
+  CREATED: "created",
+  SENT: "sent",
+  REPLIED: "replied",
+  NO_REPLY: "no reply",
+  PAID: "paid",
+  NOT_PAID: "not paid",
+};
+
+const TILE_TESTS: Record<string, (q: Quotation) => boolean> = {
+  CREATED: (q) => !q.sentAt,
+  SENT: (q) => Boolean(q.sentAt),
+  REPLIED: (q) => Boolean(q.sentAt && q.replySeenAt),
+  NO_REPLY: (q) => Boolean(q.sentAt) && !q.replySeenAt,
+  PAID: (q) => q.paymentStatus === "PAID",
+  NOT_PAID: (q) => (q.paymentStatus ?? "PENDING") === "PENDING",
+};
 import { getCustomerEmails, type MailboxHealth } from "../../../lib/customerEmailApiClient";
 
 const EMPTY_LINE_ITEM: QuotationLineItem = {
@@ -142,6 +164,11 @@ export function QuotationsPage({
   // List state
   const [items, setItems] = useState<Quotation[]>([]);
   const [search, setSearch] = useState("");
+  /**
+   * The header box someone has clicked, if any. A number nobody can open is a number they
+   * have to take on trust; clicking it shows the rows it counted.
+   */
+  const [tileFilter, setTileFilter] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [printing, setPrinting] = useState<Quotation | null>(null);
 
@@ -363,22 +390,28 @@ export function QuotationsPage({
                 0,
               );
 
-            const created = items.filter((q) => !q.sentAt).length;
-            const sent = items.filter((q) => q.sentAt).length;
-            const replied = items.filter((q) => q.replySeenAt).length;
-            const noReply = items.filter((q) => !q.replySeenAt).length;
-            const paid = items.filter((q) => q.paymentStatus === "PAID").length;
-            const notPaid = items.filter(
-              (q) => (q.paymentStatus ?? "PENDING") === "PENDING",
-            ).length;
+            // A strict funnel: Created + Sent is everything, and Sent splits into Replied
+            // and No reply. Replied means the customer answered THE MAIL WE SENT — a
+            // quotation never sent from here has nothing to have been replied to, so it
+            // stays at Created however much mail its work order has drawn.
+            //
+            // Those still say so on the row, in red, with a link to what the customer
+            // wrote. The boxes track the process; the rows carry what needs doing.
+            const count = (key: string) => items.filter(TILE_TESTS[key]!).length;
+            const created = count("CREATED");
+            const sent = count("SENT");
+            const replied = count("REPLIED");
+            const noReply = count("NO_REPLY");
+            const paid = count("PAID");
+            const notPaid = count("NOT_PAID");
 
             const tiles = [
-              { label: "Created", value: String(created), hint: "not sent from here", fg: "#475569" },
-              { label: "Sent", value: String(sent), hint: "mailed to the customer", fg: "#1d4ed8" },
-              { label: "Replied", value: String(replied), hint: "customer wrote back", fg: replied > 0 ? "#b91c1c" : "#94a3b8" },
-              { label: "No reply", value: String(noReply), hint: "nothing heard yet", fg: "#9a3412" },
-              { label: "Paid", value: String(paid), hint: `₹${formatMoney(paidValue)} collected`, fg: "#166534" },
-              { label: "Not paid", value: String(notPaid), hint: `₹${formatMoney(owedValue)} outstanding`, fg: notPaid > 0 ? "#b91c1c" : "#94a3b8" },
+              { key: "CREATED", label: "Created", value: String(created), hint: "not sent from here", fg: "#475569" },
+              { key: "SENT", label: "Sent", value: String(sent), hint: "mailed to the customer", fg: "#1d4ed8" },
+              { key: "REPLIED", label: "Replied", value: String(replied), hint: "answered what we sent", fg: replied > 0 ? "#b91c1c" : "#94a3b8" },
+              { key: "NO_REPLY", label: "No reply", value: String(noReply), hint: "sent, nothing heard", fg: noReply > 0 ? "#9a3412" : "#94a3b8" },
+              { key: "PAID", label: "Paid", value: String(paid), hint: `₹${formatMoney(paidValue)} collected`, fg: "#166534" },
+              { key: "NOT_PAID", label: "Not paid", value: String(notPaid), hint: `₹${formatMoney(owedValue)} outstanding`, fg: notPaid > 0 ? "#b91c1c" : "#94a3b8" },
             ];
             return (
               <div
@@ -390,13 +423,28 @@ export function QuotationsPage({
                 }}
               >
                 {tiles.map((tile) => (
-                  <div
+                  // Clicking narrows the list to exactly the rows this counted, and clicking
+                  // the same one again clears it — the way out has to be where the way in
+                  // was, or a filtered list looks like a broken one.
+                  <button
                     key={tile.label}
+                    type="button"
+                    onClick={() =>
+                      setTileFilter((current) => (current === tile.key ? null : tile.key))
+                    }
+                    title={
+                      tileFilter === tile.key
+                        ? "Showing these — click to show all again"
+                        : `Show only these ${tile.label.toLowerCase()} quotations`
+                    }
                     style={{
+                      textAlign: "left",
+                      cursor: "pointer",
                       padding: "10px 14px",
                       borderRadius: "10px",
-                      border: "1px solid var(--border-color, #e5e7eb)",
-                      background: "var(--card-bg, #ffffff)",
+                      border: `1px solid ${tileFilter === tile.key ? tile.fg : "var(--border-color, #e5e7eb)"}`,
+                      boxShadow: tileFilter === tile.key ? `inset 0 0 0 1px ${tile.fg}` : "none",
+                      background: tileFilter === tile.key ? "#f8fafc" : "var(--card-bg, #ffffff)",
                       minWidth: 0,
                     }}
                   >
@@ -407,11 +455,50 @@ export function QuotationsPage({
                       {tile.value}
                     </div>
                     <div style={{ fontSize: "11px", color: "#94a3b8" }}>{tile.hint}</div>
-                  </div>
+                  </button>
                 ))}
               </div>
             );
           })()}
+
+          {tileFilter ? (
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: "10px",
+                marginBottom: "12px",
+                padding: "8px 14px",
+                borderRadius: "8px",
+                background: "#eef2ff",
+                border: "1px solid #c7d2fe",
+                fontSize: "13px",
+                color: "#3730a3",
+              }}
+            >
+              <span>
+                Showing{" "}
+                <strong>{TILE_LABELS[tileFilter] ?? tileFilter}</strong>{" "}
+                only.
+              </span>
+              <button
+                type="button"
+                onClick={() => setTileFilter(null)}
+                style={{
+                  marginLeft: "auto",
+                  background: "none",
+                  border: "none",
+                  color: "#4338ca",
+                  fontWeight: 700,
+                  cursor: "pointer",
+                  textDecoration: "underline",
+                  fontSize: "12px",
+                }}
+              >
+                Show all
+              </button>
+            </div>
+          ) : null}
 
           <input
             type="search"
@@ -449,7 +536,7 @@ export function QuotationsPage({
                 ) : items.length === 0 ? (
                   <tr><td colSpan={9} style={{ ...td, textAlign: "center", padding: "26px", color: "#6b7280" }}>No quotations yet.</td></tr>
                 ) : (
-                  items.map((q) => {
+                  items.filter((q) => !tileFilter || TILE_TESTS[tileFilter]!(q)).map((q) => {
                     const t = q.baseAmount * (1 + (q.sgstPercent + q.cgstPercent) / 100);
                     return (
                       <tr key={q.id}>

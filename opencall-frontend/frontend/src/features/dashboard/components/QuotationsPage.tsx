@@ -29,13 +29,26 @@ const TILE_LABELS: Record<string, string> = {
   NOT_PAID: "not paid",
 };
 
+/** Still owed. The first four boxes describe where an OPEN quotation has got to. */
+const isOpen = (q: Quotation) => (q.paymentStatus ?? "PENDING") === "PENDING";
+
+/**
+ * One test per header box, written once so the count and the rows behind it cannot drift.
+ *
+ * The first four are stages of an open quotation and are mutually exclusive: a paid one has
+ * finished its journey and belongs under Paid, not still sitting in Created. Counting it in
+ * both is what made Created read 50 on a list of 50 where three were already settled.
+ *
+ * The arithmetic now holds: Created + Sent = Not paid, Sent = Replied + No reply, and
+ * Paid + Not paid = everything.
+ */
 const TILE_TESTS: Record<string, (q: Quotation) => boolean> = {
-  CREATED: (q) => !q.sentAt,
-  SENT: (q) => Boolean(q.sentAt),
-  REPLIED: (q) => Boolean(q.sentAt && q.replySeenAt),
-  NO_REPLY: (q) => Boolean(q.sentAt) && !q.replySeenAt,
+  CREATED: (q) => isOpen(q) && !q.sentAt,
+  SENT: (q) => isOpen(q) && Boolean(q.sentAt),
+  REPLIED: (q) => isOpen(q) && Boolean(q.sentAt && q.replySeenAt),
+  NO_REPLY: (q) => isOpen(q) && Boolean(q.sentAt) && !q.replySeenAt,
   PAID: (q) => q.paymentStatus === "PAID",
-  NOT_PAID: (q) => (q.paymentStatus ?? "PENDING") === "PENDING",
+  NOT_PAID: isOpen,
 };
 import { getCustomerEmails, type MailboxHealth } from "../../../lib/customerEmailApiClient";
 
@@ -406,9 +419,9 @@ export function QuotationsPage({
             const notPaid = count("NOT_PAID");
 
             const tiles = [
-              { key: "CREATED", label: "Created", value: String(created), hint: "not sent from here", fg: "#475569" },
-              { key: "SENT", label: "Sent", value: String(sent), hint: "mailed to the customer", fg: "#1d4ed8" },
-              { key: "REPLIED", label: "Replied", value: String(replied), hint: "answered what we sent", fg: replied > 0 ? "#b91c1c" : "#94a3b8" },
+              { key: "CREATED", label: "Created", value: String(created), hint: "not sent, still unpaid", fg: "#475569" },
+              { key: "SENT", label: "Sent", value: String(sent), hint: "mailed, still unpaid", fg: "#1d4ed8" },
+              { key: "REPLIED", label: "Replied", value: String(replied), hint: "answered, still unpaid", fg: replied > 0 ? "#b91c1c" : "#94a3b8" },
               { key: "NO_REPLY", label: "No reply", value: String(noReply), hint: "sent, nothing heard", fg: noReply > 0 ? "#9a3412" : "#94a3b8" },
               { key: "PAID", label: "Paid", value: String(paid), hint: `₹${formatMoney(paidValue)} collected`, fg: "#166534" },
               { key: "NOT_PAID", label: "Not paid", value: String(notPaid), hint: `₹${formatMoney(owedValue)} outstanding`, fg: notPaid > 0 ? "#b91c1c" : "#94a3b8" },

@@ -343,23 +343,36 @@ export function QuotationsPage({
           {/* What the section is actually for: not how many quotations exist, but how many
               are out with a customer, how many came back, and how many have gone quiet. */}
           {(() => {
-            // Counted by the same stages the rows show, so a tile and the rows under it
+            // Counted off the same stages the rows show, so a tile and the rows under it
             // can never disagree about what a quotation is doing.
-            const stages = items.map((q) => quotationStage(q).stage);
-            const count = (stage: string) => stages.filter((s) => s === stage).length;
+            const views = items.map((q) => quotationStage(q));
+            const count = (stage: string) => views.filter((v) => v.stage === stage).length;
             const paidValue = items
               .filter((q) => q.paymentStatus === "PAID")
               .reduce(
                 (sum, q) => sum + q.baseAmount * (1 + (q.sgstPercent + q.cgstPercent) / 100),
                 0,
               );
-            const replied = count("REPLIED");
+
+            // "The customer has said something about paying" — whether the quotation was
+            // ever sent from here or not. Counting only the sent ones read as zero while
+            // forty rows on the same screen asked to be checked, because a quotation
+            // handed over another way stays at Created however clearly its customer
+            // replied. The rows were right; the tile was measuring the wrong thing.
+            const check = views.filter(
+              (v) => v.stage === "REPLIED" || (v.stage === "CREATED" && v.needsAttention),
+            ).length;
+            // Created is the quiet ones only, or a flagged quotation would be counted twice.
+            const created = views.filter(
+              (v) => v.stage === "CREATED" && !v.needsAttention,
+            ).length;
             const waiting = count("WAITING");
+
             const tiles = [
-              { label: "Created", value: String(count("CREATED")), hint: "not sent yet", fg: "#475569" },
+              { label: "Created", value: String(created), hint: "not sent, nothing heard", fg: "#475569" },
               { label: "Sent", value: String(count("SENT")), hint: `waiting under ${OVERDUE_DAYS} days`, fg: "#1d4ed8" },
               { label: "Waiting", value: String(waiting), hint: `quiet ${OVERDUE_DAYS}+ days`, fg: waiting > 0 ? "#9a3412" : "#94a3b8" },
-              { label: "Replied", value: String(replied), hint: "read it and settle", fg: replied > 0 ? "#b91c1c" : "#94a3b8" },
+              { label: "Check payment", value: String(check), hint: "customer replied — read it", fg: check > 0 ? "#b91c1c" : "#94a3b8" },
               { label: "Paid", value: String(count("PAID")), hint: `₹${formatMoney(paidValue)} collected`, fg: "#166534" },
             ];
             return (

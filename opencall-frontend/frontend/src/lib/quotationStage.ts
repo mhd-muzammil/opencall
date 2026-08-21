@@ -60,10 +60,25 @@ export function quotationStage(quotation: Quotation): StageView {
     return { stage: "DECLINED", label: "Declined", bg: "#f1f5f9", fg: "#64748b", needsAttention: false };
   }
 
-  // Never sent from here. Not a failure — most quotations are printed and handed over —
-  // so it is stated plainly rather than warned about.
+  // Never sent from here. Not a failure — plenty are handed over on WhatsApp, at the
+  // counter, or were raised before sending existed — so it is stated plainly rather than
+  // warned about.
+  //
+  // Those cannot be re-sent; the customer already has one. What they CAN do is write back
+  // saying they have paid, and the watcher reads their work order's mail either way. So a
+  // payment-shaped reply is surfaced here too: verifying it is the only thing left to do
+  // for a quotation that was never sent from here.
   if (!quotation.sentAt) {
-    return { stage: "CREATED", label: "Created", bg: "#f1f5f9", fg: "#475569", needsAttention: false };
+    const flagged = quotation.paymentSignal === "WEAK" || quotation.paymentSignal === "STRONG";
+    return flagged
+      ? {
+          stage: "CREATED",
+          label: "Created · check payment",
+          bg: "#fef2f2",
+          fg: "#b91c1c",
+          needsAttention: true,
+        }
+      : { stage: "CREATED", label: "Created", bg: "#f1f5f9", fg: "#475569", needsAttention: false };
   }
 
   // They wrote back and it is still open, so someone has to read it. This outranks the

@@ -96,3 +96,27 @@ describe("daysSince", () => {
     expect(daysSince(new Date(Date.now() + 86_400_000).toISOString())).toBe(0);
   });
 });
+
+/**
+ * Quotations never sent from here cannot be re-sent — the customer already has one — so
+ * verifying a payment is the only thing left to do for them, and the row has to say when
+ * there is something to verify.
+ */
+describe("quotations never sent from here", () => {
+  it("stays plain Created when the customer has said nothing", () => {
+    const view = quotationStage(make({ paymentSignal: "NONE" }));
+    expect(view.label).toBe("Created");
+    expect(view.needsAttention).toBe(false);
+  });
+
+  it("asks to be checked when a payment-shaped reply turned up", () => {
+    const view = quotationStage(make({ paymentSignal: "WEAK" }));
+    expect(view.label).toContain("check payment");
+    expect(view.needsAttention).toBe(true);
+  });
+
+  it("is simply Paid once the reply settled it", () => {
+    const view = quotationStage(make({ paymentStatus: "PAID", paymentSignal: "STRONG" }));
+    expect(view.stage).toBe("PAID");
+  });
+});

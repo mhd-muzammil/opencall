@@ -437,13 +437,14 @@ export function QuotationsPage({ token }: Readonly<{ token: string }>) {
                             const days = daysSince(q.sentAt);
                             return (
                               <span style={{ display: "inline-flex", alignItems: "center", gap: "6px" }}>
-                                {/* The stage IS the select. A quotation that has been sent
-                                    can be settled by hand from here, and the option showing
-                                    is where it has got to — "Sent", "Waiting", "Replied" are
-                                    all still awaiting payment, so they are one option wearing
-                                    the name of the moment. */}
-                                {q.sentAt ? (
-                                  <select
+                                {/* The stage IS the select, on every quotation. "Sent",
+                                    "Waiting", "Replied" and "Created" are all still awaiting
+                                    payment, so they are one option wearing the name of the
+                                    moment — and one never sent from here still needs
+                                    settling, whether the customer paid in cash or wrote to
+                                    say so. Verifying is the only thing left to do for those,
+                                    since they cannot be re-sent. */}
+                                <select
                                     value={q.paymentStatus ?? "PENDING"}
                                     onChange={(e) =>
                                       void handlePayment(
@@ -452,10 +453,16 @@ export function QuotationsPage({ token }: Readonly<{ token: string }>) {
                                       )
                                     }
                                     title={
-                                      `Sent ${days === 0 ? "today" : `${days} day${days === 1 ? "" : "s"} ago`}` +
-                                      (q.sendCount && q.sendCount > 1 ? ` · ${q.sendCount} times` : "") +
-                                      (q.sentTo ? ` · to ${q.sentTo}` : "") +
+                                      // `days` is null for a quotation never sent from here,
+                                      // and "Sent null days ago" would be worse than saying
+                                      // nothing about the send at all.
+                                      (days === null
+                                        ? "Not sent from here — the customer was given it another way"
+                                        : `Sent ${days === 0 ? "today" : `${days} day${days === 1 ? "" : "s"} ago`}` +
+                                          (q.sendCount && q.sendCount > 1 ? ` · ${q.sendCount} times` : "") +
+                                          (q.sentTo ? ` · to ${q.sentTo}` : "")) +
                                       (q.replySeenAt ? ` · replied ${q.replySeenAt.slice(0, 10)}` : "") +
+                                      (q.paymentSignalReasons ? ` · ${q.paymentSignalReasons}` : "") +
                                       (q.paidAt ? ` · paid ${q.paidAt.slice(0, 10)}` : "")
                                     }
                                     style={{
@@ -472,23 +479,7 @@ export function QuotationsPage({ token }: Readonly<{ token: string }>) {
                                     <option value="PENDING">{view.label}</option>
                                     <option value="PAID">Paid</option>
                                     <option value="DECLINED">Declined</option>
-                                  </select>
-                                ) : (
-                                  // Never sent from here. Nothing to settle, so nothing to
-                                  // choose — most quotations are printed and handed over.
-                                  <span
-                                    style={{
-                                      fontSize: "11px",
-                                      fontWeight: 700,
-                                      padding: "3px 9px",
-                                      borderRadius: "999px",
-                                      background: view.bg,
-                                      color: view.fg,
-                                    }}
-                                  >
-                                    {view.label}
-                                  </span>
-                                )}
+                                </select>
                                 {days !== null ? (
                                   <span
                                     style={{

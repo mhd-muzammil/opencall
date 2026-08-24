@@ -16,44 +16,16 @@ import { quotationTotals } from "../../../lib/quotationTotals";
 import { QuotationPrint } from "./QuotationPrint";
 import { quotationStage, daysSince, OVERDUE_DAYS } from "../../../lib/quotationStage";
 
-/**
- * One test per header box, written once so the count and the rows behind it cannot drift.
- * A tile that says 38 and a list that shows 41 is worse than either being wrong alone.
- */
-const TILE_LABELS: Record<string, string> = {
-  CREATED: "created",
-  SENT: "sent",
-  REPLIED: "replied",
-  NO_REPLY: "no reply",
-  PAID: "paid",
-  NOT_PAID: "not paid",
-  REJECTED: "rejected",
-};
-
-/** Still owed. The first four boxes describe where an OPEN quotation has got to. */
-const isOpen = (q: Quotation) => (q.paymentStatus ?? "PENDING") === "PENDING";
-
-/**
- * One test per header box, written once so the count and the rows behind it cannot drift.
- *
- * The first four are stages of an open quotation and are mutually exclusive: a paid one has
- * finished its journey and belongs under Paid, not still sitting in Created. Counting it in
- * both is what made Created read 50 on a list of 50 where three were already settled.
- *
- * The arithmetic now holds: Created + Sent = Not paid, Sent = Replied + No reply, and
- * Paid + Not paid = everything.
- */
-const TILE_TESTS: Record<string, (q: Quotation) => boolean> = {
-  CREATED: (q) => isOpen(q) && !q.sentAt,
-  SENT: (q) => isOpen(q) && Boolean(q.sentAt),
-  REPLIED: (q) => isOpen(q) && Boolean(q.sentAt && q.replySeenAt),
-  NO_REPLY: (q) => isOpen(q) && Boolean(q.sentAt) && !q.replySeenAt,
-  PAID: (q) => q.paymentStatus === "PAID",
-  NOT_PAID: isOpen,
-  // The customer said no. Settled like Paid — nothing is owed and nobody should chase it —
-  // so it leaves the open stages and is not counted as money outstanding either.
-  REJECTED: (q) => q.paymentStatus === "DECLINED",
-};
+// What each box counts, and the money under it, live in one tested module — the counts have
+// been wrong in every direction on this page and each time it was a person adding up rows by
+// hand who found it.
+import {
+  TILE_LABELS,
+  TILE_TESTS,
+  tileCount,
+  tileTotal,
+  type TileKey,
+} from "../../../lib/quotationTiles";
 import { getCustomerEmails, type MailboxHealth } from "../../../lib/customerEmailApiClient";
 
 const EMPTY_LINE_ITEM: QuotationLineItem = {
@@ -185,7 +157,7 @@ export function QuotationsPage({
    * The header box someone has clicked, if any. A number nobody can open is a number they
    * have to take on trust; clicking it shows the rows it counted.
    */
-  const [tileFilter, setTileFilter] = useState<string | null>(null);
+  const [tileFilter, setTileFilter] = useState<TileKey | null>(null);
   const [loading, setLoading] = useState(false);
   const [printing, setPrinting] = useState<Quotation | null>(null);
 
@@ -387,47 +359,36 @@ export function QuotationsPage({
           {/* What the section is actually for: not how many quotations exist, but how many
               are out with a customer, how many came back, and how many have gone quiet. */}
           {(() => {
-            // Six boxes, read left to right, one question each. The one they replace
+            // Seven boxes, read left to right, one question each. The one they replace
             // asked several at once — "check payment" held sent and unsent, answered and
             // unanswered together, so a number that large told nobody what to do next.
             //
-            // Replied and No reply span sent and unsent alike. A reply is a reply however
-            // the customer came by the quotation, and scoping them to what went out from
-            // here would read zero on a list where most were handed over another way.
-            const paidValue = items
-              .filter((q) => q.paymentStatus === "PAID")
-              .reduce(
-                (sum, q) => sum + q.baseAmount * (1 + (q.sgstPercent + q.cgstPercent) / 100),
-                0,
-              );
-            const owedValue = items
-              .filter((q) => (q.paymentStatus ?? "PENDING") === "PENDING")
-              .reduce(
-                (sum, q) => sum + q.baseAmount * (1 + (q.sgstPercent + q.cgstPercent) / 100),
-                0,
-              );
+            // The money is summed over the box's OWN test rather than a rule of its own.
+            // Written separately, "₹83,789 outstanding" once described seven more
+            // quotations than the 40 the box beside it was counting, and there was no way
+            // to tell from the screen which of the two was lying.
+            const paidValue = tileTotal(items, "PAID");
+            const owedValue = tileTotal(items, "NOT_PAID");
 
-            // A strict funnel: Created + Sent is everything, and Sent splits into Replied
-            // and No reply. Replied means the customer answered THE MAIL WE SENT — a
-            // quotation never sent from here has nothing to have been replied to, so it
-            // stays at Created however much mail its work order has drawn.
-            //
-            // Those still say so on the row, in red, with a link to what the customer
-            // wrote. The boxes track the process; the rows carry what needs doing.
-            const count = (key: string) => items.filter(TILE_TESTS[key]!).length;
-            const created = count("CREATED");
-            const sent = count("SENT");
-            const replied = count("REPLIED");
-            const noReply = count("NO_REPLY");
-            const paid = count("PAID");
-            const notPaid = count("NOT_PAID");
-            const rejected = count("REJECTED");
+            const created = tileCount(items, "CREATED");
+            const sent = tileCount(items, "SENT");
+            const replied = tileCount(items, "REPLIED");
+            const noReply = tileCount(items, "NO_REPLY");
+            const paid = tileCount(items, "PAID");
+            const notPaid = tileCount(items, "NOT_PAID");
+            const rejected = tileCount(items, "REJECTED");
 
-            const tiles = [
-              { key: "CREATED", label: "Created", value: String(created), hint: "not sent, still unpaid", fg: "#475569" },
-              { key: "SENT", label: "Sent", value: String(sent), hint: "mailed, still unpaid", fg: "#1d4ed8" },
-              { key: "REPLIED", label: "Replied", value: String(replied), hint: "answered, still unpaid", fg: replied > 0 ? "#b91c1c" : "#94a3b8" },
-              { key: "NO_REPLY", label: "No reply", value: String(noReply), hint: "sent, nothing heard", fg: noReply > 0 ? "#9a3412" : "#94a3b8" },
+            const tiles: Array<{
+              key: TileKey;
+              label: string;
+              value: string;
+              hint: string;
+              fg: string;
+            }> = [
+              { key: "CREATED", label: "Created", value: String(created), hint: "not mailed yet", fg: "#475569" },
+              { key: "SENT", label: "Sent", value: String(sent), hint: "the customer has it", fg: "#1d4ed8" },
+              { key: "REPLIED", label: "Replied", value: String(replied), hint: "of the sent, answered", fg: replied > 0 ? "#b91c1c" : "#94a3b8" },
+              { key: "NO_REPLY", label: "No reply", value: String(noReply), hint: "of the sent, nothing heard", fg: noReply > 0 ? "#9a3412" : "#94a3b8" },
               { key: "PAID", label: "Paid", value: String(paid), hint: `₹${formatMoney(paidValue)} collected`, fg: "#166534" },
               { key: "NOT_PAID", label: "Not paid", value: String(notPaid), hint: `₹${formatMoney(owedValue)} outstanding`, fg: notPaid > 0 ? "#b91c1c" : "#94a3b8" },
               { key: "REJECTED", label: "Rejected", value: String(rejected), hint: "customer said no", fg: "#64748b" },

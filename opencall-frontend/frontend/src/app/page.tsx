@@ -1091,6 +1091,7 @@ export default function DashboardPage() {
     engineerProductivityMetrics,
     productivityDateLabel,
     productivityRangeBounds,
+    productivityBillCycles,
   } = useProductivityAnalytics({
     report,
     selectedRegion,
@@ -1406,10 +1407,17 @@ export default function DashboardPage() {
       if (!selectedProductivityValue || !engineerProductivityMetrics.monthsList.includes(selectedProductivityValue)) {
         setSelectedProductivityValue(engineerProductivityMetrics.monthsList[0] || "");
       }
+    } else if (productivityFilterType === "Bill Cycle") {
+      // Default to the cycle we are currently in — billCycles is newest first,
+      // and "this cycle so far" is what the page is opened to check.
+      const keys = productivityBillCycles.map((cycle) => cycle.key);
+      if (!selectedProductivityValue || !keys.includes(selectedProductivityValue)) {
+        setSelectedProductivityValue(keys[0] || "");
+      }
     } else {
       setSelectedProductivityValue("");
     }
-  }, [productivityFilterType, engineerProductivityMetrics.datesList, engineerProductivityMetrics.monthsList, selectedProductivityValue]);
+  }, [productivityFilterType, engineerProductivityMetrics.datesList, engineerProductivityMetrics.monthsList, productivityBillCycles, selectedProductivityValue]);
 
   // Day-by-day productivity: "Specific Date" reads that DAY's report. The
   // current report covers its own day; a past day is served by fetching the
@@ -5277,6 +5285,8 @@ export default function DashboardPage() {
                         productivityDateLabel={productivityDateLabel}
                         loading={productivityDayLoading || productivityRangeLoading}
                         rangeError={productivityRangeError}
+                        billCycles={productivityBillCycles}
+                        rangeBounds={productivityRangeBounds}
                         regionsList={report?.regionBreakdown ?? []}
                         isSuperAdmin={session?.user?.role === "SUPER_ADMIN"}
                         payrollSyncToken={

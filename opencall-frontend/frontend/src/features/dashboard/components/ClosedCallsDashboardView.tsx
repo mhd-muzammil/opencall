@@ -9,6 +9,13 @@ import {
   hasFlexClosureOutcome,
 } from "../utils";
 import { todayIsoDate } from "../utils/dateUtils";
+import {
+  billCycleFor,
+  billCycleForKey,
+  formatMonthKey,
+  prevMonthKey,
+  type BillCycle,
+} from "../utils/billCycle";
 import type {
   ClosureImportStatus,
   ClosureReconciliation,
@@ -40,71 +47,15 @@ function getRowRegionName(aspCode: string): string {
   return ASP_CODE_REGION_MAP[aspCode as keyof typeof ASP_CODE_REGION_MAP] || aspCode;
 }
 
-const MONTH_NAMES = [
-  "Jan", "Feb", "Mar", "Apr", "May", "Jun",
-  "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
-];
-
-/** "2026-06" -> "Jun 2026". */
-function formatMonthKey(key: string): string {
-  const match = /^(\d{4})-(\d{2})$/.exec(key);
-  if (!match) return key;
-  const monthIndex = Number(match[2]) - 1;
-  return `${MONTH_NAMES[monthIndex] ?? match[2]} ${match[1]}`;
-}
+// The bill cycle helpers moved to ../utils/billCycle so Engineer Productivity can
+// use the same definition. Re-exported here because this module was their home.
+export { billCycleFor, billCycleForKey, formatMonthKey, prevMonthKey };
+export type { BillCycle };
 
 /** "2026-06-05" -> "05-06-2026". */
 function formatDateKey(key: string): string {
   const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(key);
   return match ? `${match[3]}-${match[2]}-${match[1]}` : key;
-}
-
-export interface BillCycle {
-  /** The month the cycle ENDS in, "YYYY-MM" — how the invoice names it. */
-  key: string;
-  fromIso: string;
-  toIso: string;
-  /** "25 Jul – 24 Aug" */
-  label: string;
-  /** "Aug 2026" */
-  monthLabel: string;
-}
-
-/**
- * The bill cycle an IST calendar day falls in: the 25th of one month through the 24th of
- * the next, the convention closures are invoiced under. Keyed by the month the cycle ENDS
- * in ("2026-08" = 25 Jul → 24 Aug 2026), because that is the month it gets billed as.
- */
-export function billCycleFor(iso: string): BillCycle {
-  const [y, m, d] = iso.split("-").map(Number);
-  const start =
-    (d ?? 1) >= 25
-      ? new Date(Date.UTC(y!, (m ?? 1) - 1, 25))
-      : new Date(Date.UTC(y!, (m ?? 1) - 2, 25));
-  const end = new Date(Date.UTC(start.getUTCFullYear(), start.getUTCMonth() + 1, 24));
-  const isoOf = (dt: Date) => dt.toISOString().slice(0, 10);
-  const dayLabel = (dt: Date) =>
-    dt.toLocaleDateString("en-GB", { day: "2-digit", month: "short", timeZone: "UTC" });
-  const key = isoOf(end).slice(0, 7);
-  return {
-    key,
-    fromIso: isoOf(start),
-    toIso: isoOf(end),
-    label: `${dayLabel(start)} – ${dayLabel(end)}`,
-    monthLabel: formatMonthKey(key),
-  };
-}
-
-/** The cycle a "YYYY-MM" key names — the 24th always falls inside its own cycle. */
-export function billCycleForKey(key: string): BillCycle {
-  return billCycleFor(`${key}-24`);
-}
-
-/** "2026-08" -> "2026-07". */
-export function prevMonthKey(key: string): string {
-  const [y, m] = key.split("-").map(Number);
-  const dt = new Date(Date.UTC(y!, (m ?? 1) - 2, 1));
-  return `${dt.getUTCFullYear()}-${String(dt.getUTCMonth() + 1).padStart(2, "0")}`;
 }
 
 /** Human label for a from/to range: "05-06-2026 → 20-08-2026", "onwards", "up to", etc. */

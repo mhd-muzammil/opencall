@@ -17,6 +17,13 @@ import type {
 } from "../../../lib/apiClient";
 import { aspCodesForRegionIdentity } from "@opencall/shared";
 import { MANUAL_ENTRY_REQUIRED } from "../constants";
+import { todayIsoDate } from "../utils/dateUtils";
+import {
+  billCycleFor,
+  billCycleForKey,
+  billCyclesBetween,
+  type BillCycle,
+} from "../utils/billCycle";
 import {
   computeEngineerProductivity,
   mergeEngineerProductivityResults,
@@ -134,6 +141,10 @@ export function useProductivityAnalytics(params: {
     if (productivityFilterType === "Specific Month" && selectedProductivityValue) {
       return monthLabelToRange(selectedProductivityValue);
     }
+    if (productivityFilterType === "Bill Cycle" && selectedProductivityValue) {
+      const cycle = billCycleForKey(selectedProductivityValue);
+      return { from: cycle.fromIso, to: cycle.toIso };
+    }
     return null;
   }, [
     productivityFilterType,
@@ -141,6 +152,27 @@ export function useProductivityAnalytics(params: {
     productivityToDate,
     selectedProductivityValue,
   ]);
+
+  /**
+   * Bill cycles the productivity view can answer for, newest first: from the
+   * cycle containing today back to the one containing the earliest day that has
+   * a report. Offering a cycle with no reports behind it can only ever produce
+   * an empty table.
+   */
+  const productivityBillCycles = useMemo((): BillCycle[] => {
+    const today = todayIsoDate();
+    const earliest = [...historyReportDates].sort()[0];
+    return billCyclesBetween(earliest ?? today, today);
+  }, [historyReportDates]);
+
+  /** The cycle currently selected, for labelling. */
+  const productivityBillCycle = useMemo(
+    () =>
+      productivityFilterType === "Bill Cycle" && selectedProductivityValue
+        ? billCycleForKey(selectedProductivityValue)
+        : null,
+    [productivityFilterType, selectedProductivityValue],
+  );
 
   const kpiBaseRows = useMemo(() => {
     if (!report) return [];
@@ -570,6 +602,11 @@ export function useProductivityAnalytics(params: {
       }
       return "Date Range";
     }
+    if (productivityFilterType === "Bill Cycle") {
+      return productivityBillCycle
+        ? `${productivityBillCycle.monthLabel} bill cycle (${productivityBillCycle.label})`
+        : "Bill Cycle";
+    }
     return "All Dates";
   }, [
     productivityFilterType,
@@ -577,6 +614,7 @@ export function useProductivityAnalytics(params: {
     selectedProductivityValue,
     productivityFromDate,
     productivityToDate,
+    productivityBillCycle,
   ]);
 
   return {
@@ -589,5 +627,7 @@ export function useProductivityAnalytics(params: {
     engineerProductivityMetrics,
     productivityDateLabel,
     productivityRangeBounds,
+    productivityBillCycles,
+    productivityBillCycle,
   };
 }

@@ -4,6 +4,7 @@ import { downloadEngineerProductivityExcel } from "../../../lib/excelExport";
 import { syncAssignedCasesToPayroll } from "../../../lib/payrollSyncApiClient";
 import { EngineerTargetTab } from "./EngineerTargetTab";
 import { LocationPerformancePanel } from "./LocationPerformancePanel";
+import type { BillCycle } from "../utils/billCycle";
 
 export function ProductivityPage({
   selectedRegion,
@@ -21,6 +22,8 @@ export function ProductivityPage({
   productivityDateLabel,
   loading = false,
   rangeError = null,
+  billCycles = [],
+  rangeBounds = null,
   regionsList,
   isSuperAdmin,
   payrollSyncToken,
@@ -70,6 +73,18 @@ export function ProductivityPage({
    * refused range never reads as "this period had no work".
    */
   rangeError?: string | null;
+  /**
+   * Bill cycles this view can answer for, newest first. Same 25th-to-24th cycle
+   * the Closed Calls dashboard bills by — imported from one definition, not a
+   * second one that could drift from it.
+   */
+  billCycles?: readonly BillCycle[];
+  /**
+   * The day bounds the table is currently showing, when it spans more than one
+   * day. "Sync to Payroll" pushes exactly these days, so the button and the
+   * table can never mean different periods.
+   */
+  rangeBounds?: { from: string; to: string } | null;
   regionsList: Array<{ aspCode: string; regionName: string; count: number }>;
   isSuperAdmin: boolean;
   /** Auth token when the viewer may push cases to Payroll (admins only); null
@@ -98,19 +113,32 @@ export function ProductivityPage({
 
   // Which working date(s) the "Sync to Payroll" button pushes, driven by the
   // SAME filter the table already shows. Uses the dates that actually have data
-  // (datesList) so history/range/month sync exactly what's visible; "Today"
-  // falls back to today's date even if it has no report yet (harmless no-op).
+  // (datesList) so history/month/range/cycle sync exactly what is visible;
+  // "Today" falls back to today even if it has no report yet (harmless no-op).
+  //
+  // Every date leaves here as YYYY-MM-DD, which is the only form the endpoint
+  // accepts. datesList holds DD-MM-YYYY, and the multi-day filters bound in
+  // YYYY-MM-DD, so this used to compare the two formats directly (matching
+  // nothing) and to hand DD-MM-YYYY straight to the endpoint (rejected). The
+  // button therefore synced nothing at all outside "Today".
   const resolveDatesToSync = (): string[] => {
-    const all = engineerProductivityMetrics.datesList ?? [];
-    const value = selectedProductivityValue;
+    const isoOf = (dmy: string): string => {
+      const parts = dmy.split("-");
+      return parts.length === 3 && parts[2]?.length === 4
+        ? `${parts[2]}-${parts[1]}-${parts[0]}`
+        : dmy;
+    };
+    const all = (engineerProductivityMetrics.datesList ?? []).map(isoOf);
+
     switch (productivityFilterType) {
       case "Specific Date":
-        return value ? [value] : [];
+        return selectedProductivityValue ? [isoOf(selectedProductivityValue)] : [];
       case "Specific Month":
-        return value ? all.filter((d) => d.startsWith(value)) : [];
       case "Date Range":
-        if (!productivityFromDate || !productivityToDate) return [];
-        return all.filter((d) => d >= productivityFromDate && d <= productivityToDate);
+      case "Bill Cycle":
+        return rangeBounds
+          ? all.filter((iso) => iso >= rangeBounds.from && iso <= rangeBounds.to)
+          : [];
       case "All Dates":
         return all;
       case "Today":
@@ -124,6 +152,16 @@ export function ProductivityPage({
     const dates = resolveDatesToSync();
     if (dates.length === 0) {
       window.alert("No date selected to sync.");
+      return;
+    }
+    // Pushing a whole cycle is a much bigger action than pushing a day, and this
+    // button has no undo — confirm anything beyond one day.
+    if (
+      dates.length > 1 &&
+      !window.confirm(
+        `Push assigned cases for ${dates.length} days (${dates[0]} to ${dates[dates.length - 1]}) into Payroll?`,
+      )
+    ) {
       return;
     }
     setSyncing(true);
@@ -405,6 +443,7 @@ export function ProductivityPage({
               <option value="Specific Date">Specific Date</option>
               <option value="Specific Month">Specific Month</option>
               <option value="Date Range">Date Range</option>
+              <option value="Bill Cycle">Bill Cycle</option>
               <option value="All Dates">All History</option>
             </select>
           </div>
@@ -428,6 +467,25 @@ export function ProductivityPage({
                 onChange={(e) => setProductivityToDate(e.target.value)}
                 style={{ padding: "6px 10px", borderRadius: "6px", border: "1px solid var(--border)", fontSize: "13px", fontWeight: "600", outline: "none", background: "#f8fafc", cursor: "pointer" }}
               />
+            </div>
+          )}
+
+          {/* Conditional bill cycle picker (25th → 24th, named by the month it ends in) */}
+          {productivityFilterType === "Bill Cycle" && (
+            <div style={{ display: "flex", gap: "6px", alignItems: "center" }}>
+              <span style={{ fontSize: "13px", fontWeight: "600", color: "#475569" }}>Cycle:</span>
+              <select
+                value={selectedProductivityValue}
+                onChange={(e) => setSelectedProductivityValue(e.target.value)}
+                title="Productivity across one bill cycle — the 25th of a month to the 24th of the next"
+                style={{ padding: "6px 12px", borderRadius: "6px", border: "1px solid var(--border)", fontSize: "13px", fontWeight: "600", outline: "none", background: "#f8fafc", cursor: "pointer" }}
+              >
+                {billCycles.map((cycle) => (
+                  <option key={cycle.key} value={cycle.key}>
+                    {cycle.monthLabel} ({cycle.label})
+                  </option>
+                ))}
+              </select>
             </div>
           )}
 

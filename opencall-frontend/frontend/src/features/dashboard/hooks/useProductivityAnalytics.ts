@@ -15,7 +15,7 @@ import type {
   RegionEodStateResponse,
   RegionProductivityRangeEntry,
 } from "../../../lib/apiClient";
-import { aspCodesForRegionIdentity } from "@opencall/shared";
+import { ASP_CODE_REGION_MAP, aspCodesForRegionIdentity } from "@opencall/shared";
 import { MANUAL_ENTRY_REQUIRED } from "../constants";
 import { todayIsoDate } from "../utils/dateUtils";
 import {
@@ -352,7 +352,15 @@ export function useProductivityAnalytics(params: {
   }, [eodBodFilterType, regionDateMetadata.todayStr, selectedEodBodValue]);
 
   const engineerProductivityMetrics = useMemo(() => {
-    if (!report) return { list: [], totalAttended: 0, monthsList: [], datesList: [], todayStr: "" };
+    if (!report)
+      return {
+        list: [],
+        totalAttended: 0,
+        monthsList: [],
+        datesList: [],
+        todayStr: "",
+        callsByRegion: new Map<string, number>(),
+      };
 
     // "Specific Date" selects a DAY'S REPORT, not a case-created-time cohort:
     // the current report when its own day is picked, or the fetched final
@@ -475,7 +483,14 @@ export function useProductivityAnalytics(params: {
       if (!productivityRangeRegions) {
         // Still loading, or the fetch failed. An empty table is honest; a day's
         // numbers wearing a month's label is not.
-        return { list: [], totalAttended: 0, monthsList, datesList, todayStr };
+        return {
+          list: [],
+          totalAttended: 0,
+          monthsList,
+          datesList,
+          todayStr,
+          callsByRegion: new Map<string, number>(),
+        };
       }
       const targetAspCode =
         selectedRegion && selectedRegion !== "ALL"
@@ -497,6 +512,9 @@ export function useProductivityAnalytics(params: {
         monthsList,
         datesList,
         todayStr,
+        callsByRegion: new Map(
+          inScope.map((entry) => [entry.regionName, entry.callsInPeriod]),
+        ),
       };
     }
 
@@ -573,7 +591,18 @@ export function useProductivityAnalytics(params: {
       ...snapshotResults,
     ]);
 
-    return { list, totalAttended, monthsList, datesList, todayStr };
+    // Calls each region had today at all, booked or not — the same denominator
+    // the range gets from the backend, counted here off the rows in hand. Keyed
+    // by region NAME to match how the range reports it.
+    const callsByRegion = new Map<string, number>();
+    for (const row of filteredRowsForProd) {
+      const code = String(row.output["Work Location"] ?? "").trim().toUpperCase();
+      if (!code) continue;
+      const name = ASP_CODE_REGION_MAP[code as keyof typeof ASP_CODE_REGION_MAP] ?? code;
+      callsByRegion.set(name, (callsByRegion.get(name) ?? 0) + 1);
+    }
+
+    return { list, totalAttended, monthsList, datesList, todayStr, callsByRegion };
   }, [
     report,
     selectedRegion,

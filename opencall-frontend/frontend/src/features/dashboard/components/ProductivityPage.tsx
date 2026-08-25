@@ -61,6 +61,8 @@ export function ProductivityPage({
     totalAttended: number;
     monthsList: string[];
     datesList: string[];
+    /** Calls each region had in the period, booked or not. Keyed by region name. */
+    callsByRegion: ReadonlyMap<string, number>;
   };
   productivityDateLabel: string;
   /** True while a past day's or a date range's productivity is being fetched. */
@@ -604,7 +606,11 @@ export function ProductivityPage({
 
       {/* Location-wise ratios + charts. Additive only — it reads the same
           filtered list the table above renders and changes nothing in it. */}
-      <LocationPerformancePanel list={filteredList} loading={loading} />
+      <LocationPerformancePanel
+        list={filteredList}
+        loading={loading}
+        callsByRegion={engineerProductivityMetrics.callsByRegion}
+      />
     </div>
   );
 }

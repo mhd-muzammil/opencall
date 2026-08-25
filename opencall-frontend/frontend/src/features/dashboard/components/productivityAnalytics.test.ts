@@ -149,3 +149,48 @@ describe("formatPercent", () => {
     expect(formatPercent(null)).toBe("—");
   });
 });
+
+// The number that separates "this region did no work" from "this region does not
+// book its work as Scheduled". Vellore read 5 assigned in a bill cycle and looked
+// broken; Kanchipuram booked nothing and vanished from the table entirely, which
+// is worse — an absent row asks no questions.
+describe("buildLocationComparison with call counts", () => {
+  it("attaches the count to a region that has engineers", () => {
+    const { rows, total } = buildLocationComparison(
+      [engineer("SALEM", 6, 6, 3)],
+      new Map([["SALEM", 400]]),
+    );
+    expect(rows[0]).toMatchObject({ regionName: "SALEM", assigned: 6, callsInPeriod: 400 });
+    expect(total.callsInPeriod).toBe(400);
+  });
+
+  it("gives a region that booked nothing a row instead of dropping it", () => {
+    const { rows } = buildLocationComparison(
+      [engineer("SALEM", 6, 6, 3)],
+      new Map([["SALEM", 400], ["KANCHIPURAM", 6047]]),
+    );
+    const kanchipuram = rows.find((r) => r.regionName === "KANCHIPURAM");
+    expect(kanchipuram).toBeDefined();
+    expect(kanchipuram).toMatchObject({
+      engineers: 0,
+      assigned: 0,
+      callsInPeriod: 6047,
+      // No booked calls means no rate to compare, not a 0% one.
+      assignedVsAttendedPercent: null,
+    });
+  });
+
+  it("matches an existing region case-insensitively rather than duplicating it", () => {
+    const { rows } = buildLocationComparison(
+      [engineer("VELLORE", 5, 0, 0)],
+      new Map([["Vellore", 6840]]),
+    );
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({ regionName: "VELLORE", assigned: 5, callsInPeriod: 6840 });
+  });
+
+  it("leaves the count at zero when none is supplied", () => {
+    const { rows } = buildLocationComparison([engineer("SALEM", 6, 6, 3)]);
+    expect(rows[0]?.callsInPeriod).toBe(0);
+  });
+});

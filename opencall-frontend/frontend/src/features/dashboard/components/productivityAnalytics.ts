@@ -86,6 +86,13 @@ export interface LocationComparisonRow {
    * Clamped at zero so a stacked bar can never exceed its own total.
    */
   otherOrPending: number;
+  /**
+   * Calls the region had in the period at all, booked or not — 0 when unknown
+   * (the caller did not supply it). `assigned` counts only the ones booked as
+   * Scheduled with an engineer, so the gap between the two is the region's
+   * calls that never entered the scheduling flow.
+   */
+  callsInPeriod: number;
   /** Of the calls booked to this region, how many were actually attended. */
   assignedVsAttendedPercent: number | null;
   /** Of the calls attended, how many were closed on the day. */
@@ -133,25 +140,35 @@ function labelFor(item: ProductivityListItem): string {
  */
 export function buildLocationComparison(
   list: readonly ProductivityListItem[],
+  /**
+   * Calls each region had in the period, keyed by region name (matched
+   * case-insensitively). Lets a region that had calls but booked none of them
+   * appear with a zero row and a reason, instead of dropping off the table
+   * because it has no engineers — which is what made Kanchipuram invisible and
+   * Vellore read as a 0% performer rather than a region not booking its work.
+   */
+  callsByRegion?: ReadonlyMap<string, number>,
 ): LocationComparison {
   const byRegion = new Map<string, LocationComparisonRow>();
+  const emptyRow = (name: string): LocationComparisonRow => ({
+    regionName: name,
+    engineers: 0,
+    assigned: 0,
+    attended: 0,
+    closed: 0,
+    partOrdered: 0,
+    underObservation: 0,
+    cxReschedule: 0,
+    engineerDelay: 0,
+    otherOrPending: 0,
+    callsInPeriod: 0,
+    assignedVsAttendedPercent: null,
+    attendedVsClosedPercent: null,
+  });
 
   for (const item of list) {
     const key = labelFor(item);
-    const row = byRegion.get(key) ?? {
-      regionName: key,
-      engineers: 0,
-      assigned: 0,
-      attended: 0,
-      closed: 0,
-      partOrdered: 0,
-      underObservation: 0,
-      cxReschedule: 0,
-      engineerDelay: 0,
-      otherOrPending: 0,
-      assignedVsAttendedPercent: null,
-      attendedVsClosedPercent: null,
-    };
+    const row = byRegion.get(key) ?? emptyRow(key);
     row.engineers += 1;
     row.assigned += item.assigned ?? 0;
     row.attended += item.attended ?? 0;
@@ -161,6 +178,25 @@ export function buildLocationComparison(
     row.cxReschedule += item.cxReschedule ?? 0;
     row.engineerDelay += item.engineerDelay ?? 0;
     byRegion.set(key, row);
+  }
+
+  // Attach the call counts, and add a row for any region that had calls but
+  // booked none of them — it has no engineers, so nothing above created one.
+  // Reporting nothing IS the finding; leaving the region off the table hides it.
+  // Matched case-insensitively: these labels reach us from two sources.
+  for (const [name, calls] of callsByRegion ?? []) {
+    const wanted = name.trim().toUpperCase();
+    if (!wanted) continue;
+    const existing = [...byRegion.values()].find(
+      (row) => row.regionName.trim().toUpperCase() === wanted,
+    );
+    if (existing) {
+      existing.callsInPeriod = calls;
+      continue;
+    }
+    const row = emptyRow(name.trim());
+    row.callsInPeriod = calls;
+    byRegion.set(wanted, row);
   }
 
   const rows = [...byRegion.values()].map((row) => ({
@@ -189,6 +225,7 @@ export function buildLocationComparison(
       underObservation: acc.underObservation + row.underObservation,
       cxReschedule: acc.cxReschedule + row.cxReschedule,
       engineerDelay: acc.engineerDelay + row.engineerDelay,
+      callsInPeriod: acc.callsInPeriod + row.callsInPeriod,
     }),
     {
       engineers: 0,
@@ -199,6 +236,7 @@ export function buildLocationComparison(
       underObservation: 0,
       cxReschedule: 0,
       engineerDelay: 0,
+      callsInPeriod: 0,
     },
   );
 

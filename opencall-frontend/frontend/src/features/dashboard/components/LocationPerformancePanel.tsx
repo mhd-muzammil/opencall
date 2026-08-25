@@ -76,8 +76,22 @@ function PercentCell({ percent }: Readonly<{ percent: number | null }>) {
 export function LocationPerformancePanel({
   list,
   loading = false,
-}: Readonly<{ list: readonly ProductivityListItem[]; loading?: boolean }>) {
-  const { rows, total } = useMemo(() => buildLocationComparison(list), [list]);
+  callsByRegion,
+}: Readonly<{
+  list: readonly ProductivityListItem[];
+  loading?: boolean;
+  /**
+   * Calls each region had in the period, booked or not. Turns "0 assigned" from
+   * an unexplained zero into "0 booked of N calls" — the difference between a
+   * region that did no work and one that does not book through the Scheduled
+   * flow, which is invisible without it.
+   */
+  callsByRegion?: ReadonlyMap<string, number>;
+}>) {
+  const { rows, total } = useMemo(
+    () => buildLocationComparison(list, callsByRegion),
+    [list, callsByRegion],
+  );
 
   // Nothing to compare while the day is still loading or empty — the table
   // above already says so, and an empty chart frame reads as a broken widget.
@@ -95,7 +109,8 @@ export function LocationPerformancePanel({
             </div>
             <div style={{ fontSize: "11px", color: "#64748b" }}>
               Conversion rates per region, strongest attendance first. Follows the
-              filters above.
+              filters above. Only calls booked as Scheduled with an engineer are
+              counted.
             </div>
           </div>
           <div style={{ display: "flex", gap: "10px", flexWrap: "wrap" }}>
@@ -124,7 +139,25 @@ export function LocationPerformancePanel({
             <tbody>
               {rows.map((row) => (
                 <tr key={row.regionName}>
-                  <td style={{ ...TD, textAlign: "left", fontWeight: 600 }}>{row.regionName}</td>
+                  <td style={{ ...TD, textAlign: "left", fontWeight: 600 }}>
+                    {row.regionName}
+                    {row.callsInPeriod > 0 && (
+                      <div
+                        style={{
+                          fontSize: "10px",
+                          fontWeight: 500,
+                          // Amber once most of a region's calls never got booked:
+                          // the row's low numbers are a booking gap, not a
+                          // performance one, and it should not read as the latter.
+                          color:
+                            row.assigned * 2 < row.callsInPeriod ? "#b45309" : "#94a3b8",
+                          marginTop: "2px",
+                        }}
+                      >
+                        {row.assigned} booked of {row.callsInPeriod} calls
+                      </div>
+                    )}
+                  </td>
                   <td style={TD}>{row.engineers}</td>
                   <td style={TD}>{row.assigned}</td>
                   <td style={{ ...TD, fontWeight: 700, color: "#0f172a" }}>{row.attended}</td>
@@ -134,7 +167,14 @@ export function LocationPerformancePanel({
                 </tr>
               ))}
               <tr style={{ background: "#fffbeb", fontWeight: "bold" }}>
-                <td style={{ ...TD, textAlign: "left", fontWeight: 800 }}>{total.regionName}</td>
+                <td style={{ ...TD, textAlign: "left", fontWeight: 800 }}>
+                  {total.regionName}
+                  {total.callsInPeriod > 0 && (
+                    <div style={{ fontSize: "10px", fontWeight: 500, color: "#94a3b8", marginTop: "2px" }}>
+                      {total.assigned} booked of {total.callsInPeriod} calls
+                    </div>
+                  )}
+                </td>
                 <td style={{ ...TD, fontWeight: 800 }}>{total.engineers}</td>
                 <td style={{ ...TD, fontWeight: 800 }}>{total.assigned}</td>
                 <td style={{ ...TD, fontWeight: 800 }}>{total.attended}</td>

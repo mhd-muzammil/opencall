@@ -710,6 +710,23 @@ export function ClosedCallsDashboardView({
     };
   }, [rawSummary, rawScoped, rawDayPrecise, rangeActive, inMonthRange]);
 
+  /**
+   * Raw closures the rollup counts but no region card can show — the raw export leaves
+   * Work Location blank on work orders HP closed in its own CRM, and the backend only
+   * recovers a region for the ones OpenCall has a report row for. Stated on the All
+   * Regions card so the cards not summing to it is an explained number, not a bug the
+   * reader has to find.
+   */
+  const rawUnregioned = useMemo(() => {
+    const all = rawClosedFor("");
+    if (all === null) return 0;
+    const onCards = closedRegionBreakdown.reduce(
+      (sum, entry) => sum + (rawClosedFor(entry.aspCode) ?? 0),
+      0,
+    );
+    return Math.max(0, all - onCards);
+  }, [rawClosedFor, closedRegionBreakdown]);
+
   async function handleSyncRawData() {
     if (!closureImportToken) return;
     setRawSyncing(true);
@@ -1533,7 +1550,16 @@ export function ClosedCallsDashboardView({
             <ComparisonCounts
               closureCount={closureCountFor("")}
               rawCount={rawClosedFor("")}
-              rawHint={rawScopeNote}
+              rawHint={
+                [
+                  rawScopeNote,
+                  rawUnregioned > 0
+                    ? `${formatNumber(rawUnregioned)} on no region card — raw file has no ASP`
+                    : null,
+                ]
+                  .filter(Boolean)
+                  .join(" · ") || null
+              }
               closureHint={
                 closureUnmatched > 0 ? `${formatNumber(closureUnmatched)} unmatched` : null
               }

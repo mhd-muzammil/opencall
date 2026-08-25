@@ -9,6 +9,8 @@ export type {
   RegionEodStateEntry,
   RegionEodStateResponse,
   RegionEodStatus,
+  RegionProductivityRangeEntry,
+  ReportProductivityRangeResponse,
   ReopenRegionEodResponse,
   ReportHistorySession,
   ReportRow,
@@ -63,5 +65,6 @@ export const reactivateAdminRtplStatus = webApiClient.reactivateAdminRtplStatus;
 export const deleteAdminRtplStatus = webApiClient.deleteAdminRtplStatus;
 export const getRtplStatusesDropdown = webApiClient.getRtplStatusesDropdown;
 export const getRegionEodState = webApiClient.getRegionEodState;
+export const getProductivityRange = webApiClient.getProductivityRange;
 export const closeRegionEod = webApiClient.closeRegionEod;
 export const reopenRegionEod = webApiClient.reopenRegionEod;

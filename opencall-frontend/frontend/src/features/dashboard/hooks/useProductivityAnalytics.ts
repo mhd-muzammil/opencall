@@ -13,6 +13,7 @@ import {
 import type {
   GeneratedReportResponse,
   RegionEodStateResponse,
+  RegionProductivityRangeEntry,
 } from "../../../lib/apiClient";
 import { aspCodesForRegionIdentity } from "@opencall/shared";
 import { MANUAL_ENTRY_REQUIRED } from "../constants";
@@ -20,6 +21,38 @@ import {
   computeEngineerProductivity,
   mergeEngineerProductivityResults,
 } from "../utils/engineerProductivity";
+
+const MONTH_LABELS = [
+  "January", "February", "March", "April", "May", "June",
+  "July", "August", "September", "October", "November", "December",
+];
+
+/** Inclusive day bounds of a productivity view that spans more than one day. */
+export interface ProductivityRangeBounds {
+  from: string;
+  to: string;
+}
+
+/**
+ * The month dropdown's label ("July 2026") as the day range it means. A month IS
+ * a range, so it goes through the same day-by-day path rather than having a
+ * second, subtly different way of covering several days.
+ */
+function monthLabelToRange(label: string): ProductivityRangeBounds | null {
+  const match = /^([A-Za-z]+)\s+(\d{4})$/.exec(label.trim());
+  if (!match) return null;
+  const index = MONTH_LABELS.findIndex(
+    (name) => name.toLowerCase() === match[1]!.toLowerCase(),
+  );
+  if (index < 0) return null;
+  const year = Number(match[2]);
+  const month = String(index + 1).padStart(2, "0");
+  const lastDay = new Date(Date.UTC(year, index + 1, 0)).getUTCDate();
+  return {
+    from: `${year}-${month}-01`,
+    to: `${year}-${month}-${String(lastDay).padStart(2, "0")}`,
+  };
+}
 
 // "DD-MM-YYYY" (dropdown format) -> "YYYY-MM-DD" (report date format).
 function dmyToIso(dmy: string): string {
@@ -56,6 +89,16 @@ export function useProductivityAnalytics(params: {
    * or when no day-scoped view is active.
    */
   eodState?: RegionEodStateResponse | null;
+  /**
+   * Per-region productivity already summed day-by-day over the selected range,
+   * fetched from the backend for "Date Range" and "Specific Month".
+   *
+   * Productivity is a day-scoped measure — assigned is that DAY's plan, attended
+   * and closed are that DAY's outcomes — so a multi-day view cannot be derived
+   * from the single report the browser holds. Null while loading, when the fetch
+   * failed, or when the active filter covers one day.
+   */
+  productivityRangeRegions?: readonly RegionProductivityRangeEntry[] | null;
 }) {
   const {
     report,
@@ -72,7 +115,32 @@ export function useProductivityAnalytics(params: {
     productivityDayReport = null,
     historyReportDates = [],
     eodState = null,
+    productivityRangeRegions = null,
   } = params;
+
+  /**
+   * The day bounds the productivity view currently spans, or null when it is a
+   * single day ("Today" / "Specific Date") or a range with no dates picked yet.
+   * The caller fetches exactly these bounds, so what is fetched and what is
+   * rendered can never be two different periods.
+   */
+  const productivityRangeBounds = useMemo((): ProductivityRangeBounds | null => {
+    if (productivityFilterType === "Date Range") {
+      if (!productivityFromDate || !productivityToDate) return null;
+      return productivityFromDate <= productivityToDate
+        ? { from: productivityFromDate, to: productivityToDate }
+        : { from: productivityToDate, to: productivityFromDate };
+    }
+    if (productivityFilterType === "Specific Month" && selectedProductivityValue) {
+      return monthLabelToRange(selectedProductivityValue);
+    }
+    return null;
+  }, [
+    productivityFilterType,
+    productivityFromDate,
+    productivityToDate,
+    selectedProductivityValue,
+  ]);
 
   const kpiBaseRows = useMemo(() => {
     if (!report) return [];
@@ -322,7 +390,6 @@ export function useProductivityAnalytics(params: {
       }
     }
 
-    const monthsList = Array.from(monthsSet).sort((a, b) => a.localeCompare(b));
     const parseDMY = (s: string) => {
       const p = s.split("-");
       const day = parseInt(p[0] ?? "0", 10);
@@ -340,56 +407,72 @@ export function useProductivityAnalytics(params: {
       (a, b) => parseDMY(a) - parseDMY(b),
     );
 
-    // 3. Filter rows based on type. "Specific Date" is already day-scoped via
-    // sourceReport above — the day's whole report IS the day's productivity, so
-    // no Case-Created-Time filtering applies to it (an engineer's work today is
-    // mostly on cases created days ago). Month and Range remain created-time
-    // cohort filters.
-    let filteredRowsForProd = regionRows;
-    if (productivityFilterType === "Specific Month" && selectedProductivityValue) {
-      filteredRowsForProd = regionRows.filter(r => {
-        const createdTime = String(r.output["Case Created Time"] ?? "").trim();
-        if (createdTime && createdTime !== MANUAL_ENTRY_REQUIRED) {
-          const match = /^(\d{2})[-/](\d{2})[-/](\d{4})/.exec(createdTime);
-          if (match) {
-            const monthCode = match[2] ?? "";
-            const year = match[3] ?? "";
-            const monthIndex = parseInt(monthCode, 10) - 1;
-            const monthNames = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
-            const rowMonth = `${monthNames[monthIndex]} ${year}`;
-            return rowMonth === selectedProductivityValue;
-          }
-        }
-        return false;
-      });
-    } else if (
-      productivityFilterType === "Date Range" &&
-      (productivityFromDate || productivityToDate)
-    ) {
-      // "Case Created Time" is DD-MM-YYYY (or DD/MM/YYYY); the date inputs are
-      // YYYY-MM-DD. Include a row when its created date is within [from, to]
-      // (each bound optional, both inclusive).
-      const fromTs = productivityFromDate
-        ? new Date(`${productivityFromDate}T00:00:00`).getTime()
-        : null;
-      const toTs = productivityToDate
-        ? new Date(`${productivityToDate}T23:59:59`).getTime()
-        : null;
-      filteredRowsForProd = regionRows.filter((r) => {
-        const createdTime = String(r.output["Case Created Time"] ?? "").trim();
-        if (!createdTime || createdTime === MANUAL_ENTRY_REQUIRED) return false;
-        const match = /^(\d{2})[-/](\d{2})[-/](\d{4})/.exec(createdTime);
-        if (!match) return false;
-        const rowTs = new Date(
-          parseInt(match[3] ?? "0", 10),
-          parseInt(match[2] ?? "1", 10) - 1,
-          parseInt(match[1] ?? "1", 10),
-        ).getTime();
-        if (fromTs !== null && rowTs < fromTs) return false;
-        if (toTs !== null && rowTs > toTs) return false;
-        return true;
-      });
+    // The Specific Month dropdown lists months that actually HAVE reports, for
+    // the same reason: a month now means "that month's working days summed", so
+    // offering a month with no report can only produce an empty table. Sorted
+    // chronologically — these labels do not sort alphabetically ("April" before
+    // "February"). Case-creation months stay the fallback before history loads.
+    const reportMonths = Array.from(
+      new Set(
+        reportDays
+          .map((dmy) => {
+            const parts = dmy.split("-");
+            const monthIndex = parseInt(parts[1] ?? "0", 10) - 1;
+            const label = MONTH_LABELS[monthIndex];
+            return label ? `${label} ${parts[2]}` : "";
+          })
+          .filter(Boolean),
+      ),
+    );
+    const monthsList = (
+      reportMonths.length > 0 ? reportMonths : Array.from(monthsSet)
+    ).sort((a, b) =>
+      (monthLabelToRange(a)?.from ?? a).localeCompare(monthLabelToRange(b)?.from ?? b),
+    );
+
+    // 3. A multi-day view is the days ADDED UP, and only the backend can add
+    // them: each day's productivity is computed from that day's own report, and
+    // the browser holds exactly one. "Date Range" and "Specific Month" therefore
+    // render the fetched range result and return here.
+    //
+    // They used to filter the CURRENT report's rows by Case Created Time, which
+    // answered a different question — "today's productivity on the cases created
+    // in that window" — so a month-long range showed a single day's work under a
+    // month's label. Nothing about a range is derivable from these rows.
+    if (productivityRangeBounds) {
+      if (!productivityRangeRegions) {
+        // Still loading, or the fetch failed. An empty table is honest; a day's
+        // numbers wearing a month's label is not.
+        return { list: [], totalAttended: 0, monthsList, datesList, todayStr };
+      }
+      const targetAspCode =
+        selectedRegion && selectedRegion !== "ALL"
+          ? selectedRegion.trim().toUpperCase()
+          : null;
+      const inScope = productivityRangeRegions.filter(
+        (entry) =>
+          !targetAspCode ||
+          aspCodesForRegionIdentity(entry.regionCode, entry.regionName).has(
+            targetAspCode,
+          ),
+      );
+      const ranged = mergeEngineerProductivityResults(
+        inScope.map((entry) => entry.productivity),
+      );
+      return {
+        list: ranged.list,
+        totalAttended: ranged.totalAttended,
+        monthsList,
+        datesList,
+        todayStr,
+      };
     }
+
+    // "Specific Date" is already day-scoped via sourceReport above — the day's
+    // whole report IS the day's productivity, so no Case-Created-Time filtering
+    // applies to it (an engineer's work today is mostly on cases created days
+    // ago).
+    const filteredRowsForProd = regionRows;
 
     // 4. Compute per-engineer buckets via the shared day-scoped calculation —
     // the SAME function the backend Final-EOD freeze runs, so live and frozen
@@ -401,13 +484,11 @@ export function useProductivityAnalytics(params: {
     // Per-region Final EOD overlay: a CLOSED region renders from its frozen
     // snapshot and its live rows are excluded, so edits made after the close
     // no longer move that region's day. Other regions stay live. The overlay
-    // only applies when the EOD state is for the day on display and the view
-    // is day-scoped (Month/Range cohorts span many days).
+    // only applies when the EOD state is for the day on display. Multi-day views
+    // never reach here — they returned above with their own frozen/live mix
+    // resolved per day by the backend.
     const overlayActive =
-      !!eodState &&
-      eodState.workingDate === sourceReport.reportDate &&
-      productivityFilterType !== "Specific Month" &&
-      productivityFilterType !== "Date Range";
+      !!eodState && eodState.workingDate === sourceReport.reportDate;
 
     const frozenRegions = overlayActive && eodState
       ? eodState.regions.filter(
@@ -466,8 +547,8 @@ export function useProductivityAnalytics(params: {
     selectedRegion,
     productivityFilterType,
     selectedProductivityValue,
-    productivityFromDate,
-    productivityToDate,
+    productivityRangeBounds,
+    productivityRangeRegions,
     productivityDayReport,
     historyReportDates,
     eodState,
@@ -507,5 +588,6 @@ export function useProductivityAnalytics(params: {
     eodBodDateLabel,
     engineerProductivityMetrics,
     productivityDateLabel,
+    productivityRangeBounds,
   };
 }

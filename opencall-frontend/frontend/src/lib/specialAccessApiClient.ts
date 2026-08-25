@@ -7,6 +7,7 @@ import type {
   EditedReportRowResponse,
   GeneratedReportResponse,
   RegionEodStateResponse,
+  ReportProductivityRangeResponse,
   RtplStatusChange,
 } from "./api/types";
 import type { RecordColumnCatalog, RecordLayout } from "./recordLayoutApiClient";
@@ -387,6 +388,23 @@ export async function getSpecialAccessRegionEodState(
     { headers: authHeaders(token), cache: "no-store" },
   );
   return readJson<RegionEodStateResponse>(response);
+}
+
+/**
+ * Productivity summed across a day range, scoped to the credential's granted
+ * regions. Mirrors getProductivityRange, which is role-guarded and 401s here.
+ */
+export async function getSpecialAccessProductivityRange(
+  token: string,
+  from: string,
+  to: string,
+): Promise<ReportProductivityRangeResponse> {
+  const query = new URLSearchParams({ from, to }).toString();
+  const response = await fetch(
+    url(`/api/v1/special-access/productivity/range?${query}`),
+    { headers: authHeaders(token), cache: "no-store" },
+  );
+  return readJson<ReportProductivityRangeResponse>(response);
 }
 
 export async function closeSpecialAccessRegionEod(

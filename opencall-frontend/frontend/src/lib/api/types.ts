@@ -361,6 +361,8 @@ export type {
   RegionEodStateEntry,
   RegionEodStateResponse,
   RegionEodStatus,
+  RegionProductivityRangeEntry,
+  ReportProductivityRangeResponse,
 } from "@opencall/shared";
 
 import type {

@@ -7,6 +7,7 @@ import type {
   LoginResponse,
   MatchPreviewResponse,
   RegionEodStateResponse,
+  ReportProductivityRangeResponse,
   ReopenRegionEodResponse,
   ReportHistorySession,
   RtplStatusChange,
@@ -107,6 +108,16 @@ export interface OpenCallApiClient {
   deleteAdminRtplStatus(token: string, id: string): Promise<{ success: boolean }>;
   getRtplStatusesDropdown(token: string): Promise<{ statuses: DropdownRtplStatus[] }>;
   getRegionEodState(token: string, workingDate: string): Promise<RegionEodStateResponse>;
+  /**
+   * Per-region productivity summed across an inclusive day range. Productivity is
+   * day-scoped, so a range has to be computed day by day server-side — there is no
+   * single report a range can be read off.
+   */
+  getProductivityRange(
+    token: string,
+    from: string,
+    to: string,
+  ): Promise<ReportProductivityRangeResponse>;
   closeRegionEod(token: string, regionId: string, workingDate: string): Promise<CloseRegionEodResponse>;
   reopenRegionEod(token: string, regionId: string, workingDate: string): Promise<ReopenRegionEodResponse>;
 }
@@ -277,6 +288,16 @@ export function createOpenCallApiClient({
       });
 
       return readJson<RegionEodStateResponse>(response);
+    },
+
+    async getProductivityRange(token, from, to) {
+      const query = new URLSearchParams({ from, to }).toString();
+      const response = await fetchImpl(
+        url(`/api/v1/reports/productivity/range?${query}`),
+        { headers: authHeaders(token), cache: "no-store" },
+      );
+
+      return readJson<ReportProductivityRangeResponse>(response);
     },
 
     async closeRegionEod(token, regionId, workingDate) {

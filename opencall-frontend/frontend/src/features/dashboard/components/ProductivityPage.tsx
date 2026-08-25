@@ -20,6 +20,7 @@ export function ProductivityPage({
   engineerProductivityMetrics,
   productivityDateLabel,
   loading = false,
+  rangeError = null,
   regionsList,
   isSuperAdmin,
   payrollSyncToken,
@@ -61,8 +62,14 @@ export function ProductivityPage({
     datesList: string[];
   };
   productivityDateLabel: string;
-  /** True while a past day's report is being fetched — shows a loading row. */
+  /** True while a past day's or a date range's productivity is being fetched. */
   loading?: boolean;
+  /**
+   * Why the selected date range could not be loaded (e.g. it is longer than the
+   * backend will read in one request). Shown in place of the empty state, so a
+   * refused range never reads as "this period had no work".
+   */
+  rangeError?: string | null;
   regionsList: Array<{ aspCode: string; regionName: string; count: number }>;
   isSuperAdmin: boolean;
   /** Auth token when the viewer may push cases to Payroll (admins only); null
@@ -596,7 +603,13 @@ export function ProductivityPage({
             ) : loading ? (
               <tr>
                 <td colSpan={showRegionColumn ? 10 : 9} style={{ padding: "24px", border: "1px solid #cbd5e1", textAlign: "center", color: "var(--muted)" }}>
-                  Loading this day&apos;s productivity…
+                  Loading productivity for this period…
+                </td>
+              </tr>
+            ) : rangeError ? (
+              <tr>
+                <td colSpan={showRegionColumn ? 10 : 9} style={{ padding: "24px", border: "1px solid #cbd5e1", textAlign: "center", color: "#b91c1c" }}>
+                  {rangeError}
                 </td>
               </tr>
             ) : (

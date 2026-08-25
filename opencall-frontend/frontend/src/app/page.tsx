@@ -162,9 +162,11 @@ import {
   getEngineersDropdown,
   getRtplStatusesDropdown,
   getRegionEodState,
+  getProductivityRange,
   closeRegionEod,
   reopenRegionEod,
   type RegionEodStateResponse,
+  type RegionProductivityRangeEntry,
   isApiAuthError,
 } from "../lib/apiClient";
 import type { DropdownEngineer } from "../lib/api/types";
@@ -205,6 +207,7 @@ import {
   getSpecialAccessRtplStatusChanges,
   getSpecialAccessEngineersDropdown,
   getSpecialAccessRecordLayout,
+  getSpecialAccessProductivityRange,
   getSpecialAccessRegionEodState,
   getSpecialAccessRtplStatusesDropdown,
   updateSpecialAccessReportRow,
@@ -636,6 +639,18 @@ export default function DashboardPage() {
   // state for the whole wait, which reads as broken. See the fetch effect below.
   const [productivityDayLoading, setProductivityDayLoading] = useState(false);
   const productivityDayReportCacheRef = useRef(new Map<string, GeneratedReportResponse>());
+  // Productivity over MORE than one day ("Date Range" / "Specific Month").
+  // Each day's productivity is computed from that day's own report, so a range
+  // is summed server-side; the browser only ever holds one report and cannot
+  // add days together itself. Null until the range has loaded.
+  const [productivityRangeRegions, setProductivityRangeRegions] = useState<
+    readonly RegionProductivityRangeEntry[] | null
+  >(null);
+  const [productivityRangeLoading, setProductivityRangeLoading] = useState(false);
+  const [productivityRangeError, setProductivityRangeError] = useState<string | null>(null);
+  const productivityRangeCacheRef = useRef(
+    new Map<string, readonly RegionProductivityRangeEntry[]>(),
+  );
 
   // RTPL / BOD & EOD "Activity date": picking a past day loads THAT day's final
   // report so the status cards and BOD/EOD tables reflect it, instead of always
@@ -1075,6 +1090,7 @@ export default function DashboardPage() {
     eodBodDateLabel,
     engineerProductivityMetrics,
     productivityDateLabel,
+    productivityRangeBounds,
   } = useProductivityAnalytics({
     report,
     selectedRegion,
@@ -1090,7 +1106,60 @@ export default function DashboardPage() {
     productivityDayReport,
     historyReportDates,
     eodState: productivityEodState,
+    productivityRangeRegions,
   });
+
+  // Fetch the productivity range whenever the view spans more than one day.
+  // The bounds come from the hook that renders them, so what is fetched and what
+  // is shown can never be two different periods. Cached per range for the rest of
+  // this browser session; a failure clears the table and says why rather than
+  // leaving the previous range's numbers under the new label.
+  useEffect(() => {
+    if (!session || !productivityRangeBounds) {
+      setProductivityRangeRegions(null);
+      setProductivityRangeLoading(false);
+      setProductivityRangeError(null);
+      return;
+    }
+
+    const { from, to } = productivityRangeBounds;
+    const key = `${from}|${to}`;
+    const cached = productivityRangeCacheRef.current.get(key);
+    if (cached) {
+      setProductivityRangeRegions(cached);
+      setProductivityRangeLoading(false);
+      setProductivityRangeError(null);
+      return;
+    }
+
+    let cancelled = false;
+    setProductivityRangeRegions(null);
+    setProductivityRangeLoading(true);
+    setProductivityRangeError(null);
+
+    const load = isSpecialAccess
+      ? getSpecialAccessProductivityRange(session.token, from, to)
+      : getProductivityRange(session.token, from, to);
+
+    load
+      .then((range) => {
+        productivityRangeCacheRef.current.set(key, range.regions);
+        if (!cancelled) setProductivityRangeRegions(range.regions);
+      })
+      .catch((error: unknown) => {
+        if (cancelled) return;
+        setProductivityRangeError(
+          error instanceof Error ? error.message : "Could not load this date range",
+        );
+      })
+      .finally(() => {
+        if (!cancelled) setProductivityRangeLoading(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [session, isSpecialAccess, productivityRangeBounds]);
 
   useEffect(() => {
     if (tnFilterType === "Specific Date") {
@@ -5206,7 +5275,8 @@ export default function DashboardPage() {
                         setProductivityToDate={setProductivityToDate}
                         engineerProductivityMetrics={engineerProductivityMetrics}
                         productivityDateLabel={productivityDateLabel}
-                        loading={productivityDayLoading}
+                        loading={productivityDayLoading || productivityRangeLoading}
+                        rangeError={productivityRangeError}
                         regionsList={report?.regionBreakdown ?? []}
                         isSuperAdmin={session?.user?.role === "SUPER_ADMIN"}
                         payrollSyncToken={

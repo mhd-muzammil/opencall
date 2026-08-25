@@ -5289,13 +5289,6 @@ export default function DashboardPage() {
                         rangeBounds={productivityRangeBounds}
                         regionsList={report?.regionBreakdown ?? []}
                         isSuperAdmin={session?.user?.role === "SUPER_ADMIN"}
-                        payrollSyncToken={
-                          !isSpecialAccess &&
-                          (session.user.role === "SUPER_ADMIN" ||
-                            session.user.role === "REGION_ADMIN")
-                            ? session.token
-                            : null
-                        }
                         openRecordsWithFilter={openRecordsWithFilter}
                       />
                     )}

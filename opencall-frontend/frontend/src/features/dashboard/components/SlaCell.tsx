@@ -36,22 +36,21 @@ function pad(value: number): string {
 }
 
 /**
- * "45m 12s" inside the hour, "1h 15m" beyond it, "5d 3h 12m" beyond a day.
+ * "45m 12s" inside the hour, "1h 15m" inside the day, "20d" beyond it.
  *
- * Seconds only inside the last hour. They tick, which is the point — but they also cost four
- * characters, and the countdown and the deadline together have to fit a table cell beside
- * the work order. Written at every range, "over 1h 15m 32s · 26 Aug, 5:39 pm" ran off the
- * end of the column and over the Case ID beside it. An hour out is where somebody is
- * genuinely watching the clock; further out, a seconds counter is spending width on noise.
+ * Each unit is dropped at the range where nobody would act on it. Seconds tick, which is the
+ * whole point of them, and they matter in the last hour when somebody is watching the clock;
+ * on a deadline five days out they are four characters of noise. Hours and minutes go the
+ * same way past a day: "over 20d 1h 18m" tells a person about a three-week-old breach
+ * exactly what "over 20d" does, in five more characters.
+ *
+ * Those characters are not free. The countdown and the deadline share one table cell beside
+ * the work order, and every earlier version of this ran off the end of that cell and drew
+ * itself over the Case ID column next door.
  */
 export function formatCountdown(seconds: number): string {
   const total = Math.abs(seconds);
-  if (total >= DAY) {
-    const days = Math.floor(total / DAY);
-    const hours = Math.floor((total % DAY) / HOUR);
-    const minutes = Math.floor((total % HOUR) / 60);
-    return `${days}d ${hours}h ${minutes}m`;
-  }
+  if (total >= DAY) return `${Math.floor(total / DAY)}d`;
   const hours = Math.floor(total / HOUR);
   const minutes = Math.floor((total % HOUR) / 60);
   if (hours > 0) return `${hours}h ${pad(minutes)}m`;
@@ -109,16 +108,17 @@ export function SlaCell({ sla }: Readonly<SlaCellProps>) {
   return (
     <span
       style={{
-        display: "flex",
-        alignItems: "center",
-        gap: 6,
-        marginTop: 3,
-        whiteSpace: "nowrap",
-        // A table cell does not clip what overflows it, so without these the date simply
-        // drew itself on top of the Case ID column next door. Shorter text is what makes it
-        // fit; this is what guarantees it can never spill again if it stops fitting.
+        // BLOCK, not an inline flex. The clip below was already here and did nothing,
+        // because `max-width: 100%` on an inline box inside another inline box that is
+        // `white-space: nowrap` resolves against a parent that has already stretched to fit
+        // its content — 100% of "however wide this needs to be" is no limit at all. A block
+        // resolves against the table cell, which is the width that actually exists.
+        display: "block",
         maxWidth: "100%",
         overflow: "hidden",
+        textOverflow: "ellipsis",
+        marginTop: 3,
+        whiteSpace: "nowrap",
       }}
       title={
         `SLA ${sla.slaStatus || (breached ? "breached" : "within")}` +
@@ -144,7 +144,10 @@ export function SlaCell({ sla }: Readonly<SlaCellProps>) {
         ⏱ {countdown}
       </span>
       {sla.slaEndTime ? (
-        <span style={{ fontSize: 10.5, color: "var(--muted)", fontWeight: 500 }}>
+        // Last, and the one that gives way: if the cell is ever too narrow for both, the
+        // deadline truncates with an ellipsis while the countdown — the part somebody is
+        // reading at a glance — stays whole.
+        <span style={{ marginLeft: 6, fontSize: 10.5, color: "var(--muted)", fontWeight: 500 }}>
           {formatDeadline(sla.slaEndTime)}
         </span>
       ) : null}

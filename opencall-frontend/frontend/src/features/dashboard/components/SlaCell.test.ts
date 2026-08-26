@@ -26,8 +26,12 @@ describe("formatCountdown", () => {
     expect(formatCountdown(9 * 60 + 3)).toBe("9m 03s");
   });
 
-  it("uses days past a day", () => {
-    expect(formatCountdown(5 * 86400 + 3 * 3600 + 12 * 60)).toBe("5d 3h 12m");
+  it("drops to days alone past a day", () => {
+    // "over 20d 1h 18m" tells somebody about a three-week-old breach exactly what "over 20d"
+    // does, in five more characters — and those characters were what ran the SLA off the end
+    // of its cell and over the Case ID column next door.
+    expect(formatCountdown(5 * 86400 + 3 * 3600 + 12 * 60)).toBe("5d");
+    expect(formatCountdown(20 * 86400 + 3600 + 18 * 60)).toBe("20d");
   });
 
   it("reads the same either side of zero — the sign is the caller's to add", () => {
@@ -39,7 +43,15 @@ describe("formatCountdown", () => {
     expect(formatCountdown(3599)).toBe("59m 59s");
     expect(formatCountdown(3600)).toBe("1h 00m");
     expect(formatCountdown(86399)).toBe("23h 59m");
-    expect(formatCountdown(86400)).toBe("1d 0h 0m");
+    expect(formatCountdown(86400)).toBe("1d");
+  });
+
+  it("never grows past six characters, which is what makes it fit", () => {
+    // The cell clips as a backstop, but a value that has to be clipped is a value somebody
+    // cannot read. Every range has to fit on its own.
+    for (const seconds of [0, 59, 3599, 3600, 86399, 86400, 400 * 86400]) {
+      expect(formatCountdown(seconds).length).toBeLessThanOrEqual(7);
+    }
   });
 });
 

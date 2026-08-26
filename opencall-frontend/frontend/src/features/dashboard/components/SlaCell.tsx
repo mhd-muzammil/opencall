@@ -36,25 +36,24 @@ function pad(value: number): string {
 }
 
 /**
- * "45m 12s" inside the hour, "1h 15m" inside the day, "20d" beyond it.
+ * "5d 3h 22m 41s", "20h 50m 12s", "45m 12s" — always down to the second.
  *
- * Each unit is dropped at the range where nobody would act on it. Seconds tick, which is the
- * whole point of them, and they matter in the last hour when somebody is watching the clock;
- * on a deadline five days out they are four characters of noise. Hours and minutes go the
- * same way past a day: "over 20d 1h 18m" tells a person about a three-week-old breach
- * exactly what "over 20d" does, in five more characters.
+ * The seconds were dropped past an hour to save width, and that was the wrong trade: a
+ * countdown that does not move is indistinguishable from a stale number, which is exactly
+ * what this feature exists to stop anybody thinking. Every one of them ticks now.
  *
- * Those characters are not free. The countdown and the deadline share one table cell beside
- * the work order, and every earlier version of this ran off the end of that cell and drew
- * itself over the Case ID column next door.
+ * The width that bought is found instead by putting the deadline on its own line — see the
+ * component below. Thirteen characters at the very widest, which the cell holds comfortably.
  */
 export function formatCountdown(seconds: number): string {
   const total = Math.abs(seconds);
-  if (total >= DAY) return `${Math.floor(total / DAY)}d`;
-  const hours = Math.floor(total / HOUR);
+  const days = Math.floor(total / DAY);
+  const hours = Math.floor((total % DAY) / HOUR);
   const minutes = Math.floor((total % HOUR) / 60);
-  if (hours > 0) return `${hours}h ${pad(minutes)}m`;
-  return `${minutes}m ${pad(total % 60)}s`;
+  const rest = total % 60;
+  if (days > 0) return `${days}d ${hours}h ${pad(minutes)}m ${pad(rest)}s`;
+  if (hours > 0) return `${hours}h ${pad(minutes)}m ${pad(rest)}s`;
+  return `${minutes}m ${pad(rest)}s`;
 }
 
 /** "26 Aug 5:39 pm" in the time everybody here works in. */
@@ -128,6 +127,7 @@ export function SlaCell({ sla }: Readonly<SlaCellProps>) {
     >
       <span
         style={{
+          display: "inline-block",
           padding: "0 6px",
           borderRadius: 999,
           border: `1px solid ${colours.border}`,
@@ -144,10 +144,12 @@ export function SlaCell({ sla }: Readonly<SlaCellProps>) {
         ⏱ {countdown}
       </span>
       {sla.slaEndTime ? (
-        // Last, and the one that gives way: if the cell is ever too narrow for both, the
-        // deadline truncates with an ellipsis while the countdown — the part somebody is
-        // reading at a glance — stays whole.
-        <span style={{ marginLeft: 6, fontSize: 10.5, color: "var(--muted)", fontWeight: 500 }}>
+        // ITS OWN LINE. Side by side, the countdown and the deadline needed more width than
+        // the Ticket ID column has, and every attempt to make them fit either ran over the
+        // Case ID column next door or bought the room by taking the seconds off the
+        // countdown — which stopped it visibly ticking, the one thing it is for. Stacked,
+        // neither has to give anything up, and the row grows by a single line of small text.
+        <span style={{ display: "block", fontSize: 10.5, color: "var(--muted)", fontWeight: 500 }}>
           {formatDeadline(sla.slaEndTime)}
         </span>
       ) : null}

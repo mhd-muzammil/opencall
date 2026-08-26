@@ -19,8 +19,9 @@ import { VirtualTbody } from "../components/VirtualTbody";
 import {
   LayoutGrid, FolderCheck, LineChart, Activity, Timer, Layers, Map as MapIcon, Zap, TrendingUp,
   Table, Wrench, FileText, Users, UserPlus, ShieldCheck, Tag, Upload, ScrollText,
-  RefreshCw, LogOut,
+  RefreshCw, LogOut, MapPin,
 } from "lucide-react";
+import LiveTrackingPanel from "../features/dashboard/components/LiveTrackingPanel";
 import { useColumnFilters } from "../lib/useColumnFilters";
 import {
   reportHasDistanceValues,
@@ -260,6 +261,7 @@ const WORKSPACE_VIEWS = [
   "customer-emails",
   "renewal-pipeline",
   "vendor-dashboard",
+  "live-tracking",
 ] as const;
 type WorkspaceView = (typeof WORKSPACE_VIEWS)[number];
 
@@ -4594,6 +4596,22 @@ export default function DashboardPage() {
             </button>
           )}
 
+          {/* Next to Engineer Productivity: both are about the engineers rather
+              than the calls. The board used to live only at its own /admin/tracking
+              URL, which you had to already know about. */}
+          {canSeeSection("live-tracking") &&
+            (session.user.role === "SUPER_ADMIN" || session.user.role === "REGION_ADMIN") && (
+            <button
+              type="button"
+              className={`sidebarItem ${workspaceView === "live-tracking" ? "active" : ""}`}
+              onClick={() => setWorkspaceView("live-tracking")}
+            >
+              <span className="sidebarIcon">
+                <MapPin size={18} strokeWidth={2} /> <span className="sidebarText">Live Tracking</span>
+              </span>
+            </button>
+          )}
+
           {(session.user.role === "SUPER_ADMIN" || session.user.role === "REGION_ADMIN") && (
             <button
               type="button"
@@ -5266,6 +5284,12 @@ export default function DashboardPage() {
                             .catch(handleBackgroundError);
                         }}
                       />
+                    )}
+
+                    {workspaceView === "live-tracking" && (
+                      // The board reads and refreshes on its own; all it needs
+                      // from the console is who is signed in.
+                      <LiveTrackingPanel token={session.token} />
                     )}
 
                     {workspaceView === "productivity" && (

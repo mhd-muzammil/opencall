@@ -224,15 +224,45 @@ describe("the tracking board", () => {
     expect(rows().filter((row) => row.getAttribute("data-selected") === "true")).toHaveLength(0);
   });
 
-  it("selects one engineer, and only that engineer, when their day is opened", async () => {
+  it("opens that engineer's day in place of the list", async () => {
+    // Their day used to render below the map AND the list, so on any real screen
+    // the answer appeared off the bottom of the page.
+    await mountBoard();
+    await clickTab(/^On duty /);
+    expect(rowNames()).toEqual(["Praveen"]);
+
+    await act(async () => {
+      rows()[0]?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+    await act(async () => {});
+
+    // The list is gone, and the panel is now about that one engineer.
+    expect(rows()).toHaveLength(0);
+    expect(container.textContent).toContain("Praveen");
+    expect(getEngineerDay).toHaveBeenCalledWith("test-token", 91, expect.any(String));
+  });
+
+  it("comes back to everyone from an engineer's day", async () => {
     await mountBoard();
     await clickTab(/^On duty /);
     await act(async () => {
       rows()[0]?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     });
     await act(async () => {});
+    expect(rows()).toHaveLength(0);
+
+    const back = Array.from(container.querySelectorAll("button")).find(
+      (b) => b.title === "Back to all engineers",
+    );
+    expect(back).toBeTruthy();
+    await act(async () => {
+      back?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+
+    // Back to the engineers, on the tab that was open.
+    expect(rowNames()).toEqual(["Praveen"]);
     await clickTab(/^All /);
-    expect(rows().filter((row) => row.getAttribute("data-selected") === "true")).toHaveLength(1);
+    expect(rowNames()).toHaveLength(26);
   });
 
   it("cannot open the day of an engineer Payroll has no record of", async () => {

@@ -461,6 +461,224 @@ export default function LiveTrackingPanel({
             background: "#fff",
           }}
         >
+          {/* One engineer's day takes the panel over, with a way back to
+              everyone. It used to render below the map AND the list, which on
+              any real screen put the answer off the bottom of the page. */}
+          {selected ? (
+            <>
+          <div style={{ padding: "12px 14px", borderBottom: "1px solid #e5e7eb" }}>
+            <div style={{ fontSize: 15, fontWeight: 600, color: "#111827" }}>Engineer day</div>
+          </div>
+      {/* Selected engineer detail */}
+      {selected && (
+        <div style={{ flex: 1, overflowY: "auto", minHeight: 0, padding: 14 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+            <button
+              onClick={() => setSelectedId(null)}
+              title="Back to all engineers"
+              style={{
+                display: "grid",
+                placeItems: "center",
+                width: 30,
+                height: 30,
+                flexShrink: 0,
+                borderRadius: 8,
+                border: "1px solid #e5e7eb",
+                background: "#fff",
+                color: "#374151",
+                cursor: "pointer",
+                fontSize: 15,
+                lineHeight: 1,
+              }}
+            >
+              &#8592;
+            </button>
+            <div
+              style={{
+                display: "grid",
+                placeItems: "center",
+                width: 34,
+                height: 34,
+                flexShrink: 0,
+                borderRadius: 999,
+                background: "#e0e7ff",
+                color: "#4338ca",
+                fontSize: 12.5,
+                fontWeight: 700,
+              }}
+            >
+              {initials(selected.engineer_name)}
+            </div>
+            <strong style={{ fontSize: 15, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+              {selected.engineer_name}
+            </strong>
+          </div>
+          <div style={{ marginTop: 8, fontSize: 14, color: "#374151", display: "grid", gap: 4 }}>
+            <span>Branch: {selected.branch ?? "—"}</span>
+            <span>
+              Duty: <DutyBadge row={selected} />
+              {selected.duty_started_at && (
+                <>
+                  {" "}
+                  {clock(selected.duty_started_at)}
+                  {selected.duty_ended_at ? ` – ${clock(selected.duty_ended_at)}` : " onwards"} (
+                  {duration(selected.duty_minutes)})
+                </>
+              )}
+            </span>
+            <span>Active case: {selected.active_case_number ?? "—"}</span>
+            <span>Status: {selected.status || "—"}</span>
+            <span>Last seen: {relativeAge(selected.last_seen_minutes)}</span>
+            <span>
+              {selected.stale ? "Last known position: " : "Position: "}
+              {selected.latitude != null && selected.longitude != null ? (
+                <>
+                  <a
+                    href={mapsLink(selected.latitude, selected.longitude)}
+                    target="_blank"
+                    rel="noreferrer"
+                    style={{ color: "#2563eb" }}
+                  >
+                    {selected.latitude.toFixed(5)}, {selected.longitude.toFixed(5)}
+                  </a>
+                  {selected.accuracy != null && (
+                    <span style={{ color: "#9ca3af" }}> ±{Math.round(selected.accuracy)}m</span>
+                  )}
+                </>
+              ) : (
+                <span style={{ color: "#9ca3af" }}>no fix yet on this duty</span>
+              )}
+            </span>
+            <span style={{ fontWeight: 600, color: "#1d4ed8" }}>
+              This duty: {selected.distance_km} km
+            </span>
+          </div>
+
+          {/* The day itself: pick a date, read the three numbers, then read the
+              timeline top to bottom the way the day happened. */}
+          <div
+            style={{
+              marginTop: 16,
+              paddingTop: 12,
+              borderTop: "1px solid #bfdbfe",
+              display: "flex",
+              alignItems: "center",
+              gap: 8,
+              flexWrap: "wrap",
+            }}
+          >
+            {/* Plain words, not chevron glyphs — ‹ and › rendered as empty
+                boxes in the console's font, so the buttons looked broken. */}
+            <button onClick={() => shiftDay(-1)} style={arrowStyle} title="Previous day">
+              Prev
+            </button>
+            <strong style={{ fontSize: 14, minWidth: 110, textAlign: "center" }}>
+              {dayLabel(dayDate)}
+            </strong>
+            <button
+              onClick={() => shiftDay(1)}
+              disabled={dayDate >= todayStr()}
+              style={{ ...arrowStyle, opacity: dayDate >= todayStr() ? 0.35 : 1 }}
+              title="Next day"
+            >
+              Next
+            </button>
+            <input
+              type="date"
+              value={dayDate}
+              max={todayStr()}
+              onChange={(e) => e.target.value && setDayDate(e.target.value)}
+              style={{ padding: "6px 10px", border: "1px solid #bfdbfe", borderRadius: 8, fontSize: 13 }}
+            />
+            {dayLoading && <span style={{ fontSize: 12, color: "#6b7280" }}>loading…</span>}
+          </div>
+
+          {day && (
+            <>
+              <div
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
+                  gap: 12,
+                  marginTop: 12,
+                  paddingTop: 12,
+                  borderTop: "1px solid #e5e7eb",
+                }}
+              >
+                <Stat label="Duration" value={duration(day.duty_minutes)} />
+                <Stat label="Distance" value={`${day.total_km} km`} />
+                <Stat label="Stops" value={String(day.stop_count)} />
+                <Stat
+                  label="Seen"
+                  value={
+                    day.first_seen && day.last_seen
+                      ? `${clock(day.first_seen)} – ${clock(day.last_seen)}`
+                      : "—"
+                  }
+                />
+              </div>
+
+              {day.events.length === 0 ? (
+                <p style={{ marginTop: 12, fontSize: 13, color: "#6b7280" }}>
+                  Nothing recorded on this day — no duty was started and no position came in.
+                </p>
+              ) : (
+                <ol
+                  style={{
+                    marginTop: 12,
+                    maxHeight: 260,
+                    overflowY: "auto",
+                    listStyle: "none",
+                    padding: 0,
+                    display: "grid",
+                    gap: 8,
+                  }}
+                >
+                  {day.events.map((e, i) => (
+                    <li key={`${e.at}-${i}`} style={{ display: "flex", gap: 10, fontSize: 13 }}>
+                      <span style={{ color: "#6b7280", minWidth: 62, fontVariantNumeric: "tabular-nums" }}>
+                        {clock(e.at)}
+                      </span>
+                      <span
+                        style={{
+                          width: 8,
+                          height: 8,
+                          borderRadius: "50%",
+                          marginTop: 5,
+                          flexShrink: 0,
+                          background: EVENT_COLOR[e.type] ?? "#6b7280",
+                        }}
+                      />
+                      <span style={{ color: "#111827" }}>
+                        {e.label}
+                        {e.case_number && (
+                          <span style={{ color: "#6b7280" }}> · {e.case_number}</span>
+                        )}
+                        {e.latitude != null && e.longitude != null && (
+                          <>
+                            {" "}
+                            <a
+                              href={mapsLink(e.latitude, e.longitude)}
+                              target="_blank"
+                              rel="noreferrer"
+                              style={{ color: "#2563eb" }}
+                            >
+                              view on map
+                            </a>
+                          </>
+                        )}
+                      </span>
+                    </li>
+                  ))}
+                </ol>
+              )}
+            </>
+          )}
+        </div>
+      )}
+            </>
+          ) : (
+            <>
           <div style={{ padding: "12px 14px", borderBottom: "1px solid #e5e7eb" }}>
             <div style={{ fontSize: 15, fontWeight: 600, color: "#111827" }}>Track</div>
           </div>
@@ -633,183 +851,11 @@ export default function LiveTrackingPanel({
             </div>
           )}
         </div>
+            </>
+          )}
         </aside>
       </div>
 
-      {/* Selected engineer detail */}
-      {selected && (
-        <div
-          style={{
-            marginTop: 16,
-            padding: 16,
-            border: "1px solid #dbeafe",
-            background: "#eff6ff",
-            borderRadius: 12,
-          }}
-        >
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-            <strong style={{ fontSize: 16 }}>{selected.engineer_name}</strong>
-            <button
-              onClick={() => setSelectedId(null)}
-              style={{ background: "none", border: "none", color: "#2563eb", cursor: "pointer" }}
-            >
-              Clear
-            </button>
-          </div>
-          <div style={{ marginTop: 8, fontSize: 14, color: "#374151", display: "grid", gap: 4 }}>
-            <span>Branch: {selected.branch ?? "—"}</span>
-            <span>
-              Duty: <DutyBadge row={selected} />
-              {selected.duty_started_at && (
-                <>
-                  {" "}
-                  {clock(selected.duty_started_at)}
-                  {selected.duty_ended_at ? ` – ${clock(selected.duty_ended_at)}` : " onwards"} (
-                  {duration(selected.duty_minutes)})
-                </>
-              )}
-            </span>
-            <span>Active case: {selected.active_case_number ?? "—"}</span>
-            <span>Status: {selected.status || "—"}</span>
-            <span>Last seen: {relativeAge(selected.last_seen_minutes)}</span>
-            <span>
-              {selected.stale ? "Last known position: " : "Position: "}
-              {selected.latitude != null && selected.longitude != null ? (
-                <>
-                  <a
-                    href={mapsLink(selected.latitude, selected.longitude)}
-                    target="_blank"
-                    rel="noreferrer"
-                    style={{ color: "#2563eb" }}
-                  >
-                    {selected.latitude.toFixed(5)}, {selected.longitude.toFixed(5)}
-                  </a>
-                  {selected.accuracy != null && (
-                    <span style={{ color: "#9ca3af" }}> ±{Math.round(selected.accuracy)}m</span>
-                  )}
-                </>
-              ) : (
-                <span style={{ color: "#9ca3af" }}>no fix yet on this duty</span>
-              )}
-            </span>
-            <span style={{ fontWeight: 600, color: "#1d4ed8" }}>
-              This duty: {selected.distance_km} km
-            </span>
-          </div>
-
-          {/* The day itself: pick a date, read the three numbers, then read the
-              timeline top to bottom the way the day happened. */}
-          <div
-            style={{
-              marginTop: 16,
-              paddingTop: 12,
-              borderTop: "1px solid #bfdbfe",
-              display: "flex",
-              alignItems: "center",
-              gap: 8,
-              flexWrap: "wrap",
-            }}
-          >
-            {/* Plain words, not chevron glyphs — ‹ and › rendered as empty
-                boxes in the console's font, so the buttons looked broken. */}
-            <button onClick={() => shiftDay(-1)} style={arrowStyle} title="Previous day">
-              Prev
-            </button>
-            <strong style={{ fontSize: 14, minWidth: 110, textAlign: "center" }}>
-              {dayLabel(dayDate)}
-            </strong>
-            <button
-              onClick={() => shiftDay(1)}
-              disabled={dayDate >= todayStr()}
-              style={{ ...arrowStyle, opacity: dayDate >= todayStr() ? 0.35 : 1 }}
-              title="Next day"
-            >
-              Next
-            </button>
-            <input
-              type="date"
-              value={dayDate}
-              max={todayStr()}
-              onChange={(e) => e.target.value && setDayDate(e.target.value)}
-              style={{ padding: "6px 10px", border: "1px solid #bfdbfe", borderRadius: 8, fontSize: 13 }}
-            />
-            {dayLoading && <span style={{ fontSize: 12, color: "#6b7280" }}>loading…</span>}
-          </div>
-
-          {day && (
-            <>
-              <div style={{ display: "flex", gap: 24, marginTop: 12, flexWrap: "wrap" }}>
-                <Stat label="Duration" value={duration(day.duty_minutes)} />
-                <Stat label="Distance" value={`${day.total_km} km`} />
-                <Stat label="Stops" value={String(day.stop_count)} />
-                <Stat
-                  label="Seen"
-                  value={
-                    day.first_seen && day.last_seen
-                      ? `${clock(day.first_seen)} – ${clock(day.last_seen)}`
-                      : "—"
-                  }
-                />
-              </div>
-
-              {day.events.length === 0 ? (
-                <p style={{ marginTop: 12, fontSize: 13, color: "#6b7280" }}>
-                  Nothing recorded on this day — no duty was started and no position came in.
-                </p>
-              ) : (
-                <ol
-                  style={{
-                    marginTop: 12,
-                    maxHeight: 260,
-                    overflowY: "auto",
-                    listStyle: "none",
-                    padding: 0,
-                    display: "grid",
-                    gap: 8,
-                  }}
-                >
-                  {day.events.map((e, i) => (
-                    <li key={`${e.at}-${i}`} style={{ display: "flex", gap: 10, fontSize: 13 }}>
-                      <span style={{ color: "#6b7280", minWidth: 62, fontVariantNumeric: "tabular-nums" }}>
-                        {clock(e.at)}
-                      </span>
-                      <span
-                        style={{
-                          width: 8,
-                          height: 8,
-                          borderRadius: "50%",
-                          marginTop: 5,
-                          flexShrink: 0,
-                          background: EVENT_COLOR[e.type] ?? "#6b7280",
-                        }}
-                      />
-                      <span style={{ color: "#111827" }}>
-                        {e.label}
-                        {e.case_number && (
-                          <span style={{ color: "#6b7280" }}> · {e.case_number}</span>
-                        )}
-                        {e.latitude != null && e.longitude != null && (
-                          <>
-                            {" "}
-                            <a
-                              href={mapsLink(e.latitude, e.longitude)}
-                              target="_blank"
-                              rel="noreferrer"
-                              style={{ color: "#2563eb" }}
-                            >
-                              view on map
-                            </a>
-                          </>
-                        )}
-                      </span>
-                    </li>
-                  ))}
-                </ol>
-              )}
-            </>
-          )}
-        </div>
-      )}
 
     </div>
   );

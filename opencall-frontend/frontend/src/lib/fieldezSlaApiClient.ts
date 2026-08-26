@@ -102,17 +102,23 @@ export function slaSecondsLeft(slaEndTime: string | null, now: Date = new Date()
 }
 
 /**
- * "121h 39m", the way FieldEZ writes it.
+ * "3h 12m" up close, "27d" far away.
  *
- * Hours rather than days because that is the unit the promise is made in and the unit
- * somebody chasing it thinks in — "5 days left" reads as comfortable in a way "121h" does
- * not. Seconds are dropped: they change while you read them and nobody acts on them.
+ * This sits inside a table cell beside the work order, and the first version wrote every
+ * value in hours the way FieldEZ does. That is right near a deadline and unreadable away
+ * from one: calls breached a month ago came out as "overdue 652h 54m", which is both hard to
+ * parse and wide enough to push the Case ID column off the screen.
+ *
+ * So hours and minutes while the answer is actionable, and days past two of them, where
+ * nobody is counting hours anyway. Seconds are never shown — they change while you read them.
  */
 export function formatSlaLeft(seconds: number | null): string {
   if (seconds === null) return "";
   const overdue = seconds < 0;
   const total = Math.abs(seconds);
+  const prefix = overdue ? "over " : "";
+  if (total >= 48 * 3600) return `${prefix}${Math.floor(total / 86400)}d`;
   const hours = Math.floor(total / 3600);
   const minutes = Math.floor((total % 3600) / 60);
-  return `${overdue ? "overdue " : ""}${hours}h ${minutes}m`;
+  return hours > 0 ? `${prefix}${hours}h ${minutes}m` : `${prefix}${minutes}m`;
 }

@@ -91,13 +91,20 @@ describe("slaSecondsLeft", () => {
 });
 
 describe("formatSlaLeft", () => {
-  it("writes hours, the unit the promise is made in", () => {
-    expect(formatSlaLeft(438000)).toBe("121h 40m");
+  it("writes hours and minutes while the answer is actionable", () => {
     expect(formatSlaLeft(3660)).toBe("1h 1m");
+    expect(formatSlaLeft(600)).toBe("10m");
   });
 
-  it("says overdue rather than showing a minus sign to be squinted at", () => {
-    expect(formatSlaLeft(-7200)).toBe("overdue 2h 0m");
+  it("switches to days once nobody is counting hours", () => {
+    // "overdue 652h 54m" is what a month-old breach used to read as: hard to parse, and wide
+    // enough in a table cell to push the Case ID column off the screen.
+    expect(formatSlaLeft(-2350440)).toBe("over 27d");
+    expect(formatSlaLeft(438000)).toBe("5d");
+  });
+
+  it("says over rather than showing a minus sign to be squinted at", () => {
+    expect(formatSlaLeft(-7200)).toBe("over 2h 0m");
   });
 
   it("is empty when there is nothing to count", () => {

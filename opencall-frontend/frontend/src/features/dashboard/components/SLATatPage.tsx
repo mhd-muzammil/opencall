@@ -1,6 +1,10 @@
 // SLA TaT page component that displays Turnaround Time metrics for PC, Print, and Install cases.
 import type { ReportRow, PrintCaseFilter } from "../types";
-import { formatNumber } from "../utils";
+// One call counted once. The Flex WIP export is part-level, so a call waiting on three
+// spare parts arrives as three rows under one Ticket ID — counting rows made it three calls
+// in the total, three entries in the drill-down and three votes in the percentage. Shared
+// with the mobile page so the two cannot drift apart.
+import { calculateSlaMetrics, type SlaMetrics } from "../../../lib/slaTat";
 
 interface SLATatPageProps {
   selectedRegion: string | null;
@@ -40,62 +44,6 @@ export function SLATatPage({
   const regionalPrintRows = filterByRegion(printFixRows);
   const regionalInstallRows = filterByRegion(printInstallationRows);
 
-  // Helper to calculate SLA metrics
-  const calculateSlaMetrics = (rows: ReportRow[]) => {
-    const now = new Date();
-    let withinSlaCount = 0;
-    let breachedSlaCount = 0;
-    let pendingCount = 0;
-
-    const withinSlaTickets: string[] = [];
-    const breachedSlaTickets: string[] = [];
-    const pendingTickets: string[] = [];
-    const allTickets: string[] = [];
-
-    for (const row of rows) {
-      const ticketId = String(row.output["Ticket ID"] ?? "").trim();
-      if (!ticketId) continue;
-      allTickets.push(ticketId);
-
-      const tatVal = row.output["TAT"];
-      if (!tatVal || String(tatVal).trim() === "Manual Entry Required" || String(tatVal).trim() === "") {
-        pendingCount += 1;
-        pendingTickets.push(ticketId);
-        continue;
-      }
-
-      const tatDate = new Date(String(tatVal));
-      if (Number.isNaN(tatDate.getTime())) {
-        pendingCount += 1;
-        pendingTickets.push(ticketId);
-        continue;
-      }
-
-      if (now < tatDate) {
-        withinSlaCount += 1;
-        withinSlaTickets.push(ticketId);
-      } else {
-        breachedSlaCount += 1;
-        breachedSlaTickets.push(ticketId);
-      }
-    }
-
-    const totalValid = withinSlaCount + breachedSlaCount;
-    const adherencePercent = totalValid > 0 ? Math.round((withinSlaCount / totalValid) * 100) : 100;
-
-    return {
-      total: rows.length,
-      withinSla: withinSlaCount,
-      breached: breachedSlaCount,
-      pending: pendingCount,
-      adherence: adherencePercent,
-      withinSlaTickets,
-      breachedSlaTickets,
-      pendingTickets,
-      allTickets,
-    };
-  };
-
   const pcMetrics = calculateSlaMetrics(regionalPcRows);
   const printMetrics = calculateSlaMetrics(regionalPrintRows);
   const installMetrics = calculateSlaMetrics(regionalInstallRows);
@@ -103,7 +51,7 @@ export function SLATatPage({
   const renderCard = (
     title: string,
     icon: string,
-    metrics: ReturnType<typeof calculateSlaMetrics>,
+    metrics: SlaMetrics,
     themeColor: string,
     clickHandlers: {
       onTotal: () => void;

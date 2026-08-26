@@ -12,29 +12,13 @@ import {
   isPrintInstallationCase,
 } from "../../../features/dashboard/utils/caseClassification";
 import type { GeneratedReportResponse } from "../../../lib/api/types";
+// The same counting the web page uses, from the same file: one call counted once, however
+// many spare-part rows the Flex WIP export splits it into. Two copies of this rule is how
+// the phone and the desktop came to show different numbers for the same day.
+import { calculateSlaMetrics, ticketKey, type SlaBucket } from "../../../lib/slaTat";
 
 type Row = GeneratedReportResponse["rows"][number];
-type Bucket = "within" | "breached" | "pending";
-
-/**
- * SLA TaT — the same three case sets and the same rule as SLATatPage.tsx:
- * rows without a Ticket ID are skipped entirely, a blank / "Manual Entry Required" /
- * unparseable TAT counts as Pending, otherwise `now < TAT` is Within and anything else
- * is Breached. Adherence = within / (within + breached), 100 when there is nothing valid.
- */
-function bucketOf(row: Row, now: Date): Bucket | null {
-  const ticketId = String(row.output["Ticket ID"] ?? "").trim();
-  if (!ticketId) return null;
-
-  const tatVal = row.output["TAT"];
-  const text = String(tatVal ?? "").trim();
-  if (!tatVal || text === "" || text === "Manual Entry Required") return "pending";
-
-  const tatDate = new Date(String(tatVal));
-  if (Number.isNaN(tatDate.getTime())) return "pending";
-
-  return now < tatDate ? "within" : "breached";
-}
+type Bucket = SlaBucket;
 
 const CASE_TYPES = [
   { key: "pc", label: "PC Cases", match: isPcCase },
@@ -65,24 +49,14 @@ export default function MobileSlaPage() {
   const stats = useMemo(
     () =>
       CASE_TYPES.map((t) => {
-        const typeRows = rows.filter(t.match);
-        let within = 0;
-        let breached = 0;
-        let pending = 0;
-        for (const r of typeRows) {
-          const b = bucketOf(r, now);
-          if (b === "within") within += 1;
-          else if (b === "breached") breached += 1;
-          else if (b === "pending") pending += 1;
-        }
-        const valid = within + breached;
+        const m = calculateSlaMetrics(rows.filter(t.match), now);
         return {
           ...t,
-          total: typeRows.length,
-          within,
-          breached,
-          pending,
-          adherence: valid > 0 ? Math.round((within / valid) * 100) : 100,
+          total: m.total,
+          within: m.withinSla,
+          breached: m.breached,
+          pending: m.pending,
+          adherence: m.adherence,
         };
       }),
     [rows, now],
@@ -92,7 +66,27 @@ export default function MobileSlaPage() {
     if (!drill) return [];
     const t = CASE_TYPES.find((c) => c.key === drill.type);
     if (!t) return [];
-    return rows.filter((r) => t.match(r) && bucketOf(r, now) === drill.bucket);
+    // ONE ROW PER CALL, matching the number that was clicked. Filtering the raw rows would
+    // list a three-part call three times under a count that had it once, which is the
+    // disagreement the shared counting exists to end. The first row of each call is kept so
+    // the list still has a real record to show.
+    const wanted = new Set(
+      calculateSlaMetrics(rows.filter(t.match), now)[
+        drill.bucket === "within"
+          ? "withinSlaTickets"
+          : drill.bucket === "breached"
+            ? "breachedSlaTickets"
+            : "pendingTickets"
+      ].map(ticketKey),
+    );
+    const seen = new Set<string>();
+    return rows.filter((r) => {
+      if (!t.match(r)) return false;
+      const key = ticketKey(r.output["Ticket ID"]);
+      if (!key || !wanted.has(key) || seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
   }, [rows, drill, now]);
 
   const regions = report?.regionBreakdown ?? [];

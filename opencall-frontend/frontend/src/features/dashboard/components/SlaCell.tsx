@@ -35,7 +35,15 @@ function pad(value: number): string {
   return value < 10 ? `0${value}` : String(value);
 }
 
-/** "4h 12m 08s" close in, "5d 3h 12m" further out. */
+/**
+ * "45m 12s" inside the hour, "1h 15m" beyond it, "5d 3h 12m" beyond a day.
+ *
+ * Seconds only inside the last hour. They tick, which is the point — but they also cost four
+ * characters, and the countdown and the deadline together have to fit a table cell beside
+ * the work order. Written at every range, "over 1h 15m 32s · 26 Aug, 5:39 pm" ran off the
+ * end of the column and over the Case ID beside it. An hour out is where somebody is
+ * genuinely watching the clock; further out, a seconds counter is spending width on noise.
+ */
 export function formatCountdown(seconds: number): string {
   const total = Math.abs(seconds);
   if (total >= DAY) {
@@ -46,22 +54,26 @@ export function formatCountdown(seconds: number): string {
   }
   const hours = Math.floor(total / HOUR);
   const minutes = Math.floor((total % HOUR) / 60);
-  const rest = total % 60;
-  return hours > 0 ? `${hours}h ${pad(minutes)}m ${pad(rest)}s` : `${minutes}m ${pad(rest)}s`;
+  if (hours > 0) return `${hours}h ${pad(minutes)}m`;
+  return `${minutes}m ${pad(total % 60)}s`;
 }
 
-/** "31 Aug, 6:00 PM" in the time everybody here works in. */
+/** "26 Aug 5:39 pm" in the time everybody here works in. */
 export function formatDeadline(iso: string): string {
   const date = new Date(iso);
   if (Number.isNaN(date.getTime())) return "";
-  return date.toLocaleString("en-IN", {
-    timeZone: "Asia/Kolkata",
-    day: "2-digit",
-    month: "short",
-    hour: "numeric",
-    minute: "2-digit",
-    hour12: true,
-  });
+  return date
+    .toLocaleString("en-IN", {
+      timeZone: "Asia/Kolkata",
+      day: "2-digit",
+      month: "short",
+      hour: "numeric",
+      minute: "2-digit",
+      hour12: true,
+    })
+    // The comma en-IN puts between the date and the time buys nothing and costs width in a
+    // cell that has none to spare.
+    .replace(",", "");
 }
 
 export function SlaCell({ sla }: Readonly<SlaCellProps>) {
@@ -96,7 +108,18 @@ export function SlaCell({ sla }: Readonly<SlaCellProps>) {
 
   return (
     <span
-      style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 3, whiteSpace: "nowrap" }}
+      style={{
+        display: "flex",
+        alignItems: "center",
+        gap: 6,
+        marginTop: 3,
+        whiteSpace: "nowrap",
+        // A table cell does not clip what overflows it, so without these the date simply
+        // drew itself on top of the Case ID column next door. Shorter text is what makes it
+        // fit; this is what guarantees it can never spill again if it stops fitting.
+        maxWidth: "100%",
+        overflow: "hidden",
+      }}
       title={
         `SLA ${sla.slaStatus || (breached ? "breached" : "within")}` +
         (sla.slaPolicy ? ` · ${sla.slaPolicy}` : "") +

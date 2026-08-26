@@ -132,12 +132,8 @@ import {
   useExportRows,
   useFieldezSla,
 } from "../features/dashboard/hooks";
-import {
-  formatSlaLeft,
-  slaBucket,
-  slaSecondsLeft,
-  slaTicketKey,
-} from "../lib/fieldezSlaApiClient";
+import { slaTicketKey } from "../lib/fieldezSlaApiClient";
+import { SlaCell } from "../features/dashboard/components/SlaCell";
 import {
   FILTERABLE_COLUMNS,
   type WipAgingSortDirection,
@@ -4306,54 +4302,12 @@ export default function DashboardPage() {
                                           ✉ {mail.total}
                                         </button>
                                       ) : null}
-                                      {/* What FieldEZ promised about this call. The hours are
-                                          worked out here from the recorded deadline rather
-                                          than copied from FieldEZ's own countdown, which was
-                                          true when the worker read it and drifts from then
-                                          on. Nothing shows for a call FieldEZ tracks no SLA
-                                          on — a blank is honest, a zero would not be. */}
-                                      {(() => {
-                                        const sla = fieldezSla.byTicket.get(slaTicketKey(ticket));
-                                        if (!sla) return null;
-                                        const left = slaSecondsLeft(sla.slaEndTime);
-                                        const bucket = slaBucket(sla);
-                                        if (bucket === "none") return null;
-                                        const breached = bucket === "breached";
-                                        const soon = !breached && left !== null && left <= 4 * 3600;
-                                        const colours = breached
-                                          ? { border: "#fecaca", bg: "#fef2f2", fg: "#b91c1c" }
-                                          : soon
-                                            ? { border: "#fed7aa", bg: "#fff7ed", fg: "#c2410c" }
-                                            : { border: "#bbf7d0", bg: "#f0fdf4", fg: "#15803d" };
-                                        return (
-                                          <span
-                                            title={
-                                              `SLA: ${sla.slaStatus || (breached ? "breached" : "within")}` +
-                                              (sla.slaPolicy ? ` · ${sla.slaPolicy}` : "") +
-                                              (sla.slaEndTime
-                                                ? ` · due ${new Date(sla.slaEndTime).toLocaleString("en-IN", { timeZone: "Asia/Kolkata", day: "2-digit", month: "short", hour: "numeric", minute: "2-digit", hour12: true })}`
-                                                : "") +
-                                              ` · from FieldEZ`
-                                            }
-                                            style={{
-                                              marginLeft: 6,
-                                              padding: "0 6px",
-                                              borderRadius: 999,
-                                              border: "1px solid",
-                                              borderColor: colours.border,
-                                              background: colours.bg,
-                                              color: colours.fg,
-                                              fontSize: 10.5,
-                                              fontWeight: 700,
-                                              lineHeight: "16px",
-                                              verticalAlign: "middle",
-                                              whiteSpace: "nowrap",
-                                            }}
-                                          >
-                                            ⏱ {formatSlaLeft(left) || (breached ? "breached" : "in SLA")}
-                                          </span>
-                                        );
-                                      })()}
+                                      {/* FieldEZ's SLA for this call, on its own line: the
+                                          countdown ticking off a shared clock and the
+                                          deadline it is counting to. Beside the work order
+                                          the two together pushed the Case ID column off the
+                                          screen. */}
+                                      <SlaCell sla={fieldezSla.byTicket.get(slaTicketKey(ticket))} />
                                     </span>
                                   );
                                 })()

@@ -3,6 +3,8 @@ import { useMemo } from "react";
 import type { ReportRow, PrintCaseFilter } from "../types";
 import type { FieldezSlaFreshness } from "../../../lib/fieldezSlaApiClient";
 import type { SlaLookup } from "../../../lib/slaTat";
+import { useLiveNow } from "../../../lib/liveClock";
+import { formatCountdown, formatDeadline } from "./SlaCell";
 
 /**
  * A dashboard that answers "which calls do I chase, in what order".
@@ -49,6 +51,8 @@ interface SlaCall {
   segment: "PC" | "Print" | "Install";
   /** Null when FieldEZ records no deadline for this call. */
   secondsLeft: number | null;
+  /** The deadline itself. What somebody quotes back to HP; the countdown alone is not. */
+  slaEndTime: string | null;
   urgency: Urgency;
   policy: string;
 }
@@ -90,18 +94,6 @@ const URGENCY_STYLE: Record<Urgency, { fg: string; bg: string; border: string; l
   none: { fg: "#64748b", bg: "#f8fafc", border: "#e2e8f0", label: "No SLA" },
 };
 
-/** "5h 20m", or "overdue 5h 20m". Seconds are dropped — nobody acts on them. */
-function formatLeft(seconds: number | null): string {
-  if (seconds === null) return "—";
-  const overdue = seconds < 0;
-  const total = Math.abs(seconds);
-  const days = Math.floor(total / 86400);
-  const hours = Math.floor((total % 86400) / 3600);
-  const minutes = Math.floor((total % 3600) / 60);
-  const body = days > 0 ? `${days}d ${hours}h` : `${hours}h ${minutes}m`;
-  return overdue ? `overdue ${body}` : body;
-}
-
 function ageLabel(iso: string | null): string {
   if (!iso) return "never";
   const then = new Date(iso).getTime();
@@ -125,8 +117,12 @@ export function SLATatPage({
   slaError,
   openRecordsWithFilter,
 }: Readonly<SLATatPageProps>) {
+  // Every countdown on this page is worked out against this, and it moves once a second off
+  // the shared clock. A board about deadlines whose numbers only change on reload is a
+  // photograph of a board about deadlines.
+  const now = useLiveNow();
+
   const calls = useMemo<SlaCall[]>(() => {
-    const now = Date.now();
     const inRegion = (row: ReportRow) => {
       if (!selectedRegion || selectedRegion === "ALL") return true;
       return (
@@ -166,13 +162,14 @@ export function SLATatPage({
           location: cell(row, "Location", "Customer City", "Work Location"),
           segment,
           secondsLeft,
+          slaEndTime: sla?.slaEndTime ?? null,
           urgency: urgencyOf(secondsLeft),
           policy: sla?.slaStatus ?? "",
         });
       }
     }
     return out;
-  }, [pcRows, printFixRows, printInstallationRows, slaByTicket, selectedRegion]);
+  }, [pcRows, printFixRows, printInstallationRows, slaByTicket, selectedRegion, now]);
 
   const counts = useMemo(() => {
     const tally: Record<Urgency, number> = { breached: 0, soon: 0, today: 0, healthy: 0, none: 0 };
@@ -386,7 +383,9 @@ export function SLATatPage({
                       whiteSpace: "nowrap",
                     }}
                   >
-                    {formatLeft(call.secondsLeft)}
+                    {call.secondsLeft === null
+                      ? "—"
+                      : `${call.secondsLeft < 0 ? "over " : ""}${formatCountdown(call.secondsLeft)}`}
                   </span>
 
                   <span style={{ minWidth: 0 }}>
@@ -397,7 +396,16 @@ export function SLATatPage({
                       </span>
                     </span>
                     <span style={{ display: "block", fontSize: 11.5, color: "var(--muted)" }}>
-                      {[call.segment, call.location].filter(Boolean).join(" · ")}
+                      {[
+                        call.segment,
+                        call.location,
+                        // The deadline itself, not only how far off it is: this is the thing
+                        // somebody quotes back to HP, and it is what makes the countdown
+                        // beside it checkable rather than taken on trust.
+                        call.slaEndTime ? `due ${formatDeadline(call.slaEndTime)}` : "",
+                      ]
+                        .filter(Boolean)
+                        .join(" · ")}
                     </span>
                     <span
                       style={{

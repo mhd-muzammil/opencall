@@ -131,13 +131,13 @@ async function mountBoard() {
 }
 
 function rows() {
-  return Array.from(container.querySelectorAll("tbody tr"));
+  return Array.from(container.querySelectorAll('[data-testid="engineer-row"]'));
 }
 
 /** Names in the table, in the order they are actually painted. */
 function rowNames() {
   return rows()
-    .map((tr) => tr.querySelector("td")?.textContent ?? "")
+    .map((row) => row.querySelector('[data-testid="engineer-name"]')?.textContent ?? "")
     .filter((name) => name !== "");
 }
 
@@ -216,37 +216,34 @@ describe("the tracking board", () => {
     for (const unmatched of UNMATCHED_NAMES) expect(names).not.toContain(unmatched);
   });
 
-  it("shows no row as being checked while no engineer is selected", async () => {
-    // engineer_id null === selectedId null used to make every unmatched row read
-    // "Checking" and sit highlighted with nothing chosen at all.
+  it("shows no row as selected while no engineer is chosen", async () => {
+    // engineer_id null === selectedId null used to make every unmatched row sit
+    // highlighted with nothing chosen at all.
     await mountBoard();
-    const labels = rows().map((tr) => tr.querySelector("button")?.textContent);
-    expect(labels.filter((l) => l === "Checking")).toHaveLength(0);
-    expect(labels.filter((l) => l === "View day")).toHaveLength(26);
+    expect(rows()).toHaveLength(26);
+    expect(rows().filter((row) => row.getAttribute("data-selected") === "true")).toHaveLength(0);
   });
 
-  it("checks one engineer, and only that engineer, when their day is opened", async () => {
+  it("selects one engineer, and only that engineer, when their day is opened", async () => {
     await mountBoard();
     await clickTab(/^On duty /);
     await act(async () => {
-      rows()[0]
-        ?.querySelector("button")
-        ?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+      rows()[0]?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     });
     await act(async () => {});
     await clickTab(/^All /);
-    const labels = rows().map((tr) => tr.querySelector("button")?.textContent);
-    expect(labels.filter((l) => l === "Checking")).toHaveLength(1);
+    expect(rows().filter((row) => row.getAttribute("data-selected") === "true")).toHaveLength(1);
   });
 
   it("cannot open the day of an engineer Payroll has no record of", async () => {
     await mountBoard();
     await clickTab(/^Not in Payroll /);
-    const button = rows()[0]?.querySelector("button") as HTMLButtonElement;
-    expect(button.disabled).toBe(true);
+    // They have no Payroll id, so there is no day to ask for — clicking must do
+    // nothing rather than fetch someone else's.
     await act(async () => {
-      button.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+      rows()[0]?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     });
+    expect(rows().filter((row) => row.getAttribute("data-selected") === "true")).toHaveLength(0);
     expect(getEngineerDay).not.toHaveBeenCalled();
   });
 });

@@ -68,13 +68,16 @@ export default function LiveTrackingMap({
   pathPoints,
   stops = [],
   onSelect,
-}: Props) {
+  // Given so the map can fill a flex column beside the engineer list. Defaults
+  // to what it always was, for any caller that wants it on its own.
+  height = "60vh",
+}: Props & { height?: string }) {
   const plottable = engineers.filter(hasPosition);
   const first = plottable[0];
   const center: [number, number] = first ? [first.latitude, first.longitude] : DEFAULT_CENTER;
 
   return (
-    <div style={{ height: "60vh", width: "100%", borderRadius: 12, overflow: "hidden", border: "1px solid #e5e7eb" }}>
+    <div style={{ height, width: "100%", borderRadius: 12, overflow: "hidden", border: "1px solid #e5e7eb" }}>
       <MapContainer center={center} zoom={12} style={{ height: "100%", width: "100%" }} scrollWheelZoom>
         <TileLayer
           attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'

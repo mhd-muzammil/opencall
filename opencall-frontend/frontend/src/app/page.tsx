@@ -4947,12 +4947,22 @@ export default function DashboardPage() {
                 </section>
               ) : null}
 
+              {/* The board reads Payroll, not the daily call report, so it sits
+                  outside the report gate below — a failed or unselected report
+                  must not take live tracking down with it. */}
+              {workspaceView === "live-tracking" ? (
+                <section className="panel reportPanel" style={{ minWidth: 0 }}>
+                  <LiveTrackingPanel token={session.token} />
+                </section>
+              ) : null}
+
               {report &&
               workspaceView !== "warranty" &&
               workspaceView !== "renewal-pipeline" &&
               workspaceView !== "customer-emails" &&
               workspaceView !== "parts-catalog" &&
-              workspaceView !== "quotations" ? (
+              workspaceView !== "quotations" &&
+              workspaceView !== "live-tracking" ? (
                 <section className="panel reportPanel">
                   <div className="overviewReportContent">
                     {workspaceView === "overview" && (
@@ -5284,12 +5294,6 @@ export default function DashboardPage() {
                             .catch(handleBackgroundError);
                         }}
                       />
-                    )}
-
-                    {workspaceView === "live-tracking" && (
-                      // The board reads and refreshes on its own; all it needs
-                      // from the console is who is signed in.
-                      <LiveTrackingPanel token={session.token} />
                     )}
 
                     {workspaceView === "productivity" && (

@@ -182,6 +182,18 @@ function mapsLink(lat: number, lon: number): string {
 }
 
 /**
+ * Initials for a row's avatar. We hold no photographs of the engineers, and
+ * twenty identical grey silhouettes read as missing data rather than as people.
+ */
+function initials(name: string): string {
+  const words = (name || "").trim().split(/\s+/).filter(Boolean);
+  if (words.length === 0) return "?";
+  const first = words[0]?.[0] ?? "";
+  const last = words.length > 1 ? (words[words.length - 1]?.[0] ?? "") : "";
+  return (first + last).toUpperCase() || "?";
+}
+
+/**
  * The live engineer board: who is out, where they are, how far they have gone.
  *
  * Rendered both as a section of the admin console and at its own /admin/tracking
@@ -406,10 +418,15 @@ export default function LiveTrackingPanel({ token }: { token: string | null }) {
       )}
       {error && !sessionExpired && <p style={{ color: "#dc2626", marginTop: 12 }}>{error}</p>}
 
+      {/* Map on the left, the engineers on it down the right \u2014 the two
+          things the office looks at together. */}
+      <div style={{ display: "flex", flexWrap: "wrap", gap: 16, marginTop: 16, alignItems: "stretch", minHeight: 520 }}>
+        <div style={{ flex: "1 1 520px", minWidth: 380, minHeight: 420, display: "flex", flexDirection: "column" }}>
       {/* Free live map (Leaflet + OpenStreetMap, no API key/billing). Click a
           marker to select that engineer and draw today's path. */}
-      <div style={{ marginTop: 16 }}>
+      <div style={{ display: "flex", flexDirection: "column", minHeight: 0, flex: 1 }}>
         <LiveTrackingMap
+          height="100%"
           engineers={liveOnMap}
           selectedId={selectedId}
           pathPoints={pathPoints}
@@ -420,6 +437,38 @@ export default function LiveTrackingPanel({ token }: { token: string | null }) {
           Map © OpenStreetMap contributors — free tiles. Positions refresh every 30s while engineers have the app open.
         </p>
       </div>
+
+        </div>
+
+        <aside
+          style={{
+            flex: "0 1 360px",
+            minWidth: 300,
+            display: "flex",
+            flexDirection: "column",
+            border: "1px solid #e5e7eb",
+            borderRadius: 12,
+            overflow: "hidden",
+            background: "#fff",
+          }}
+        >
+          <div style={{ padding: "12px 14px", borderBottom: "1px solid #e5e7eb" }}>
+            <div style={{ fontSize: 15, fontWeight: 600, color: "#111827" }}>Track</div>
+          </div>
+      <input
+        placeholder="Search engineer / branch / case…"
+        value={query}
+        onChange={(e) => setQuery(e.target.value)}
+        style={{
+          marginTop: 16,
+          width: "100%",
+          maxWidth: 360,
+          padding: "8px 12px",
+          border: "1px solid #d1d5db",
+          borderRadius: 8,
+          fontSize: 14,
+        }}
+      />
 
       {/* Pick ANY engineer — on duty, finished, or never started. The whole point
           of the roster is that a shift ending does not take someone off the board.
@@ -454,20 +503,129 @@ export default function LiveTrackingPanel({ token }: { token: string | null }) {
         ))}
       </div>
 
-      <input
-        placeholder="Search engineer / branch / case…"
-        value={query}
-        onChange={(e) => setQuery(e.target.value)}
-        style={{
-          marginTop: 16,
-          width: "100%",
-          maxWidth: 360,
-          padding: "8px 12px",
-          border: "1px solid #d1d5db",
-          borderRadius: 8,
-          fontSize: 14,
-        }}
-      />
+        <div style={{ flex: 1, overflowY: "auto", minHeight: 0 }}>
+          {filtered.map((e, index) => {
+            const chosen = isRowSelected(e, selectedId);
+            return (
+              <div
+                key={rosterRowKey(e, index)}
+                data-testid="engineer-row"
+                data-selected={chosen ? "true" : "false"}
+                onClick={() => e.engineer_id != null && setSelectedId(e.engineer_id)}
+                style={{
+                  display: "flex",
+                  gap: 10,
+                  padding: "10px 14px",
+                  borderBottom: "1px solid #f3f4f6",
+                  background: chosen ? "#eff6ff" : undefined,
+                  cursor: e.engineer_id == null ? "default" : "pointer",
+                }}
+              >
+                {/* Initials rather than a photo: we have no pictures, and a grey
+                    silhouette twenty times over reads as missing data. */}
+                <div
+                  style={{
+                    position: "relative",
+                    display: "grid",
+                    placeItems: "center",
+                    width: 36,
+                    height: 36,
+                    borderRadius: 999,
+                    flexShrink: 0,
+                    background: e.state === "unmatched" ? "#fee2e2" : "#e0e7ff",
+                    color: e.state === "unmatched" ? "#b91c1c" : "#4338ca",
+                    fontSize: 13,
+                    fontWeight: 700,
+                  }}
+                >
+                  {initials(e.engineer_name)}
+                  <span
+                    title={e.state === "on_duty" ? "On duty" : "Not on duty"}
+                    style={{
+                      position: "absolute",
+                      right: -1,
+                      top: -1,
+                      width: 11,
+                      height: 11,
+                      borderRadius: 999,
+                      border: "2px solid #fff",
+                      background:
+                        e.state !== "on_duty"
+                          ? "#d1d5db"
+                          : e.stale
+                            ? "#f59e0b"
+                            : "#22c55e",
+                    }}
+                  />
+                </div>
+
+                <div style={{ minWidth: 0, flex: 1 }}>
+                  <div style={{ display: "flex", alignItems: "baseline", gap: 6 }}>
+                    <span
+                      data-testid="engineer-name"
+                      style={{
+                        fontSize: 13.5,
+                        fontWeight: 600,
+                        color: "#111827",
+                        overflow: "hidden",
+                        textOverflow: "ellipsis",
+                        whiteSpace: "nowrap",
+                      }}
+                    >
+                      {e.engineer_name}
+                    </span>
+                    {e.branch && (
+                      <span style={{ fontSize: 10.5, color: "#9ca3af", whiteSpace: "nowrap" }}>
+                        {e.branch}
+                      </span>
+                    )}
+                  </div>
+
+                  <div style={{ marginTop: 3 }}>
+                    <DutyBadge row={e} />
+                  </div>
+
+                  {/* The two numbers the office asks about. Not battery level —
+                      the app does not report one and inventing it would be a
+                      number people would act on. */}
+                  {e.state !== "unmatched" && (
+                    <div style={{ marginTop: 4, display: "flex", gap: 10, fontSize: 11, color: "#6b7280" }}>
+                      <span>{duration(e.duty_minutes)}</span>
+                      <span style={{ fontWeight: 600, color: "#374151" }}>{e.distance_km} km</span>
+                      {e.active_case_number && (
+                        <span style={{ color: "#2563eb" }}>{e.active_case_number}</span>
+                      )}
+                    </div>
+                  )}
+
+                  {e.latitude != null && e.longitude != null && (
+                    <a
+                      href={mapsLink(e.latitude, e.longitude)}
+                      target="_blank"
+                      rel="noreferrer"
+                      onClick={(event) => event.stopPropagation()}
+                      style={{ display: "inline-block", marginTop: 3, fontSize: 11, color: "#2563eb" }}
+                    >
+                      Open in Maps
+                    </a>
+                  )}
+                </div>
+              </div>
+            );
+          })}
+
+          {filtered.length === 0 && configured && (
+            <div style={{ padding: 24, textAlign: "center", color: "#9ca3af", fontSize: 13 }}>
+              {engineers.length === 0
+                ? "No engineers found. Every active employee appears here once Payroll is reachable."
+                : stateFilter === "unmatched" && !query.trim()
+                  ? "Every engineer in the register is matched in Payroll \u2014 no cases are being skipped."
+                  : "No match for this filter."}
+            </div>
+          )}
+        </div>
+        </aside>
+      </div>
 
       {/* Selected engineer detail */}
       {selected && (
@@ -644,96 +802,6 @@ export default function LiveTrackingPanel({ token }: { token: string | null }) {
         </div>
       )}
 
-      <table style={{ width: "100%", marginTop: 16, borderCollapse: "collapse", fontSize: 14 }}>
-        <thead>
-          <tr style={{ textAlign: "left", color: "#6b7280", borderBottom: "1px solid #e5e7eb" }}>
-            <th style={{ padding: 8 }}>Engineer</th>
-            <th style={{ padding: 8 }}>Branch</th>
-            <th style={{ padding: 8 }}>Duty</th>
-            <th style={{ padding: 8 }}>On duty for</th>
-            <th style={{ padding: 8 }}>Distance</th>
-            <th style={{ padding: 8 }}>Active case</th>
-            <th style={{ padding: 8 }}>Status</th>
-            <th style={{ padding: 8 }}>Location</th>
-            <th style={{ padding: 8 }}></th>
-          </tr>
-        </thead>
-        <tbody>
-          {filtered.map((e, index) => (
-            <tr
-              key={rosterRowKey(e, index)}
-              style={{
-                borderBottom: "1px solid #f3f4f6",
-                background: isRowSelected(e, selectedId) ? "#eff6ff" : undefined,
-              }}
-            >
-              <td style={{ padding: 8, fontWeight: 500 }}>{e.engineer_name}</td>
-              <td style={{ padding: 8 }}>{e.branch ?? "—"}</td>
-              <td style={{ padding: 8 }}>
-                <DutyBadge row={e} />
-              </td>
-              <td style={{ padding: 8 }}>{duration(e.duty_minutes)}</td>
-              <td style={{ padding: 8, fontWeight: 600 }}>{e.distance_km} km</td>
-              <td style={{ padding: 8 }}>{e.active_case_number ?? "—"}</td>
-              <td style={{ padding: 8 }}>{e.status || "—"}</td>
-              <td style={{ padding: 8 }}>
-                {e.latitude != null && e.longitude != null ? (
-                  <>
-                    <a
-                      href={mapsLink(e.latitude, e.longitude)}
-                      target="_blank"
-                      rel="noreferrer"
-                      style={{ color: "#2563eb" }}
-                    >
-                      {e.latitude.toFixed(4)}, {e.longitude.toFixed(4)}
-                    </a>
-                    {e.accuracy != null && <span style={{ color: "#9ca3af" }}> ±{Math.round(e.accuracy)}m</span>}
-                  </>
-                ) : (
-                  <span style={{ color: "#9ca3af" }}>waiting for GPS</span>
-                )}
-              </td>
-              <td style={{ padding: 8 }}>
-                {/* Nothing to open for an engineer Payroll cannot match — there
-                    is no day recorded against them. */}
-                <button
-                  onClick={() => e.engineer_id != null && setSelectedId(e.engineer_id)}
-                  disabled={e.engineer_id == null}
-                  title={e.engineer_id == null ? "No matching Payroll employee" : undefined}
-                  style={{
-                    padding: "4px 10px",
-                    fontSize: 13,
-                    border: "1px solid",
-                    borderColor: e.engineer_id == null ? "#d1d5db" : "#2563eb",
-                    borderRadius: 6,
-                    background: isRowSelected(e, selectedId) ? "#2563eb" : "#fff",
-                    color:
-                      e.engineer_id == null
-                        ? "#9ca3af"
-                        : isRowSelected(e, selectedId)
-                          ? "#fff"
-                          : "#2563eb",
-                    cursor: e.engineer_id == null ? "not-allowed" : "pointer",
-                  }}
-                >
-                  {isRowSelected(e, selectedId) ? "Checking" : "View day"}
-                </button>
-              </td>
-            </tr>
-          ))}
-          {filtered.length === 0 && configured && (
-            <tr>
-              <td colSpan={9} style={{ padding: 24, textAlign: "center", color: "#9ca3af" }}>
-                {engineers.length === 0
-                  ? "No engineers found. Every active employee appears here once Payroll is reachable."
-                  : stateFilter === "unmatched" && !query.trim()
-                    ? "Every engineer in the register is matched in Payroll — no cases are being skipped."
-                    : "No match for this filter."}
-              </td>
-            </tr>
-          )}
-        </tbody>
-      </table>
     </div>
   );
 }

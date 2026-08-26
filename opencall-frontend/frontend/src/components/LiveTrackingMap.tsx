@@ -1,8 +1,43 @@
 "use client";
 
-import { Fragment } from "react";
-import { MapContainer, TileLayer, CircleMarker, Popup, Polyline, Circle } from "react-leaflet";
+import { Fragment, useEffect, useRef } from "react";
+import { MapContainer, TileLayer, CircleMarker, Popup, Polyline, Circle, useMap } from "react-leaflet";
 import "leaflet/dist/leaflet.css";
+
+/**
+ * Keep Leaflet's idea of its own size honest.
+ *
+ * Leaflet measures its container once, when the map is created. Since the board
+ * put the map in a flex column beside the engineer rail, that measurement now
+ * happens before the column has settled — so the map believed it was a sliver
+ * tall, asked only for the tiles covering that, and rendered as blank blue-grey
+ * panes that never filled in. Re-measuring whenever the container resizes is
+ * what makes the tiles appear.
+ */
+function KeepMapSized() {
+  const map = useMap();
+  const frame = useRef<number | null>(null);
+
+  useEffect(() => {
+    const container = map.getContainer();
+    const settle = () => {
+      if (frame.current != null) cancelAnimationFrame(frame.current);
+      // After the browser has laid the flex row out, not in the middle of it.
+      frame.current = requestAnimationFrame(() => map.invalidateSize());
+    };
+    settle();
+    const observer = new ResizeObserver(settle);
+    observer.observe(container);
+    window.addEventListener("resize", settle);
+    return () => {
+      if (frame.current != null) cancelAnimationFrame(frame.current);
+      observer.disconnect();
+      window.removeEventListener("resize", settle);
+    };
+  }, [map]);
+
+  return null;
+}
 /**
  * Only what the map draws. Declared here rather than reusing LiveEngineer so the
  * component accepts a roster row too — both carry these fields, and the map has
@@ -79,6 +114,7 @@ export default function LiveTrackingMap({
   return (
     <div style={{ height, width: "100%", borderRadius: 12, overflow: "hidden", border: "1px solid #e5e7eb" }}>
       <MapContainer center={center} zoom={12} style={{ height: "100%", width: "100%" }} scrollWheelZoom>
+        <KeepMapSized />
         <TileLayer
           attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
           url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"

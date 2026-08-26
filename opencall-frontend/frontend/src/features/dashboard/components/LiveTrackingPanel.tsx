@@ -200,7 +200,16 @@ function initials(name: string): string {
  * URL, so the token is a prop rather than something this reads for itself —
  * whichever host mounts it already knows who is signed in.
  */
-export default function LiveTrackingPanel({ token }: { token: string | null }) {
+export default function LiveTrackingPanel({
+  token,
+  // The console draws its own header for the section, so the panel's own
+  // heading rendered on top of it — the same words twice, overlapping. The
+  // standalone /admin/tracking route has no header of its own and keeps it.
+  embedded = false,
+}: {
+  token: string | null;
+  embedded?: boolean;
+}) {
   const [engineers, setEngineers] = useState<RosterEngineer[]>([]);
   const [configured, setConfigured] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -349,9 +358,9 @@ export default function LiveTrackingPanel({ token }: { token: string | null }) {
   );
 
   return (
-    <div style={{ padding: 24 }}>
+    <div style={{ padding: embedded ? 0 : 24 }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
-        <h1 style={{ fontSize: 20, fontWeight: 600 }}>Live Engineer Tracking</h1>
+        {!embedded && <h1 style={{ fontSize: 20, fontWeight: 600 }}>Live Engineer Tracking</h1>}
         {/* The day at a glance: who is out, how many we can actually see, and
             the total ground covered across everyone on duty. */}
         <div style={{ display: "flex", gap: 16, fontSize: 13, color: "#6b7280", alignItems: "center" }}>

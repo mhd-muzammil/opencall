@@ -4952,7 +4952,7 @@ export default function DashboardPage() {
                   must not take live tracking down with it. */}
               {workspaceView === "live-tracking" ? (
                 <section className="panel reportPanel" style={{ minWidth: 0 }}>
-                  <LiveTrackingPanel token={session.token} />
+                  <LiveTrackingPanel token={session.token} embedded />
                 </section>
               ) : null}
 

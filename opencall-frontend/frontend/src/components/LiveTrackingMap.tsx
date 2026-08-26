@@ -5,6 +5,49 @@ import { MapContainer, TileLayer, CircleMarker, Popup, Polyline, Circle, useMap 
 import "leaflet/dist/leaflet.css";
 
 /**
+ * Bring the picked engineer's day into view.
+ *
+ * The route was drawn wherever it fell, which on a state-sized map is usually
+ * off-screen: you clicked someone and nothing appeared to happen. Fits to the
+ * whole day when there is one, otherwise to where they are standing now.
+ *
+ * Only when the SELECTION changes — refitting on every 30s refresh would drag
+ * the map out from under someone who had panned to look at something.
+ */
+function FitToSelection({
+  selectedId,
+  pathPoints,
+  focus,
+}: {
+  selectedId: number | null;
+  pathPoints: [number, number][];
+  focus: [number, number] | null;
+}) {
+  const map = useMap();
+  const fitted = useRef<number | null>(null);
+
+  useEffect(() => {
+    if (selectedId == null) {
+      fitted.current = null;
+      return;
+    }
+    if (fitted.current === selectedId) return;
+
+    if (pathPoints.length > 1) {
+      map.fitBounds(pathPoints, { padding: [40, 40], maxZoom: 16 });
+      fitted.current = selectedId;
+    } else if (focus) {
+      map.setView(focus, 15);
+      fitted.current = selectedId;
+    }
+    // No day and no position: leave the map alone rather than jumping to a
+    // default that means nothing.
+  }, [map, selectedId, pathPoints, focus]);
+
+  return null;
+}
+
+/**
  * Keep Leaflet's idea of its own size honest.
  *
  * Leaflet measures its container once, when the map is created. Since the board
@@ -110,18 +153,59 @@ export default function LiveTrackingMap({
   const plottable = engineers.filter(hasPosition);
   const first = plottable[0];
   const center: [number, number] = first ? [first.latitude, first.longitude] : DEFAULT_CENTER;
+  // Where the picked engineer is right now, for the case where they have a
+  // position but no route yet — just gone on duty, or standing where they
+  // started.
+  // Taken once: indexing the array gives `| undefined` under the strict index
+  // checks, and the route only means anything when it has both ends anyway.
+  const routeStart = pathPoints.length > 1 ? pathPoints[0] : undefined;
+  const routeEnd = pathPoints.length > 1 ? pathPoints[pathPoints.length - 1] : undefined;
+  const picked = plottable.find((e) => e.engineer_id === selectedId);
+  const selectedPosition: [number, number] | null =
+    picked && picked.latitude != null && picked.longitude != null
+      ? [picked.latitude, picked.longitude]
+      : null;
 
   return (
     <div style={{ height, width: "100%", borderRadius: 12, overflow: "hidden", border: "1px solid #e5e7eb" }}>
       <MapContainer center={center} zoom={12} style={{ height: "100%", width: "100%" }} scrollWheelZoom>
         <KeepMapSized />
+        <FitToSelection selectedId={selectedId} pathPoints={pathPoints} focus={selectedPosition} />
         <TileLayer
           attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
           url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
         />
 
-        {pathPoints.length > 1 && (
-          <Polyline positions={pathPoints} pathOptions={{ color: "#2563eb", weight: 4, opacity: 0.7 }} />
+        {routeStart && routeEnd && (
+          <>
+            {/* A casing under the line, so the route stays readable over a dark
+                or busy patch of map. */}
+            <Polyline
+              positions={pathPoints}
+              pathOptions={{ color: "#ffffff", weight: 8, opacity: 0.9 }}
+            />
+            <Polyline
+              positions={pathPoints}
+              pathOptions={{ color: "#2563eb", weight: 4, opacity: 0.95 }}
+            />
+
+            {/* Which end is the morning. A bare line says where they went but
+                not which way round, and that is half the question. */}
+            <CircleMarker
+              center={routeStart}
+              radius={7}
+              pathOptions={{ color: "#ffffff", weight: 2, fillColor: "#16a34a", fillOpacity: 1 }}
+            >
+              <Popup>Start of the day</Popup>
+            </CircleMarker>
+            <CircleMarker
+              center={routeEnd}
+              radius={7}
+              pathOptions={{ color: "#ffffff", weight: 2, fillColor: "#dc2626", fillOpacity: 1 }}
+            >
+              <Popup>Latest position on this day</Popup>
+            </CircleMarker>
+          </>
         )}
 
         {/* Where they stood still. Drawn under the live markers and sized by how

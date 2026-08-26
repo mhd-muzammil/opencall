@@ -99,6 +99,110 @@ export function collapseToCalls(rows: readonly Row[]): Map<string, { ticketId: s
   return calls;
 }
 
+/** How close to a deadline counts as "act on this today". */
+export const BREACHING_SOON_HOURS = 4;
+
+export interface FieldezSlaMetrics {
+  /** Distinct calls, not rows. */
+  total: number;
+  within: number;
+  breached: number;
+  /** FieldEZ records no SLA for these at all. Not the same as keeping one. */
+  noSla: number;
+  /** A subset of `within`: still inside the promise, but not for much longer. */
+  soon: number;
+  /** within / (within + breached). Calls with no SLA are not evidence either way. */
+  adherence: number;
+  withinTickets: string[];
+  breachedTickets: string[];
+  noSlaTickets: string[];
+  soonTickets: string[];
+}
+
+export interface SlaLookup {
+  slaEndTime: string | null;
+  slaStatus: string;
+}
+
+/**
+ * SLA adherence from what FieldEZ actually promised, rather than from our own TAT column.
+ *
+ * The TAT-based figure this sits beside was a reconstruction: take the target date we hold,
+ * compare it to now, call the difference adherence. It was the best available answer while
+ * FieldEZ's own numbers were locked inside its ticket pages, and it disagreed with them —
+ * different dates, different rules, no notion of a call FieldEZ makes no promise about.
+ *
+ * THE DEADLINE DECIDES, NOT THE STORED STATUS. FieldEZ's `slaStatus` was true when the
+ * worker read it, up to fifteen minutes ago; a call that crossed its deadline since then
+ * still says "Within SLA". The deadline is a fixed instant, so comparing it to the clock is
+ * correct at the moment somebody looks — which is what makes this live rather than a
+ * fifteen-minute-old photograph.
+ *
+ * A CALL WITH NO SLA IS ITS OWN ANSWER. Plenty carry none, and counting those as kept
+ * promises would flatter every percentage on the page. They are held apart and left out of
+ * the denominator entirely.
+ */
+export function calculateFieldezSlaMetrics(
+  rows: readonly Row[],
+  slaByTicket: ReadonlyMap<string, SlaLookup>,
+  now: Date = new Date(),
+): FieldezSlaMetrics {
+  const withinTickets: string[] = [];
+  const breachedTickets: string[] = [];
+  const noSlaTickets: string[] = [];
+  const soonTickets: string[] = [];
+  const soonCutoff = now.getTime() + BREACHING_SOON_HOURS * 3_600_000;
+
+  // One entry per call first, for the same reason as everywhere else on this page: the WIP
+  // export is part-level, and a call waiting on three parts is one promise, not three.
+  const seen = new Set<string>();
+  for (const row of rows) {
+    const ticketId = String(row.output["Ticket ID"] ?? "").trim();
+    const key = ticketKey(ticketId);
+    if (!key || seen.has(key)) continue;
+    seen.add(key);
+
+    const sla = slaByTicket.get(key);
+    if (!sla) {
+      // FieldEZ has not been asked about this one yet — a call raised since the last sweep.
+      // Unknown is not "no SLA", but there is nothing else to do with it here and it is
+      // counted apart from the two that mean something.
+      noSlaTickets.push(ticketId);
+      continue;
+    }
+
+    const end = sla.slaEndTime ? new Date(sla.slaEndTime).getTime() : Number.NaN;
+    if (!Number.isNaN(end)) {
+      if (end > now.getTime()) {
+        withinTickets.push(ticketId);
+        if (end <= soonCutoff) soonTickets.push(ticketId);
+      } else {
+        breachedTickets.push(ticketId);
+      }
+      continue;
+    }
+    // No usable deadline: fall back to whatever FieldEZ said in words, and to nothing if it
+    // said nothing.
+    if (/breach/i.test(sla.slaStatus)) breachedTickets.push(ticketId);
+    else if (/within/i.test(sla.slaStatus)) withinTickets.push(ticketId);
+    else noSlaTickets.push(ticketId);
+  }
+
+  const judgeable = withinTickets.length + breachedTickets.length;
+  return {
+    total: seen.size,
+    within: withinTickets.length,
+    breached: breachedTickets.length,
+    noSla: noSlaTickets.length,
+    soon: soonTickets.length,
+    adherence: judgeable > 0 ? Math.round((withinTickets.length / judgeable) * 100) : 100,
+    withinTickets,
+    breachedTickets,
+    noSlaTickets,
+    soonTickets,
+  };
+}
+
 export function calculateSlaMetrics(rows: readonly Row[], now: Date = new Date()): SlaMetrics {
   const withinSlaTickets: string[] = [];
   const breachedSlaTickets: string[] = [];

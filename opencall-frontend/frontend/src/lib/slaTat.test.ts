@@ -1,6 +1,13 @@
 import { describe, expect, it } from "vitest";
 import type { GeneratedReportResponse } from "./apiClient";
-import { bucketFor, calculateSlaMetrics, collapseToCalls, readTat, ticketKey } from "./slaTat";
+import {
+  bucketFor,
+  calculateFieldezSlaMetrics,
+  calculateSlaMetrics,
+  collapseToCalls,
+  readTat,
+  ticketKey,
+} from "./slaTat";
 
 type Row = GeneratedReportResponse["rows"][number];
 
@@ -166,5 +173,87 @@ describe("calculateSlaMetrics", () => {
       row({ "Ticket ID": "wo035640797", TAT: FUTURE }),
     ];
     expect(calculateSlaMetrics(rows, NOW).total).toBe(1);
+  });
+});
+
+describe("calculateFieldezSlaMetrics", () => {
+  const now = new Date("2026-08-26T12:00:00.000Z");
+  const sla = (slaEndTime: string | null, slaStatus = "") => ({ slaEndTime, slaStatus });
+
+  it("judges by the deadline, not by a status read fifteen minutes ago", () => {
+    // The worker refreshes every fifteen minutes, so a call that crossed its deadline in
+    // between still carries "Within SLA". Reading the status would call a live breach fine.
+    const rows = [row({ "Ticket ID": "WO-1" })];
+    const map = new Map([[ticketKey("WO-1"), sla("2026-08-25T12:00:00.000Z", "Within SLA")]]);
+    expect(calculateFieldezSlaMetrics(rows, map, now).breached).toBe(1);
+  });
+
+  it("keeps calls FieldEZ makes no promise about out of the percentage", () => {
+    // Counting them as kept promises would flatter every number on the page.
+    const rows = [row({ "Ticket ID": "WO-1" }), row({ "Ticket ID": "WO-2" })];
+    const map = new Map([
+      [ticketKey("WO-1"), sla("2026-08-31T12:00:00.000Z", "Within SLA")],
+      [ticketKey("WO-2"), sla(null, "")],
+    ]);
+    const m = calculateFieldezSlaMetrics(rows, map, now);
+    expect(m.within).toBe(1);
+    expect(m.noSla).toBe(1);
+    expect(m.adherence).toBe(100);
+    expect(m.total).toBe(2);
+  });
+
+  it("counts a call waiting on three parts once", () => {
+    const rows = [
+      row({ "Ticket ID": "WO-1" }),
+      row({ "Ticket ID": "WO-1" }),
+      row({ "Ticket ID": "WO-1" }),
+    ];
+    const map = new Map([[ticketKey("WO-1"), sla("2026-08-31T12:00:00.000Z")]]);
+    expect(calculateFieldezSlaMetrics(rows, map, now).total).toBe(1);
+  });
+
+  it("flags the ones about to breach as a subset of the ones still within", () => {
+    const rows = [row({ "Ticket ID": "WO-1" }), row({ "Ticket ID": "WO-2" })];
+    const map = new Map([
+      [ticketKey("WO-1"), sla("2026-08-26T14:00:00.000Z")], // 2h away
+      [ticketKey("WO-2"), sla("2026-08-31T12:00:00.000Z")], // days away
+    ]);
+    const m = calculateFieldezSlaMetrics(rows, map, now);
+    expect(m.within).toBe(2);
+    expect(m.soon).toBe(1);
+    expect(m.soonTickets).toEqual(["WO-1"]);
+  });
+
+  it("does not invent an SLA for a call FieldEZ has not been asked about yet", () => {
+    const rows = [row({ "Ticket ID": "WO-NEW" })];
+    const m = calculateFieldezSlaMetrics(rows, new Map(), now);
+    expect(m.noSla).toBe(1);
+    expect(m.within).toBe(0);
+    expect(m.breached).toBe(0);
+  });
+
+  it("falls back to FieldEZ's words when it gave no usable deadline", () => {
+    const rows = [row({ "Ticket ID": "WO-1" }), row({ "Ticket ID": "WO-2" })];
+    const map = new Map([
+      [ticketKey("WO-1"), sla(null, "SLA Breached")],
+      [ticketKey("WO-2"), sla("not a date", "Within SLA")],
+    ]);
+    const m = calculateFieldezSlaMetrics(rows, map, now);
+    expect(m.breached).toBe(1);
+    expect(m.within).toBe(1);
+  });
+
+  it("adds up: within + breached + no SLA is the total", () => {
+    const rows = [
+      row({ "Ticket ID": "WO-1" }),
+      row({ "Ticket ID": "WO-2" }),
+      row({ "Ticket ID": "WO-3" }),
+    ];
+    const map = new Map([
+      [ticketKey("WO-1"), sla("2026-08-31T12:00:00.000Z")],
+      [ticketKey("WO-2"), sla("2026-08-20T12:00:00.000Z")],
+    ]);
+    const m = calculateFieldezSlaMetrics(rows, map, now);
+    expect(m.within + m.breached + m.noSla).toBe(m.total);
   });
 });

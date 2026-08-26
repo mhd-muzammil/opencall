@@ -5,3 +5,4 @@ export * from "./useRtplPivot";
 export * from "./useRtplAnalytics";
 export * from "./useProductivityAnalytics";
 export * from "./useExportRows";
+export * from "./useFieldezSla";

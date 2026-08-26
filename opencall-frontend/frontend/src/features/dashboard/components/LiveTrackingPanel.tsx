@@ -429,8 +429,26 @@ export default function LiveTrackingPanel({
 
       {/* Map on the left, the engineers on it down the right \u2014 the two
           things the office looks at together. */}
-      <div style={{ display: "flex", flexWrap: "wrap", gap: 16, marginTop: 16, alignItems: "stretch", minHeight: 520 }}>
-        <div style={{ flex: "1 1 520px", minWidth: 380, minHeight: 420, display: "flex", flexDirection: "column" }}>
+      <div
+        style={{
+          display: "flex",
+          flexWrap: "wrap",
+          gap: 16,
+          marginTop: 16,
+          // flex-start, not stretch: the two halves carry their own
+          // height below rather than one dragging the other taller.
+          alignItems: "flex-start",
+        }}
+      >
+        <div
+          style={{
+            flex: "1 1 520px",
+            minWidth: 380,
+            height: "clamp(420px, 68vh, 760px)",
+            display: "flex",
+            flexDirection: "column",
+          }}
+        >
       {/* Free live map (Leaflet + OpenStreetMap, no API key/billing). Click a
           marker to select that engineer and draw today's path. */}
       <div style={{ display: "flex", flexDirection: "column", minHeight: 0, flex: 1 }}>
@@ -453,6 +471,9 @@ export default function LiveTrackingPanel({
           style={{
             flex: "0 1 360px",
             minWidth: 300,
+            // Same bound as the map, so the engineers scroll inside the panel
+            // instead of the panel growing to fit twenty-five of them.
+            height: "clamp(420px, 68vh, 760px)",
             display: "flex",
             flexDirection: "column",
             border: "1px solid #e5e7eb",

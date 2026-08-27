@@ -107,7 +107,12 @@ export function PartsCatalogPage({
   };
 
   return (
-    <section style={{ padding: "8px 4px" }}>
+    // `min-width: 0` is permission to shrink, which a flex item does not have by default —
+    // it refuses to go narrower than its content, and the content here is a table with a
+    // dozen columns. Without it the section grows past the window, the window scrolls
+    // sideways, and the page header — which does not scroll with it — slides under the
+    // sidebar leaving "arts Catalog" and "OME / DATA & OPERATIONS".
+    <section style={{ padding: "8px 4px", minWidth: 0, maxWidth: "100%" }}>
       <div
         style={{
           display: "flex",
@@ -196,7 +201,18 @@ export function PartsCatalogPage({
         </div>
       )}
 
-      <div style={{ overflowX: "auto", borderRadius: "8px", border: "1px solid var(--border-color, #e5e7eb)" }}>
+      {/* `overflowX: auto` was already here and could not act: the box grew to whatever the
+          table needed instead of scrolling inside itself, so it had its own scrollbar AND
+          made the page scroll. `maxWidth` is what holds it to the space that exists. */}
+      <div
+        style={{
+          overflowX: "auto",
+          maxWidth: "100%",
+          minWidth: 0,
+          borderRadius: "8px",
+          border: "1px solid var(--border-color, #e5e7eb)",
+        }}
+      >
         <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "13px" }}>
           <thead>
             <tr>

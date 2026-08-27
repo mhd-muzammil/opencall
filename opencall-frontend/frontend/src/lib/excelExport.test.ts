@@ -3,10 +3,12 @@ import { describe, expect, it } from "vitest";
 import type { GeneratedReportResponse } from "./apiClient";
 import {
   buildPivotMatrix,
+  buildRecordsViewMatrix,
   buildRecordsViewWorkbook,
   buildReportExportMatrix,
   buildWorkbookExportMatrices,
   EXPORT_METADATA_COLUMNS,
+  mapRowToStandardExport,
   pivotFilterLabel,
   RECORDS_VIEW_SHEET,
   STANDARD_EXPORT_COLUMNS,
@@ -531,5 +533,66 @@ describe("buildOcrExportFilename", () => {
     expect(buildOcrExportFilename(report, "   ")).toBe(
       "Renderways_Technology_Pvt_Ltd_OCR_BOD_15-July.xlsx",
     );
+  });
+});
+
+// Work Location is stored as the ASP code and shown on screen as the region
+// name. The export wrote the raw code, so a downloaded all-regions file
+// disagreed with the screen it came from; only the per-region download read
+// correctly, and only because it is handed a region name rather than reading
+// one out of the rows.
+describe("Work Location exports as the region name", () => {
+  const locationIndex = standardColumnIndex("Work Location");
+
+  function rowWithLocation(value: string): GeneratedReportResponse["rows"][number] {
+    const [row] = reportFixture().rows;
+    return {
+      ...row!,
+      output: outputRow({ "Work Location": value }),
+    };
+  }
+
+  it("maps the ASP code to its region name", () => {
+    const cells = mapRowToStandardExport(rowWithLocation("ASPS01463"));
+    expect(cells[locationIndex]).toBe("VELLORE");
+  });
+
+  it("ignores surrounding whitespace on the code", () => {
+    const cells = mapRowToStandardExport(rowWithLocation("  ASPS01461  "));
+    expect(cells[locationIndex]).toBe("CHENNAI");
+  });
+
+  it("passes an unmapped code through rather than blanking the cell", () => {
+    // A region the map has not been told about still has to export as
+    // something — losing the value would be worse than showing the code.
+    const cells = mapRowToStandardExport(rowWithLocation("ASPS99999"));
+    expect(cells[locationIndex]).toBe("ASPS99999");
+  });
+
+  it("leaves an empty Work Location empty", () => {
+    const cells = mapRowToStandardExport(rowWithLocation(""));
+    expect(cells[locationIndex]).toBe("");
+  });
+
+  it("applies to the records view too, not just the report matrix", () => {
+    const { aoa } = buildRecordsViewMatrix(
+      [rowWithLocation("ASPS01511")],
+      STANDARD_EXPORT_COLUMNS,
+    );
+    expect(aoa[1]?.[locationIndex]).toBe("HOSUR");
+  });
+
+  it("applies to a multi-region export, the case that was wrong", () => {
+    const rows = [
+      rowWithLocation("ASPS01461"),
+      rowWithLocation("ASPS01463"),
+      rowWithLocation("ASPS01465"),
+    ];
+    const { aoa } = buildRecordsViewMatrix(rows, STANDARD_EXPORT_COLUMNS);
+    expect(aoa.slice(1).map((cells) => cells[locationIndex])).toEqual([
+      "CHENNAI",
+      "VELLORE",
+      "SALEM",
+    ]);
   });
 });

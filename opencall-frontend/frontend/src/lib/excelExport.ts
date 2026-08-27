@@ -1,4 +1,4 @@
-import { DAILY_CALL_PLAN_COLUMNS } from "@opencall/shared";
+import { ASP_CODE_REGION_MAP, DAILY_CALL_PLAN_COLUMNS } from "@opencall/shared";
 import type { GeneratedReportResponse } from "./apiClient";
 import type { RtplWipPivot } from "../features/dashboard/types";
 import {
@@ -182,6 +182,23 @@ export function mapRowToStandardExport(
     if (value !== null && value !== undefined && value !== "") {
       if (value === MANUAL_ENTRY_REQUIRED) {
         return MANUAL_ENTRY_EXPORT_LABEL;
+      }
+      // Work Location is stored as the ASP code and shown as the region name —
+      // the records grid has done that since "ASP code into Region Name", but
+      // the export kept writing the raw code, so the file disagreed with the
+      // screen it was taken from. Only the per-region download looked right,
+      // and only because it is handed a region name rather than reading one.
+      //
+      // Every export path (records view, report matrix, workbook tabs) comes
+      // through here, so this is the one place that can put them all in
+      // agreement. An unmapped code passes through unchanged: a region the map
+      // has not been told about must still export as something.
+      if (col === "Work Location") {
+        const aspCode = String(value).trim();
+        return (
+          ASP_CODE_REGION_MAP[aspCode as keyof typeof ASP_CODE_REGION_MAP] ??
+          aspCode
+        );
       }
       return coerceNumericCell(col as (typeof STANDARD_EXPORT_COLUMNS)[number], value);
     }

@@ -332,6 +332,13 @@ export function ClosedCallsDashboardView({
 
   // --- Flex reconciliation: "did Flex agree with us on this day?" ---
   const [reconDate, setReconDate] = useState(todayIsoDate);
+  /**
+   * The last day of the period, inclusive.
+   *
+   * Seeded to the same day as `reconDate`, so the section opens on exactly the question it
+   * asked before there was a range — one day — and only widens when somebody widens it.
+   */
+  const [reconToDate, setReconToDate] = useState(todayIsoDate);
   const [recon, setRecon] = useState<ClosureReconciliation | null>(null);
   const [reconError, setReconError] = useState<string | null>(null);
   const [reconLoading, setReconLoading] = useState(false);
@@ -575,6 +582,9 @@ export function ClosedCallsDashboardView({
         const { getClosureReconciliation } = await import("../../../lib/closureDateApiClient");
         const result = await getClosureReconciliation(summaryToken, {
           date: reconDate,
+          // Only when it widens the question. A `to` equal to `date` is the single day the
+          // endpoint already answers, so there is nothing to say.
+          ...(reconToDate && reconToDate > reconDate ? { to: reconToDate } : {}),
           ...(reconAsp ? { asp: reconAsp } : {}),
         });
         if (cancelled) return;
@@ -591,12 +601,12 @@ export function ClosedCallsDashboardView({
     return () => {
       cancelled = true;
     };
-  }, [summaryToken, reconDate, reconAsp, summaryNonce]);
+  }, [summaryToken, reconDate, reconToDate, reconAsp, summaryNonce]);
 
   // Selecting a different day/region invalidates whichever bucket list was open.
   React.useEffect(() => {
     setReconBucket(null);
-  }, [reconDate, reconAsp]);
+  }, [reconDate, reconToDate, reconAsp]);
 
   React.useEffect(() => {
     if (!summaryToken) return;
@@ -1650,12 +1660,37 @@ export function ClosedCallsDashboardView({
                       : ""}
                 </span>
               )}
+              {/* A period rather than a single day. Both bounds are inclusive, and To is
+                  seeded to From so opening the page still asks about one day — the same
+                  question it asked before, with the same answer. */}
               <label style={{ fontSize: "12px", color: "#6b7280", display: "flex", alignItems: "center", gap: "6px" }}>
-                Day
+                From
                 <input
                   type="date"
                   value={reconDate}
-                  onChange={(e) => setReconDate(e.target.value)}
+                  max={reconToDate || undefined}
+                  onChange={(e) => {
+                    const next = e.target.value;
+                    setReconDate(next);
+                    // Dragging From past To would make a backwards range, which the server
+                    // refuses. Carrying To along keeps it a single day instead of an error.
+                    if (next && reconToDate && next > reconToDate) setReconToDate(next);
+                  }}
+                  style={{
+                    padding: "6px 8px",
+                    fontSize: "12px",
+                    borderRadius: "6px",
+                    border: "1px solid var(--border-color, #e5e7eb)",
+                  }}
+                />
+              </label>
+              <label style={{ fontSize: "12px", color: "#6b7280", display: "flex", alignItems: "center", gap: "6px" }}>
+                To
+                <input
+                  type="date"
+                  value={reconToDate}
+                  min={reconDate || undefined}
+                  onChange={(e) => setReconToDate(e.target.value)}
                   style={{
                     padding: "6px 8px",
                     fontSize: "12px",

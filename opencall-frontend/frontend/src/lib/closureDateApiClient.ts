@@ -162,9 +162,12 @@ export interface ClosureReconciliation {
  */
 export async function getClosureReconciliation(
   token: string,
-  params: { date: string; asp?: string },
+  params: { date: string; to?: string; asp?: string },
 ): Promise<ClosureReconciliation> {
   const qs = new URLSearchParams({ date: params.date });
+  // The last day of the period, inclusive. Sent only when there is one, so a caller asking
+  // about a single day gets exactly the request it made before ranges existed.
+  if (params.to) qs.set("to", params.to);
   if (params.asp) qs.set("asp", params.asp);
   const response = await fetch(
     url(`/api/v1/closure-dates/reconciliation?${qs.toString()}`),

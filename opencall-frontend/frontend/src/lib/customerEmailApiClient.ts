@@ -112,7 +112,13 @@ function authHeaders(token: string): HeadersInit {
 
 export async function getCustomerEmails(
   token: string,
-  params: { status?: string; limit?: number; offset?: number; ticketId?: string } = {},
+  params: {
+    status?: string;
+    limit?: number;
+    offset?: number;
+    ticketId?: string;
+    cabOnly?: boolean;
+  } = {},
 ): Promise<CustomerEmailsResponse> {
   const qs = new URLSearchParams();
   if (params.status) qs.set("status", params.status);
@@ -123,6 +129,10 @@ export async function getCustomerEmails(
   // One work order's mail only — filtered on the server, so mail older than the current
   // page is still found.
   if (params.ticketId) qs.set("ticketId", params.ticketId);
+  // Cab mail only. Filtered on the server for the same reason as the work order above: cab
+  // mail from last week is older than the page the list holds, and filtering what is already
+  // loaded would show nothing and read as "there is no cab mail".
+  if (params.cabOnly) qs.set("cabOnly", "1");
   const suffix = qs.toString() ? `?${qs.toString()}` : "";
   const response = await fetch(`${WEB_API_BASE_URL}/api/v1/customer-emails${suffix}`, {
     headers: authHeaders(token),

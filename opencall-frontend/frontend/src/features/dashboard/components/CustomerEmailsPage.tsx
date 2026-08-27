@@ -153,6 +153,15 @@ export function CustomerEmailsPage({
   const [loadingMore, setLoadingMore] = useState(false);
   const [counts, setCounts] = useState<InboundEmailCount[]>([]);
 
+  /**
+   * Cab mail only.
+   *
+   * Sent to the server rather than applied to `rows`: cab mail from last week is older than
+   * the page this list holds, so filtering what is already loaded would show nothing and
+   * read as "there is no cab mail". Off by default — the inbox opens exactly as it did.
+   */
+  const [cabOnly, setCabOnly] = useState(false);
+
   const load = useCallback(async () => {
     setLoading(true);
     try {
@@ -160,6 +169,7 @@ export function CustomerEmailsPage({
         status,
         limit: PAGE_SIZE,
         ...(ticketFilter ? { ticketId: ticketFilter } : {}),
+        ...(cabOnly ? { cabOnly: true } : {}),
       });
       setRows(res.rows);
       setMailboxes(res.mailboxes);
@@ -171,7 +181,7 @@ export function CustomerEmailsPage({
     } finally {
       setLoading(false);
     }
-  }, [token, status, ticketFilter]);
+  }, [token, status, ticketFilter, cabOnly]);
 
   const loadMore = useCallback(async () => {
     setLoadingMore(true);
@@ -181,6 +191,9 @@ export function CustomerEmailsPage({
         limit: PAGE_SIZE,
         offset: rows.length,
         ...(ticketFilter ? { ticketId: ticketFilter } : {}),
+        // The older page has to be narrowed the same way, or "load older" would pour the
+        // whole inbox in underneath a filtered list.
+        ...(cabOnly ? { cabOnly: true } : {}),
       });
       // Mail can arrive between one page and the next, which shifts everything down by one
       // and would otherwise re-show the row that fell across the boundary.
@@ -194,7 +207,7 @@ export function CustomerEmailsPage({
     } finally {
       setLoadingMore(false);
     }
-  }, [token, status, rows.length, ticketFilter]);
+  }, [token, status, rows.length, ticketFilter, cabOnly]);
 
   useEffect(() => {
     void load();
@@ -619,6 +632,40 @@ It will go out from ${selected?.mailboxEmail ?? ""}. This cannot be undone.`,
             </button>
           );
         })}
+      </div>
+
+      {/* Cab mail on its own. A toggle rather than a separate screen: it is the same inbox,
+          narrowed — so the status tabs, the mailbox chips and everything else keep working
+          exactly as they do, and clicking it again puts the rest of the mail back. The
+          narrowing happens on the server, so it finds cab mail older than the page currently
+          loaded rather than sifting what is already on screen. */}
+      <div style={{ display: "flex", alignItems: "center", gap: "10px", marginBottom: "12px" }}>
+        <button
+          type="button"
+          onClick={() => setCabOnly((on) => !on)}
+          title={
+            cabOnly
+              ? "Showing cab mail only — click to show all mail again"
+              : "Show only mail about cabs"
+          }
+          style={{
+            padding: "7px 14px",
+            borderRadius: "999px",
+            fontSize: "12px",
+            fontWeight: 700,
+            cursor: "pointer",
+            background: cabOnly ? "#4f46e5" : "#ffffff",
+            color: cabOnly ? "#ffffff" : "#475569",
+            border: `1px solid ${cabOnly ? "#4f46e5" : "#e2e8f0"}`,
+          }}
+        >
+          🚕 CAB
+        </button>
+        {cabOnly ? (
+          <span style={{ fontSize: "12px", color: "#4338ca" }}>
+            Cab mail only — click CAB again to show everything.
+          </span>
+        ) : null}
       </div>
 
       {/* A filtered inbox that does not say it is filtered reads as an empty one — this is

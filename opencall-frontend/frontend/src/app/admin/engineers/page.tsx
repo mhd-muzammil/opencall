@@ -12,6 +12,7 @@ import {
 import { listAdminRegions, type AdminRegion } from "../../../lib/adminApiClient";
 import { readSession, type ClientSession } from "../../../lib/session";
 import type { Engineer } from "../../../lib/api/types";
+import { countByRegion } from "../../../lib/engineerRegionCounts";
 
 function formatDate(value: string | null): string {
   if (!value) return "—";
@@ -89,6 +90,35 @@ export default function AdminEngineersPage() {
   }, [regions]);
 
   const activeRegions = regions.filter((r) => r.isActive);
+
+  /**
+   * The engineers behind the region boxes: status and search apply, the region filter does
+   * NOT. Applying it would collapse the breakdown to whichever region is selected, and a
+   * breakdown that only ever shows one row is not a breakdown — it is the number already on
+   * the Total Engineers card.
+   */
+  const regionScoped = useMemo(() => {
+    if (!engineers) return [];
+    return engineers.filter((e) => {
+      if (filterActive === "active" && !e.isActive) return false;
+      if (filterActive === "inactive" && e.isActive) return false;
+      if (search) {
+        const s = search.toLowerCase();
+        if (
+          !e.engineerName.toLowerCase().includes(s) &&
+          !e.engineerCode?.toLowerCase().includes(s)
+        ) {
+          return false;
+        }
+      }
+      return true;
+    });
+  }, [engineers, filterActive, search]);
+
+  const regionCounts = useMemo(
+    () => countByRegion(regionScoped, regions),
+    [regionScoped, regions],
+  );
 
   // Engineers matching the region / status / search filters, BEFORE the count-card
   // (HP/Vendor) filter. The count cards summarise this set so their numbers stay in
@@ -414,6 +444,95 @@ export default function AdminEngineersPage() {
           </select>
         </label>
       </div>
+
+      {/* How many engineers each region has. Clicking one is the same act as picking that
+          region in the dropdown above — same state, so the two can never disagree — and
+          clicking the selected one again clears it, because the way out has to be where the
+          way in was. Regions with nobody in them are shown too: an empty region is a hole in
+          the roster, and it is the one thing the dropdown cannot tell you without visiting
+          every entry in turn. */}
+      {engineers && regionCounts.length > 0 && (
+        <div style={{ marginBottom: "14px" }}>
+          <div
+            style={{
+              fontSize: "11px",
+              fontWeight: 700,
+              color: "#6b7280",
+              textTransform: "uppercase",
+              letterSpacing: "0.5px",
+              marginBottom: "8px",
+            }}
+          >
+            Engineers by region
+          </div>
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "repeat(auto-fit, minmax(132px, 1fr))",
+              gap: "10px",
+            }}
+          >
+            {regionCounts.map((region) => {
+              const active = filterRegion === region.id && region.id !== "";
+              const empty = region.count === 0;
+              return (
+                <button
+                  key={region.id || "__none"}
+                  type="button"
+                  // A region with nobody in it has nothing to filter to, so it stays a
+                  // label rather than pretending to be a control that does nothing.
+                  disabled={empty || region.id === ""}
+                  onClick={() => setFilterRegion(active ? "" : region.id)}
+                  title={
+                    empty
+                      ? `No engineers in ${region.name}`
+                      : region.id === ""
+                        ? "These engineers' region no longer exists"
+                        : active
+                          ? "Showing this region — click to show all"
+                          : `Show only ${region.name}`
+                  }
+                  style={{
+                    textAlign: "left",
+                    padding: "10px 12px",
+                    borderRadius: "10px",
+                    border: active
+                      ? "2px solid #4f46e5"
+                      : "1px solid var(--border-color, #e5e7eb)",
+                    background: active ? "#4f46e512" : "var(--card-bg, #ffffff)",
+                    cursor: empty || region.id === "" ? "default" : "pointer",
+                    opacity: empty ? 0.6 : 1,
+                    transition: "all 0.15s ease",
+                  }}
+                >
+                  <div
+                    style={{
+                      fontSize: "11.5px",
+                      fontWeight: 600,
+                      color: "#6b7280",
+                      overflow: "hidden",
+                      textOverflow: "ellipsis",
+                      whiteSpace: "nowrap",
+                    }}
+                  >
+                    {region.name}
+                  </div>
+                  <div
+                    style={{
+                      fontSize: "22px",
+                      fontWeight: 800,
+                      marginTop: "2px",
+                      color: empty ? "#9ca3af" : active ? "#4f46e5" : "#111827",
+                    }}
+                  >
+                    {region.count}
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      )}
 
       {/* Clickable count cards — each filters the table to that set. */}
       {engineers && (

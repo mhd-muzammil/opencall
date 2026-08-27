@@ -5334,7 +5334,6 @@ export default function DashboardPage() {
                         loading={productivityDayLoading || productivityRangeLoading}
                         rangeError={productivityRangeError}
                         billCycles={productivityBillCycles}
-                        rangeBounds={productivityRangeBounds}
                         regionsList={report?.regionBreakdown ?? []}
                         isSuperAdmin={session?.user?.role === "SUPER_ADMIN"}
                         openRecordsWithFilter={openRecordsWithFilter}

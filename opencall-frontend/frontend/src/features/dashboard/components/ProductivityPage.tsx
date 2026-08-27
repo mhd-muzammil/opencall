@@ -22,7 +22,6 @@ export function ProductivityPage({
   loading = false,
   rangeError = null,
   billCycles = [],
-  rangeBounds = null,
   regionsList,
   isSuperAdmin,
   openRecordsWithFilter,
@@ -79,12 +78,6 @@ export function ProductivityPage({
    * second one that could drift from it.
    */
   billCycles?: readonly BillCycle[];
-  /**
-   * The day bounds the table is currently showing, when it spans more than one
-   * day. "Sync to Payroll" pushes exactly these days, so the button and the
-   * table can never mean different periods.
-   */
-  rangeBounds?: { from: string; to: string } | null;
   regionsList: Array<{ aspCode: string; regionName: string; count: number }>;
   isSuperAdmin: boolean;
   openRecordsWithFilter: (args: Readonly<{

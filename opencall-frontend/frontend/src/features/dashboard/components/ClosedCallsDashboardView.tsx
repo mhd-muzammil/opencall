@@ -339,6 +339,23 @@ export function ClosedCallsDashboardView({
    * asked before there was a range — one day — and only widens when somebody widens it.
    */
   const [reconToDate, setReconToDate] = useState(todayIsoDate);
+
+  /**
+   * The furthest To may go. Must match the server's own ceiling.
+   *
+   * Reconciliation reads every report row in the period and window-functions over them. One
+   * day is a lookup; a quarter is a report, and it holds one of the API's ten database
+   * connections for as long as it runs. On 2026-08-27 that pool was emptied by two
+   * concurrent report generations and everything — login, the health check — began failing
+   * with "timeout exceeded when trying to connect". An unbounded date picker is a second way
+   * to reach the same place. Thirty-one days covers "this month", which is the question.
+   */
+  const RECON_MAX_DAYS = 31;
+  const reconMaxToDate = React.useMemo(() => {
+    const start = Date.parse(`${reconDate}T00:00:00Z`);
+    if (Number.isNaN(start)) return "";
+    return new Date(start + RECON_MAX_DAYS * 86_400_000).toISOString().slice(0, 10);
+  }, [reconDate]);
   const [recon, setRecon] = useState<ClosureReconciliation | null>(null);
   const [reconError, setReconError] = useState<string | null>(null);
   const [reconLoading, setReconLoading] = useState(false);
@@ -1672,9 +1689,21 @@ export function ClosedCallsDashboardView({
                   onChange={(e) => {
                     const next = e.target.value;
                     setReconDate(next);
+                    if (!next || !reconToDate) return;
                     // Dragging From past To would make a backwards range, which the server
                     // refuses. Carrying To along keeps it a single day instead of an error.
-                    if (next && reconToDate && next > reconToDate) setReconToDate(next);
+                    if (next > reconToDate) {
+                      setReconToDate(next);
+                      return;
+                    }
+                    // Dragging From BACKWARDS can stretch the period past the limit without
+                    // To having moved at all, so it is pulled in to match.
+                    const start = Date.parse(`${next}T00:00:00Z`);
+                    if (Number.isNaN(start)) return;
+                    const limit = new Date(start + RECON_MAX_DAYS * 86_400_000)
+                      .toISOString()
+                      .slice(0, 10);
+                    if (reconToDate > limit) setReconToDate(limit);
                   }}
                   style={{
                     padding: "6px 8px",
@@ -1690,7 +1719,16 @@ export function ClosedCallsDashboardView({
                   type="date"
                   value={reconToDate}
                   min={reconDate || undefined}
-                  onChange={(e) => setReconToDate(e.target.value)}
+                  // The picker will not offer a day past the limit, so the range cannot be
+                  // made too long by accident. The server refuses one anyway — this is so
+                  // nobody meets that refusal.
+                  max={reconMaxToDate}
+                  onChange={(e) => {
+                    const next = e.target.value;
+                    // A date typed rather than picked ignores `max`, so it is clamped here
+                    // too. Silently, and the hint beside the field says what the limit is.
+                    setReconToDate(next && next > reconMaxToDate ? reconMaxToDate : next);
+                  }}
                   style={{
                     padding: "6px 8px",
                     fontSize: "12px",
@@ -1699,6 +1737,14 @@ export function ClosedCallsDashboardView({
                   }}
                 />
               </label>
+              {/* Said only once the period is a period. On a single day the limit is not
+                  something anybody needs to be told about; the moment To is clamped, it is
+                  the explanation for why it moved on its own. */}
+              {reconToDate > reconDate ? (
+                <span style={{ fontSize: "11px", color: "#9ca3af" }}>
+                  up to {RECON_MAX_DAYS} days
+                </span>
+              ) : null}
             </div>
           </div>
 

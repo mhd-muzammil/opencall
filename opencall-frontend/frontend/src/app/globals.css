@@ -5675,6 +5675,11 @@ th .colFilterWrap {
   flex-direction: column;
   gap: 24px;
   max-width: 1280px;
+  /* A flex item will not shrink below its content unless told it may, and a page holding a
+     wide table is exactly that content. Without this the page grows past the window, the
+     window scrolls sideways, and the header — which does not scroll with it — slides under
+     the sidebar with the title cut in half. */
+  min-width: 0;
 }
 
 .adminPageHeader {
@@ -5765,6 +5770,11 @@ th .colFilterWrap {
   border-radius: 12px;
   overflow: hidden;
   overflow-x: auto;
+  /* The `overflow-x: auto` above was already the intent and could not take effect: as a flex
+     item this box defaulted to `min-width: auto`, so it grew to whatever the table needed
+     instead of scrolling inside itself. It kept its own scrollbar AND made the page scroll,
+     which is what dragged the header out from under the title. */
+  min-width: 0;
 }
 
 .adminTable {

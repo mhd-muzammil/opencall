@@ -583,6 +583,32 @@ It will go out from ${selected?.mailboxEmail ?? ""}. This cannot be undone.`,
         >
           ⚠ Escalations · {escalationCount}
         </button>
+        {/* Cab mail, beside Escalations because it is the same kind of switch: a slice of the
+            same inbox rather than another place to go. Its date range lives on its own row
+            below — two date fields in here would push the tabs onto a second line. */}
+        <button
+          type="button"
+          onClick={() => setCabOnly((on) => !on)}
+          title={
+            cabOnly
+              ? "Showing cab mail only — click to show all mail again"
+              : "Show only mail about cabs"
+          }
+          style={{
+            padding: "7px 16px",
+            minHeight: "34px",
+            borderRadius: "999px",
+            border: `1px solid ${cabOnly ? "#4f46e5" : "#e5e7eb"}`,
+            background: cabOnly ? "#4f46e5" : "#ffffff",
+            color: cabOnly ? "#ffffff" : "#475569",
+            fontSize: "13px",
+            fontWeight: 700,
+            cursor: "pointer",
+            whiteSpace: "nowrap",
+          }}
+        >
+          🚕 CAB
+        </button>
       </div>
 
       {/* Region filter. Each chip is also the mailbox health light: green when the last
@@ -651,41 +677,18 @@ It will go out from ${selected?.mailboxEmail ?? ""}. This cannot be undone.`,
         })}
       </div>
 
-      {/* Cab mail on its own. A toggle rather than a separate screen: it is the same inbox,
-          narrowed — so the status tabs, the mailbox chips and everything else keep working
-          exactly as they do, and clicking it again puts the rest of the mail back. The
-          narrowing happens on the server, so it finds cab mail older than the page currently
-          loaded rather than sifting what is already on screen. */}
+      {/* The period the CAB view covers. The button itself sits with the tabs above; this row
+          appears under it only while CAB is on, and holds nothing otherwise — two date fields
+          in the tab row would push the tabs onto a second line. */}
       <div
         style={{
           display: "flex",
           alignItems: "center",
           flexWrap: "wrap",
           gap: "10px",
-          marginBottom: "12px",
+          marginBottom: cabOnly ? "12px" : 0,
         }}
       >
-        <button
-          type="button"
-          onClick={() => setCabOnly((on) => !on)}
-          title={
-            cabOnly
-              ? "Showing cab mail only — click to show all mail again"
-              : "Show only mail about cabs"
-          }
-          style={{
-            padding: "7px 14px",
-            borderRadius: "999px",
-            fontSize: "12px",
-            fontWeight: 700,
-            cursor: "pointer",
-            background: cabOnly ? "#4f46e5" : "#ffffff",
-            color: cabOnly ? "#ffffff" : "#475569",
-            border: `1px solid ${cabOnly ? "#4f46e5" : "#e2e8f0"}`,
-          }}
-        >
-          🚕 CAB
-        </button>
         {/* The period, and only while CAB is on. Cab mail is read as a period — what was
             spent over the last couple of months — where the rest of the inbox is read as
             "what came in", so this belongs to CAB and appears with it. Off, the inbox has no

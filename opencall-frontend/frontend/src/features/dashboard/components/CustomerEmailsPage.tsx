@@ -12,6 +12,7 @@ import {
   type InboundEmailRow,
   type MailboxHealth,
 } from "../../../lib/customerEmailApiClient";
+import { defaultCabRange, normalizeCabRange } from "../../../lib/cabDateRange";
 import { EmailBodyView } from "./EmailBodyView";
 import { ComposeModal } from "./ComposeModal";
 import { SentMailPanel } from "./SentMailPanel";
@@ -162,6 +163,20 @@ export function CustomerEmailsPage({
    */
   const [cabOnly, setCabOnly] = useState(false);
 
+  /**
+   * The period the CAB view covers. Cab mail is read as a period — what was spent over the
+   * last couple of months — where the rest of the inbox is read as "what came in", so this
+   * range exists for CAB and is applied only while CAB is on.
+   *
+   * Seeded to the last two months and the reader's to change from there.
+   */
+  const [cabFrom, setCabFrom] = useState(() => defaultCabRange().from);
+  const [cabTo, setCabTo] = useState(() => defaultCabRange().to);
+  const cabRange = useMemo(
+    () => (cabOnly ? normalizeCabRange(cabFrom, cabTo) : null),
+    [cabOnly, cabFrom, cabTo],
+  );
+
   const load = useCallback(async () => {
     setLoading(true);
     try {
@@ -170,6 +185,7 @@ export function CustomerEmailsPage({
         limit: PAGE_SIZE,
         ...(ticketFilter ? { ticketId: ticketFilter } : {}),
         ...(cabOnly ? { cabOnly: true } : {}),
+        ...(cabRange ?? {}),
       });
       setRows(res.rows);
       setMailboxes(res.mailboxes);
@@ -181,7 +197,7 @@ export function CustomerEmailsPage({
     } finally {
       setLoading(false);
     }
-  }, [token, status, ticketFilter, cabOnly]);
+  }, [token, status, ticketFilter, cabOnly, cabRange]);
 
   const loadMore = useCallback(async () => {
     setLoadingMore(true);
@@ -194,6 +210,7 @@ export function CustomerEmailsPage({
         // The older page has to be narrowed the same way, or "load older" would pour the
         // whole inbox in underneath a filtered list.
         ...(cabOnly ? { cabOnly: true } : {}),
+        ...(cabRange ?? {}),
       });
       // Mail can arrive between one page and the next, which shifts everything down by one
       // and would otherwise re-show the row that fell across the boundary.
@@ -207,7 +224,7 @@ export function CustomerEmailsPage({
     } finally {
       setLoadingMore(false);
     }
-  }, [token, status, rows.length, ticketFilter, cabOnly]);
+  }, [token, status, rows.length, ticketFilter, cabOnly, cabRange]);
 
   useEffect(() => {
     void load();
@@ -639,7 +656,15 @@ It will go out from ${selected?.mailboxEmail ?? ""}. This cannot be undone.`,
           exactly as they do, and clicking it again puts the rest of the mail back. The
           narrowing happens on the server, so it finds cab mail older than the page currently
           loaded rather than sifting what is already on screen. */}
-      <div style={{ display: "flex", alignItems: "center", gap: "10px", marginBottom: "12px" }}>
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          flexWrap: "wrap",
+          gap: "10px",
+          marginBottom: "12px",
+        }}
+      >
         <button
           type="button"
           onClick={() => setCabOnly((on) => !on)}
@@ -661,10 +686,72 @@ It will go out from ${selected?.mailboxEmail ?? ""}. This cannot be undone.`,
         >
           🚕 CAB
         </button>
+        {/* The period, and only while CAB is on. Cab mail is read as a period — what was
+            spent over the last couple of months — where the rest of the inbox is read as
+            "what came in", so this belongs to CAB and appears with it. Off, the inbox has no
+            date filter at all and behaves exactly as it always did. */}
         {cabOnly ? (
-          <span style={{ fontSize: "12px", color: "#4338ca" }}>
-            Cab mail only — click CAB again to show everything.
-          </span>
+          <>
+            <label style={{ fontSize: "12px", color: "#475569", fontWeight: 600 }}>
+              From{" "}
+              <input
+                type="date"
+                value={cabFrom}
+                max={cabTo || undefined}
+                onChange={(e) => setCabFrom(e.target.value)}
+                style={{
+                  padding: "5px 8px",
+                  borderRadius: "8px",
+                  border: "1px solid #e2e8f0",
+                  fontSize: "12px",
+                }}
+              />
+            </label>
+            <label style={{ fontSize: "12px", color: "#475569", fontWeight: 600 }}>
+              To{" "}
+              <input
+                type="date"
+                value={cabTo}
+                min={cabFrom || undefined}
+                onChange={(e) => setCabTo(e.target.value)}
+                style={{
+                  padding: "5px 8px",
+                  borderRadius: "8px",
+                  border: "1px solid #e2e8f0",
+                  fontSize: "12px",
+                }}
+              />
+            </label>
+            <button
+              type="button"
+              onClick={() => {
+                const fresh = defaultCabRange();
+                setCabFrom(fresh.from);
+                setCabTo(fresh.to);
+              }}
+              style={{
+                padding: "5px 10px",
+                borderRadius: "8px",
+                border: "1px solid #e2e8f0",
+                background: "#ffffff",
+                color: "#475569",
+                fontSize: "11.5px",
+                fontWeight: 600,
+                cursor: "pointer",
+              }}
+            >
+              Last 2 months
+            </button>
+            {/* A range the wrong way round is not silently swapped — that would show a
+                period nobody chose. It is refused, said so, and the list stays where it was. */}
+            <span
+              style={{ fontSize: "11.5px", color: cabRange ? "#4338ca" : "#b91c1c" }}
+            >
+              {cabRange
+                ? "Cab mail only — click CAB again to show everything."
+                : "From must be on or before To."}
+            </span>
+          </>
         ) : null}
       </div>
 

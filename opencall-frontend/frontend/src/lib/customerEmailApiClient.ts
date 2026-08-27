@@ -118,6 +118,9 @@ export async function getCustomerEmails(
     offset?: number;
     ticketId?: string;
     cabOnly?: boolean;
+    /** Inclusive day bounds, `YYYY-MM-DD`. The server reads them as IST days. */
+    from?: string;
+    to?: string;
   } = {},
 ): Promise<CustomerEmailsResponse> {
   const qs = new URLSearchParams();
@@ -133,6 +136,10 @@ export async function getCustomerEmails(
   // mail from last week is older than the page the list holds, and filtering what is already
   // loaded would show nothing and read as "there is no cab mail".
   if (params.cabOnly) qs.set("cabOnly", "1");
+  // Both bounds are inclusive days. Sent only when present, so a caller that asks for no
+  // period gets the same unbounded list it always did.
+  if (params.from) qs.set("from", params.from);
+  if (params.to) qs.set("to", params.to);
   const suffix = qs.toString() ? `?${qs.toString()}` : "";
   const response = await fetch(`${WEB_API_BASE_URL}/api/v1/customer-emails${suffix}`, {
     headers: authHeaders(token),

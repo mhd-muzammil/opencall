@@ -22,12 +22,25 @@ function url(path: string): string {
   return `${WEB_API_BASE_URL}${path}`;
 }
 
+/**
+ * Imports a Flex Closure ASP Report from the "Import Closure Dates" button.
+ *
+ * Sends `merge` explicitly rather than leaning on the server's default: this call
+ * used to send no mode at all, the server read that as `replace`, and a partial
+ * export therefore wiped the closure history down to whatever that one file held.
+ * Saying which mode we want — where the file is chosen — is what stops a server
+ * default ever deciding that again.
+ *
+ * Merge adds and refreshes the closures in the file and touches nothing else. A
+ * genuine full-rebuild is a deliberate, separate act (`mode=replace`).
+ */
 export async function importClosureDates(
   token: string,
   file: File,
 ): Promise<ClosureImportResult> {
   const formData = new FormData();
   formData.append("closureReport", file);
+  formData.append("mode", "merge");
   const response = await fetch(url("/api/v1/closure-dates/import"), {
     method: "POST",
     headers: { Authorization: `Bearer ${token}` },

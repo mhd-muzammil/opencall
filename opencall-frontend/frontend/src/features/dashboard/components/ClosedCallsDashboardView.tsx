@@ -1881,6 +1881,7 @@ export function ClosedCallsDashboardView({
                   type="button"
                   disabled={importing}
                   onClick={() => closureFileInputRef.current?.click()}
+                  title="Adds and refreshes the closures this file lists. Closures it does not mention are left alone."
                   style={{
                     padding: "8px 14px",
                     fontSize: "13px",

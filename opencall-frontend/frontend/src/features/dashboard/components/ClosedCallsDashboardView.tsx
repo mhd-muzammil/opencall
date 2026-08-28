@@ -16,6 +16,7 @@ import {
   prevMonthKey,
   type BillCycle,
 } from "../utils/billCycle";
+import { closureOutcomeOf, rawOutcomeOf, type ClosureOutcome } from "./closureOutcome";
 import type {
   ClosureImportStatus,
   ClosureReconciliation,
@@ -82,16 +83,24 @@ function formatRangeLabel(
  * exactly as it always did until there is something to compare against. The two numbers
  * cover different periods from the live closed count and from each other — they are a
  * reconciliation aid, not a total.
+ *
+ * BOTH headline figures are completions only. "Closed - Canceled" is closed in Flex but
+ * abandoned and never billable, so adding it to a completion count answers no question
+ * anyone has — it gets its own muted sub-figure instead. The raw line always worked this
+ * way; the FieldEZ line used to fold cancellations into its total, which is why the two
+ * could disagree on any day with a cancellation and nothing on screen explained it.
  */
 function ComparisonCounts({
-  closureCount,
-  rawCount,
+  closure,
+  raw,
   closureHint,
   rawHint,
   onDrill,
 }: Readonly<{
-  closureCount: number | null;
-  rawCount: number | null;
+  /** null until the Flex Closure ASP Report has been imported at all. */
+  closure: ClosureOutcome | null;
+  /** null until the raw export has been synced at all. */
+  raw: ClosureOutcome | null;
   closureHint?: string | null;
   /**
    * Why the raw number covers a wider period than the closure one — raw data is stored
@@ -100,9 +109,9 @@ function ComparisonCounts({
    */
   rawHint?: string | null;
   /** Opens the record list for that source; only wired when the count is clickable. */
-  onDrill?: (kind: "closure" | "raw") => void;
+  onDrill?: (kind: "closure" | "raw", outcome: "closed" | "cancelled") => void;
 }>) {
-  if (closureCount === null && rawCount === null) return null;
+  if (closure === null && raw === null) return null;
 
   const line = (
     label: string,
@@ -118,7 +127,7 @@ function ComparisonCounts({
         onClick={(e) => {
           // The card itself is clickable (region filter) — don't also select the region.
           e.stopPropagation();
-          onDrill?.(kind);
+          onDrill?.(kind, "closed");
         }}
         title={clickable ? "View records" : undefined}
         style={{
@@ -148,6 +157,51 @@ function ComparisonCounts({
     );
   };
 
+  /**
+   * The cancelled sub-figure. Rendered even at zero — "0 cancelled" is the statement
+   * that makes the headline above it readable as completions-only. Suppressed entirely
+   * when the source reported no split (`hasSplit` false, i.e. a backend that predates
+   * it), because "0 cancelled" would then assert something nobody said.
+   */
+  const cancelledLine = (outcome: ClosureOutcome, kind: "closure" | "raw") => {
+    if (!outcome.hasSplit) return null;
+    const count = outcome.cancelled;
+    const clickable = Boolean(onDrill) && count > 0;
+    return (
+      <button
+        type="button"
+        disabled={!clickable}
+        onClick={(e) => {
+          e.stopPropagation();
+          onDrill?.(kind, "cancelled");
+        }}
+        title={
+          clickable
+            ? "View cancelled records"
+            : "Closed - Canceled in Flex — abandoned, not billable"
+        }
+        style={{
+          display: "block",
+          width: "100%",
+          fontSize: "10px",
+          lineHeight: 1.5,
+          color: count > 0 ? "#b45309" : "#9ca3af",
+          padding: 0,
+          margin: "-2px 0 2px",
+          border: "none",
+          background: "none",
+          fontFamily: "inherit",
+          textAlign: "left",
+          cursor: clickable ? "pointer" : "default",
+          textDecoration: clickable ? "underline dotted" : "none",
+          textUnderlineOffset: "2px",
+        }}
+      >
+        + {formatNumber(count)} cancelled
+      </button>
+    );
+  };
+
   return (
     <div
       style={{
@@ -156,9 +210,11 @@ function ComparisonCounts({
         borderTop: "1px dashed var(--border-color, #e5e7eb)",
       }}
     >
-      {closureCount !== null && line("FieldEZ data closure", closureCount, "#7c3aed", "closure")}
-      {rawCount !== null && line("Raw data closures", rawCount, "#ea580c", "raw")}
-      {rawCount !== null && rawHint && (
+      {closure && line("FieldEZ data closure", closure.closed, "#7c3aed", "closure")}
+      {closure && cancelledLine(closure, "closure")}
+      {raw && line("Raw data closures", raw.closed, "#ea580c", "raw")}
+      {raw && cancelledLine(raw, "raw")}
+      {raw && rawHint && (
         <div style={{ fontSize: "10px", color: "#9ca3af", marginTop: "-2px" }}>
           {rawHint}
         </div>
@@ -325,8 +381,15 @@ export function ClosedCallsDashboardView({
   const [rawSummary, setRawSummary] = useState<import("../../../lib/flexRawApiClient").FlexRawSummary | null>(null);
   const [rawSyncing, setRawSyncing] = useState(false);
   const [rawSyncMessage, setRawSyncMessage] = useState<string | null>(null);
-  // The record-list drill-down opened from a card's "FieldEZ data closure" / "Raw data closures".
-  const [drill, setDrill] = useState<{ kind: "closure" | "raw"; aspCode: string; label: string } | null>(null);
+  // The record-list drill-down opened from a card's "FieldEZ data closure" / "Raw data
+  // closures". `outcome` says which half of the line was clicked, so the rows that open
+  // are the ones the clicked number counted rather than every closure of that source.
+  const [drill, setDrill] = useState<{
+    kind: "closure" | "raw";
+    outcome: "closed" | "cancelled";
+    aspCode: string;
+    label: string;
+  } | null>(null);
   // Bumped after an import/sync so the summaries refetch without reloading the report.
   const [summaryNonce, setSummaryNonce] = useState(0);
 
@@ -569,15 +632,37 @@ export function ClosedCallsDashboardView({
   }, [summaryToken, rangeActive, dateLo, dateHi, summaryNonce]);
   const rawDayPrecise = rangeActive && rawScoped?.dayPrecise === true;
 
-  // Per-ASP closure count. Day-precise via the scoped summary when a range is active,
-  // otherwise the full all-dates summary. aspCode "" is the "All Regions" rollup (which
-  // includes closure dates with no matched region).
-  const closureCountFor = useMemo(() => {
+  /**
+   * Per-ASP closure count, split into completions and cancellations. Day-precise via the
+   * scoped summary when a range is active, otherwise the full all-dates summary. aspCode
+   * "" is the "All Regions" rollup (which includes closure dates with no matched region).
+   *
+   * `closed` is what the card headlines, so this line means the same thing as the Raw
+   * data line beside it — that one has always excluded cancellations, while this one
+   * counted them silently, so on a day with cancellations the two could never agree.
+   *
+   * A backend that predates the split sends neither field. Falling back to the total
+   * keeps the old (cancellation-inclusive) number rather than showing a blank card, and
+   * `hasSplit` suppresses the sub-line so nothing claims a split that wasn't sent.
+   */
+  const closureOutcomeFor = useMemo(() => {
     const src = rangeActive ? closureScoped : closureSummary;
-    return (aspCode: string): number | null => {
+    return (aspCode: string): ClosureOutcome | null => {
       if (!src) return null;
-      if (aspCode === "") return src.total;
-      return src.byAsp.find((e) => e.aspCode === aspCode)?.count ?? 0;
+      if (aspCode === "") {
+        // The ALL rollup lives on the summary root, where the total is `total` rather
+        // than `count` — it also counts closures that matched no region.
+        return closureOutcomeOf({
+          count: src.total,
+          closed: src.closed,
+          cancelled: src.cancelled,
+        });
+      }
+      const entry = src.byAsp.find((e) => e.aspCode === aspCode);
+      // A region with no closures at all is a real zero, not a missing split.
+      return entry
+        ? closureOutcomeOf(entry)
+        : { closed: 0, cancelled: 0, hasSplit: true };
     };
   }, [closureSummary, closureScoped, rangeActive]);
 
@@ -669,22 +754,26 @@ export function ClosedCallsDashboardView({
     closureDataAgeMs !== null &&
     closureDataAgeMs > CLOSURE_SYNC_STALE_AFTER_MS;
 
-  // Per-ASP raw CLOSED count: day-precise via the scoped summary when the
-  // backend confirmed it, else month-mapped for the range, else all months.
-  const rawClosedFor = useMemo(() => {
-    return (aspCode: string): number | null => {
-      if (rawDayPrecise && rawScoped) {
-        if (aspCode === "") return rawScoped.closed;
-        return rawScoped.byAsp.find((e) => e.aspCode === aspCode)?.closed ?? 0;
-      }
+  /**
+   * Per-ASP raw CLOSED and CANCELLED counts: day-precise via the scoped summary when the
+   * backend confirmed it, else month-mapped for the range, else all months.
+   *
+   * `closed` has always excluded cancellations here — `classifyRawStatus` tests CANCEL
+   * before CLOSED, so they are disjoint groups. The cancelled figure was already in the
+   * payload and simply never shown; surfacing it is what lets this line be compared with
+   * the FieldEZ one above it.
+   */
+  const rawOutcomeFor = useMemo(() => {
+    return (aspCode: string): ClosureOutcome | null => {
+      if (rawDayPrecise && rawScoped) return rawOutcomeOf(rawScoped.byAsp, aspCode);
       if (!rawSummary) return null;
-      if (!rangeActive) {
-        if (aspCode === "") return rawSummary.closed;
-        return rawSummary.byAsp.find((e) => e.aspCode === aspCode)?.closed ?? 0;
-      }
-      return rawSummary.byAspMonth
-        .filter((e) => inMonthRange(e.month) && (aspCode === "" || e.aspCode === aspCode))
-        .reduce((sum, e) => sum + e.closed, 0);
+      if (!rangeActive) return rawOutcomeOf(rawSummary.byAsp, aspCode);
+      // Month-mapped: narrow to the months the range covers first, then roll up the
+      // same way — byAspMonth rows carry the identical closed/cancelled fields.
+      return rawOutcomeOf(
+        rawSummary.byAspMonth.filter((e) => inMonthRange(e.month)),
+        aspCode,
+      );
     };
   }, [rawSummary, rawScoped, rawDayPrecise, rangeActive, inMonthRange]);
 
@@ -696,14 +785,17 @@ export function ClosedCallsDashboardView({
    * reader has to find.
    */
   const rawUnregioned = useMemo(() => {
-    const all = rawClosedFor("");
+    const all = rawOutcomeFor("");
     if (all === null) return 0;
+    // Completions only, on both sides of the subtraction — that is what the cards
+    // headline, so mixing the cancelled figure in here would report a gap the reader
+    // cannot see on any card.
     const onCards = closedRegionBreakdown.reduce(
-      (sum, entry) => sum + (rawClosedFor(entry.aspCode) ?? 0),
+      (sum, entry) => sum + (rawOutcomeFor(entry.aspCode)?.closed ?? 0),
       0,
     );
-    return Math.max(0, all - onCards);
-  }, [rawClosedFor, closedRegionBreakdown]);
+    return Math.max(0, all.closed - onCards);
+  }, [rawOutcomeFor, closedRegionBreakdown]);
 
   async function handleSyncRawData() {
     if (!closureImportToken) return;
@@ -1526,8 +1618,8 @@ export function ClosedCallsDashboardView({
               {...closedOutcomeFor("", closedCountFor("", overallClosedCount))}
             />
             <ComparisonCounts
-              closureCount={closureCountFor("")}
-              rawCount={rawClosedFor("")}
+              closure={closureOutcomeFor("")}
+              raw={rawOutcomeFor("")}
               rawHint={
                 [
                   rawScopeNote,
@@ -1541,7 +1633,9 @@ export function ClosedCallsDashboardView({
               closureHint={
                 closureUnmatched > 0 ? `${formatNumber(closureUnmatched)} unmatched` : null
               }
-              onDrill={(kind) => setDrill({ kind, aspCode: "", label: "All Regions" })}
+              onDrill={(kind, outcome) =>
+                setDrill({ kind, outcome, aspCode: "", label: "All Regions" })
+              }
             />
           </div>
 
@@ -1591,10 +1685,12 @@ export function ClosedCallsDashboardView({
                   )}
                 />
                 <ComparisonCounts
-                  closureCount={closureCountFor(entry.aspCode)}
-                  rawCount={rawClosedFor(entry.aspCode)}
+                  closure={closureOutcomeFor(entry.aspCode)}
+                  raw={rawOutcomeFor(entry.aspCode)}
                   rawHint={rawScopeNote}
-                  onDrill={(kind) => setDrill({ kind, aspCode: entry.aspCode, label: entry.regionName })}
+                  onDrill={(kind, outcome) =>
+                    setDrill({ kind, outcome, aspCode: entry.aspCode, label: entry.regionName })
+                  }
                 />
               </div>
             );
@@ -2380,6 +2476,7 @@ export function ClosedCallsDashboardView({
         <RecordsDrillModal
           token={summaryToken}
           kind={drill.kind}
+          outcome={drill.outcome}
           aspCode={drill.aspCode}
           closureFrom={dateLo}
           closureTo={dateHi}
@@ -2401,11 +2498,13 @@ export function ClosedCallsDashboardView({
  * own data so opening it never blocks the cards.
  */
 function RecordsDrillModal({
-  token, kind, aspCode, closureFrom, closureTo, rawMonthFrom, rawMonthTo,
+  token, kind, outcome, aspCode, closureFrom, closureTo, rawMonthFrom, rawMonthTo,
   rawDateFrom, rawDateTo, regionLabel, onClose,
 }: Readonly<{
   token: string;
   kind: "closure" | "raw";
+  /** Which half of the card's line was clicked — completions or cancellations. */
+  outcome: "closed" | "cancelled";
   aspCode: string;
   /** Day-precise date bounds ("YYYY-MM-DD") used for the closure records. */
   closureFrom: string;
@@ -2437,7 +2536,9 @@ function RecordsDrillModal({
       try {
         if (kind === "closure") {
           const { getClosureDateRecords } = await import("../../../lib/closureDateApiClient");
-          const res = await getClosureDateRecords(token, { asp: aspCode, from: closureFrom, to: closureTo });
+          const res = await getClosureDateRecords(token, {
+            asp: aspCode, from: closureFrom, to: closureTo, status: outcome,
+          });
           if (cancelled) return;
           setRows(
             res.rows.map((r) => ({
@@ -2463,7 +2564,7 @@ function RecordsDrillModal({
             to: dayScoped ? "" : rawMonthTo,
             dateFrom: rawDateFrom,
             dateTo: rawDateTo,
-            status: "closed",
+            status: outcome,
           });
           if (cancelled) return;
           setRows(
@@ -2487,7 +2588,7 @@ function RecordsDrillModal({
     return () => {
       cancelled = true;
     };
-  }, [token, kind, aspCode, closureFrom, closureTo, rawMonthFrom, rawMonthTo, rawDateFrom, rawDateTo]);
+  }, [token, kind, outcome, aspCode, closureFrom, closureTo, rawMonthFrom, rawMonthTo, rawDateFrom, rawDateTo]);
 
   const columns = rows[0] ? Object.keys(rows[0]) : [];
   const filtered = useMemo(() => {
@@ -2496,7 +2597,9 @@ function RecordsDrillModal({
     return rows.filter((r) => Object.values(r).some((v) => v.toLowerCase().includes(q)));
   }, [rows, search]);
 
-  const title = kind === "closure" ? "FieldEZ data closure" : "Raw data closures";
+  const title =
+    (kind === "closure" ? "FieldEZ data closure" : "Raw data closures") +
+    (outcome === "cancelled" ? " — cancelled" : "");
   // Closure and day-scoped raw show the exact dates picked; month-scoped raw
   // shows the months the range mapped to.
   const rangeLabel =

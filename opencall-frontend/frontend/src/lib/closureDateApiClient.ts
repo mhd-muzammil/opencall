@@ -80,13 +80,25 @@ export async function getClosureDatesStatus(
   return readJson<ClosureImportStatus>(response);
 }
 
-export interface ClosureDateSummary {
-  /** Every stored closure date, matched to a region or not. */
+/** The completed / cancelled / other split of a closure count. */
+export interface ClosureOutcomeCounts {
+  /** Genuine completions — "WO Closed". The number the card headlines. */
+  closed: number;
+  /** "Closed - Canceled" — closed in Flex, but abandoned and never billable. */
+  cancelled: number;
+  /** Unclassifiable remainder, incl. a blank Status. */
+  other: number;
+}
+
+export interface ClosureDateSummary extends Partial<ClosureOutcomeCounts> {
+  /** Every stored closure date, matched to a region or not — completions AND cancellations. */
   total: number;
   /** Closure dates whose WO id / Case id could not be traced to a Work Location. */
   unmatched: number;
-  byAsp: Array<{ aspCode: string; count: number }>;
-  byAspMonth: Array<{ aspCode: string; month: string; count: number }>;
+  byAsp: Array<{ aspCode: string; count: number } & Partial<ClosureOutcomeCounts>>;
+  byAspMonth: Array<
+    { aspCode: string; month: string; count: number } & Partial<ClosureOutcomeCounts>
+  >;
   /** Distinct months present, ascending ("YYYY-MM"). */
   months: string[];
 }
@@ -127,15 +139,24 @@ export interface ClosureDateRecordList {
   total: number;
 }
 
-/** The closure dates behind a "FieldEZ data closure" count for a region + month range. */
+/** Which half of a card's split a drill-down is asking for. */
+export type ClosureStatusGroup = "closed" | "cancelled" | "other";
+
+/**
+ * The closure dates behind a "FieldEZ data closure" count for a region + month range.
+ * `status` narrows to one half of the card's split, so the rows that open match the
+ * number that was clicked. Omitted on a backend that predates the split — it ignores
+ * the param and returns every closure, which is the old behaviour.
+ */
 export async function getClosureDateRecords(
   token: string,
-  params: { asp?: string; from?: string; to?: string },
+  params: { asp?: string; from?: string; to?: string; status?: ClosureStatusGroup },
 ): Promise<ClosureDateRecordList> {
   const qs = new URLSearchParams();
   if (params.asp) qs.set("asp", params.asp);
   if (params.from) qs.set("from", params.from);
   if (params.to) qs.set("to", params.to);
+  if (params.status) qs.set("status", params.status);
   const response = await fetch(url(`/api/v1/closure-dates/records?${qs.toString()}`), {
     headers: { Authorization: `Bearer ${token}` },
     cache: "no-store",

@@ -303,8 +303,10 @@ const RECON_BUCKETS: ReadonlyArray<{
  * closed count looking exactly like paid work. Thirteen of them in the 25 Jul – 24 Aug
  * cycle; one case took three visits in six days, two of them free.
  *
- * Grouped by case rather than listed flat: the point is not "here are 13 work orders",
- * it is "here are the customers we had to go back to".
+ * A table, sorted SHORTEST GAP FIRST. The ordering is the point: a customer we were back
+ * with the next day is a worse signal than one who called again a fortnight later, and
+ * sorting by date would bury it. Columns rather than flowing text because this list is
+ * read by scanning down one column — which region, or how bad — not by reading rows.
  */
 function RepeatVisitsPanel({
   summary,
@@ -313,23 +315,54 @@ function RepeatVisitsPanel({
   summary: import("../../../lib/closureDateApiClient").RepeatVisitSummary;
   regionName: (aspCode: string) => string;
 }>) {
-  const byCase = useMemo(() => {
-    const groups = new Map<string, typeof summary.rows>();
-    for (const row of summary.rows) {
-      const existing = groups.get(row.caseId);
-      if (existing) existing.push(row);
-      else groups.set(row.caseId, [row]);
-    }
-    return [...groups.entries()].sort((a, b) => {
-      // Most revisited first, then most recent — the worst case should be on top.
-      if (b[1].length !== a[1].length) return b[1].length - a[1].length;
-      return (b[1][0]?.closedOn ?? "").localeCompare(a[1][0]?.closedOn ?? "");
-    });
-  }, [summary.rows]);
+  const rows = useMemo(
+    () =>
+      [...summary.rows].sort((a, b) => {
+        const ga = a.gapDays ?? Number.MAX_SAFE_INTEGER;
+        const gb = b.gapDays ?? Number.MAX_SAFE_INTEGER;
+        if (ga !== gb) return ga - gb;
+        return b.closedOn.localeCompare(a.closedOn);
+      }),
+    [summary.rows],
+  );
+
+  /**
+   * How alarming a callback is, by how fast it came back. A next-day return says the
+   * first visit did not fix anything; a fortnight later is closer to a new fault that
+   * happens to fall inside the window.
+   */
+  const gapTone = (days: number | null): { fg: string; bg: string } => {
+    if (days === null) return { fg: "#6b7280", bg: "#f3f4f6" };
+    if (days <= 3) return { fg: "#b91c1c", bg: "#fee2e2" };
+    if (days <= 10) return { fg: "#b45309", bg: "#fef3c7" };
+    return { fg: "#6b7280", bg: "#f3f4f6" };
+  };
 
   const worstRegions = summary.byAsp
     .filter((entry) => entry.unpaid > 0)
     .sort((a, b) => b.unpaid - a.unpaid);
+
+  const th: React.CSSProperties = {
+    textAlign: "left",
+    fontSize: "10px",
+    fontWeight: 700,
+    letterSpacing: "0.04em",
+    textTransform: "uppercase",
+    color: "#6b7280",
+    padding: "8px 12px",
+    borderBottom: "1px solid var(--border-color, #e5e7eb)",
+    background: "var(--card-bg, #ffffff)",
+    position: "sticky",
+    top: 0,
+    zIndex: 1,
+    whiteSpace: "nowrap",
+  };
+  const td: React.CSSProperties = {
+    padding: "9px 12px",
+    fontSize: "12px",
+    borderBottom: "1px solid var(--border-color, #f3f4f6)",
+    whiteSpace: "nowrap",
+  };
 
   return (
     <div
@@ -342,40 +375,49 @@ function RepeatVisitsPanel({
         marginBottom: "16px",
       }}
     >
-      <div style={{ display: "flex", flexWrap: "wrap", alignItems: "baseline", gap: "12px" }}>
-        <h3 style={{ margin: 0, fontSize: "16px", fontWeight: 700, color: "#b45309" }}>
-          Repeat visits — not paid
-        </h3>
-        <span style={{ fontSize: "12px", color: "#6b7280" }}>
-          A case reopened within {summary.windowDays} days of its last closure. The work
-          order differs, the case does not — so HP pays nothing for the second visit.
-        </span>
-      </div>
+      <h3 style={{ margin: 0, fontSize: "16px", fontWeight: 700, color: "#b45309" }}>
+        Repeat visits — not paid
+      </h3>
+      <p style={{ margin: "4px 0 0", fontSize: "12px", color: "#6b7280" }}>
+        A case reopened within {summary.windowDays} days of its last closure. The work
+        order differs, the case does not — so HP pays nothing for the second visit.
+      </p>
 
-      <div style={{ display: "flex", flexWrap: "wrap", gap: "24px", margin: "14px 0 6px" }}>
+      <div
+        style={{
+          display: "flex",
+          flexWrap: "wrap",
+          gap: "32px",
+          margin: "18px 0",
+          paddingBottom: "16px",
+          borderBottom: "1px solid var(--border-color, #e5e7eb)",
+        }}
+      >
         {[
-          { label: "Closed", value: summary.closed, color: "#111827" },
-          { label: "Payable", value: summary.payable, color: "#047857" },
-          { label: "Repeat (unpaid)", value: summary.unpaid, color: "#b45309" },
+          { label: "Closed", value: summary.closed, color: "#111827", hint: "Completed closures in this period" },
+          { label: "Payable", value: summary.payable, color: "#047857", hint: "Closed minus the repeat visits" },
+          { label: "Repeat (unpaid)", value: summary.unpaid, color: "#b45309", hint: "Free work — went back inside the window" },
         ].map((stat) => (
-          <div key={stat.label}>
-            <div style={{ fontSize: "22px", fontWeight: 800, color: stat.color }}>
+          <div key={stat.label} title={stat.hint}>
+            <div style={{ fontSize: "30px", fontWeight: 800, color: stat.color, lineHeight: 1.1 }}>
               {formatNumber(stat.value)}
             </div>
-            <div style={{ fontSize: "11px", color: "#6b7280" }}>{stat.label}</div>
+            <div style={{ fontSize: "11px", color: "#6b7280", marginTop: "2px" }}>
+              {stat.label}
+            </div>
           </div>
         ))}
       </div>
 
       {worstRegions.length > 0 && (
-        <div style={{ display: "flex", flexWrap: "wrap", gap: "8px", marginBottom: "12px" }}>
+        <div style={{ display: "flex", flexWrap: "wrap", gap: "8px", marginBottom: "14px" }}>
           {worstRegions.map((entry) => (
             <span
               key={entry.aspCode}
               title={`${entry.payable} payable of ${entry.closed} closed`}
               style={{
                 fontSize: "11px",
-                padding: "3px 8px",
+                padding: "3px 10px",
                 borderRadius: "999px",
                 background: "#fef3c7",
                 color: "#92400e",
@@ -388,49 +430,63 @@ function RepeatVisitsPanel({
         </div>
       )}
 
-      <div style={{ maxHeight: "340px", overflowY: "auto" }}>
-        {byCase.map(([caseId, visits]) => (
-          <div
-            key={caseId}
-            style={{
-              borderTop: "1px dashed var(--border-color, #e5e7eb)",
-              padding: "8px 0",
-              fontSize: "12px",
-            }}
-          >
-            <div style={{ display: "flex", flexWrap: "wrap", gap: "8px", alignItems: "baseline" }}>
-              <strong style={{ color: "#374151" }}>Case {caseId}</strong>
-              <span style={{ color: "#6b7280", fontSize: "11px" }}>
-                {regionName(visits[0]?.aspCode ?? "")}
-                {visits.length > 1 ? ` · ${visits.length} unpaid visits` : ""}
-              </span>
-            </div>
-            {visits.map((visit) => (
-              <div
-                key={visit.woId}
-                style={{
-                  display: "flex",
-                  flexWrap: "wrap",
-                  gap: "8px",
-                  color: "#6b7280",
-                  fontSize: "11px",
-                  paddingLeft: "10px",
-                  lineHeight: 1.8,
-                }}
-              >
-                <span style={{ color: "#047857" }}>
-                  {visit.previousWoId || "—"} {visit.previousClosedOn && `· ${formatDateKey(visit.previousClosedOn)}`}
-                </span>
-                <span>→</span>
-                <span style={{ color: "#b45309", fontWeight: 700 }}>{visit.woId}</span>
-                <span>{formatDateKey(visit.closedOn)}</span>
-                <span style={{ color: "#b45309" }}>
-                  {visit.gapDays !== null ? `${visit.gapDays}d later — unpaid` : "unpaid"}
-                </span>
-              </div>
-            ))}
-          </div>
-        ))}
+      {/* Wide content scrolls inside its own box so the page never scrolls sideways.
+          The header is sticky, so scrolling a long list can never orphan a row from
+          the column it belongs to. */}
+      <div style={{ maxHeight: "420px", overflow: "auto" }}>
+        <table style={{ width: "100%", borderCollapse: "collapse" }}>
+          <thead>
+            <tr>
+              <th style={th}>Gap</th>
+              <th style={th}>Case</th>
+              <th style={th}>Region</th>
+              <th style={th}>First visit — paid</th>
+              <th style={th}>Repeat visit — unpaid</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((row) => {
+              const tone = gapTone(row.gapDays);
+              return (
+                <tr key={`${row.caseId}-${row.woId}`}>
+                  <td style={td}>
+                    <span
+                      style={{
+                        display: "inline-block",
+                        minWidth: "34px",
+                        textAlign: "center",
+                        padding: "2px 6px",
+                        borderRadius: "6px",
+                        fontWeight: 700,
+                        fontSize: "11px",
+                        color: tone.fg,
+                        background: tone.bg,
+                      }}
+                    >
+                      {row.gapDays !== null ? `${row.gapDays}d` : "—"}
+                    </span>
+                  </td>
+                  <td style={{ ...td, fontWeight: 600, color: "#374151" }}>{row.caseId}</td>
+                  <td style={{ ...td, color: "#6b7280" }}>{regionName(row.aspCode)}</td>
+                  <td style={{ ...td, color: "#047857" }}>
+                    {row.previousWoId || "—"}
+                    {row.previousClosedOn && (
+                      <span style={{ color: "#9ca3af", marginLeft: "8px" }}>
+                        {formatDateKey(row.previousClosedOn)}
+                      </span>
+                    )}
+                  </td>
+                  <td style={{ ...td, color: "#b45309", fontWeight: 700 }}>
+                    {row.woId}
+                    <span style={{ color: "#9ca3af", marginLeft: "8px", fontWeight: 400 }}>
+                      {formatDateKey(row.closedOn)}
+                    </span>
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
       </div>
     </div>
   );

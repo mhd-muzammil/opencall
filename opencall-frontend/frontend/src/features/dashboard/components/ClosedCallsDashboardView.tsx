@@ -93,6 +93,7 @@ function formatRangeLabel(
 function ComparisonCounts({
   closure,
   raw,
+  repeatUnpaid,
   closureHint,
   rawHint,
   onDrill,
@@ -101,6 +102,12 @@ function ComparisonCounts({
   closure: ClosureOutcome | null;
   /** null until the raw export has been synced at all. */
   raw: ClosureOutcome | null;
+  /**
+   * Repeat visits inside the vendor's unpaid window for this region — free work that
+   * would otherwise be indistinguishable from a paid close. null when the backend does
+   * not report it yet, which hides the line rather than claiming zero callbacks.
+   */
+  repeatUnpaid?: number | null;
   closureHint?: string | null;
   /**
    * Why the raw number covers a wider period than the closure one — raw data is stored
@@ -212,6 +219,12 @@ function ComparisonCounts({
     >
       {closure && line("FieldEZ data closure", closure.closed, "#7c3aed", "closure")}
       {closure && cancelledLine(closure, "closure")}
+      {closure && typeof repeatUnpaid === "number" && repeatUnpaid > 0 && (
+        <div style={{ fontSize: "10px", color: "#b45309", margin: "-2px 0 2px" }}>
+          − {formatNumber(repeatUnpaid)} repeat (unpaid) ={" "}
+          <strong>{formatNumber(closure.closed - repeatUnpaid)}</strong> payable
+        </div>
+      )}
       {raw && line("Raw data closures", raw.closed, "#ea580c", "raw")}
       {raw && cancelledLine(raw, "raw")}
       {raw && rawHint && (
@@ -281,6 +294,147 @@ const RECON_BUCKETS: ReadonlyArray<{
     color: "#dc2626",
   },
 ];
+
+/**
+ * Repeat visits: a case closed again inside the vendor's window of its previous closure.
+ *
+ * HP pays for the first fix, not for going back. The work order differs but the case is
+ * the same, so a callback earns nothing — and until this panel existed it sat inside the
+ * closed count looking exactly like paid work. Thirteen of them in the 25 Jul – 24 Aug
+ * cycle; one case took three visits in six days, two of them free.
+ *
+ * Grouped by case rather than listed flat: the point is not "here are 13 work orders",
+ * it is "here are the customers we had to go back to".
+ */
+function RepeatVisitsPanel({
+  summary,
+  regionName,
+}: Readonly<{
+  summary: import("../../../lib/closureDateApiClient").RepeatVisitSummary;
+  regionName: (aspCode: string) => string;
+}>) {
+  const byCase = useMemo(() => {
+    const groups = new Map<string, typeof summary.rows>();
+    for (const row of summary.rows) {
+      const existing = groups.get(row.caseId);
+      if (existing) existing.push(row);
+      else groups.set(row.caseId, [row]);
+    }
+    return [...groups.entries()].sort((a, b) => {
+      // Most revisited first, then most recent — the worst case should be on top.
+      if (b[1].length !== a[1].length) return b[1].length - a[1].length;
+      return (b[1][0]?.closedOn ?? "").localeCompare(a[1][0]?.closedOn ?? "");
+    });
+  }, [summary.rows]);
+
+  const worstRegions = summary.byAsp
+    .filter((entry) => entry.unpaid > 0)
+    .sort((a, b) => b.unpaid - a.unpaid);
+
+  return (
+    <div
+      style={{
+        background: "var(--card-bg, #ffffff)",
+        border: "1px solid var(--border-color, #e5e7eb)",
+        borderRadius: "12px",
+        padding: "20px",
+        boxShadow: "0 1px 4px rgba(0,0,0,0.04)",
+        marginBottom: "16px",
+      }}
+    >
+      <div style={{ display: "flex", flexWrap: "wrap", alignItems: "baseline", gap: "12px" }}>
+        <h3 style={{ margin: 0, fontSize: "16px", fontWeight: 700, color: "#b45309" }}>
+          Repeat visits — not paid
+        </h3>
+        <span style={{ fontSize: "12px", color: "#6b7280" }}>
+          A case reopened within {summary.windowDays} days of its last closure. The work
+          order differs, the case does not — so HP pays nothing for the second visit.
+        </span>
+      </div>
+
+      <div style={{ display: "flex", flexWrap: "wrap", gap: "24px", margin: "14px 0 6px" }}>
+        {[
+          { label: "Closed", value: summary.closed, color: "#111827" },
+          { label: "Payable", value: summary.payable, color: "#047857" },
+          { label: "Repeat (unpaid)", value: summary.unpaid, color: "#b45309" },
+        ].map((stat) => (
+          <div key={stat.label}>
+            <div style={{ fontSize: "22px", fontWeight: 800, color: stat.color }}>
+              {formatNumber(stat.value)}
+            </div>
+            <div style={{ fontSize: "11px", color: "#6b7280" }}>{stat.label}</div>
+          </div>
+        ))}
+      </div>
+
+      {worstRegions.length > 0 && (
+        <div style={{ display: "flex", flexWrap: "wrap", gap: "8px", marginBottom: "12px" }}>
+          {worstRegions.map((entry) => (
+            <span
+              key={entry.aspCode}
+              title={`${entry.payable} payable of ${entry.closed} closed`}
+              style={{
+                fontSize: "11px",
+                padding: "3px 8px",
+                borderRadius: "999px",
+                background: "#fef3c7",
+                color: "#92400e",
+                whiteSpace: "nowrap",
+              }}
+            >
+              {regionName(entry.aspCode)} <strong>{entry.unpaid}</strong>
+            </span>
+          ))}
+        </div>
+      )}
+
+      <div style={{ maxHeight: "340px", overflowY: "auto" }}>
+        {byCase.map(([caseId, visits]) => (
+          <div
+            key={caseId}
+            style={{
+              borderTop: "1px dashed var(--border-color, #e5e7eb)",
+              padding: "8px 0",
+              fontSize: "12px",
+            }}
+          >
+            <div style={{ display: "flex", flexWrap: "wrap", gap: "8px", alignItems: "baseline" }}>
+              <strong style={{ color: "#374151" }}>Case {caseId}</strong>
+              <span style={{ color: "#6b7280", fontSize: "11px" }}>
+                {regionName(visits[0]?.aspCode ?? "")}
+                {visits.length > 1 ? ` · ${visits.length} unpaid visits` : ""}
+              </span>
+            </div>
+            {visits.map((visit) => (
+              <div
+                key={visit.woId}
+                style={{
+                  display: "flex",
+                  flexWrap: "wrap",
+                  gap: "8px",
+                  color: "#6b7280",
+                  fontSize: "11px",
+                  paddingLeft: "10px",
+                  lineHeight: 1.8,
+                }}
+              >
+                <span style={{ color: "#047857" }}>
+                  {visit.previousWoId || "—"} {visit.previousClosedOn && `· ${formatDateKey(visit.previousClosedOn)}`}
+                </span>
+                <span>→</span>
+                <span style={{ color: "#b45309", fontWeight: 700 }}>{visit.woId}</span>
+                <span>{formatDateKey(visit.closedOn)}</span>
+                <span style={{ color: "#b45309" }}>
+                  {visit.gapDays !== null ? `${visit.gapDays}d later — unpaid` : "unpaid"}
+                </span>
+              </div>
+            ))}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
 
 /**
  * The completed / cancelled / unknown split under a card's total.
@@ -597,6 +751,61 @@ export function ClosedCallsDashboardView({
         if (!cancelled) setClosureScoped(scoped);
       } catch {
         // Keep whatever the cards last showed on a transient failure.
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [summaryToken, rangeActive, dateLo, dateHi, summaryNonce]);
+
+  /**
+   * Repeat visits: a case closed again inside the vendor's window of its previous
+   * closure. HP pays nothing for those, so they are free work sitting inside the closed
+   * count looking exactly like paid jobs.
+   *
+   * Fetched for the selected period, and refetched after an import so a backfill shows
+   * up without a reload. Null until it loads, or on any failure — the panel simply does
+   * not render rather than claiming zero callbacks.
+   */
+  const [repeatVisits, setRepeatVisits] =
+    useState<import("../../../lib/closureDateApiClient").RepeatVisitSummary | null>(null);
+  /**
+   * Unpaid repeat visits for one region, or "" for the All Regions rollup. null when the
+   * backend has not reported them, which keeps the card's line hidden rather than
+   * asserting there were no callbacks.
+   */
+  const repeatUnpaidFor = useMemo(() => {
+    return (aspCode: string): number | null => {
+      if (!repeatVisits) return null;
+      if (aspCode === "") return repeatVisits.unpaid;
+      return repeatVisits.byAsp.find((e) => e.aspCode === aspCode)?.unpaid ?? 0;
+    };
+  }, [repeatVisits]);
+
+  /** ASP code -> the region name the cards show, falling back to the code itself. */
+  const regionNameFor = useMemo(() => {
+    const names = new Map(
+      closedRegionBreakdown.map((entry) => [entry.aspCode, entry.regionName]),
+    );
+    return (aspCode: string) => names.get(aspCode) ?? aspCode ?? "(no region)";
+  }, [closedRegionBreakdown]);
+  React.useEffect(() => {
+    if (!summaryToken) {
+      setRepeatVisits(null);
+      return;
+    }
+    let cancelled = false;
+    void (async () => {
+      try {
+        const { getRepeatVisits } = await import("../../../lib/closureDateApiClient");
+        const summary = await getRepeatVisits(summaryToken, {
+          from: rangeActive ? dateLo : "",
+          to: rangeActive ? dateHi : "",
+        });
+        if (!cancelled) setRepeatVisits(summary);
+      } catch {
+        // A backend without the endpoint yet: leave the panel hidden.
+        if (!cancelled) setRepeatVisits(null);
       }
     })();
     return () => {
@@ -1620,6 +1829,7 @@ export function ClosedCallsDashboardView({
             <ComparisonCounts
               closure={closureOutcomeFor("")}
               raw={rawOutcomeFor("")}
+              repeatUnpaid={repeatUnpaidFor("")}
               rawHint={
                 [
                   rawScopeNote,
@@ -1687,6 +1897,7 @@ export function ClosedCallsDashboardView({
                 <ComparisonCounts
                   closure={closureOutcomeFor(entry.aspCode)}
                   raw={rawOutcomeFor(entry.aspCode)}
+                  repeatUnpaid={repeatUnpaidFor(entry.aspCode)}
                   rawHint={rawScopeNote}
                   onDrill={(kind, outcome) =>
                     setDrill({ kind, outcome, aspCode: entry.aspCode, label: entry.regionName })
@@ -1697,6 +1908,13 @@ export function ClosedCallsDashboardView({
           })}
         </div>
       </div>
+
+      {/* Repeat visits — the free work. Rendered only when the period actually holds
+          one: a panel reading "0 unpaid" every day trains people to stop looking, and
+          the number that matters is the one that is not zero. */}
+      {repeatVisits && repeatVisits.unpaid > 0 && (
+        <RepeatVisitsPanel summary={repeatVisits} regionName={regionNameFor} />
+      )}
 
       {/* Flex reconciliation — "did Flex agree with us on this day?". Sits beside the
           per-card "FieldEZ data closure" / "Raw data closures" comparison lines and uses

@@ -212,3 +212,50 @@ export async function getClosureReconciliation(
   );
   return readJson<ClosureReconciliation>(response);
 }
+
+/** One closure, positioned against the previous closure on the same case. */
+export interface RepeatVisitRow {
+  woId: string;
+  caseId: string;
+  aspCode: string;
+  /** YYYY-MM-DD. */
+  closedOn: string;
+  status: string;
+  /** The closure this one followed on the same case. */
+  previousWoId: string;
+  previousClosedOn: string;
+  /** Days since that previous closure. */
+  gapDays: number | null;
+  unpaid: boolean;
+}
+
+export interface RepeatVisitSummary {
+  /** The vendor's unpaid window, in days — 15 today, read from the server. */
+  windowDays: number;
+  closed: number;
+  /** Repeat visits inside the window. Not billable. */
+  unpaid: number;
+  payable: number;
+  byAsp: Array<{ aspCode: string; closed: number; unpaid: number; payable: number }>;
+  rows: RepeatVisitRow[];
+}
+
+/**
+ * Repeat visits HP does not pay for: a case closed again within the vendor's window of
+ * its previous closure. The work order differs but the case is the same, so the second
+ * visit is free work — invisible inside the closed count until it is reported apart.
+ */
+export async function getRepeatVisits(
+  token: string,
+  params: { from?: string; to?: string } = {},
+): Promise<RepeatVisitSummary> {
+  const qs = new URLSearchParams();
+  if (params.from) qs.set("from", params.from);
+  if (params.to) qs.set("to", params.to);
+  const suffix = qs.toString() ? `?${qs.toString()}` : "";
+  const response = await fetch(url(`/api/v1/closure-dates/repeat-visits${suffix}`), {
+    headers: { Authorization: `Bearer ${token}` },
+    cache: "no-store",
+  });
+  return readJson<RepeatVisitSummary>(response);
+}

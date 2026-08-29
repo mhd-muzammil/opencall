@@ -9,6 +9,7 @@ import {
   hasFlexClosureOutcome,
 } from "../utils";
 import { todayIsoDate } from "../utils/dateUtils";
+import { useSessionPersistedState } from "../../../lib/useSessionPersistedState";
 import {
   billCycleFor,
   billCycleForKey,
@@ -577,8 +578,18 @@ export function ClosedCallsDashboardView({
   // records table all read this same range, so no two numbers on the page can answer
   // for different periods. Defaults to today — what the page is opened to check; the
   // presets reach the bill cycle and the whole ledger in one click.
-  const [periodFrom, setPeriodFrom] = useState(todayIsoDate);
-  const [periodTo, setPeriodTo] = useState(todayIsoDate);
+  // Kept in sessionStorage: the workspace mounts one view at a time, so switching to
+  // another page and back unmounts this one and a range someone had just set was lost.
+  // Per-tab and dies with the tab, so the filter follows you around the app while you
+  // work and tomorrow starts on today again.
+  const [periodFrom, setPeriodFrom] = useSessionPersistedState(
+    "closedCalls.periodFrom",
+    todayIsoDate,
+  );
+  const [periodTo, setPeriodTo] = useSessionPersistedState(
+    "closedCalls.periodTo",
+    todayIsoDate,
+  );
   const [importing, setImporting] = useState(false);
   const [importMessage, setImportMessage] = useState<string | null>(null);
   const closureFileInputRef = React.useRef<HTMLInputElement | null>(null);
@@ -707,7 +718,10 @@ export function ClosedCallsDashboardView({
    * toggle alone could only ever answer for the current one; this is the month picker
    * that sits beside it. Keyed by end month ("2026-08" = 25 Jul → 24 Aug).
    */
-  const [cycleKey, setCycleKey] = useState(() => currentBillCycle.key);
+  const [cycleKey, setCycleKey] = useSessionPersistedState(
+    "closedCalls.cycleKey",
+    () => currentBillCycle.key,
+  );
 
   /**
    * Selectable cycles: every one from the current cycle back to the oldest closure the

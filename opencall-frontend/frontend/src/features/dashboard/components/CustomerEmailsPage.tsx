@@ -168,7 +168,7 @@ export function CustomerEmailsPage({
    * last couple of months — where the rest of the inbox is read as "what came in", so this
    * range exists for CAB and is applied only while CAB is on.
    *
-   * Seeded to the last two months and the reader's to change from there.
+   * Seeded to the last three months and the reader's to change from there.
    */
   const [cabFrom, setCabFrom] = useState(() => defaultCabRange().from);
   const [cabTo, setCabTo] = useState(() => defaultCabRange().to);
@@ -743,7 +743,7 @@ It will go out from ${selected?.mailboxEmail ?? ""}. This cannot be undone.`,
                 cursor: "pointer",
               }}
             >
-              Last 2 months
+              Last 3 months
             </button>
             {/* A range the wrong way round is not silently swapped — that would show a
                 period nobody chose. It is refused, said so, and the list stays where it was. */}

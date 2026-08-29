@@ -42,9 +42,11 @@ describe("monthsBefore", () => {
 });
 
 describe("defaultCabRange", () => {
-  it("opens on the last two months, ending today", () => {
+  it("opens on the last three months, ending today", () => {
+    // Must match how far back the backfill has fetched. A wider window than exists reads as
+    // "there was no mail" for the months nobody has pulled in.
     const range = defaultCabRange(new Date(2026, 7, 27));
-    expect(range).toEqual({ from: "2026-06-27", to: "2026-08-27" });
+    expect(range).toEqual({ from: "2026-05-27", to: "2026-08-27" });
   });
 
   it("is a range the server would accept", () => {

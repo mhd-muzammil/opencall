@@ -11,8 +11,14 @@
  * yesterday's date for anybody looking before half past five in the morning.
  */
 
-/** How far back the CAB view reaches before anybody touches it. */
-export const DEFAULT_CAB_MONTHS = 2;
+/**
+ * How far back the CAB view reaches before anybody touches it.
+ *
+ * Must match how far back the backfill script has actually fetched. Showing a wider window
+ * than exists reads as "there was no mail" for the months nobody has pulled in yet, which is
+ * a far worse answer than a shorter window honestly stated.
+ */
+export const DEFAULT_CAB_MONTHS = 3;
 
 /** `2026-08-27` from a Date, read in the reader's own timezone. */
 export function toIsoDay(date: Date): string {

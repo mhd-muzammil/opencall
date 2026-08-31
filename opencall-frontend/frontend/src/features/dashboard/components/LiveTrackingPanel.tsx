@@ -100,41 +100,145 @@ const EVENT_COLOR: Record<string, string> = {
 
 // Below this, a phone is close enough to flat that it explains a silence.
 const LOW_BATTERY_PERCENT = 15;
+// And a band above it. A single cliff meant 16% was styled exactly like 98%,
+// while the point of showing charge at all is to catch a phone coming to the end
+// of its day in time to ring the engineer. 30% at nine in the morning does not
+// survive a shift.
+const WATCH_BATTERY_PERCENT = 30;
+
+/** How a charge figure should be treated: urgent, worth noticing, or ordinary. */
+function batteryTone(level: number | null | undefined, charging: boolean | null | undefined) {
+  if (level == null || charging) return undefined;
+  if (level <= LOW_BATTERY_PERCENT) return "warn" as const;
+  if (level <= WATCH_BATTERY_PERCENT) return "watch" as const;
+  return undefined;
+}
 
 /**
- * The charge on the last fix the phone managed to send.
+ * One of the numbers across the top of the board, as a bordered tile.
  *
- * Not decoration: it is the answer to "why has this engineer gone quiet". Shown
- * for everyone so the office can see it coming — an engineer at 12% at noon is
- * going to disappear this afternoon, and that is worth a phone call now rather
- * than a mystery later.
+ * Distinct from Stat above, which is the borderless kind used inside a single
+ * engineer's day. These sit over the whole board and have to hold their own
+ * against a map, so they carry a box.
+ *
+ * A number is only worth its size if you can tell what it counts, so the label
+ * travels with it rather than sitting in a legend somewhere.
  */
-function BatteryChip({ row }: { row: RosterEngineer }) {
-  if (row.battery_level == null) return null;
-
-  const low = row.battery_level <= LOW_BATTERY_PERCENT;
+function SummaryStat({
+  value,
+  of,
+  label,
+  tone,
+  hint,
+}: {
+  value: string;
+  of?: string;
+  label: string;
+  tone?: "warn";
+  hint?: string;
+}) {
+  const warn = tone === "warn";
   return (
-    <span
-      title={
-        row.is_charging
-          ? `Phone on ${row.battery_level}%, charging`
-          : low
-            ? `Phone on ${row.battery_level}% and not charging — expect it to go quiet`
-            : `Phone on ${row.battery_level}%`
-      }
+    <div
+      title={hint}
       style={{
-        display: "inline-flex",
-        alignItems: "center",
-        gap: 3,
-        fontSize: 11,
-        fontWeight: 600,
-        color: low && !row.is_charging ? "#b91c1c" : "#6b7280",
-        whiteSpace: "nowrap",
+        padding: "8px 14px",
+        borderRadius: 10,
+        border: `1px solid ${warn ? "#fde68a" : "#e5e7eb"}`,
+        background: warn ? "#fffbeb" : "#fff",
+        minWidth: 96,
       }}
     >
-      {row.is_charging ? "⚡" : ""}
-      {row.battery_level}%
-    </span>
+      <div style={{ display: "flex", alignItems: "baseline", gap: 4 }}>
+        <span style={{ fontSize: 22, fontWeight: 700, lineHeight: 1, color: warn ? "#b45309" : "#111827" }}>
+          {value}
+        </span>
+        {of && <span style={{ fontSize: 12, color: "#9ca3af" }}>{of}</span>}
+      </div>
+      <div
+        style={{
+          marginTop: 3,
+          fontSize: 10.5,
+          fontWeight: 600,
+          letterSpacing: 0.3,
+          textTransform: "uppercase",
+          color: warn ? "#b45309" : "#6b7280",
+        }}
+      >
+        {label}
+      </div>
+    </div>
+  );
+}
+
+/**
+ * One number on an engineer's row, with its label under it.
+ *
+ * Small enough that four fit across the rail, labelled enough that none of them
+ * has to be guessed at. No borders — a row already has enough edges.
+ */
+function RowStat({
+  value,
+  label,
+  tone,
+  strong,
+  hint,
+}: {
+  value: string;
+  label: string;
+  tone?: "warn" | "watch" | "chip";
+  strong?: boolean;
+  hint?: string;
+}) {
+  const color =
+    tone === "warn"
+      ? "#b91c1c"
+      : tone === "watch"
+        ? "#b45309"
+        : tone === "chip"
+          ? "#1d4ed8"
+          : strong
+            ? "#111827"
+            : "#374151";
+  // A chip for the case number and a fill for the urgent band. The case number
+  // was bare link-blue text three pixels above a real link, so it read as
+  // clickable and was not; and only one thing in a row should be shouting.
+  const boxed =
+    tone === "chip" || tone === "warn"
+      ? {
+          background: tone === "chip" ? "#eff6ff" : "#fef2f2",
+          padding: "1px 6px",
+          borderRadius: 4,
+          display: "inline-block",
+        }
+      : {};
+  return (
+    <div title={hint} style={{ minWidth: 0 }}>
+      <div
+        style={{
+          fontSize: 12.5,
+          fontWeight: strong || tone ? 700 : 600,
+          color,
+          lineHeight: 1.15,
+          whiteSpace: "nowrap",
+          ...boxed,
+        }}
+      >
+        {value}
+      </div>
+      <div
+        style={{
+          fontSize: 9.5,
+          fontWeight: 600,
+          letterSpacing: 0.3,
+          textTransform: "uppercase",
+          color: tone === "warn" ? "#b91c1c" : tone === "watch" ? "#b45309" : "#9ca3af",
+          whiteSpace: "nowrap",
+        }}
+      >
+        {label}
+      </div>
+    </div>
   );
 }
 
@@ -387,6 +491,12 @@ export default function LiveTrackingPanel({
     [engineers],
   );
   const staleCount = useMemo(() => engineers.filter((e) => e.stale).length, [engineers]);
+  // One of the reasons this page gets opened is "whose phone is about to die",
+  // and answering it meant reading every row. Counted once, up top.
+  const lowBatteryCount = useMemo(
+    () => engineers.filter((e) => e.state === "on_duty" && batteryTone(e.battery_level, e.is_charging)).length,
+    [engineers],
+  );
   // Only people actually out get a live marker; a finished shift would otherwise
   // leave a pin sitting where they were hours ago. An unlinked engineer has no
   // Payroll id and no position, so they never reach the map.
@@ -427,21 +537,29 @@ export default function LiveTrackingPanel({
     <div style={{ padding: embedded ? 0 : 24 }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
         {!embedded && <h1 style={{ fontSize: 20, fontWeight: 600 }}>Live Engineer Tracking</h1>}
-        {/* The day at a glance: who is out, how many we can actually see, and
-            the total ground covered across everyone on duty. */}
-        <div style={{ display: "flex", gap: 16, fontSize: 13, color: "#6b7280", alignItems: "center" }}>
-          <span>
-            <strong style={{ color: "#111827", fontSize: 15 }}>{onDutyCount}</strong> on duty
-            <span style={{ color: "#9ca3af" }}> of {engineers.length}</span>
-          </span>
+        {/* The day at a glance. These are the numbers the office looks at
+            most, and they used to be set in 13px grey — smaller than the filter
+            pills below them, which nobody glances at twice. The figure leads
+            now and the label explains it, rather than the other way round. */}
+        <div style={{ display: "flex", gap: 10, alignItems: "stretch", flexWrap: "wrap" }}>
+          <SummaryStat value={String(onDutyCount)} of={`of ${engineers.length}`} label="On duty" />
           {staleCount > 0 && (
-            <span style={{ color: "#b45309" }}>
-              <strong style={{ fontSize: 15 }}>{staleCount}</strong> no signal
-            </span>
+            <SummaryStat
+              value={String(staleCount)}
+              label="No signal"
+              tone="warn"
+              hint="On duty, but their phone has stopped reporting"
+            />
           )}
-          <span>
-            <strong style={{ color: "#111827", fontSize: 15 }}>{totalKm.toFixed(1)}</strong> km total
-          </span>
+          {lowBatteryCount > 0 && (
+            <SummaryStat
+              value={String(lowBatteryCount)}
+              label="Low battery"
+              tone="warn"
+              hint={`${lowBatteryCount} on duty at ${WATCH_BATTERY_PERCENT}% or less and not charging — they will go quiet before the day is out`}
+            />
+          )}
+          <SummaryStat value={totalKm.toFixed(1)} of="km" label="Travelled today" />
         </div>
       </div>
 
@@ -788,31 +906,57 @@ export default function LiveTrackingPanel({
           of the roster is that a shift ending does not take someone off the board.
           "Not in Payroll" is a separate tab because it is a data problem to fix,
           not a duty state: those engineers' cases are being skipped entirely. */}
-      <div style={{ display: "flex", gap: 8, marginTop: 16, flexWrap: "wrap", alignItems: "center" }}>
+      {/* A 2x2 grid, not a wrapping row. Four labels with counts do not fit
+          across the rail at any sensible size, and letting them wrap left
+          "Not in Payroll 5" stranded alone on a second line looking like an
+          afterthought. Two by two is deliberate and even. */}
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6, marginTop: 14 }}>
         {(
           [
-            ["all", `All ${bucketCounts.all}`, "#2563eb"],
-            ["on_duty", `On duty ${bucketCounts.on_duty}`, "#2563eb"],
-            ["off", `Off duty ${bucketCounts.off}`, "#2563eb"],
-            ["unmatched", `Not in Payroll ${bucketCounts.unmatched}`, "#dc2626"],
+            ["all", "All", "#2563eb", bucketCounts.all],
+            ["on_duty", "On duty", "#2563eb", bucketCounts.on_duty],
+            ["off", "Off duty", "#2563eb", bucketCounts.off],
+            ["unmatched", "Not in Payroll", "#dc2626", bucketCounts.unmatched],
           ] as const
-        ).map(([value, label, accent]) => (
+        ).map(([value, label, accent, count]) => (
           <button
             key={value}
             onClick={() => setStateFilter(value)}
             style={{
-              padding: "6px 14px",
-              borderRadius: 999,
-              fontSize: 13,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "space-between",
+              gap: 6,
+              padding: "7px 11px",
+              borderRadius: 8,
+              fontSize: 12.5,
               fontWeight: 600,
               cursor: "pointer",
               border: "1px solid",
-              borderColor: stateFilter === value ? accent : "#d1d5db",
+              borderColor: stateFilter === value ? accent : "#e5e7eb",
               background: stateFilter === value ? accent : "#fff",
               color: stateFilter === value ? "#fff" : value === "unmatched" ? "#b91c1c" : "#374151",
+              textAlign: "left",
             }}
           >
-            {label}
+            <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+              {label}
+            </span>
+            {/* The count in its own chip: the label stays readable when it is
+                long, and the number stays findable when it is not. */}
+            <span
+              style={{
+                flexShrink: 0,
+                fontSize: 11,
+                fontWeight: 700,
+                padding: "1px 6px",
+                borderRadius: 999,
+                background: stateFilter === value ? "rgba(255,255,255,0.25)" : "#f3f4f6",
+                color: stateFilter === value ? "#fff" : "#6b7280",
+              }}
+            >
+              {count}
+            </span>
           </button>
         ))}
       </div>
@@ -893,37 +1037,87 @@ export default function LiveTrackingPanel({
                         {e.branch}
                       </span>
                     )}
+                    {/* On the name line, not under the figures. Four labelled
+                        figures and a link do not share a line at the rail's
+                        width, so down there it wrapped and cost every row an
+                        extra line — a screenful of scrolling across 22 of them.
+                        Up here there is room going spare. */}
+                    {e.latitude != null && e.longitude != null && (
+                      <a
+                        href={mapsLink(e.latitude, e.longitude)}
+                        target="_blank"
+                        rel="noreferrer"
+                        onClick={(event) => event.stopPropagation()}
+                        style={{
+                          marginLeft: "auto",
+                          fontSize: 10.5,
+                          fontWeight: 600,
+                          color: "#2563eb",
+                          whiteSpace: "nowrap",
+                        }}
+                      >
+                        Maps ↗
+                      </a>
+                    )}
                   </div>
 
                   <div style={{ marginTop: 3 }}>
                     <DutyBadge row={e} />
                   </div>
 
-                  {/* The numbers the office asks about. Battery is here now
-                      that the app reports it — it used to be left off precisely
-                      because it did not, and a made-up figure is worse than a
-                      missing one when people act on it. */}
-                  {e.state !== "unmatched" && (
-                    <div style={{ marginTop: 4, display: "flex", gap: 10, fontSize: 11, color: "#6b7280" }}>
-                      <span>{duration(e.duty_minutes)}</span>
-                      <span style={{ fontWeight: 600, color: "#374151" }}>{e.distance_km} km</span>
-                      <BatteryChip row={e} />
-                      {e.active_case_number && (
-                        <span style={{ color: "#2563eb" }}>{e.active_case_number}</span>
-                      )}
+                  {/* The reason, on the row rather than in a tooltip nobody
+                      hovers for. Only on rows that have actually gone quiet, so
+                      an ordinary row costs no height. */}
+                  {e.state === "on_duty" && e.stale && e.battery_level != null && (
+                    <div style={{ marginTop: 3, fontSize: 11, color: "#b45309" }}>
+                      {e.battery_level <= LOW_BATTERY_PERCENT
+                        ? `Was on ${e.battery_level}% — phone has probably gone flat`
+                        : `Was on ${e.battery_level}% — signal, not charge`}
                     </div>
                   )}
 
-                  {e.latitude != null && e.longitude != null && (
-                    <a
-                      href={mapsLink(e.latitude, e.longitude)}
-                      target="_blank"
-                      rel="noreferrer"
-                      onClick={(event) => event.stopPropagation()}
-                      style={{ display: "inline-block", marginTop: 3, fontSize: 11, color: "#2563eb" }}
+                  {/* The numbers the office asks about, each one labelled.
+                      They used to run together as one line of unlabelled grey
+                      text — "26m 7.24 km 45% OC-003169" — which the person who
+                      built the screen can read and nobody else can: 45% could
+                      as easily have been progress through a job as charge left
+                      in a phone. The value leads, the label says what it is.
+
+                      Battery is here at all only because the app now reports
+                      it; it was deliberately left off while it did not, since a
+                      made-up figure is worse than a missing one. */}
+                  {e.state !== "unmatched" && (
+                    <div
+                      style={{
+                        marginTop: 6,
+                        display: "flex",
+                        alignItems: "flex-start",
+                        gap: 14,
+                        flexWrap: "wrap",
+                      }}
                     >
-                      Open in Maps
-                    </a>
+                      <RowStat value={duration(e.duty_minutes)} label="On duty" />
+                      <RowStat value={`${e.distance_km} km`} label="Travelled" strong />
+                      {e.battery_level != null && (
+                        <RowStat
+                          value={`${e.battery_level}%`}
+                          label={e.is_charging ? "Charging" : "Battery"}
+                          {...(batteryTone(e.battery_level, e.is_charging)
+                            ? { tone: batteryTone(e.battery_level, e.is_charging)! }
+                            : {})}
+                          hint={
+                            e.is_charging
+                              ? `Phone on ${e.battery_level}%, charging`
+                              : e.battery_level <= LOW_BATTERY_PERCENT
+                                ? `Phone on ${e.battery_level}% and not charging — expect it to go quiet`
+                                : `Phone on ${e.battery_level}%`
+                          }
+                        />
+                      )}
+                      {e.active_case_number && (
+                        <RowStat value={e.active_case_number} label="On case" tone="chip" />
+                      )}
+                    </div>
                   )}
                 </div>
               </div>
@@ -931,12 +1125,37 @@ export default function LiveTrackingPanel({
           })}
 
           {filtered.length === 0 && configured && (
-            <div style={{ padding: 24, textAlign: "center", color: "#9ca3af", fontSize: 13 }}>
+            <div style={{ padding: "32px 20px", textAlign: "center" }}>
+              <div style={{ fontSize: 13, color: "#6b7280", lineHeight: 1.5 }}>
               {engineers.length === 0
                 ? "No engineers found. Every active employee appears here once Payroll is reachable."
                 : stateFilter === "unmatched" && !query.trim()
                   ? "Every engineer in the register is matched in Payroll \u2014 no cases are being skipped."
-                  : "No match for this filter."}
+                  : query.trim()
+                    ? `Nobody matches “${query.trim()}” in this tab.`
+                    : "Nobody is in this tab right now."}
+              </div>
+              {(query.trim() || stateFilter !== "all") && (
+                <button
+                  onClick={() => {
+                    setQuery("");
+                    setStateFilter("all");
+                  }}
+                  style={{
+                    marginTop: 12,
+                    padding: "6px 14px",
+                    borderRadius: 8,
+                    border: "1px solid #d1d5db",
+                    background: "#fff",
+                    fontSize: 12.5,
+                    fontWeight: 600,
+                    color: "#374151",
+                    cursor: "pointer",
+                  }}
+                >
+                  Show all {engineers.length}
+                </button>
+              )}
             </div>
           )}
         </div>

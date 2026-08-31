@@ -141,6 +141,8 @@ function rowNames() {
     .filter((name) => name !== "");
 }
 
+// The count sits in its own chip beside the label, so a button's textContent is
+// the two run together — "All26". The label alone is what identifies the tab.
 function tab(label: RegExp) {
   const button = Array.from(container.querySelectorAll("button")).find((b) =>
     label.test(b.textContent ?? ""),
@@ -158,21 +160,21 @@ async function clickTab(label: RegExp) {
 describe("the tracking board", () => {
   it("starts on All, showing every engineer once", async () => {
     await mountBoard();
-    expect(tab(/^All /).textContent).toBe("All 26");
+    expect(tab(/^All/).textContent).toBe("All26");
     expect(rowNames()).toHaveLength(26);
     expect(new Set(rowNames()).size).toBe(26);
   });
 
   it("counts the buckets the way the rows add up", async () => {
     await mountBoard();
-    expect(tab(/^On duty /).textContent).toBe("On duty 1");
-    expect(tab(/^Off duty /).textContent).toBe("Off duty 12");
-    expect(tab(/^Not in Payroll /).textContent).toBe("Not in Payroll 13");
+    expect(tab(/^On duty/).textContent).toBe("On duty1");
+    expect(tab(/^Off duty/).textContent).toBe("Off duty12");
+    expect(tab(/^Not in Payroll/).textContent).toBe("Not in Payroll13");
   });
 
   it("shows ONLY the engineer on duty under On duty", async () => {
     await mountBoard();
-    await clickTab(/^On duty /);
+    await clickTab(/^On duty/);
     expect(rowNames()).toEqual(["Praveen"]);
   });
 
@@ -181,36 +183,36 @@ describe("the tracking board", () => {
     // to leave the previous tab's unmatched rows in the DOM.
     await mountBoard();
     for (let pass = 0; pass < 3; pass += 1) {
-      await clickTab(/^All /);
+      await clickTab(/^All/);
       expect(rowNames()).toHaveLength(26);
-      await clickTab(/^On duty /);
+      await clickTab(/^On duty/);
       expect(rowNames()).toEqual(["Praveen"]);
     }
   });
 
   it("does not stack stale rows across the 30s refresh either", async () => {
     await mountBoard();
-    await clickTab(/^On duty /);
+    await clickTab(/^On duty/);
     // Three more roster responses land while the On duty tab is open.
     for (let poll = 0; poll < 3; poll += 1) {
       await act(async () => {
         getRoster.mock.results[0]; // the poll re-renders with the same 26 rows
       });
-      await clickTab(/^Not in Payroll /);
-      await clickTab(/^On duty /);
+      await clickTab(/^Not in Payroll/);
+      await clickTab(/^On duty/);
     }
     expect(rowNames()).toEqual(["Praveen"]);
   });
 
   it("lists exactly the engineers Payroll cannot match, once each", async () => {
     await mountBoard();
-    await clickTab(/^Not in Payroll /);
+    await clickTab(/^Not in Payroll/);
     expect(rowNames()).toEqual(UNMATCHED_NAMES);
   });
 
   it("keeps unmatched engineers out of Off duty", async () => {
     await mountBoard();
-    await clickTab(/^Off duty /);
+    await clickTab(/^Off duty/);
     const names = rowNames();
     expect(names).toHaveLength(12);
     for (const unmatched of UNMATCHED_NAMES) expect(names).not.toContain(unmatched);
@@ -228,7 +230,7 @@ describe("the tracking board", () => {
     // Their day used to render below the map AND the list, so on any real screen
     // the answer appeared off the bottom of the page.
     await mountBoard();
-    await clickTab(/^On duty /);
+    await clickTab(/^On duty/);
     expect(rowNames()).toEqual(["Praveen"]);
 
     await act(async () => {
@@ -244,7 +246,7 @@ describe("the tracking board", () => {
 
   it("comes back to everyone from an engineer's day", async () => {
     await mountBoard();
-    await clickTab(/^On duty /);
+    await clickTab(/^On duty/);
     await act(async () => {
       rows()[0]?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     });
@@ -261,13 +263,13 @@ describe("the tracking board", () => {
 
     // Back to the engineers, on the tab that was open.
     expect(rowNames()).toEqual(["Praveen"]);
-    await clickTab(/^All /);
+    await clickTab(/^All/);
     expect(rowNames()).toHaveLength(26);
   });
 
   it("cannot open the day of an engineer Payroll has no record of", async () => {
     await mountBoard();
-    await clickTab(/^Not in Payroll /);
+    await clickTab(/^Not in Payroll/);
     // They have no Payroll id, so there is no day to ask for — clicking must do
     // nothing rather than fetch someone else's.
     await act(async () => {

@@ -340,10 +340,18 @@ export default function LiveTrackingPanel({
     [engineers],
   );
 
-  const pathPoints = useMemo<[number, number][]>(
-    () => (day?.points ?? []).map((p) => [p.latitude, p.longitude] as [number, number]),
-    [day],
-  );
+  // Prefer the road version when Payroll has managed to produce one: the fixes
+  // are 30 seconds apart, so joining the raw ones draws a line that cuts corners
+  // and crosses buildings. Falls back to the raw trail when there is no road
+  // version — an older Payroll, no Ola key, or Ola unreachable — so the route
+  // always draws, just less precisely.
+  const pathPoints = useMemo<[number, number][]>(() => {
+    const road = day?.road_path;
+    if (road && road.points.length > 1) {
+      return road.points.map(([lat, lon]) => [lat, lon] as [number, number]);
+    }
+    return (day?.points ?? []).map((p) => [p.latitude, p.longitude] as [number, number]);
+  }, [day]);
   const stopMarkers = useMemo(
     () =>
       (day?.stops ?? []).map((s) => ({

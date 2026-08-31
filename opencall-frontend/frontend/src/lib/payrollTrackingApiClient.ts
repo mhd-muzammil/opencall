@@ -98,6 +98,23 @@ export interface EngineerDayEvent {
   case_number?: string | null;
 }
 
+/**
+ * The day's trail with each fix moved onto the road it was taken on, so the
+ * drawn line follows the street instead of cutting between fixes.
+ *
+ * `source` says how much of it is real: "ola" all of it, "partial" a snapped
+ * body with the newest few fixes still raw (they are snapped in batches, so the
+ * live end of today's trail waits its turn), "raw" none of it — Payroll has no
+ * Ola key, or Ola was unreachable. Optional because an older Payroll does not
+ * send it at all.
+ */
+export interface RoadPath {
+  points: Array<[number, number]>;
+  snapped: number;
+  raw: number;
+  source: "ola" | "partial" | "raw";
+}
+
 export interface EngineerDay {
   engineer_id: number;
   engineer_name: string;
@@ -110,6 +127,7 @@ export interface EngineerDay {
   stop_count: number;
   stops: EngineerDayStop[];
   events: EngineerDayEvent[];
+  road_path?: RoadPath;
   points: Array<{
     latitude: number;
     longitude: number;

@@ -98,6 +98,46 @@ const EVENT_COLOR: Record<string, string> = {
   completed: "#16a34a",
 };
 
+// Below this, a phone is close enough to flat that it explains a silence.
+const LOW_BATTERY_PERCENT = 15;
+
+/**
+ * The charge on the last fix the phone managed to send.
+ *
+ * Not decoration: it is the answer to "why has this engineer gone quiet". Shown
+ * for everyone so the office can see it coming — an engineer at 12% at noon is
+ * going to disappear this afternoon, and that is worth a phone call now rather
+ * than a mystery later.
+ */
+function BatteryChip({ row }: { row: RosterEngineer }) {
+  if (row.battery_level == null) return null;
+
+  const low = row.battery_level <= LOW_BATTERY_PERCENT;
+  return (
+    <span
+      title={
+        row.is_charging
+          ? `Phone on ${row.battery_level}%, charging`
+          : low
+            ? `Phone on ${row.battery_level}% and not charging — expect it to go quiet`
+            : `Phone on ${row.battery_level}%`
+      }
+      style={{
+        display: "inline-flex",
+        alignItems: "center",
+        gap: 3,
+        fontSize: 11,
+        fontWeight: 600,
+        color: low && !row.is_charging ? "#b91c1c" : "#6b7280",
+        whiteSpace: "nowrap",
+      }}
+    >
+      {row.is_charging ? "⚡" : ""}
+      {row.battery_level}%
+    </span>
+  );
+}
+
 /**
  * Where an engineer stands, in one chip. Three states, not two: on duty and
  * reporting, on duty but the phone has gone quiet (amber — the case that used to
@@ -129,9 +169,27 @@ function DutyBadge({ row }: { row: RosterEngineer }) {
               "#b45309",
               "#f59e0b",
               `No signal · ${relativeAge(row.last_seen_minutes)}`,
-              "On duty, but the phone has stopped reporting",
+              // Going dark looks identical either way, and the charge on the
+              // last fix is the only thing that tells them apart. Saying which
+              // is the difference between "chase them" and "they will be back".
+              row.battery_level != null && row.battery_level <= LOW_BATTERY_PERCENT
+                ? `On duty, but the phone has stopped reporting. It was on ${row.battery_level}% — it has probably gone flat.`
+                : row.battery_level != null
+                  ? `On duty, but the phone has stopped reporting. It was on ${row.battery_level}%, so this is signal, not charge.`
+                  : "On duty, but the phone has stopped reporting",
             ]
-          : ["#dcfce7", "#15803d", "#22c55e", "On duty", "Sending live position"];
+          // Reporting again after a spell offline. Worth saying out loud: the
+          // route just filled in behind them, so a gap that was there a minute
+          // ago is not a gap any more.
+          : row.queued_minutes != null && row.queued_minutes > 0
+            ? [
+                "#dbeafe",
+                "#1d4ed8",
+                "#3b82f6",
+                `Caught up · ${row.queued_minutes}m dark`,
+                `The phone was offline for about ${row.queued_minutes} minutes and has just sent what it recorded while it was. The route behind them is complete.`,
+              ]
+            : ["#dcfce7", "#15803d", "#22c55e", "On duty", "Sending live position"];
 
   return (
     <span
@@ -841,13 +899,15 @@ export default function LiveTrackingPanel({
                     <DutyBadge row={e} />
                   </div>
 
-                  {/* The two numbers the office asks about. Not battery level —
-                      the app does not report one and inventing it would be a
-                      number people would act on. */}
+                  {/* The numbers the office asks about. Battery is here now
+                      that the app reports it — it used to be left off precisely
+                      because it did not, and a made-up figure is worse than a
+                      missing one when people act on it. */}
                   {e.state !== "unmatched" && (
                     <div style={{ marginTop: 4, display: "flex", gap: 10, fontSize: 11, color: "#6b7280" }}>
                       <span>{duration(e.duty_minutes)}</span>
                       <span style={{ fontWeight: 600, color: "#374151" }}>{e.distance_km} km</span>
+                      <BatteryChip row={e} />
                       {e.active_case_number && (
                         <span style={{ color: "#2563eb" }}>{e.active_case_number}</span>
                       )}

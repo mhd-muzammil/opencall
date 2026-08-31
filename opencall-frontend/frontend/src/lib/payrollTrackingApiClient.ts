@@ -69,6 +69,17 @@ export interface RosterEngineer {
   timestamp: string | null;
   active_case_id: number | null;
   active_case_number: string | null;
+  // Optional because a Payroll that has not been redeployed sends none of
+  // these three, and the board has to keep working against that one.
+  // What the phone had left, on the last fix it managed to send. This is what
+  // makes going dark answerable: 4% says the phone died, 80% says the signal
+  // did. Null when the app is too old to report it, or there is no fix at all.
+  battery_level?: number | null;
+  is_charging?: boolean | null;
+  // How long the newest fix waited on the phone before it could be sent. 0 is
+  // live; a number means the phone was offline that long and has since posted
+  // its backlog; null means we cannot tell.
+  queued_minutes?: number | null;
 }
 
 export interface RosterResult {

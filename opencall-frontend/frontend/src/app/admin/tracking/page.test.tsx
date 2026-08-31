@@ -276,4 +276,72 @@ describe("the tracking board", () => {
     expect(rows().filter((row) => row.getAttribute("data-selected") === "true")).toHaveLength(0);
     expect(getEngineerDay).not.toHaveBeenCalled();
   });
+  // ---- what the phone itself is doing ----------------------------------
+  //
+  // Going dark looks the same whether the battery died or the signal did, and
+  // the office does different things about each. The charge on the last fix is
+  // the only thing that tells them apart, so the row has to carry it.
+
+  async function boardWith(one: Partial<RosterEngineer>) {
+    getRoster.mockResolvedValue({
+      configured: true,
+      engineers: [
+        engineer({ engineer_name: "Praveen S", engineer_id: 7, state: "on_duty", ...one }),
+      ],
+    });
+    await mountBoard();
+    return rows()[0]!;
+  }
+
+  it("shows what charge the phone had", async () => {
+    const row = await boardWith({ battery_level: 72 });
+    expect(row.textContent).toContain("72%");
+  });
+
+  it("says nothing about charge when the app did not report any", async () => {
+    const row = await boardWith({ battery_level: null });
+    expect(row.textContent).not.toContain("%");
+  });
+
+  it("blames the battery when a phone went quiet on almost nothing", async () => {
+    const row = await boardWith({
+      battery_level: 4,
+      stale: true,
+      last_seen_minutes: 30,
+    });
+    expect(row.textContent).toContain("No signal");
+    expect(row.innerHTML).toContain("gone flat");
+  });
+
+  it("blames the signal when a phone went quiet on a full battery", async () => {
+    const row = await boardWith({
+      battery_level: 80,
+      stale: true,
+      last_seen_minutes: 30,
+    });
+    expect(row.textContent).toContain("No signal");
+    expect(row.innerHTML).toContain("signal, not charge");
+    expect(row.innerHTML).not.toContain("gone flat");
+  });
+
+  it("says an engineer has caught up, and for how long they were dark", async () => {
+    const row = await boardWith({ queued_minutes: 25, stale: false });
+    expect(row.textContent).toContain("Caught up");
+    expect(row.textContent).toContain("25m dark");
+  });
+
+  it("reads as plain On duty when nothing was queued", async () => {
+    const row = await boardWith({ queued_minutes: 0, stale: false });
+    expect(row.textContent).toContain("On duty");
+    expect(row.textContent).not.toContain("Caught up");
+  });
+
+  it("does not claim a catch-up when Payroll never said", async () => {
+    // A Payroll that has not been redeployed sends none of these fields, so the
+    // property is ABSENT rather than set to undefined — which is also the only
+    // way to say it under exactOptionalPropertyTypes.
+    const row = await boardWith({ stale: false });
+    expect(row.textContent).toContain("On duty");
+    expect(row.textContent).not.toContain("Caught up");
+  });
 });

@@ -128,6 +128,9 @@ interface Props {
   engineers: MapEngineer[];
   selectedId: number | null;
   pathPoints: [number, number][];
+  // Index at which the line stops being road-matched and becomes the phone's own
+  // fixes. Absent when the whole route is one or the other.
+  rawFromIndex?: number;
   stops?: StopMarker[];
   onSelect: (id: number) => void;
 }
@@ -140,10 +143,44 @@ function hasPosition(e: MapEngineer): e is Plottable {
   return e.latitude != null && e.longitude != null;
 }
 
+/** One line of the map legend: a swatch and what it means. */
+function LegendRow({
+  color,
+  label,
+  ring,
+  small,
+  line,
+}: {
+  color: string;
+  label: string;
+  ring?: string;
+  small?: boolean;
+  line?: boolean;
+}) {
+  return (
+    <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+      <span
+        style={{
+          display: "inline-block",
+          width: line ? 14 : small ? 8 : 10,
+          height: line ? 3 : small ? 8 : 10,
+          borderRadius: line ? 2 : 999,
+          background: color,
+          border: ring ? `1px solid ${ring}` : line ? "none" : "1px solid #fff",
+          boxShadow: line ? "none" : "0 0 0 1px rgba(0,0,0,0.12)",
+          flexShrink: 0,
+        }}
+      />
+      {label}
+    </div>
+  );
+}
+
 export default function LiveTrackingMap({
   engineers,
   selectedId,
   pathPoints,
+  rawFromIndex,
   stops = [],
   onSelect,
   // Given so the map can fill a flex column beside the engineer list. Defaults
@@ -167,7 +204,51 @@ export default function LiveTrackingMap({
       : null;
 
   return (
-    <div style={{ height, width: "100%", borderRadius: 12, overflow: "hidden", border: "1px solid #e5e7eb" }}>
+    <div
+      style={{
+        height,
+        width: "100%",
+        borderRadius: 12,
+        overflow: "hidden",
+        border: "1px solid #e5e7eb",
+        position: "relative",
+      }}
+    >
+      {/* What the dots mean. Four colours and a line were being left to the
+          operator to work out, and a map that has to be decoded is a map that
+          gets misread — an amber dot is a stale position, but it looks a lot
+          like the amber circle that means somebody stood still for an hour.
+          Sits bottom-left, clear of Leaflet's zoom control and attribution. */}
+      <div
+        style={{
+          position: "absolute",
+          left: 10,
+          bottom: 26,
+          zIndex: 500,
+          background: "rgba(255,255,255,0.94)",
+          border: "1px solid #e5e7eb",
+          borderRadius: 8,
+          padding: "7px 10px",
+          fontSize: 10.5,
+          lineHeight: 1.6,
+          color: "#374151",
+          pointerEvents: "none",
+        }}
+      >
+        <LegendRow color="#2563eb" label="Live position" />
+        <LegendRow color="#d97706" label="No signal" />
+        {stops.length > 0 && <LegendRow color="#f59e0b" label="Stopped here" ring="#b45309" />}
+        {pathPoints.length > 1 && (
+          <>
+            <LegendRow color="#16a34a" label="Started the day" small />
+            <LegendRow color="#dc2626" label="Latest fix" small />
+            <LegendRow color="#2563eb" label="Route travelled" line />
+            {rawFromIndex !== undefined && (
+              <LegendRow color="#93c5fd" label="Newest, not yet on roads" line />
+            )}
+          </>
+        )}
+      </div>
       <MapContainer center={center} zoom={12} style={{ height: "100%", width: "100%" }} scrollWheelZoom>
         <KeepMapSized />
         <FitToSelection selectedId={selectedId} pathPoints={pathPoints} focus={selectedPosition} />
@@ -184,10 +265,33 @@ export default function LiveTrackingMap({
               positions={pathPoints}
               pathOptions={{ color: "#ffffff", weight: 8, opacity: 0.9 }}
             />
-            <Polyline
-              positions={pathPoints}
-              pathOptions={{ color: "#2563eb", weight: 4, opacity: 0.95 }}
-            />
+            {rawFromIndex === undefined ? (
+              <Polyline
+                positions={pathPoints}
+                pathOptions={{ color: "#2563eb", weight: 4, opacity: 0.95 }}
+              />
+            ) : (
+              <>
+                {/* Solid where the fixes have been put on roads. */}
+                <Polyline
+                  positions={pathPoints.slice(0, rawFromIndex)}
+                  pathOptions={{ color: "#2563eb", weight: 4, opacity: 0.95 }}
+                />
+                {/* Dashed for the newest stretch, which is still the phone's own
+                    coordinates — they are snapped in batches and this one has
+                    not filled yet. Overlaps by one point so the two halves join
+                    instead of leaving a gap. */}
+                <Polyline
+                  positions={pathPoints.slice(rawFromIndex - 1)}
+                  pathOptions={{
+                    color: "#2563eb",
+                    weight: 4,
+                    opacity: 0.8,
+                    dashArray: "6 5",
+                  }}
+                />
+              </>
+            )}
 
             {/* Which end is the morning. A bare line says where they went but
                 not which way round, and that is half the question. */}
@@ -237,6 +341,15 @@ export default function LiveTrackingMap({
                 pathOptions={{ color: "#3b82f6", fillOpacity: 0.08, weight: 1 }}
               />
             )}
+            {/* The selection ring, drawn under the marker so it reads as a halo
+                rather than an outline. */}
+            {e.engineer_id === selectedId && (
+              <CircleMarker
+                center={[e.latitude, e.longitude]}
+                radius={15}
+                pathOptions={{ color: "#1d4ed8", weight: 3, fillColor: "#3b82f6", fillOpacity: 0.2 }}
+              />
+            )}
             <CircleMarker
               center={[e.latitude, e.longitude]}
               radius={9}
@@ -244,9 +357,14 @@ export default function LiveTrackingMap({
                 color: "#fff",
                 weight: 2,
                 // Amber = still on duty, but this position is old and the
-                // engineer may have moved since. Green = the one being checked.
-                fillColor:
-                  e.engineer_id === selectedId ? "#16a34a" : e.stale ? "#d97706" : "#2563eb",
+                // engineer may have moved since.
+                //
+                // The selected engineer used to be green, which is also the
+                // colour of the route's start marker — and since a selected
+                // engineer usually HAS a route, two different greens ended up on
+                // one map meaning two different things. Selection is a ring now,
+                // not a hue, so it reads on top of any of the three states.
+                fillColor: e.stale ? "#d97706" : "#2563eb",
                 fillOpacity: e.stale ? 0.65 : 1,
               }}
               eventHandlers={{ click: () => onSelect(e.engineer_id) }}

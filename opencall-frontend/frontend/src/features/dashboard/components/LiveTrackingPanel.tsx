@@ -130,23 +130,35 @@ function SummaryStat({
   label,
   tone,
   hint,
+  onClick,
+  active,
 }: {
   value: string;
   of?: string;
   label: string;
   tone?: "warn";
   hint?: string;
+  onClick?: () => void;
+  active?: boolean;
 }) {
   const warn = tone === "warn";
+  // A count nobody can act on is trivia. Where there are engineers behind the
+  // number, the tile is the way to them — a fifth filter pill would have broken
+  // the 2x2 below, and the number is where the eye already is.
+  const Tag = onClick ? "button" : "div";
   return (
-    <div
+    <Tag
       title={hint}
+      {...(onClick ? { onClick, type: "button" as const } : {})}
       style={{
         padding: "8px 14px",
         borderRadius: 10,
-        border: `1px solid ${warn ? "#fde68a" : "#e5e7eb"}`,
-        background: warn ? "#fffbeb" : "#fff",
+        border: `1px solid ${active ? (warn ? "#f59e0b" : "#93c5fd") : warn ? "#fde68a" : "#e5e7eb"}`,
+        background: active ? (warn ? "#fef3c7" : "#eff6ff") : warn ? "#fffbeb" : "#fff",
         minWidth: 96,
+        textAlign: "left",
+        font: "inherit",
+        cursor: onClick ? "pointer" : "default",
       }}
     >
       <div style={{ display: "flex", alignItems: "baseline", gap: 4 }}>
@@ -167,7 +179,7 @@ function SummaryStat({
       >
         {label}
       </div>
-    </div>
+    </Tag>
   );
 }
 
@@ -493,6 +505,11 @@ export default function LiveTrackingPanel({
   const staleCount = useMemo(() => engineers.filter((e) => e.stale).length, [engineers]);
   // One of the reasons this page gets opened is "whose phone is about to die",
   // and answering it meant reading every row. Counted once, up top.
+  // Clicking a headline number should show you the engineers behind it. Kept
+  // separate from the bucket tabs because it cuts across them — it narrows
+  // whatever tab you are on rather than replacing it.
+  const [focus, setFocus] = useState<"stale" | "low_battery" | null>(null);
+
   const lowBatteryCount = useMemo(
     () => engineers.filter((e) => e.state === "on_duty" && batteryTone(e.battery_level, e.is_charging)).length,
     [engineers],
@@ -520,6 +537,20 @@ export default function LiveTrackingPanel({
     }
     return (day?.points ?? []).map((p) => [p.latitude, p.longitude] as [number, number]);
   }, [day]);
+
+  // Where the road-matched part of the line stops and the raw fixes begin.
+  //
+  // Fixes are snapped in batches, so the newest few minutes of a live trail are
+  // still the phone's own coordinates. Drawing both as one solid line claims a
+  // precision the tail does not have — the map should say which part is which,
+  // and only when there IS a mix, since a route that is all one or all the other
+  // needs no explaining.
+  const rawFromIndex = useMemo(() => {
+    const road = day?.road_path;
+    if (!road || road.source !== "partial" || road.raw <= 0) return undefined;
+    const index = road.points.length - road.raw;
+    return index > 0 && index < road.points.length ? index : undefined;
+  }, [day]);
   const stopMarkers = useMemo(
     () =>
       (day?.stops ?? []).map((s) => ({
@@ -542,13 +573,28 @@ export default function LiveTrackingPanel({
             pills below them, which nobody glances at twice. The figure leads
             now and the label explains it, rather than the other way round. */}
         <div style={{ display: "flex", gap: 10, alignItems: "stretch", flexWrap: "wrap" }}>
-          <SummaryStat value={String(onDutyCount)} of={`of ${engineers.length}`} label="On duty" />
+          <SummaryStat
+            value={String(onDutyCount)}
+            of={`of ${engineers.length}`}
+            label="On duty"
+            {...(onDutyCount > 0
+              ? {
+                  onClick: () => {
+                    setFocus(null);
+                    setStateFilter("on_duty");
+                  },
+                  active: stateFilter === "on_duty" && focus === null,
+                }
+              : {})}
+          />
           {staleCount > 0 && (
             <SummaryStat
               value={String(staleCount)}
               label="No signal"
               tone="warn"
-              hint="On duty, but their phone has stopped reporting"
+              hint="On duty, but their phone has stopped reporting — click to see who"
+              onClick={() => setFocus(focus === "stale" ? null : "stale")}
+              active={focus === "stale"}
             />
           )}
           {lowBatteryCount > 0 && (
@@ -556,7 +602,9 @@ export default function LiveTrackingPanel({
               value={String(lowBatteryCount)}
               label="Low battery"
               tone="warn"
-              hint={`${lowBatteryCount} on duty at ${WATCH_BATTERY_PERCENT}% or less and not charging — they will go quiet before the day is out`}
+              hint={`${lowBatteryCount} on duty at ${WATCH_BATTERY_PERCENT}% or less and not charging — they will go quiet before the day is out. Click to see who.`}
+              onClick={() => setFocus(focus === "low_battery" ? null : "low_battery")}
+              active={focus === "low_battery"}
             />
           )}
           <SummaryStat value={totalKm.toFixed(1)} of="km" label="Travelled today" />
@@ -641,6 +689,7 @@ export default function LiveTrackingPanel({
           engineers={liveOnMap}
           selectedId={selectedId}
           pathPoints={pathPoints}
+          {...(rawFromIndex !== undefined ? { rawFromIndex } : {})}
           stops={stopMarkers}
           onSelect={(id) => setSelectedId(id)}
         />
@@ -655,9 +704,12 @@ export default function LiveTrackingPanel({
           style={{
             flex: "0 1 360px",
             minWidth: 300,
-            // Same bound as the map, so the engineers scroll inside the panel
-            // instead of the panel growing to fit twenty-five of them.
-            height: "clamp(420px, 68vh, 760px)",
+            // A CEILING, not a height. The same bound as the map stops
+            // twenty-five engineers stretching the page, but as a fixed height
+            // it also held the panel open at 420px on the ordinary day when one
+            // person is out — a row, then a third of a screen of white, which
+            // reads as something failing to load rather than as a quiet day.
+            maxHeight: "clamp(420px, 68vh, 760px)",
             display: "flex",
             flexDirection: "column",
             border: "1px solid #e5e7eb",
@@ -1131,11 +1183,15 @@ export default function LiveTrackingPanel({
                 ? "No engineers found. Every active employee appears here once Payroll is reachable."
                 : stateFilter === "unmatched" && !query.trim()
                   ? "Every engineer in the register is matched in Payroll \u2014 no cases are being skipped."
-                  : query.trim()
-                    ? `Nobody matches “${query.trim()}” in this tab.`
-                    : "Nobody is in this tab right now."}
+                  : focus === "stale"
+                    ? "Nobody on duty has gone quiet."
+                    : focus === "low_battery"
+                      ? "No phone is running low."
+                      : query.trim()
+                        ? `Nobody matches “${query.trim()}” in this tab.`
+                        : "Nobody is in this tab right now."}
               </div>
-              {(query.trim() || stateFilter !== "all") && (
+              {(query.trim() || stateFilter !== "all" || focus) && (
                 <button
                   onClick={() => {
                     setQuery("");

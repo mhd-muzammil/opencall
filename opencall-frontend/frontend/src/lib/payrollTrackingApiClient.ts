@@ -126,6 +126,27 @@ export interface RoadPath {
   source: "ola" | "partial" | "raw";
 }
 
+/**
+ * A moment the engineer marked themselves, and where they were standing.
+ *
+ * Distinct from a stop, which is inferred from the trail standing still: a stop
+ * is our guess, a punch is their word. Worth being able to see both on one map —
+ * a punch with no stop under it is somebody who marked a call done from the road.
+ *
+ * latitude/longitude are null when the phone had no fix at that instant. The
+ * punch is still real; it just cannot be drawn.
+ */
+export interface EngineerPunch {
+  kind: "in" | "out";
+  at: string;
+  case_id: number;
+  case_number: string | null;
+  title: string;
+  latitude: number | null;
+  longitude: number | null;
+  accuracy: number | null;
+}
+
 export interface EngineerDay {
   engineer_id: number;
   engineer_name: string;
@@ -138,6 +159,7 @@ export interface EngineerDay {
   stop_count: number;
   stops: EngineerDayStop[];
   events: EngineerDayEvent[];
+  punches?: EngineerPunch[];
   road_path?: RoadPath;
   points: Array<{
     latitude: number;

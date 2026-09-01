@@ -551,6 +551,22 @@ export default function LiveTrackingPanel({
     const index = road.points.length - road.raw;
     return index > 0 && index < road.points.length ? index : undefined;
   }, [day]);
+  // Only the punches whose position was captured. One taken with no fix is
+  // still in the timeline; it just has nowhere to be drawn.
+  const punchMarkers = useMemo(
+    () =>
+      (day?.punches ?? [])
+        .filter((p) => p.latitude != null && p.longitude != null)
+        .map((p) => ({
+          kind: p.kind,
+          latitude: p.latitude as number,
+          longitude: p.longitude as number,
+          label: `${p.kind === "in" ? "Punched in" : "Punched out"} ${clock(p.at)}${
+            p.case_number ? ` · ${p.case_number}` : ""
+          }`,
+        })),
+    [day],
+  );
   const stopMarkers = useMemo(
     () =>
       (day?.stops ?? []).map((s) => ({
@@ -691,6 +707,7 @@ export default function LiveTrackingPanel({
           pathPoints={pathPoints}
           {...(rawFromIndex !== undefined ? { rawFromIndex } : {})}
           stops={stopMarkers}
+          punches={punchMarkers}
           onSelect={(id) => setSelectedId(id)}
         />
         <p style={{ fontSize: 11, color: "#9ca3af", marginTop: 6 }}>

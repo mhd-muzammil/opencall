@@ -132,6 +132,7 @@ interface Props {
   // fixes. Absent when the whole route is one or the other.
   rawFromIndex?: number;
   stops?: StopMarker[];
+  punches?: PunchMarker[];
   onSelect: (id: number) => void;
 }
 
@@ -176,12 +177,21 @@ function LegendRow({
   );
 }
 
+/** Where an engineer said they arrived at, or finished, a call. */
+export interface PunchMarker {
+  kind: "in" | "out";
+  latitude: number;
+  longitude: number;
+  label: string;
+}
+
 export default function LiveTrackingMap({
   engineers,
   selectedId,
   pathPoints,
   rawFromIndex,
   stops = [],
+  punches = [],
   onSelect,
   // Given so the map can fill a flex column beside the engineer list. Defaults
   // to what it always was, for any caller that wants it on its own.
@@ -238,6 +248,12 @@ export default function LiveTrackingMap({
         <LegendRow color="#2563eb" label="Live position" />
         <LegendRow color="#d97706" label="No signal" />
         {stops.length > 0 && <LegendRow color="#f59e0b" label="Stopped here" ring="#b45309" />}
+        {punches.some((p) => p.kind === "in") && (
+          <LegendRow color="#7c3aed" label="Punched in" ring="#6d28d9" />
+        )}
+        {punches.some((p) => p.kind === "out") && (
+          <LegendRow color="#ffffff" label="Punched out" ring="#6d28d9" />
+        )}
         {pathPoints.length > 1 && (
           <>
             <LegendRow color="#16a34a" label="Started the day" small />
@@ -328,6 +344,34 @@ export default function LiveTrackingMap({
           >
             <Popup>
               <div style={{ fontSize: 13 }}>{stop.label}</div>
+            </Popup>
+          </CircleMarker>
+        ))}
+
+        {/* Where the engineer SAID they arrived and left.
+            Violet, because every other colour on this map already means
+            something — blue is a live position, amber a stale one or a stop,
+            green and red the ends of the route. Filled for in, hollow for out,
+            so the pair reads without a second colour and without relying on
+            telling red from green.
+
+            Above the stops on purpose: a stop is inferred from the trail
+            standing still, a punch is the engineer's own word, and where the
+            two disagree the claim is the one worth seeing. */}
+        {punches.map((punch, i) => (
+          <CircleMarker
+            key={`punch-${i}`}
+            center={[punch.latitude, punch.longitude]}
+            radius={8}
+            pathOptions={{
+              color: "#6d28d9",
+              weight: 2.5,
+              fillColor: punch.kind === "in" ? "#7c3aed" : "#ffffff",
+              fillOpacity: 1,
+            }}
+          >
+            <Popup>
+              <div style={{ fontSize: 13 }}>{punch.label}</div>
             </Popup>
           </CircleMarker>
         ))}

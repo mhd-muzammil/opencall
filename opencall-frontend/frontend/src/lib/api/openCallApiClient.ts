@@ -139,6 +139,15 @@ function appendUploadFile(formData: FormData, fieldName: string, file: UploadFil
   formData.append(fieldName, file as Blob);
 }
 
+/**
+ * Generations currently in flight, keyed by region + request body.
+ *
+ * Deliberately module-level rather than per-client: the callers that duplicate a
+ * generation are separate React effects, and collapsing them only works if they share
+ * one map. Entries live only for the duration of the request — see `generateReport`.
+ */
+const inFlightGenerations = new Map<string, Promise<GeneratedReportResponse>>();
+
 export function createOpenCallApiClient({
   baseUrl,
   fetchImpl = fetch,
@@ -222,23 +231,56 @@ export function createOpenCallApiClient({
 
     async generateReport(input) {
       const headers = jsonAuthHeaders(input.token);
+      const regionId = input.regionId.trim();
 
-      if (input.regionId.trim()) {
-        headers["x-region-id"] = input.regionId.trim();
+      if (regionId) {
+        headers["x-region-id"] = regionId;
       }
 
-      const response = await fetchImpl(url("/api/v1/reports/daily-call-plan/generate"), {
-        method: "POST",
-        headers,
-        body: JSON.stringify({
-          reportDate: input.reportDate,
-          flexUploadBatchId: input.flexUploadBatchId,
-          renderwaysUploadBatchId: input.renderwaysUploadBatchId || null,
-          callPlanUploadBatchId: input.callPlanUploadBatchId || null,
-        }),
+      const body = JSON.stringify({
+        reportDate: input.reportDate,
+        flexUploadBatchId: input.flexUploadBatchId,
+        renderwaysUploadBatchId: input.renderwaysUploadBatchId || null,
+        callPlanUploadBatchId: input.callPlanUploadBatchId || null,
       });
 
-      return readJson<GeneratedReportResponse>(response);
+      // One in-flight request per identical generation.
+      //
+      // A page load asks for the SAME report from three places at once: the history
+      // restore, the Engineer Productivity day report and the RTPL day report. Each
+      // has its own result cache, so none of them knows another is already asking,
+      // and all three send identical requests.
+      //
+      // On the server every one of them takes `pg_advisory_xact_lock` on the same key
+      // (report date + batch ids), so they do not run in parallel — they queue, and
+      // the page waits for all three to run end to end. The stragglers then hit the
+      // database statement timeout and answer 500, which is what put "Unexpected
+      // server error" on screen even when the first request had succeeded.
+      //
+      // Keyed by exactly what is sent, so a genuinely different report (another date,
+      // another batch, another region) is never folded into this one. The entry is
+      // removed as soon as it settles, so this is a request-collapsing window and
+      // never a cache: the next load re-asks the server.
+      const key = `${regionId}|${body}`;
+      const existing = inFlightGenerations.get(key);
+      if (existing) {
+        return existing;
+      }
+
+      const pending = (async () => {
+        const response = await fetchImpl(
+          url("/api/v1/reports/daily-call-plan/generate"),
+          { method: "POST", headers, body },
+        );
+        return readJson<GeneratedReportResponse>(response);
+      })();
+
+      inFlightGenerations.set(key, pending);
+      try {
+        return await pending;
+      } finally {
+        inFlightGenerations.delete(key);
+      }
     },
 
     async updateReportRow(input) {

@@ -422,6 +422,11 @@ export default function DashboardPage() {
   const [files, setFiles] = useState<Partial<Record<FileField, File[]>>>({});
   const [upload, setUpload] = useState<UploadResponse | null>(null);
   const [preview, setPreview] = useState<MatchPreviewResponse | null>(null);
+  // Region a restored session's batches belong to, so an on-demand match preview asks
+  // about the same scope the restore itself used. Never folded into the ambient
+  // `regionId`: adopting a restored session's region silently scoped every LATER upload
+  // from this tab (2026-07-27 incident).
+  const [previewScopeRegionId, setPreviewScopeRegionId] = useState<string | null>(null);
   const [report, setReport] = useState<GeneratedReportResponse | null>(null);
   const [rtplStatusChanges, setRtplStatusChanges] = useState<RtplStatusChange[]>([]);
   const [editingSerialNo, setEditingSerialNo] = useState<number | null>(null);
@@ -2592,6 +2597,9 @@ export default function DashboardPage() {
       });
       setUpload(result);
       setPreview(null);
+      // These batches are this tab's own upload, so an on-demand preview should ask
+      // about the ambient region, not whichever session was restored earlier.
+      setPreviewScopeRegionId(null);
       setReport(null);
       setEditingSerialNo(null);
       setSavingSerialNo(null);
@@ -2671,6 +2679,7 @@ export default function DashboardPage() {
     setUploadRegionId("");
     setUpload(null);
     setPreview(null);
+    setPreviewScopeRegionId(null);
     setReport(null);
     setEditingSerialNo(null);
     setSavingSerialNo(null);
@@ -2724,24 +2733,14 @@ export default function DashboardPage() {
     // background poll, the poll then early-returned forever and never retried.
     // The result looked exactly like the app hanging on "loading" until a manual
     // refresh. Failing here now leaves the previous report on screen instead.
-    // The match preview is auxiliary (the Match Preview panel). If it fails —
-    // e.g. a permission/scope error on another region's batches — the restore
-    // must still proceed: the report fetched next is the workspace, and it is
-    // already region-filtered server-side. Aborting here used to blank the
-    // whole workspace behind a red banner.
-    let prev: MatchPreviewResponse | null = null;
-    try {
-      prev = await previewMatches({
-        token: session.token,
-        regionId: effectiveRegionId,
-        flexUploadBatchId: detail.flexUploadBatchId,
-        ...(detail.renderwaysUploadBatchId ? { renderwaysUploadBatchId: detail.renderwaysUploadBatchId } : {}),
-        ...(detail.callPlanUploadBatchId ? { callPlanUploadBatchId: detail.callPlanUploadBatchId } : {}),
-      });
-    } catch {
-      prev = null;
-    }
-
+    //
+    // The match preview is NOT fetched here. It feeds one panel — Match Preview —
+    // which is collapsed by default (`showMatchPreviewSection` starts false), and a
+    // restore runs on every page load. /match/preview re-reads the same Flex,
+    // Renderways and call-plan batches and runs the same matching pass as the
+    // generate below, so prefetching it doubled the server work behind the
+    // "Preparing your report" overlay to fill a panel nobody had opened. It is
+    // loaded on demand instead, by the effect next to `canUseBatches`.
     const rep =
       detail.status === "COMPLETED"
         ? await generateReport({
@@ -2773,7 +2772,10 @@ export default function DashboardPage() {
       setRtplAnalyticsDate(detail.reportDate);
     }
 
-    setPreview(prev);
+    // Cleared, not carried over: a stale preview belongs to the batches of the
+    // session we just left. Reopening the panel refetches it for this one.
+    setPreview(null);
+    setPreviewScopeRegionId(effectiveRegionId);
     setReport(rep);
     window.localStorage.setItem(LAST_HISTORY_SESSION_KEY, rep?.sessionId ?? detail.id);
 
@@ -2815,6 +2817,36 @@ export default function DashboardPage() {
   }
 
   const canUseBatches = Boolean(batchIds.flexUploadBatchId);
+
+  // Loads the Match Preview panel the first time it is opened.
+  //
+  // The restore that runs on every page load deliberately does not prefetch this:
+  // /match/preview repeats the whole matching pass that generating the report already
+  // does, and the panel is collapsed by default. Fetching it when it is actually opened
+  // costs the same request, just not on the critical path to seeing the dashboard.
+  useEffect(() => {
+    if (!showMatchPreviewSection || preview || !session || !canUseBatches) return;
+
+    let cancelled = false;
+    previewMatches({
+      token: session.token,
+      regionId: previewScopeRegionId ?? regionId,
+      ...batchIds,
+    })
+      .then((result) => {
+        if (!cancelled) setPreview(result);
+      })
+      // Surfaced, unlike the old prefetch which swallowed its errors: that one ran
+      // invisibly on every load, so a banner there was noise over a workspace that
+      // was otherwise fine. This one runs because somebody opened the panel, and a
+      // panel that stays blank with no explanation is worse.
+      .catch(handleBackgroundError);
+
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [showMatchPreviewSection, preview, session?.token, canUseBatches]);
 
   /**
    * Identity of the row the editor was opened on.

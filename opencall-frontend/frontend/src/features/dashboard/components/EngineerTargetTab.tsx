@@ -11,6 +11,11 @@ import {
   STATUS_LABEL,
   type EngineerTargetAnalysis,
 } from "./engineerTargetMath";
+import {
+  currentTargetCycle,
+  cycleLabel,
+  recentTargetCycles,
+} from "../../../lib/targetCycle";
 
 /**
  * Engineer Target — are the engineers hitting the standing close target, and what do they
@@ -23,20 +28,9 @@ import {
  * Entirely self-contained — it reads its own endpoint and changes nothing else.
  */
 
-/** First day of the current month in IST. */
-function monthStartIst(): string {
-  const today = todayIst();
-  return `${today.slice(0, 7)}-01`;
-}
-
-function todayIst(): string {
-  return new Intl.DateTimeFormat("en-CA", {
-    timeZone: "Asia/Kolkata",
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-  }).format(new Date());
-}
+// `monthStartIst` and `todayIst` lived here to seed the two date fields with "1st of this
+// month" and "today". The cycle in `lib/targetCycle` seeds them now, and neither had another
+// caller — left behind they would read as the intended default to the next person here.
 
 function pct(done: number, target: number): number {
   if (target <= 0) return 0;
@@ -75,8 +69,25 @@ export function EngineerTargetTab() {
     setToken(readSession()?.token ?? null);
   }, []);
 
-  const [fromDate, setFromDate] = useState(monthStartIst);
-  const [toDate, setToDate] = useState(todayIst);
+  // Opens on the cycle the target is actually set over — 24th to 25th — not on the calendar
+  // month. "1st of this month to today" is a single day on the 1st, which reads as everybody
+  // having closed almost nothing, and it is a month out of step with the target anyway.
+  const [fromDate, setFromDate] = useState(() => currentTargetCycle().from);
+  const [toDate, setToDate] = useState(() => currentTargetCycle().to);
+
+  /** The picker's options: this cycle and the five before it. */
+  const cycles = useMemo(() => recentTargetCycles(6), []);
+
+  /**
+   * Which option is selected, or "" when the dates have been edited by hand.
+   *
+   * Read from the dates rather than held separately: with its own state, typing a date would
+   * leave the dropdown still naming a cycle the table is no longer showing.
+   */
+  const selectedCycle = useMemo(
+    () => cycles.find((c) => c.from === fromDate && c.to === toDate)?.to ?? "",
+    [cycles, fromDate, toDate],
+  );
   const [data, setData] = useState<EngineerTargetResponse | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -186,6 +197,29 @@ export function EngineerTargetTab() {
           </p>
         </div>
         <div style={{ display: "flex", gap: "8px", alignItems: "center", flexWrap: "wrap" }}>
+          {/* Pick a cycle instead of typing two dates. The dates stay, and stay editable —
+              this only fills them in, so anybody wanting an odd period is not blocked by a
+              list that does not have it. */}
+          <select
+            value={selectedCycle}
+            onChange={(e) => {
+              const picked = cycles.find((c) => c.to === e.target.value);
+              if (!picked) return;
+              setFromDate(picked.from);
+              setToDate(picked.to);
+            }}
+            style={dateInput}
+            aria-label="Target cycle"
+          >
+            {/* Only shown while the dates match no cycle, so the dropdown never claims to be
+                showing a cycle the table is not. */}
+            {selectedCycle === "" ? <option value="">Custom dates</option> : null}
+            {cycles.map((cycle) => (
+              <option key={cycle.to} value={cycle.to}>
+                {cycleLabel(cycle)}
+              </option>
+            ))}
+          </select>
           <input
             type="date"
             value={fromDate}

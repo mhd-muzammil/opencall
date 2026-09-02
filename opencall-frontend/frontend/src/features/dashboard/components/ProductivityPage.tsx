@@ -2,6 +2,7 @@
 import { useEffect, useState, useMemo, type Dispatch, type SetStateAction } from "react";
 import { getRoster } from "../../../lib/payrollTrackingApiClient";
 import { readSession } from "../../../lib/session";
+import { productivityReportDay } from "../utils/productivityReportDay";
 import { downloadEngineerProductivityExcel } from "../../../lib/excelExport";
 import { EngineerTargetTab } from "./EngineerTargetTab";
 import { LocationPerformancePanel } from "./LocationPerformancePanel";
@@ -180,10 +181,24 @@ export function ProductivityPage({
    * systems share here; Payroll matches the name to an employee at its end and
    * hands back the id, which is what the link needs.
    */
-  const reportDay =
-    productivityFromDate && productivityFromDate === productivityToDate
-      ? productivityFromDate
-      : null;
+  // Extracted, because getting this wrong is invisible: the page said one date
+  // while every KM cell said dash, and nothing explained the disagreement.
+  // productivityReportDay.test.ts pins it.
+  const reportDay = useMemo(
+    () =>
+      productivityReportDay({
+        filterType: productivityFilterType,
+        selectedValue: selectedProductivityValue,
+        fromDate: productivityFromDate,
+        toDate: productivityToDate,
+      }),
+    [
+      productivityFilterType,
+      selectedProductivityValue,
+      productivityFromDate,
+      productivityToDate,
+    ],
+  );
 
   const [kmByEngineer, setKmByEngineer] = useState<Map<string, { km: number; id: number | null }>>(
     new Map(),

@@ -1,5 +1,6 @@
 // Engineer Productivity dashboard page extracted from app/page.tsx (Phase 6.5) and updated to render as a separate page view.
 import { useEffect, useState, useMemo, type Dispatch, type SetStateAction } from "react";
+import { canonicalEngineerName } from "@opencall/shared";
 import { getRoster } from "../../../lib/payrollTrackingApiClient";
 import { readSession } from "../../../lib/session";
 import { productivityReportDay } from "../utils/productivityReportDay";
@@ -171,6 +172,15 @@ export function ProductivityPage({
   /**
    * How far each engineer travelled, from Payroll's tracking.
    *
+   * Matched through canonicalEngineerName, the SAME function the productivity
+   * counts are grouped by -- not a second rule of my own. The register calls
+   * somebody "Lava Kumar" and the report calls them "Lava", because
+   * ENGINEER_NAME_ALIASES says to; keying the roster on the raw register name
+   * meant that row never matched and showed a dash while Live Tracking had his
+   * 19.79 km. If another engineer's two spellings ever differ, the fix is an
+   * entry in that alias table, which then corrects the counts and this column
+   * together.
+   *
    * Only for a SINGLE day. Distance is recorded per day, and this view can be
    * pointed at a month or a range -- showing one day's kilometres beside a
    * month's calls would be a number that looks like it belongs to the row and
@@ -220,7 +230,9 @@ export function ProductivityPage({
         if (!alive) return;
         const next = new Map<string, { km: number; id: number | null }>();
         for (const row of result.engineers ?? []) {
-          const key = String(row.engineer_name || "").trim().toLowerCase();
+          const key = canonicalEngineerName(String(row.engineer_name || ""))
+            .trim()
+            .toLowerCase();
           if (key) next.set(key, { km: row.distance_km ?? 0, id: row.engineer_id });
         }
         setKmByEngineer(next);
@@ -636,7 +648,11 @@ export function ProductivityPage({
                       without an id there is no tracking page to open, and a
                       link that goes nowhere is worse than plain text. */}
                   {(() => {
-                    const found = kmByEngineer.get(item.name.trim().toLowerCase());
+                    // item.name is already canonical; running it through again
+                    // is a no-op and keeps both sides reading the one function.
+                    const found = kmByEngineer.get(
+                      canonicalEngineerName(item.name).trim().toLowerCase(),
+                    );
                     if (!reportDay) {
                       return (
                         <td

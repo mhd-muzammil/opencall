@@ -380,9 +380,16 @@ export default function LiveTrackingPanel({
   // heading rendered on top of it — the same words twice, overlapping. The
   // standalone /admin/tracking route has no header of its own and keeps it.
   embedded = false,
+  // Open straight onto one engineer. Engineer Productivity links here from its
+  // KM column, and landing on a board of 25 rows and having to find the person
+  // again is not arriving at their tracking.
+  initialEngineerId = null,
+  initialDate = null,
 }: {
   token: string | null;
   embedded?: boolean;
+  initialEngineerId?: number | null;
+  initialDate?: string | null;
 }) {
   const [engineers, setEngineers] = useState<RosterEngineer[]>([]);
   const [configured, setConfigured] = useState(true);
@@ -393,10 +400,21 @@ export default function LiveTrackingPanel({
   const [sessionExpired, setSessionExpired] = useState(false);
 
   // Which engineer the admin is checking, and which day of theirs.
-  const [selectedId, setSelectedId] = useState<number | null>(null);
+  const [selectedId, setSelectedId] = useState<number | null>(initialEngineerId);
   const [day, setDay] = useState<EngineerDay | null>(null);
-  const [dayDate, setDayDate] = useState(todayStr());
+  const [dayDate, setDayDate] = useState(initialDate ?? todayStr());
   const [dayLoading, setDayLoading] = useState(false);
+
+  // A second link, to a different engineer, has to move the board. Seeding
+  // state only covers the first mount: on the console the panel stays mounted,
+  // so without this the deep link would work once and then silently do nothing.
+  useEffect(() => {
+    if (initialEngineerId != null) setSelectedId(initialEngineerId);
+  }, [initialEngineerId]);
+
+  useEffect(() => {
+    if (initialDate) setDayDate(initialDate);
+  }, [initialDate]);
   const [query, setQuery] = useState("");
   const [stateFilter, setStateFilter] = useState<RosterBucket>("all");
 

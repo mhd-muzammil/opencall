@@ -1,5 +1,7 @@
 // Engineer Productivity dashboard page extracted from app/page.tsx (Phase 6.5) and updated to render as a separate page view.
-import { useState, useMemo, type Dispatch, type SetStateAction } from "react";
+import { useEffect, useState, useMemo, type Dispatch, type SetStateAction } from "react";
+import { getRoster } from "../../../lib/payrollTrackingApiClient";
+import { readSession } from "../../../lib/session";
 import { downloadEngineerProductivityExcel } from "../../../lib/excelExport";
 import { EngineerTargetTab } from "./EngineerTargetTab";
 import { LocationPerformancePanel } from "./LocationPerformancePanel";
@@ -164,6 +166,63 @@ export function ProductivityPage({
   }, [filteredList]);
 
   const showRegionColumn = !selectedRegion || selectedRegion === "ALL";
+
+  /**
+   * How far each engineer travelled, from Payroll's tracking.
+   *
+   * Only for a SINGLE day. Distance is recorded per day, and this view can be
+   * pointed at a month or a range -- showing one day's kilometres beside a
+   * month's calls would be a number that looks like it belongs to the row and
+   * does not. When the range is wider than a day the column says so instead of
+   * guessing.
+   *
+   * Keyed on the lower-cased name because that is the only thing the two
+   * systems share here; Payroll matches the name to an employee at its end and
+   * hands back the id, which is what the link needs.
+   */
+  const reportDay =
+    productivityFromDate && productivityFromDate === productivityToDate
+      ? productivityFromDate
+      : null;
+
+  const [kmByEngineer, setKmByEngineer] = useState<Map<string, { km: number; id: number | null }>>(
+    new Map(),
+  );
+  const [kmUnavailable, setKmUnavailable] = useState(false);
+
+  useEffect(() => {
+    if (!reportDay) {
+      setKmByEngineer(new Map());
+      setKmUnavailable(false);
+      return;
+    }
+    const token = readSession()?.token;
+    if (!token) return;
+
+    let alive = true;
+    getRoster(token, reportDay)
+      .then((result) => {
+        if (!alive) return;
+        const next = new Map<string, { km: number; id: number | null }>();
+        for (const row of result.engineers ?? []) {
+          const key = String(row.engineer_name || "").trim().toLowerCase();
+          if (key) next.set(key, { km: row.distance_km ?? 0, id: row.engineer_id });
+        }
+        setKmByEngineer(next);
+        setKmUnavailable(!result.configured);
+      })
+      .catch(() => {
+        // Tracking being unreachable must not take the productivity table with
+        // it. The column goes quiet; every other number on the page is intact.
+        if (alive) {
+          setKmByEngineer(new Map());
+          setKmUnavailable(true);
+        }
+      });
+    return () => {
+      alive = false;
+    };
+  }, [reportDay]);
 
   const renderClickableCell = (
     count: number,
@@ -497,7 +556,7 @@ export function ProductivityPage({
         <table className="kpiSummaryTable" style={{ width: "100%", borderCollapse: "collapse" }}>
           <thead>
             <tr style={{ background: "#fed7aa", color: "#7c2d12", fontWeight: "bold" }}>
-              <td colSpan={showRegionColumn ? 9 : 8} style={{ padding: "12px", border: "1px solid #cbd5e1", textAlign: "center", fontSize: "14px", fontWeight: "800" }}>
+              <td colSpan={showRegionColumn ? 10 : 9} style={{ padding: "12px", border: "1px solid #cbd5e1", textAlign: "center", fontSize: "14px", fontWeight: "800" }}>
                 Filter Applied: {productivityDateLabel}
               </td>
             </tr>
@@ -507,6 +566,16 @@ export function ProductivityPage({
               {showRegionColumn && (
                 <td style={{ padding: "10px", border: "1px solid #cbd5e1", fontSize: "13px" }}>Region</td>
               )}
+              <td
+                style={{ padding: "10px", border: "1px solid #cbd5e1", textAlign: "center", fontSize: "13px" }}
+                title={
+                  reportDay
+                    ? "Distance travelled on this day, from the engineer's phone. Click a figure to open their tracking."
+                    : "Distance is recorded per day - pick a single date to see it"
+                }
+              >
+                KM
+              </td>
               <td style={{ padding: "10px", border: "1px solid #cbd5e1", textAlign: "center", fontSize: "13px" }}>Assigned</td>
               <td style={{ padding: "10px", border: "1px solid #cbd5e1", textAlign: "center", fontSize: "13px" }}>Attended</td>
               <td style={{ padding: "10px", border: "1px solid #cbd5e1", textAlign: "center", fontSize: "13px" }}>Closed</td>
@@ -547,6 +616,60 @@ export function ProductivityPage({
                     <td style={{ padding: "10px", border: "1px solid #cbd5e1", color: "#475569", fontSize: "12px", fontWeight: "500" }}>{item.regionName || item.regionCode || "—"}</td>
                   )}
 
+                  {/* How far they went, and the way into their day.
+                      Only a link when Payroll matched the name to an employee:
+                      without an id there is no tracking page to open, and a
+                      link that goes nowhere is worse than plain text. */}
+                  {(() => {
+                    const found = kmByEngineer.get(item.name.trim().toLowerCase());
+                    if (!reportDay) {
+                      return (
+                        <td
+                          style={{ padding: "10px", border: "1px solid #cbd5e1", textAlign: "center", color: "#94a3b8" }}
+                          title="Distance is recorded per day - pick a single date to see it"
+                        >
+                          &mdash;
+                        </td>
+                      );
+                    }
+                    if (!found) {
+                      return (
+                        <td
+                          style={{ padding: "10px", border: "1px solid #cbd5e1", textAlign: "center", color: "#94a3b8" }}
+                          title={
+                            kmUnavailable
+                              ? "Tracking is unavailable right now"
+                              : `No tracking record for ${item.name} on this day`
+                          }
+                        >
+                          &mdash;
+                        </td>
+                      );
+                    }
+                    const km = `${found.km.toFixed(1)} km`;
+                    if (found.id == null) {
+                      return (
+                        <td
+                          style={{ padding: "10px", border: "1px solid #cbd5e1", textAlign: "center", color: "#334155", fontWeight: "600" }}
+                          title={`${item.name} is not linked to a Payroll employee, so their tracking cannot be opened`}
+                        >
+                          {km}
+                        </td>
+                      );
+                    }
+                    return (
+                      <td style={{ padding: "10px", border: "1px solid #cbd5e1", textAlign: "center" }}>
+                        <a
+                          href={`/admin/tracking?engineer=${found.id}&date=${reportDay}`}
+                          style={{ color: "#1e40af", fontWeight: "700", textDecoration: "underline" }}
+                          title={`Open ${item.name}'s tracking for ${reportDay}`}
+                        >
+                          {km}
+                        </a>
+                      </td>
+                    );
+                  })()}
+
                   {/* Clickable Status Counts */}
                   {renderClickableCell(item.assigned, item.assignedTickets, false, "#334155")}
                   {renderClickableCell(item.attended, item.attendedTickets, true, "#0f172a", "#f1f5f9")}
@@ -578,8 +701,12 @@ export function ProductivityPage({
             )}
             {filteredList.length > 0 && (
               <tr style={{ background: "#fffbeb", fontWeight: "bold" }}>
+                {/* +1 for the KM column. The label stretches over it rather
+                    than the row carrying a fleet total: distance only means
+                    anything per engineer here, and a summed figure beside
+                    per-engineer call counts would invite the wrong reading. */}
                 <td
-                  colSpan={showRegionColumn ? 3 : 2}
+                  colSpan={showRegionColumn ? 4 : 3}
                   style={{ padding: "12px", border: "1px solid #cbd5e1", textAlign: "right", color: "#334155" }}
                 >
                   Total ({filteredActiveEngineers} {filteredActiveEngineers === 1 ? "engineer" : "engineers"})

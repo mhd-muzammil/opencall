@@ -110,6 +110,11 @@ export interface EngineerDayEvent {
   longitude?: number;
   case_number?: string | null;
   case_ref?: string | null;
+  /**
+   * Where the case stands NOW, which is not the same as what this day shows: a
+   * call closed on an earlier day records no event today and is still closed.
+   */
+  case_status?: string | null;
 }
 
 /**

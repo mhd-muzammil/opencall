@@ -6,6 +6,7 @@ import {
   getEngineerDay,
   getRoster,
   type EngineerDay,
+  type EngineerDayEvent,
   type RosterEngineer,
 } from "../../../lib/payrollTrackingApiClient";
 import { clearSession } from "../../../lib/session";
@@ -132,6 +133,92 @@ function Fact({ label, children }: { label: string; children: React.ReactNode })
       </dd>
     </>
   );
+}
+
+/**
+ * How far along one case got, from the events the day recorded for it.
+ *
+ * Ranked, because a case that was reached AND completed has both entries and
+ * only the furthest one is worth saying. "Listed" is the honest floor: it is on
+ * the engineer's list and nothing has happened to it yet.
+ */
+const CASE_PROGRESS: Record<string, { rank: number; word: string; color: string }> = {
+  carried: { rank: 0, word: "Not started", color: "#6b7280" },
+  assigned: { rank: 0, word: "Not started", color: "#6b7280" },
+  stop: { rank: 1, word: "Stopped nearby", color: "#b45309" },
+  started: { rank: 2, word: "On the way", color: "#2563eb" },
+  reached: { rank: 3, word: "On site", color: "#0891b2" },
+  completed: { rank: 4, word: "Closed", color: "#15803d" },
+};
+
+/**
+ * What a case's own status says, for a call this day recorded nothing about.
+ *
+ * Needed because four of an engineer's five calls can be closed and still have
+ * no entry today -- they were closed on an earlier day. Saying "Not started"
+ * beside an app that says DONE is worse than saying nothing.
+ */
+const STATUS_WORD: Record<string, { word: string; color: string }> = {
+  completed: { word: "Closed earlier", color: "#15803d" },
+  reached: { word: "On site", color: "#0891b2" },
+  working: { word: "Working", color: "#0891b2" },
+  on_the_way: { word: "On the way", color: "#2563eb" },
+  accepted: { word: "Accepted", color: "#6b7280" },
+  assigned: { word: "Not started", color: "#6b7280" },
+  open: { word: "Not started", color: "#6b7280" },
+};
+
+interface DayCase {
+  key: string;
+  case_number: string | null;
+  case_ref: string | null;
+  rank: number;
+  word: string;
+  color: string;
+}
+
+/**
+ * Every case the day touched, one row each, in the order they were given.
+ *
+ * Keyed on the case number and falling back to the WO number, so an event that
+ * carries only one of the two still lands on the right row instead of opening a
+ * second one for the same job.
+ */
+function casesOfDay(events: EngineerDayEvent[]): DayCase[] {
+  const byCase = new Map<string, DayCase>();
+  for (const event of events) {
+    const key = event.case_number ?? event.case_ref ?? null;
+    if (!key) continue;
+    // Rank 0 means the day says nothing happened to this call, so the case's
+    // own status is the better answer where it has one.
+    const moved = CASE_PROGRESS[event.type];
+    const progress =
+      moved && moved.rank > 0
+        ? moved
+        : {
+            rank: 0,
+            // No status on the payload means the backend serving this board
+            // predates the field. Say only what is certain -- that the call is
+            // on the list -- rather than "Not started", which would be a claim
+            // about a case that may well have been closed last week.
+            ...(STATUS_WORD[event.case_status ?? ""] ?? { word: "On the list", color: "#6b7280" }),
+          };
+    const existing = byCase.get(key);
+    if (!existing) {
+      byCase.set(key, {
+        key,
+        case_number: event.case_number ?? null,
+        case_ref: event.case_ref ?? null,
+        ...progress,
+      });
+      continue;
+    }
+    // Fill in whichever number this event knows and the first one did not.
+    if (!existing.case_number && event.case_number) existing.case_number = event.case_number;
+    if (!existing.case_ref && event.case_ref) existing.case_ref = event.case_ref;
+    if (progress.rank > existing.rank) Object.assign(existing, progress);
+  }
+  return [...byCase.values()];
 }
 
 // Each kind of timeline entry gets its own colour, so the shape of a day reads
@@ -453,6 +540,9 @@ export default function LiveTrackingPanel({
   // Which engineer the admin is checking, and which day of theirs.
   const [selectedId, setSelectedId] = useState<number | null>(initialEngineerId);
   const [day, setDay] = useState<EngineerDay | null>(null);
+  // Grouped once per payload rather than on every render: a full day is forty
+  // events and this runs inside a panel that re-renders on a 30s refresh.
+  const dayCases = useMemo(() => (day ? casesOfDay(day.events) : []), [day]);
   const [dayDate, setDayDate] = useState(initialDate ?? todayStr());
   const [dayLoading, setDayLoading] = useState(false);
 
@@ -1019,6 +1109,80 @@ export default function LiveTrackingPanel({
                   }
                 />
               </div>
+
+              {/* THE COUNT, said out loud.
+                  The timeline is chronological, so calls carried in from
+                  earlier days cluster at the top and one given this morning
+                  sits an hour below them. The office was counting rows in that
+                  list against the engineer's app -- four against five -- and
+                  the total was on neither screen. */}
+              {dayCases.length > 0 && (
+                <div style={{ padding: "0 14px 12px" }}>
+                  <div
+                    style={{
+                      fontSize: 11,
+                      color: "#9ca3af",
+                      textTransform: "uppercase",
+                      letterSpacing: 0.4,
+                      marginBottom: 6,
+                    }}
+                  >
+                    Cases ({dayCases.length})
+                  </div>
+                  <div style={{ display: "grid", gap: 6 }}>
+                    {dayCases.map((c) => (
+                      <div
+                        key={c.key}
+                        style={{
+                          display: "grid",
+                          gridTemplateColumns: "minmax(0, 1fr) auto",
+                          alignItems: "center",
+                          gap: 8,
+                          border: "1px solid #eef2f7",
+                          borderRadius: 8,
+                          padding: "6px 8px",
+                        }}
+                      >
+                        <div
+                          style={{
+                            display: "flex",
+                            alignItems: "center",
+                            gap: 6,
+                            flexWrap: "wrap",
+                            fontSize: 12,
+                            fontVariantNumeric: "tabular-nums",
+                          }}
+                        >
+                          {c.case_number && <span style={{ color: "#111827" }}>{c.case_number}</span>}
+                          {c.case_ref && (
+                            <span
+                              style={{
+                                color: "#374151",
+                                background: "#f3f4f6",
+                                border: "1px solid #e5e7eb",
+                                borderRadius: 6,
+                                padding: "0 5px",
+                              }}
+                            >
+                              {c.case_ref}
+                            </span>
+                          )}
+                        </div>
+                        <span
+                          style={{
+                            fontSize: 11,
+                            fontWeight: 600,
+                            color: c.color,
+                            whiteSpace: "nowrap",
+                          }}
+                        >
+                          {c.word}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
 
               {day.events.length === 0 ? (
                 <p style={{ margin: 0, padding: "0 14px 16px", fontSize: 13, color: "#6b7280" }}>

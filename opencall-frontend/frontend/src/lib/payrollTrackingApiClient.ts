@@ -97,6 +97,8 @@ export interface EngineerDayStop {
   fixes: number;
   case_id: number | null;
   case_number: string | null;
+  /** The WO number, which is what everyone outside Payroll calls the job. */
+  case_ref?: string | null;
 }
 
 export interface EngineerDayEvent {
@@ -107,6 +109,7 @@ export interface EngineerDayEvent {
   latitude?: number;
   longitude?: number;
   case_number?: string | null;
+  case_ref?: string | null;
 }
 
 /**

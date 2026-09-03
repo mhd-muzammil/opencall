@@ -141,6 +141,9 @@ const EVENT_COLOR: Record<string, string> = {
   duty_end: "#dc2626",
   stop: "#d97706",
   assigned: "#6b7280",
+  // Not a moment in the day but the state it opened in, so it is the quietest
+  // thing on the rail.
+  carried: "#d1d5db",
   started: "#2563eb",
   reached: "#0891b2",
   completed: "#16a34a",
@@ -1047,13 +1050,16 @@ export default function LiveTrackingPanel({
                         <span
                           style={{
                             fontSize: 12,
-                            color: "#6b7280",
+                            color: e.type === "carried" ? "#c3c8d0" : "#6b7280",
                             fontVariantNumeric: "tabular-nums",
                             whiteSpace: "nowrap",
                             paddingTop: 1,
                           }}
                         >
-                          {clock(e.at)}
+                          {/* A call carried in from an earlier day has no clock
+                              time of its own. Stamping it 12:00 AM said it
+                              happened at midnight, which nobody did. */}
+                          {e.type === "carried" ? "—" : clock(e.at)}
                         </span>
                         {/* A dot with a line running on to the next entry, so a
                             day reads as one sequence rather than sixteen
@@ -1089,14 +1095,19 @@ export default function LiveTrackingPanel({
                           </div>
                           {/* The case and the map link on a line of their own.
                               Inline, "view on map" broke after "view" and left
-                              "on map" hanging under the next entry. */}
-                          {(e.case_number || mapped) && (
+                              "on map" hanging under the next entry.
+                              Both numbers, in full: the OC number is Payroll's,
+                              the WO number is the one the customer, the report
+                              and FieldEZ use, and the office should not have to
+                              cross-reference a second screen to get it. */}
+                          {(e.case_number || e.case_ref || mapped) && (
                             <div
                               style={{
                                 marginTop: 2,
                                 display: "flex",
                                 alignItems: "center",
                                 gap: 8,
+                                flexWrap: "wrap",
                                 fontSize: 12,
                                 color: "#6b7280",
                               }}
@@ -1104,6 +1115,20 @@ export default function LiveTrackingPanel({
                               {e.case_number && (
                                 <span style={{ fontVariantNumeric: "tabular-nums" }}>
                                   {e.case_number}
+                                </span>
+                              )}
+                              {e.case_ref && (
+                                <span
+                                  style={{
+                                    fontVariantNumeric: "tabular-nums",
+                                    color: "#374151",
+                                    background: "#f3f4f6",
+                                    border: "1px solid #e5e7eb",
+                                    borderRadius: 6,
+                                    padding: "0 5px",
+                                  }}
+                                >
+                                  {e.case_ref}
                                 </span>
                               )}
                               {mapped && (

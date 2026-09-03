@@ -75,14 +75,62 @@ const arrowStyle: React.CSSProperties = {
 };
 
 /** One headline number, the way Lystloc puts duration / distance / stops up top. */
-function Stat({ label, value }: { label: string; value: string }) {
+function Stat({ label, value, size = 18 }: { label: string; value: string; size?: number }) {
   return (
-    <div>
-      <div style={{ fontSize: 18, fontWeight: 700, color: "#111827" }}>{value}</div>
-      <div style={{ fontSize: 11, color: "#6b7280", textTransform: "uppercase", letterSpacing: 0.4 }}>
+    // A tile rather than bare text: four figures side by side need an edge each
+    // to be read as four, and the tint separates them from the timeline below.
+    <div
+      style={{
+        border: "1px solid #eef2f7",
+        borderRadius: 10,
+        background: "#f9fafb",
+        padding: "8px 10px",
+        minWidth: 0,
+      }}
+    >
+      <div
+        style={{
+          fontSize: size,
+          fontWeight: 700,
+          color: "#111827",
+          fontVariantNumeric: "tabular-nums",
+          whiteSpace: "nowrap",
+          overflow: "hidden",
+          textOverflow: "ellipsis",
+        }}
+      >
+        {value}
+      </div>
+      <div style={{ fontSize: 10.5, color: "#6b7280", textTransform: "uppercase", letterSpacing: 0.4 }}>
         {label}
       </div>
     </div>
+  );
+}
+
+/**
+ * One fact about the engineer: a muted label in its own column, the value in
+ * the next. Written as a dt/dd pair because that is what it is, and because
+ * two columns is what lets seven facts be scanned instead of read.
+ */
+function Fact({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <>
+      <dt
+        style={{
+          fontSize: 11,
+          color: "#9ca3af",
+          textTransform: "uppercase",
+          letterSpacing: 0.4,
+          whiteSpace: "nowrap",
+        }}
+      >
+        {label}
+      </dt>
+      <dd style={{ margin: 0, color: "#374151", minWidth: 0, overflowWrap: "anywhere" }}>
+        {children}
+      </dd>
+    </>
   );
 }
 
@@ -758,28 +806,33 @@ export default function LiveTrackingPanel({
               any real screen put the answer off the bottom of the page. */}
           {selected ? (
             <>
-          <div style={{ padding: "12px 14px", borderBottom: "1px solid #e5e7eb" }}>
-            <div style={{ fontSize: 15, fontWeight: 600, color: "#111827" }}>Engineer day</div>
-          </div>
-      {/* Selected engineer detail */}
-      {selected && (
-        <div style={{ flex: 1, overflowY: "auto", minHeight: 0, padding: 14 }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          {/* The identity stays put. The timeline under it can run to forty
+              entries on a full day, and reading half of one while the name has
+              scrolled off the top is how the wrong engineer gets phoned. */}
+          <div
+            style={{
+              padding: "10px 12px 8px",
+              background: "#f9fafb",
+              display: "flex",
+              alignItems: "center",
+              gap: 10,
+            }}
+          >
             <button
               onClick={() => setSelectedId(null)}
               title="Back to all engineers"
               style={{
                 display: "grid",
                 placeItems: "center",
-                width: 30,
-                height: 30,
+                width: 28,
+                height: 28,
                 flexShrink: 0,
                 borderRadius: 8,
                 border: "1px solid #e5e7eb",
                 background: "#fff",
                 color: "#374151",
                 cursor: "pointer",
-                fontSize: 15,
+                fontSize: 14,
                 lineHeight: 1,
               }}
             >
@@ -789,47 +842,90 @@ export default function LiveTrackingPanel({
               style={{
                 display: "grid",
                 placeItems: "center",
-                width: 34,
-                height: 34,
+                width: 32,
+                height: 32,
                 flexShrink: 0,
                 borderRadius: 999,
                 background: "#e0e7ff",
                 color: "#4338ca",
-                fontSize: 12.5,
+                fontSize: 12,
                 fontWeight: 700,
               }}
             >
               {initials(selected.engineer_name)}
             </div>
-            <strong style={{ fontSize: 15, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-              {selected.engineer_name}
-            </strong>
+            <div style={{ minWidth: 0, flex: 1 }}>
+              <div
+                style={{
+                  fontSize: 14.5,
+                  fontWeight: 700,
+                  color: "#111827",
+                  overflow: "hidden",
+                  textOverflow: "ellipsis",
+                  whiteSpace: "nowrap",
+                }}
+              >
+                {selected.engineer_name}
+              </div>
+              <div style={{ fontSize: 12, color: "#6b7280" }}>
+                {selected.branch ?? "No branch"}
+                {selected.duty_started_at && (
+                  <>
+                    {" · "}
+                    <span style={{ fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap" }}>
+                      {clock(selected.duty_started_at)}
+                      {selected.duty_ended_at ? `–${clock(selected.duty_ended_at)}` : " onwards"}
+                    </span>
+                    {` (${duration(selected.duty_minutes)})`}
+                  </>
+                )}
+              </div>
+            </div>
           </div>
-          <div style={{ marginTop: 8, fontSize: 14, color: "#374151", display: "grid", gap: 4 }}>
-            <span>Branch: {selected.branch ?? "—"}</span>
-            <span>
-              Duty: <DutyBadge row={selected} />
-              {selected.duty_started_at && (
-                <>
-                  {" "}
-                  {clock(selected.duty_started_at)}
-                  {selected.duty_ended_at ? ` – ${clock(selected.duty_ended_at)}` : " onwards"} (
-                  {duration(selected.duty_minutes)})
-                </>
-              )}
-            </span>
-            <span>Active case: {selected.active_case_number ?? "—"}</span>
-            <span>Status: {selected.status || "—"}</span>
-            <span>Last seen: {relativeAge(selected.last_seen_minutes)}</span>
-            <span>
-              {selected.stale ? "Last known position: " : "Position: "}
+
+          {/* The badge on a line of its own. Beside the name on a 360px rail it
+              squeezed "Prashanth K" down to "Prashan…" and the shift window ran
+              underneath it. */}
+          <div
+            style={{
+              padding: "0 12px 10px",
+              borderBottom: "1px solid #e5e7eb",
+              background: "#f9fafb",
+            }}
+          >
+            <DutyBadge row={selected} />
+          </div>
+      {/* Selected engineer detail */}
+      {selected && (
+        // ONE scrolling region. There used to be two -- this pane and the
+        // timeline inside it -- so the office scrolled the wrong one, lost the
+        // header off the top and had the date picker sliced in half.
+        <div style={{ flex: 1, overflowY: "auto", minHeight: 0 }}>
+          {/* Labels down the left, values in a column of their own: the facts
+              read as a table you can scan, not as five sentences. */}
+          <dl
+            style={{
+              margin: 0,
+              padding: "12px 14px",
+              display: "grid",
+              gridTemplateColumns: "auto minmax(0, 1fr)",
+              columnGap: 12,
+              rowGap: 7,
+              fontSize: 13,
+              alignItems: "baseline",
+            }}
+          >
+            <Fact label="Active case">{selected.active_case_number ?? "—"}</Fact>
+            <Fact label="Status">{selected.status || "—"}</Fact>
+            <Fact label="Last seen">{relativeAge(selected.last_seen_minutes)}</Fact>
+            <Fact label={selected.stale ? "Last known" : "Position"}>
               {selected.latitude != null && selected.longitude != null ? (
                 <>
                   <a
                     href={mapsLink(selected.latitude, selected.longitude)}
                     target="_blank"
                     rel="noreferrer"
-                    style={{ color: "#2563eb" }}
+                    style={{ color: "#2563eb", fontVariantNumeric: "tabular-nums" }}
                   >
                     {selected.latitude.toFixed(5)}, {selected.longitude.toFixed(5)}
                   </a>
@@ -840,31 +936,34 @@ export default function LiveTrackingPanel({
               ) : (
                 <span style={{ color: "#9ca3af" }}>no fix yet on this duty</span>
               )}
-            </span>
-            <span style={{ fontWeight: 600, color: "#1d4ed8" }}>
-              This duty: {selected.distance_km} km
-            </span>
-          </div>
+            </Fact>
+            <Fact label="This duty">
+              <strong style={{ color: "#1d4ed8", fontVariantNumeric: "tabular-nums" }}>
+                {selected.distance_km} km
+              </strong>
+            </Fact>
+          </dl>
 
-          {/* The day itself: pick a date, read the three numbers, then read the
+          {/* The day itself: pick a date, read the four numbers, then read the
               timeline top to bottom the way the day happened. */}
           <div
             style={{
-              marginTop: 16,
-              paddingTop: 12,
-              borderTop: "1px solid #bfdbfe",
+              padding: "10px 14px",
+              borderTop: "1px solid #e5e7eb",
+              background: "#f8fafc",
               display: "flex",
               alignItems: "center",
               gap: 8,
               flexWrap: "wrap",
             }}
           >
-            {/* Plain words, not chevron glyphs — ‹ and › rendered as empty
-                boxes in the console's font, so the buttons looked broken. */}
+            {/* Plain words, not chevron glyphs: the single-guillemet characters
+                rendered as empty boxes in the console font, so the buttons
+                looked broken. */}
             <button onClick={() => shiftDay(-1)} style={arrowStyle} title="Previous day">
               Prev
             </button>
-            <strong style={{ fontSize: 14, minWidth: 110, textAlign: "center" }}>
+            <strong style={{ fontSize: 13.5, minWidth: 96, textAlign: "center" }}>
               {dayLabel(dayDate)}
             </strong>
             <button
@@ -880,7 +979,13 @@ export default function LiveTrackingPanel({
               value={dayDate}
               max={todayStr()}
               onChange={(e) => e.target.value && setDayDate(e.target.value)}
-              style={{ padding: "6px 10px", border: "1px solid #bfdbfe", borderRadius: 8, fontSize: 13 }}
+              style={{
+                padding: "5px 8px",
+                border: "1px solid #bfdbfe",
+                borderRadius: 8,
+                fontSize: 12.5,
+                fontVariantNumeric: "tabular-nums",
+              }}
             />
             {dayLoading && <span style={{ fontSize: 12, color: "#6b7280" }}>loading…</span>}
           </div>
@@ -891,17 +996,19 @@ export default function LiveTrackingPanel({
                 style={{
                   display: "grid",
                   gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
-                  gap: 12,
-                  marginTop: 12,
-                  paddingTop: 12,
-                  borderTop: "1px solid #e5e7eb",
+                  gap: 8,
+                  padding: "12px 14px",
                 }}
               >
                 <Stat label="Duration" value={duration(day.duty_minutes)} />
                 <Stat label="Distance" value={`${day.total_km} km`} />
                 <Stat label="Stops" value={String(day.stop_count)} />
+                {/* A clock range is far wider than the other three figures. At
+                    the same size it broke across two lines and left "PM"
+                    stranded on its own, so it is set smaller instead. */}
                 <Stat
                   label="Seen"
+                  size={12.5}
                   value={
                     day.first_seen && day.last_seen
                       ? `${clock(day.first_seen)} – ${clock(day.last_seen)}`
@@ -911,57 +1018,110 @@ export default function LiveTrackingPanel({
               </div>
 
               {day.events.length === 0 ? (
-                <p style={{ marginTop: 12, fontSize: 13, color: "#6b7280" }}>
-                  Nothing recorded on this day — no duty was started and no position came in.
+                <p style={{ margin: 0, padding: "0 14px 16px", fontSize: 13, color: "#6b7280" }}>
+                  Nothing recorded on this day — no duty was started and no position came
+                  in.
                 </p>
               ) : (
                 <ol
                   style={{
-                    marginTop: 12,
-                    maxHeight: 260,
-                    overflowY: "auto",
+                    margin: 0,
+                    padding: "12px 14px 16px",
                     listStyle: "none",
-                    padding: 0,
-                    display: "grid",
-                    gap: 8,
+                    borderTop: "1px solid #e5e7eb",
                   }}
                 >
-                  {day.events.map((e, i) => (
-                    <li key={`${e.at}-${i}`} style={{ display: "flex", gap: 10, fontSize: 13 }}>
-                      <span style={{ color: "#6b7280", minWidth: 62, fontVariantNumeric: "tabular-nums" }}>
-                        {clock(e.at)}
-                      </span>
-                      <span
+                  {day.events.map((e, i) => {
+                    const last = i === day.events.length - 1;
+                    const mapped = e.latitude != null && e.longitude != null;
+                    return (
+                      <li
+                        key={`${e.at}-${i}`}
                         style={{
-                          width: 8,
-                          height: 8,
-                          borderRadius: "50%",
-                          marginTop: 5,
-                          flexShrink: 0,
-                          background: EVENT_COLOR[e.type] ?? "#6b7280",
+                          display: "grid",
+                          gridTemplateColumns: "56px 16px minmax(0, 1fr)",
+                          columnGap: 8,
+                          alignItems: "start",
                         }}
-                      />
-                      <span style={{ color: "#111827" }}>
-                        {e.label}
-                        {e.case_number && (
-                          <span style={{ color: "#6b7280" }}> · {e.case_number}</span>
-                        )}
-                        {e.latitude != null && e.longitude != null && (
-                          <>
-                            {" "}
-                            <a
-                              href={mapsLink(e.latitude, e.longitude)}
-                              target="_blank"
-                              rel="noreferrer"
-                              style={{ color: "#2563eb" }}
+                      >
+                        <span
+                          style={{
+                            fontSize: 12,
+                            color: "#6b7280",
+                            fontVariantNumeric: "tabular-nums",
+                            whiteSpace: "nowrap",
+                            paddingTop: 1,
+                          }}
+                        >
+                          {clock(e.at)}
+                        </span>
+                        {/* A dot with a line running on to the next entry, so a
+                            day reads as one sequence rather than sixteen
+                            unrelated lines. */}
+                        <span style={{ position: "relative", alignSelf: "stretch" }}>
+                          <span
+                            style={{
+                              position: "absolute",
+                              left: 3,
+                              top: 5,
+                              width: 9,
+                              height: 9,
+                              borderRadius: "50%",
+                              background: EVENT_COLOR[e.type] ?? "#6b7280",
+                            }}
+                          />
+                          {!last && (
+                            <span
+                              style={{
+                                position: "absolute",
+                                left: 7,
+                                top: 16,
+                                bottom: 0,
+                                width: 1,
+                                background: "#e5e7eb",
+                              }}
+                            />
+                          )}
+                        </span>
+                        <div style={{ minWidth: 0, paddingBottom: last ? 0 : 12 }}>
+                          <div style={{ fontSize: 13, fontWeight: 500, color: "#111827" }}>
+                            {e.label}
+                          </div>
+                          {/* The case and the map link on a line of their own.
+                              Inline, "view on map" broke after "view" and left
+                              "on map" hanging under the next entry. */}
+                          {(e.case_number || mapped) && (
+                            <div
+                              style={{
+                                marginTop: 2,
+                                display: "flex",
+                                alignItems: "center",
+                                gap: 8,
+                                fontSize: 12,
+                                color: "#6b7280",
+                              }}
                             >
-                              view on map
-                            </a>
-                          </>
-                        )}
-                      </span>
-                    </li>
-                  ))}
+                              {e.case_number && (
+                                <span style={{ fontVariantNumeric: "tabular-nums" }}>
+                                  {e.case_number}
+                                </span>
+                              )}
+                              {mapped && (
+                                <a
+                                  href={mapsLink(e.latitude as number, e.longitude as number)}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                  style={{ color: "#2563eb", whiteSpace: "nowrap" }}
+                                >
+                                  view on map
+                                </a>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      </li>
+                    );
+                  })}
                 </ol>
               )}
             </>

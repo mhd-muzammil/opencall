@@ -543,6 +543,14 @@ export default function LiveTrackingPanel({
   // Grouped once per payload rather than on every render: a full day is forty
   // events and this runs inside a panel that re-renders on a 30s refresh.
   const dayCases = useMemo(() => (day ? casesOfDay(day.events) : []), [day]);
+  // What HAPPENED, as against what was on the list. The two entry kinds that
+  // only say a case exists -- "On the list from 14 Aug" and "Case assigned" --
+  // are the Cases block above; repeating them here pushed the actual work of
+  // the day, nine rows of it, off the bottom of the panel.
+  const timeline = useMemo(
+    () => (day ? day.events.filter((e) => e.type !== "carried" && e.type !== "assigned") : []),
+    [day],
+  );
   const [dayDate, setDayDate] = useState(initialDate ?? todayStr());
   const [dayLoading, setDayLoading] = useState(false);
 
@@ -1189,7 +1197,7 @@ export default function LiveTrackingPanel({
                   Nothing recorded on this day — no duty was started and no position came
                   in.
                 </p>
-              ) : (
+              ) : timeline.length === 0 ? null : (
                 <ol
                   style={{
                     margin: 0,
@@ -1198,8 +1206,8 @@ export default function LiveTrackingPanel({
                     borderTop: "1px solid #e5e7eb",
                   }}
                 >
-                  {day.events.map((e, i) => {
-                    const last = i === day.events.length - 1;
+                  {timeline.map((e, i) => {
+                    const last = i === timeline.length - 1;
                     const mapped = e.latitude != null && e.longitude != null;
                     return (
                       <li

@@ -23,6 +23,7 @@ import {
 } from "lucide-react";
 import LiveTrackingPanel from "../features/dashboard/components/LiveTrackingPanel";
 import { useColumnFilters } from "../lib/useColumnFilters";
+import { findFinalSessionForDay } from "../lib/dayReportSession";
 import {
   reportHasDistanceValues,
   withDistanceAvailability,
@@ -3382,7 +3383,7 @@ export default function DashboardPage() {
     );
   }
 
-  function openRecordsWithFilter({
+  async function openRecordsWithFilter({
     region,
     woOtcCode,
     rtplStatus,
@@ -3432,18 +3433,42 @@ export default function DashboardPage() {
     /**
      * The day the caller's numbers were counted over, as YYYY-MM-DD.
      *
-     * Records renders whatever day `rtplAnalyticsDate` names, which starts at
-     * today. A caller counting a PAST day (Engineer Productivity on a specific
-     * date) therefore handed over ticket ids that today's report cannot match:
-     * calls closed on that day have left the working list by the next morning,
-     * so "8 assigned" opened onto only the 3 still open. Moving the date with
-     * the filter is what makes the drill-down land on the rows that were
-     * counted. Null means "whatever day Records is already on".
+     * The records TABLE is date-blind: useRecordRowSets reads `report`, the
+     * workspace report, and no date narrows it. So a caller counting a PAST day
+     * (Engineer Productivity on a specific date) handed over ticket ids that
+     * today's rows cannot match — the calls that closed that day have left the
+     * working list by the next morning, and "8 assigned" opened onto only the 3
+     * still open. Setting rtplAnalyticsDate alone does NOT fix this; that date
+     * only drives the RTPL/BOD-EOD panel above the table.
+     *
+     * Bringing the day's report into the workspace is what makes the ids match,
+     * and it is the same thing opening that day from Report History does.
+     * Null means "leave Records on the day it is already showing".
      */
     reportDate?: string | null;
   }>) {
-    if (reportDate) {
-      setRtplAnalyticsDate(reportDate);
+    // Before any filter is set, because restoring swaps the rows the filter is
+    // about to be applied to.
+    if (reportDate && report?.reportDate !== reportDate) {
+      // The day's FINAL report = its most recent completed session, the same
+      // one Engineer Productivity counted from.
+      const daySession = findFinalSessionForDay(historySessions, reportDate);
+
+      if (daySession) {
+        await runAction(async () => {
+          await restoreHistorySession(daySession, { closeHistoryPanel: false });
+        });
+      } else {
+        // Special access has no history sessions to restore from — it reads the
+        // day through the scoped endpoint. That report is already cached by the
+        // productivity fetch, so reuse it rather than leaving the wrong day up.
+        const cached = productivityDayReportCacheRef.current.get(reportDate);
+        if (cached) {
+          setReport(cached);
+          setReportDate(reportDate);
+          setRtplAnalyticsDate(reportDate);
+        }
+      }
     }
     setSelectedRegion(region ?? null);
     setSelectedWoOtcCode(woOtcCode ?? null);

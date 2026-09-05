@@ -97,6 +97,7 @@ export function ProductivityPage({
     wipAgings?: readonly string[] | null;
     engineers?: readonly string[] | null;
     ticketIds?: readonly string[] | null;
+    reportDate?: string | null;
   }>) => void;
 }>) {
   const [searchQuery, setSearchQuery] = useState("");
@@ -278,7 +279,11 @@ export function ProductivityPage({
           if (hasTickets) {
             openRecordsWithFilter({
               region: selectedRegion === "ALL" ? null : selectedRegion,
-              ticketIds
+              ticketIds,
+              // Send Records to the day these tickets were counted on. Without
+              // it the closed ones are missing there: they are in that day's
+              // report, not in today's.
+              reportDate: reportDay,
             });
           }
         }}
@@ -316,6 +321,7 @@ export function ProductivityPage({
             openRecordsWithFilter({
               region: selectedRegion === "ALL" ? null : selectedRegion,
               ticketIds,
+              reportDate: reportDay,
             });
           }
         }}
@@ -632,6 +638,7 @@ export function ProductivityPage({
                       openRecordsWithFilter({
                         region: selectedRegion === "ALL" ? null : selectedRegion,
                         engineers: [item.name],
+                        reportDate: reportDay,
                       });
                     }}
                     title={`Click to view all records for ${item.name}`}

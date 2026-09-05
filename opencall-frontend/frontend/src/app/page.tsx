@@ -3405,6 +3405,7 @@ export default function DashboardPage() {
     warrantyOnly = false,
     nonWarrantyOnly = false,
     ticketIds = null,
+    reportDate = null,
   }: Readonly<{
     region?: string | null;
     woOtcCode?: string | null;
@@ -3428,7 +3429,22 @@ export default function DashboardPage() {
     warrantyOnly?: boolean;
     nonWarrantyOnly?: boolean;
     ticketIds?: readonly string[] | null;
+    /**
+     * The day the caller's numbers were counted over, as YYYY-MM-DD.
+     *
+     * Records renders whatever day `rtplAnalyticsDate` names, which starts at
+     * today. A caller counting a PAST day (Engineer Productivity on a specific
+     * date) therefore handed over ticket ids that today's report cannot match:
+     * calls closed on that day have left the working list by the next morning,
+     * so "8 assigned" opened onto only the 3 still open. Moving the date with
+     * the filter is what makes the drill-down land on the rows that were
+     * counted. Null means "whatever day Records is already on".
+     */
+    reportDate?: string | null;
   }>) {
+    if (reportDate) {
+      setRtplAnalyticsDate(reportDate);
+    }
     setSelectedRegion(region ?? null);
     setSelectedWoOtcCode(woOtcCode ?? null);
     setShowCissOnly(cissOnly);

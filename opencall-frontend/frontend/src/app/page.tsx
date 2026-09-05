@@ -912,8 +912,24 @@ export default function DashboardPage() {
   // `session`, so without this a different user signing in on the same tab would
   // inherit the previous user's filter.
   const retainedSelectionUserIdRef = useRef<string | null>(null);
+  /** Set when a drill-down is about to swap the report on purpose. */
+  const drillDownRestoreRef = useRef(false);
 
   useEffect(() => {
+    // A drill-down that deliberately loaded another day's report is NOT a fresh
+    // report to start clean on: it arrives carrying the region, the day and the
+    // ticket filter it wants. Clearing here undid all of that — the first click
+    // from Engineer Productivity on a past day landed on Records correctly, and
+    // sent the productivity date back to today on the way, so returning to the
+    // page showed today and the drill-down had to be done twice. The ref is
+    // consumed on the first report change it sees, so an ordinary swap after it
+    // still resets.
+    if (drillDownRestoreRef.current) {
+      drillDownRestoreRef.current = false;
+      retainedSelectionUserIdRef.current = session?.user?.id ?? null;
+      return;
+    }
+
     const isRegionAdmin = session?.user?.role === "REGION_ADMIN";
 
     // A report SWAP must not silently drop the ASP the user is working in.
@@ -3455,6 +3471,9 @@ export default function DashboardPage() {
       const daySession = findFinalSessionForDay(historySessions, reportDate);
 
       if (daySession) {
+        // Tells the report-changed effect that this swap is deliberate, so it
+        // leaves the region and the productivity date alone.
+        drillDownRestoreRef.current = true;
         await runAction(async () => {
           await restoreHistorySession(daySession, { closeHistoryPanel: false });
         });
@@ -3464,6 +3483,8 @@ export default function DashboardPage() {
         // productivity fetch, so reuse it rather than leaving the wrong day up.
         const cached = productivityDayReportCacheRef.current.get(reportDate);
         if (cached) {
+          // Same deliberate swap as the restore above, same guard.
+          drillDownRestoreRef.current = true;
           setReport(cached);
           setReportDate(reportDate);
           setRtplAnalyticsDate(reportDate);

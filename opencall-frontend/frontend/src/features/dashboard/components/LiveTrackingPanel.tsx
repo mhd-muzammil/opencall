@@ -53,12 +53,28 @@ function clock(iso: string): string {
   return new Date(iso).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
 }
 
+/**
+ * A moment as the day it fell on, in the office's own timezone.
+ *
+ * NOT toISOString().slice(0, 10), which is UTC. India is five and a half hours
+ * ahead, so local midnight on the 1st is 18:30 UTC on the 31st -- that slice
+ * walked Prev two days back and left Next unable to advance at all.
+ */
+function istDay(when: Date): string {
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Kolkata",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(when);
+}
+
 function dayLabel(date: string): string {
   if (date === todayStr()) return "Today";
   const d = new Date(`${date}T00:00:00`);
   const yesterday = new Date();
   yesterday.setDate(yesterday.getDate() - 1);
-  if (date === yesterday.toISOString().slice(0, 10)) return "Yesterday";
+  if (date === istDay(yesterday)) return "Yesterday";
   return d.toLocaleDateString([], { day: "numeric", month: "short", year: "numeric" });
 }
 
@@ -105,6 +121,67 @@ function Stat({ label, value, size = 18 }: { label: string; value: string; size?
       <div style={{ fontSize: 10.5, color: "#6b7280", textTransform: "uppercase", letterSpacing: 0.4 }}>
         {label}
       </div>
+    </div>
+  );
+}
+
+/**
+ * Which day the board is showing.
+ *
+ * One component, used above the Track list and inside an engineer's day, so the
+ * two cannot drift apart -- they drive the same state and the same fetch.
+ */
+function DayPicker({
+  dayDate,
+  setDayDate,
+  shiftDay,
+  loading = false,
+}: {
+  dayDate: string;
+  setDayDate: (date: string) => void;
+  shiftDay: (days: number) => void;
+  loading?: boolean;
+}) {
+  return (
+    <div
+      style={{
+        display: "flex",
+        alignItems: "center",
+        gap: 8,
+        flexWrap: "wrap",
+      }}
+    >
+      {/* Plain words, not chevron glyphs: the single-guillemet characters
+          rendered as empty boxes in the console font, so the buttons looked
+          broken. */}
+      <button onClick={() => shiftDay(-1)} style={arrowStyle} title="Previous day">
+        Prev
+      </button>
+      <strong style={{ fontSize: 13.5, minWidth: 96, textAlign: "center" }}>
+        {dayLabel(dayDate)}
+      </strong>
+      <button
+        onClick={() => shiftDay(1)}
+        disabled={dayDate >= todayStr()}
+        style={{ ...arrowStyle, opacity: dayDate >= todayStr() ? 0.35 : 1 }}
+        title="Next day"
+      >
+        Next
+      </button>
+      <input
+        type="date"
+        value={dayDate}
+        max={todayStr()}
+        onChange={(e) => e.target.value && setDayDate(e.target.value)}
+        style={{
+          padding: "5px 8px",
+          border: "1px solid #bfdbfe",
+          borderRadius: 8,
+          fontSize: 12.5,
+          fontVariantNumeric: "tabular-nums",
+        }}
+      />
+      {loading && <span style={{ fontSize: 12, color: "#6b7280" }}>loading…</span>}
     </div>
   );
 }
@@ -475,12 +552,7 @@ function DutyBadge({ row }: { row: RosterEngineer }) {
  * and came back absent, with their whole night's work missing from the board.
  */
 function todayStr(): string {
-  return new Intl.DateTimeFormat("en-CA", {
-    timeZone: "Asia/Kolkata",
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-  }).format(new Date());
+  return istDay(new Date());
 }
 
 /**
@@ -641,9 +713,12 @@ export default function LiveTrackingPanel({
   }, [token, selectedId, dayDate, engineers.length]);
 
   const shiftDay = (days: number) => {
-    const d = new Date(`${dayDate}T00:00:00`);
+    // Walked in whole days from local midnight and read back as a local day.
+    // Through toISOString() this lost the half-hour offset and with it a whole
+    // day: Prev jumped two and Next moved none.
+    const d = new Date(`${dayDate}T12:00:00`);
     d.setDate(d.getDate() + days);
-    const next = d.toISOString().slice(0, 10);
+    const next = istDay(d);
     // Never walk into the future — there is nothing recorded there.
     if (next <= todayStr()) setDayDate(next);
   };
@@ -790,7 +865,13 @@ export default function LiveTrackingPanel({
               active={focus === "low_battery"}
             />
           )}
-          <SummaryStat value={totalKm.toFixed(1)} of="km" label="Travelled today" />
+          {/* Named for the day on screen. Left as "today" it read as today's
+              distance while showing Thursday's. */}
+          <SummaryStat
+            value={totalKm.toFixed(1)}
+            of="km"
+            label={dayDate === todayStr() ? "Travelled today" : `Travelled ${dayLabel(dayDate)}`}
+          />
         </div>
       </div>
 
@@ -1058,37 +1139,12 @@ export default function LiveTrackingPanel({
               flexWrap: "wrap",
             }}
           >
-            {/* Plain words, not chevron glyphs: the single-guillemet characters
-                rendered as empty boxes in the console font, so the buttons
-                looked broken. */}
-            <button onClick={() => shiftDay(-1)} style={arrowStyle} title="Previous day">
-              Prev
-            </button>
-            <strong style={{ fontSize: 13.5, minWidth: 96, textAlign: "center" }}>
-              {dayLabel(dayDate)}
-            </strong>
-            <button
-              onClick={() => shiftDay(1)}
-              disabled={dayDate >= todayStr()}
-              style={{ ...arrowStyle, opacity: dayDate >= todayStr() ? 0.35 : 1 }}
-              title="Next day"
-            >
-              Next
-            </button>
-            <input
-              type="date"
-              value={dayDate}
-              max={todayStr()}
-              onChange={(e) => e.target.value && setDayDate(e.target.value)}
-              style={{
-                padding: "5px 8px",
-                border: "1px solid #bfdbfe",
-                borderRadius: 8,
-                fontSize: 12.5,
-                fontVariantNumeric: "tabular-nums",
-              }}
+            <DayPicker
+              dayDate={dayDate}
+              setDayDate={setDayDate}
+              shiftDay={shiftDay}
+              loading={dayLoading}
             />
-            {dayLoading && <span style={{ fontSize: 12, color: "#6b7280" }}>loading…</span>}
           </div>
 
           {day && (
@@ -1329,7 +1385,13 @@ export default function LiveTrackingPanel({
           ) : (
             <>
           <div style={{ padding: "12px 14px", borderBottom: "1px solid #e5e7eb" }}>
-            <div style={{ fontSize: 15, fontWeight: 600, color: "#111827" }}>Track</div>
+            <div style={{ fontSize: 15, fontWeight: 600, color: "#111827", marginBottom: 10 }}>
+              Track
+            </div>
+            {/* The day the whole board is showing. The roster call has always
+                taken a date; the only way to change it was to open an engineer,
+                change it there and come back. */}
+            <DayPicker dayDate={dayDate} setDayDate={setDayDate} shiftDay={shiftDay} />
           </div>
       <input
         placeholder="Search engineer / branch / case…"

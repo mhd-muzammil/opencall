@@ -540,7 +540,10 @@ function DutyBadge({ row }: { row: RosterEngineer }) {
                 `Caught up · ${row.queued_minutes}m dark`,
                 `The phone was offline for about ${row.queued_minutes} minutes and has just sent what it recorded while it was. The route behind them is complete.`,
               ]
-            : ["#dcfce7", "#15803d", "#22c55e", "On duty", "Sending live position"];
+            // The engineer's own word again: they tapped Login and have not
+            // tapped Logout. The line above the badge already carries the time
+            // it happened, so the badge says only the state.
+            : ["#dcfce7", "#15803d", "#22c55e", "Login", "Logged in and sending live position"];
 
   return (
     <span

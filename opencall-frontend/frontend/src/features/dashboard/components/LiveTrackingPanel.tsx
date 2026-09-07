@@ -229,6 +229,23 @@ const CASE_PROGRESS: Record<string, { rank: number; word: string; color: string 
 };
 
 /**
+ * The words the ENGINEER sees, for the two events that are their taps.
+ *
+ * They tap Login and Logout -- there is no button named Start Duty or Stop Duty
+ * anywhere any more -- so the board saying "Started duty" described the same tap
+ * in a second vocabulary. Keyed on the event TYPE rather than the sentence the
+ * server sent, so this holds whether or not the backend has been redeployed.
+ * An auto-closed session keeps saying so: that one was not a tap at all.
+ */
+function eventLabel(event: EngineerDayEvent): string {
+  if (event.type === "duty_start") return "Login";
+  if (event.type === "duty_end") {
+    return /auto/i.test(event.label ?? "") ? "Logout (auto \u2014 never tapped)" : "Logout";
+  }
+  return event.label;
+}
+
+/**
  * What a case's own status says, for a call this day recorded nothing about.
  *
  * Needed because four of an engineer's five calls can be closed and still have
@@ -491,8 +508,11 @@ function DutyBadge({ row }: { row: RosterEngineer }) {
             "#e0e7ff",
             "#4338ca",
             "#6366f1",
-            `Checked out${row.duty_ended_at ? ` · ${clock(row.duty_ended_at)}` : ""}`,
-            row.auto_closed ? "Auto-closed — they never tapped Stop Duty" : "Shift finished",
+            // The engineer's own word. They tap Logout; "checked out" was a
+            // third name for the same thing, after Login/Logout replaced Start
+            // Duty/Stop Duty in the app.
+            `Logout${row.duty_ended_at ? ` · ${clock(row.duty_ended_at)}` : ""}`,
+            row.auto_closed ? "Auto-closed — they never tapped Logout" : "Shift finished",
           ]
         : row.stale
           ? [
@@ -1319,7 +1339,7 @@ export default function LiveTrackingPanel({
                         </span>
                         <div style={{ minWidth: 0, paddingBottom: last ? 0 : 12 }}>
                           <div style={{ fontSize: 13, fontWeight: 500, color: "#111827" }}>
-                            {e.label}
+                            {eventLabel(e)}
                           </div>
                           {/* The case and the map link on a line of their own.
                               Inline, "view on map" broke after "view" and left

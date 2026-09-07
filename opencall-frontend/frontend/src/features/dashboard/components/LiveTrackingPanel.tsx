@@ -346,6 +346,10 @@ const EVENT_MARK: Record<string, string> = {
   started: "T",
   reached: "C",
   completed: "D",
+  // The two kinds of dark. G is the one that cost kilometres; N only cost the
+  // office the live view.
+  location_off: "G",
+  no_network: "N",
 };
 
 /** A figure reads faster with a mark beside it than with a longer label. */
@@ -398,6 +402,12 @@ const EVENT_COLOR: Record<string, string> = {
   started: "#2563eb",
   reached: "#0891b2",
   completed: "#16a34a",
+  // Location off is a hole in the day: that stretch is counted as zero
+  // kilometres, so it is coloured like a problem. No network lost nothing but
+  // the live view -- the kilometres arrived late and in full -- so it is a
+  // quiet slate, deliberately not alarming.
+  location_off: "#be123c",
+  no_network: "#475569",
 };
 
 // Below this, a phone is close enough to flat that it explains a silence.

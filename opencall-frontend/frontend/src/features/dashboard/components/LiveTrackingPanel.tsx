@@ -92,7 +92,17 @@ const arrowStyle: React.CSSProperties = {
 };
 
 /** One headline number, the way Lystloc puts duration / distance / stops up top. */
-function Stat({ label, value, size = 18 }: { label: string; value: string; size?: number }) {
+function Stat({
+  label,
+  value,
+  size = 18,
+  icon,
+}: {
+  label: string;
+  value: string;
+  size?: number;
+  icon?: React.ReactNode;
+}) {
   return (
     // A tile rather than bare text: four figures side by side need an edge each
     // to be read as four, and the tint separates them from the timeline below.
@@ -105,18 +115,21 @@ function Stat({ label, value, size = 18 }: { label: string; value: string; size?
         minWidth: 0,
       }}
     >
-      <div
-        style={{
-          fontSize: size,
-          fontWeight: 700,
-          color: "#111827",
-          fontVariantNumeric: "tabular-nums",
-          whiteSpace: "nowrap",
-          overflow: "hidden",
-          textOverflow: "ellipsis",
-        }}
-      >
-        {value}
+      <div style={{ display: "flex", alignItems: "center", gap: 5, minWidth: 0 }}>
+        {icon}
+        <div
+          style={{
+            fontSize: size,
+            fontWeight: 700,
+            color: "#111827",
+            fontVariantNumeric: "tabular-nums",
+            whiteSpace: "nowrap",
+            overflow: "hidden",
+            textOverflow: "ellipsis",
+          }}
+        >
+          {value}
+        </div>
       </div>
       <div style={{ fontSize: 10.5, color: "#6b7280", textTransform: "uppercase", letterSpacing: 0.4 }}>
         {label}
@@ -317,6 +330,63 @@ function casesOfDay(events: EngineerDayEvent[]): DayCase[] {
 
 // Each kind of timeline entry gets its own colour, so the shape of a day reads
 // at a glance: green starts, red ends, amber standing still, blue case work.
+/**
+ * One letter per kind of entry, inside a coloured ring.
+ *
+ * The letter is what makes a day skimmable: L for the two logins, W for
+ * waiting, C for reaching a customer, D for closing the call. A row of
+ * identical grey dots told the office nothing until they read every line.
+ */
+const EVENT_MARK: Record<string, string> = {
+  duty_start: "L",
+  duty_end: "L",
+  stop: "W",
+  assigned: "A",
+  carried: "A",
+  started: "T",
+  reached: "C",
+  completed: "D",
+};
+
+/** A figure reads faster with a mark beside it than with a longer label. */
+function StatIcon({ kind, color }: { kind: "time" | "distance" | "pin"; color: string }) {
+  const common = {
+    width: 13,
+    height: 13,
+    viewBox: "0 0 24 24",
+    fill: "none",
+    stroke: color,
+    strokeWidth: 2.2,
+    strokeLinecap: "round" as const,
+    strokeLinejoin: "round" as const,
+    style: { flexShrink: 0 },
+    "aria-hidden": true,
+  };
+  if (kind === "time") {
+    return (
+      <svg {...common}>
+        <circle cx="12" cy="12" r="9" />
+        <path d="M12 7v5l3 2" />
+      </svg>
+    );
+  }
+  if (kind === "distance") {
+    return (
+      <svg {...common}>
+        <path d="M4 18h4a4 4 0 0 0 0-8H9a4 4 0 0 1 0-8h11" />
+        <circle cx="4" cy="18" r="1.6" fill={color} stroke="none" />
+        <circle cx="20" cy="2" r="1.6" fill={color} stroke="none" />
+      </svg>
+    );
+  }
+  return (
+    <svg {...common}>
+      <path d="M12 21s7-5.4 7-11a7 7 0 1 0-14 0c0 5.6 7 11 7 11z" />
+      <circle cx="12" cy="10" r="2.4" />
+    </svg>
+  );
+}
+
 const EVENT_COLOR: Record<string, string> = {
   duty_start: "#16a34a",
   duty_end: "#dc2626",
@@ -1173,17 +1243,45 @@ export default function LiveTrackingPanel({
 
           {day && (
             <>
+              {/* The three the office reads first, across the top: how long
+                  they were out, how far they went, how many customers they
+                  actually reached. */}
+              <div
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: "repeat(3, minmax(0, 1fr))",
+                  gap: 8,
+                  padding: "12px 14px 0",
+                }}
+              >
+                <Stat
+                  label="Duration"
+                  size={15}
+                  value={duration(day.duty_minutes)}
+                  icon={<StatIcon kind="time" color="#dc2626" />}
+                />
+                <Stat
+                  label="Distance"
+                  size={15}
+                  value={`${day.total_km} km`}
+                  icon={<StatIcon kind="distance" color="#15803d" />}
+                />
+                <Stat
+                  label="Check-ins"
+                  size={15}
+                  value={String((day.punches ?? []).filter((p) => p.kind === "in").length)}
+                  icon={<StatIcon kind="pin" color="#2563eb" />}
+                />
+              </div>
               <div
                 style={{
                   display: "grid",
                   gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
                   gap: 8,
-                  padding: "12px 14px",
+                  padding: "8px 14px 12px",
                 }}
               >
-                <Stat label="Duration" value={duration(day.duty_minutes)} />
-                <Stat label="Distance" value={`${day.total_km} km`} />
-                <Stat label="Stops" value={String(day.stop_count)} />
+                <Stat label="Stops" value={String(day.stop_count)} size={15} />
                 {/* A clock range is far wider than the other three figures. At
                     the same size it broke across two lines and left "PM"
                     stranded on its own, so it is set smaller instead. */}
@@ -1294,7 +1392,7 @@ export default function LiveTrackingPanel({
                         key={`${e.at}-${i}`}
                         style={{
                           display: "grid",
-                          gridTemplateColumns: "56px 16px minmax(0, 1fr)",
+                          gridTemplateColumns: "56px 26px minmax(0, 1fr)",
                           columnGap: 8,
                           alignItems: "start",
                         }}
@@ -1313,36 +1411,53 @@ export default function LiveTrackingPanel({
                               happened at midnight, which nobody did. */}
                           {e.type === "carried" ? "—" : clock(e.at)}
                         </span>
-                        {/* A dot with a line running on to the next entry, so a
-                            day reads as one sequence rather than sixteen
-                            unrelated lines. */}
+                        {/* A lettered badge on a line running to the next
+                            entry, so the day reads as one sequence AND each
+                            entry says what kind it is without being read. */}
                         <span style={{ position: "relative", alignSelf: "stretch" }}>
                           <span
                             style={{
                               position: "absolute",
-                              left: 3,
-                              top: 5,
-                              width: 9,
-                              height: 9,
+                              left: 0,
+                              top: 0,
+                              width: 20,
+                              height: 20,
                               borderRadius: "50%",
-                              background: EVENT_COLOR[e.type] ?? "#6b7280",
+                              display: "grid",
+                              placeItems: "center",
+                              fontSize: 10,
+                              fontWeight: 700,
+                              lineHeight: 1,
+                              color: EVENT_COLOR[e.type] ?? "#6b7280",
+                              background: `${EVENT_COLOR[e.type] ?? "#6b7280"}1f`,
+                              border: `1px solid ${EVENT_COLOR[e.type] ?? "#6b7280"}59`,
                             }}
-                          />
+                          >
+                            {EVENT_MARK[e.type] ?? "·"}
+                          </span>
                           {!last && (
                             <span
                               style={{
                                 position: "absolute",
-                                left: 7,
-                                top: 16,
-                                bottom: 0,
+                                left: 9.5,
+                                top: 22,
+                                bottom: -2,
                                 width: 1,
                                 background: "#e5e7eb",
                               }}
                             />
                           )}
                         </span>
-                        <div style={{ minWidth: 0, paddingBottom: last ? 0 : 12 }}>
-                          <div style={{ fontSize: 13, fontWeight: 500, color: "#111827" }}>
+                        <div style={{ minWidth: 0, paddingBottom: last ? 0 : 14, paddingTop: 1 }}>
+                          {/* Coloured like its badge: the eye follows one colour
+                              down the day instead of reading every title. */}
+                          <div
+                            style={{
+                              fontSize: 13,
+                              fontWeight: 600,
+                              color: EVENT_COLOR[e.type] ?? "#111827",
+                            }}
+                          >
                             {eventLabel(e)}
                           </div>
                           {/* The case and the map link on a line of their own.

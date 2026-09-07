@@ -1,4 +1,13 @@
 import { ASP_CODE_REGION_MAP, DAILY_CALL_PLAN_COLUMNS } from "@opencall/shared";
+import type { ProductivityCallDayDetail } from "@opencall/shared";
+import {
+  detailSheetRows,
+  distinctCallCount,
+  DETAIL_SHEET_HEADERS,
+  uniqueCallRows,
+  uniqueSheetRows,
+  UNIQUE_SHEET_HEADERS,
+} from "../features/dashboard/utils/productivityCallDayViews";
 import type { GeneratedReportResponse } from "./apiClient";
 import type { RtplWipPivot } from "../features/dashboard/types";
 import {
@@ -976,6 +985,19 @@ export async function downloadEngineerProductivityExcel(
   dateLabel: string,
   list: any[],
   totalAttended: number,
+  /**
+   * The rows behind the counts, when the view covers more than one day.
+   *
+   * Summary alone cannot answer "where did 2441 come from", and the answer is
+   * not a longer summary: a range is day-bookings, so the same WO legitimately
+   * repeats. Passing the call-days adds the two sheets that show that — one row
+   * per booking, and one row per real call — from the SAME data the on-screen
+   * drill-down renders, so the file and the screen cannot disagree.
+   *
+   * Omitted for a single day, where every call is booked once and the extra
+   * sheets would only repeat the summary.
+   */
+  callDays?: readonly ProductivityCallDayDetail[],
 ): Promise<void> {
   const XLSX = await loadXlsx();
   const sum = (key: string) =>
@@ -1027,7 +1049,50 @@ export async function downloadEngineerProductivityExcel(
   ];
 
   const wb = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb, ws, "Engineer Productivity");
+  XLSX.utils.book_append_sheet(wb, ws, "Summary");
+
+  if (callDays && callDays.length > 0) {
+    const uniqueRows = uniqueCallRows(callDays);
+
+    // Sheet 2 — one row per assigned call-day. Its row count IS the Assigned
+    // total on Sheet 1, which is what lets a reader check the summary rather
+    // than take it on faith.
+    const detailSheet = XLSX.utils.aoa_to_sheet([
+      [
+        `Date ${dateLabel}`,
+        `${callDays.length} day-bookings across ${distinctCallCount(callDays)} calls`,
+      ],
+      [...DETAIL_SHEET_HEADERS],
+      ...detailSheetRows(callDays),
+    ]);
+    detailSheet["!cols"] = DETAIL_SHEET_HEADERS.map((header) => ({
+      wch: header === "Customer Name" || header === "Product" ? 24 : 16,
+    }));
+    // The header block is two rows, so freeze below it and the column names stay
+    // visible through 2400 rows of scrolling.
+    detailSheet["!freeze"] = { xSplit: "0", ySplit: "2" };
+    XLSX.utils.book_append_sheet(wb, detailSheet, "Detail (by booking)");
+
+    // Sheet 3 — one row per call per engineer. A DIFFERENT number from Sheet 2,
+    // not a corrected one; the note says so on the sheet, because a reader who
+    // takes it for a correction will report the summary as wrong.
+    const uniqueSheet = XLSX.utils.aoa_to_sheet([
+      [
+        `Date ${dateLabel}`,
+        `${uniqueRows.length} engineer-call pairs; ${distinctCallCount(callDays)} distinct calls`,
+      ],
+      [
+        "One row per call PER ENGINEER - a call reassigned mid-cycle appears once for each engineer who was booked on it, so these rows do not sum to the distinct call count.",
+      ],
+      [...UNIQUE_SHEET_HEADERS],
+      ...uniqueSheetRows(uniqueRows),
+    ]);
+    uniqueSheet["!cols"] = UNIQUE_SHEET_HEADERS.map((header) => ({
+      wch: header === "Customer Name" ? 24 : 16,
+    }));
+    uniqueSheet["!freeze"] = { xSplit: "0", ySplit: "3" };
+    XLSX.utils.book_append_sheet(wb, uniqueSheet, "Unique WOs");
+  }
 
   XLSX.writeFile(wb, `Engineer_Productivity_${regionName}_${dateLabel.replace(/\s+/g, "_")}.xlsx`);
 }

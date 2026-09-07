@@ -9,6 +9,7 @@ export type {
   RegionEodStateEntry,
   RegionEodStateResponse,
   RegionEodStatus,
+  ProductivityCallDayDetail,
   RegionProductivityRangeEntry,
   ReportProductivityRangeResponse,
   ReopenRegionEodResponse,

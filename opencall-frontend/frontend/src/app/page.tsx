@@ -171,6 +171,7 @@ import {
   closeRegionEod,
   reopenRegionEod,
   type RegionEodStateResponse,
+  type ProductivityCallDayDetail,
   type RegionProductivityRangeEntry,
   isApiAuthError,
 } from "../lib/apiClient";
@@ -654,6 +655,12 @@ export default function DashboardPage() {
   // Each day's productivity is computed from that day's own report, so a range
   // is summed server-side; the browser only ever holds one report and cannot
   // add days together itself. Null until the range has loaded.
+  const productivityRangeDetailCacheRef = useRef(
+    new Map<
+      string,
+      { callDays: ProductivityCallDayDetail[]; uniqueCallCount: number }
+    >(),
+  );
   const [productivityRangeRegions, setProductivityRangeRegions] = useState<
     readonly RegionProductivityRangeEntry[] | null
   >(null);
@@ -1194,6 +1201,39 @@ export default function DashboardPage() {
     return () => {
       cancelled = true;
     };
+  }, [session, isSpecialAccess, productivityRangeBounds]);
+
+  /**
+   * The rows behind a range's counts, fetched on demand.
+   *
+   * Deliberately NOT part of the effect above. That one runs on every range
+   * change to draw the table, and the detail is ~2400 rows the table never
+   * needs; loading it eagerly would make every date-range change pay for an
+   * export nobody asked for. Cached per range like the counts are, so exporting
+   * and then drilling in does not fetch twice.
+   */
+  const fetchProductivityRangeCallDays = useCallback(async () => {
+    if (!session || !productivityRangeBounds) return null;
+    const { from, to } = productivityRangeBounds;
+    const key = `${from}|${to}`;
+
+    const cached = productivityRangeDetailCacheRef.current.get(key);
+    if (cached) return cached;
+
+    const range = isSpecialAccess
+      ? await getSpecialAccessProductivityRange(session.token, from, to, {
+          detail: true,
+        })
+      : await getProductivityRange(session.token, from, to, { detail: true });
+
+    const detail = {
+      callDays: range.callDays ?? [],
+      // The distinct-call figure is the server's, not a second count derived
+      // here — the drill-down header and the export cover must quote one number.
+      uniqueCallCount: range.uniqueCallCount ?? 0,
+    };
+    productivityRangeDetailCacheRef.current.set(key, detail);
+    return detail;
   }, [session, isSpecialAccess, productivityRangeBounds]);
 
   useEffect(() => {
@@ -5431,6 +5471,8 @@ export default function DashboardPage() {
                         regionsList={report?.regionBreakdown ?? []}
                         isSuperAdmin={session?.user?.role === "SUPER_ADMIN"}
                         openRecordsWithFilter={openRecordsWithFilter}
+                        productivityRangeBounds={productivityRangeBounds}
+                        fetchRangeCallDays={fetchProductivityRangeCallDays}
                       />
                     )}
 

@@ -361,6 +361,7 @@ export type {
   RegionEodStateEntry,
   RegionEodStateResponse,
   RegionEodStatus,
+  ProductivityCallDayDetail,
   RegionProductivityRangeEntry,
   ReportProductivityRangeResponse,
 } from "@opencall/shared";

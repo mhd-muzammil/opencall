@@ -5,9 +5,11 @@ import { getRoster } from "../../../lib/payrollTrackingApiClient";
 import { readSession } from "../../../lib/session";
 import { productivityReportDay } from "../utils/productivityReportDay";
 import { downloadEngineerProductivityExcel } from "../../../lib/excelExport";
+import { ProductivityCallDaysModal } from "./ProductivityCallDaysModal";
 import { EngineerTargetTab } from "./EngineerTargetTab";
 import { LocationPerformancePanel } from "./LocationPerformancePanel";
 import type { BillCycle } from "../utils/billCycle";
+import type { ProductivityCallDayDetail, ProductivityBucket } from "@opencall/shared";
 
 export function ProductivityPage({
   selectedRegion,
@@ -29,6 +31,8 @@ export function ProductivityPage({
   regionsList,
   isSuperAdmin,
   openRecordsWithFilter,
+  productivityRangeBounds = null,
+  fetchRangeCallDays,
 }: Readonly<{
   selectedRegion: string | null;
   setSelectedRegion: Dispatch<SetStateAction<string | null>>;
@@ -99,6 +103,20 @@ export function ProductivityPage({
     ticketIds?: readonly string[] | null;
     reportDate?: string | null;
   }>) => void;
+  /**
+   * The day bounds when the view spans more than one day; null for a single
+   * day. A range cannot drill into Records — that table renders one report — so
+   * this is what decides which of the two drill-downs a click opens.
+   */
+  productivityRangeBounds?: Readonly<{ from: string; to: string }> | null;
+  /**
+   * Fetches the call-days behind a range's counts. Not called until a click or
+   * an export asks for them: it is ~2400 rows the table itself never needs.
+   */
+  fetchRangeCallDays?: () => Promise<{
+    callDays: ProductivityCallDayDetail[];
+    uniqueCallCount: number;
+  } | null>;
 }>) {
   const [searchQuery, setSearchQuery] = useState("");
   // Which tab of this page is showing. "target" renders the self-contained Engineer
@@ -252,7 +270,95 @@ export function ProductivityPage({
     };
   }, [reportDay]);
 
+  // The range drill-down. Open with the tickets a cell counted, narrowed from the
+  // range's call-days — NOT by sending ticket ids to Records, which renders one
+  // report and so could only ever show the handful still open today.
+  const [callDayDrill, setCallDayDrill] = useState<{
+    title: string;
+    rows: ProductivityCallDayDetail[];
+  } | null>(null);
+  const [callDayLoading, setCallDayLoading] = useState(false);
+  const [exporting, setExporting] = useState(false);
+  const [callDayError, setCallDayError] = useState<string | null>(null);
+
+  const isRangeView = productivityRangeBounds !== null;
+
+  /**
+   * The range's call-days, fetched once and reused.
+   *
+   * Both the export and every drill-down click come through here, so the file
+   * and the screen are rendered from the same rows — the divergence between them
+   * is the bug this feature exists to close.
+   */
+  const loadRangeCallDays = async (): Promise<ProductivityCallDayDetail[]> => {
+    if (!fetchRangeCallDays) return [];
+    const detail = await fetchRangeCallDays();
+    return detail?.callDays ?? [];
+  };
+
+  /**
+   * Open the drill-down on one cell's worth of work.
+   *
+   * `engineer` narrows to a row, `buckets` to a column; the footer totals pass
+   * neither and get the whole range. Filtering here rather than sending ticket
+   * ids anywhere means the rows shown are the rows counted, by construction.
+   */
+  const openCallDayDrill = async (
+    title: string,
+    filter: {
+      engineer?: string | undefined;
+      buckets?: readonly ProductivityBucket[] | undefined;
+    },
+  ) => {
+    setCallDayDrill({ title, rows: [] });
+    setCallDayLoading(true);
+    setCallDayError(null);
+    try {
+      const callDays = await loadRangeCallDays();
+      const wantedBuckets = filter.buckets ? new Set(filter.buckets) : null;
+      const engineer = filter.engineer?.toLowerCase();
+      setCallDayDrill({
+        title,
+        rows: callDays.filter(
+          (callDay) =>
+            (!engineer || callDay.engineer.toLowerCase() === engineer) &&
+            (!wantedBuckets || wantedBuckets.has(callDay.bucket)),
+        ),
+      });
+    } catch (error: unknown) {
+      setCallDayError(
+        error instanceof Error
+          ? error.message
+          : "Could not load the calls behind this number",
+      );
+    } finally {
+      setCallDayLoading(false);
+    }
+  };
+
+  /**
+   * Which buckets a column is counting.
+   *
+   * Assigned is every call-day, so it filters by nothing. Attended is the three
+   * named outcomes PLUS ATTENDED_OTHER — leaving that out is what makes Closed +
+   * Part ordered + Under Observation fall short of the Attended total, and the
+   * drill-down would then quietly show fewer rows than the number clicked.
+   */
+  const BUCKETS_BY_COLUMN: Readonly<
+    Record<string, readonly ProductivityBucket[] | undefined>
+  > = {
+    Assigned: undefined,
+    Attended: ["CLOSED", "PART_ORDER", "UNDER_OBSERVATION", "ATTENDED_OTHER"],
+    Closed: ["CLOSED"],
+    "Part ordered": ["PART_ORDER"],
+    "Under Observation": ["UNDER_OBSERVATION"],
+    "Customer Pending": ["CX_RESCHEDULE"],
+    "Engineer Delay": ["ENGINEER_DELAY"],
+  };
+
   const renderClickableCell = (
+    column: string,
+    engineer: string | null,
     count: number,
     ticketIds?: readonly string[],
     isBold: boolean = false,
@@ -276,18 +382,35 @@ export function ProductivityPage({
           userSelect: "none"
         }}
         onClick={() => {
-          if (hasTickets) {
-            openRecordsWithFilter({
-              region: selectedRegion === "ALL" ? null : selectedRegion,
-              ticketIds,
-              // Send Records to the day these tickets were counted on. Without
-              // it the closed ones are missing there: they are in that day's
-              // report, not in today's.
-              reportDate: reportDay,
-            });
+          if (!hasTickets) return;
+          if (isRangeView) {
+            // A range's rows live across many reports, so they cannot be shown
+            // by filtering the one report Records holds.
+            void openCallDayDrill(
+              `${engineer ? `${engineer} - ` : ""}${column} - ${productivityDateLabel}`,
+              {
+                engineer: engineer ?? undefined,
+                buckets: BUCKETS_BY_COLUMN[column],
+              },
+            );
+            return;
           }
+          openRecordsWithFilter({
+            region: selectedRegion === "ALL" ? null : selectedRegion,
+            ticketIds,
+            // Send Records to the day these tickets were counted on. Without
+            // it the closed ones are missing there: they are in that day's
+            // report, not in today's.
+            reportDate: reportDay,
+          });
         }}
-        title={hasTickets ? `Click to view all ${count} records` : undefined}
+        title={
+          hasTickets
+            ? isRangeView
+              ? `Click to see the ${count} bookings behind this number`
+              : `Click to view all ${count} records`
+            : undefined
+        }
       >
         {displayVal}
       </td>
@@ -298,6 +421,7 @@ export function ProductivityPage({
   // tickets of every engineer for that column. Emphasised (bold + tinted) so
   // the totals row reads as a summary, not another engineer.
   const renderTotalCell = (
+    column: string,
     count: number,
     ticketIds: readonly string[],
     color: string = "#0f172a",
@@ -317,15 +441,27 @@ export function ProductivityPage({
           userSelect: "none",
         }}
         onClick={() => {
-          if (hasTickets) {
-            openRecordsWithFilter({
-              region: selectedRegion === "ALL" ? null : selectedRegion,
-              ticketIds,
-              reportDate: reportDay,
-            });
+          if (!hasTickets) return;
+          if (isRangeView) {
+            void openCallDayDrill(
+              `Total ${column} - ${productivityDateLabel}`,
+              { buckets: BUCKETS_BY_COLUMN[column] },
+            );
+            return;
           }
+          openRecordsWithFilter({
+            region: selectedRegion === "ALL" ? null : selectedRegion,
+            ticketIds,
+            reportDate: reportDay,
+          });
         }}
-        title={hasTickets ? `Click to view all ${count} records` : undefined}
+        title={
+          hasTickets
+            ? isRangeView
+              ? `Click to see the ${count} bookings behind this number`
+              : `Click to view all ${count} records`
+            : undefined
+        }
       >
         {count === 0 ? "" : count}
       </td>
@@ -519,16 +655,36 @@ export function ProductivityPage({
           <button
             type="button"
             style={{ background: "linear-gradient(135deg, #f97316, #ea580c)", borderColor: "#f97316", display: "inline-flex", alignItems: "center", gap: "6px", color: "#ffffff", minHeight: "36px", padding: "0 14px", fontSize: "13px" }}
-            onClick={() => {
-              downloadEngineerProductivityExcel(
-                activeRegionName || "Global",
-                productivityDateLabel,
-                filteredList,
-                filteredTotalAttended
-              );
+            disabled={exporting}
+            onClick={async () => {
+              setExporting(true);
+              try {
+                // A range gets the two detail sheets; a single day does not,
+                // where every call is booked once and they would only restate
+                // the summary. A failed detail fetch still exports the summary —
+                // losing the whole file because the extra sheets could not be
+                // built would be the worse outcome.
+                let callDays: ProductivityCallDayDetail[] | undefined;
+                if (isRangeView) {
+                  try {
+                    callDays = await loadRangeCallDays();
+                  } catch {
+                    callDays = undefined;
+                  }
+                }
+                await downloadEngineerProductivityExcel(
+                  activeRegionName || "Global",
+                  productivityDateLabel,
+                  filteredList,
+                  filteredTotalAttended,
+                  callDays,
+                );
+              } finally {
+                setExporting(false);
+              }
             }}
           >
-            📥 Download Excel
+            {exporting ? "Preparing..." : "📥 Download Excel"}
           </button>
 
         </div>
@@ -709,13 +865,13 @@ export function ProductivityPage({
                   })()}
 
                   {/* Clickable Status Counts */}
-                  {renderClickableCell(item.assigned, item.assignedTickets, false, "#334155")}
-                  {renderClickableCell(item.attended, item.attendedTickets, true, "#0f172a", "#f1f5f9")}
-                  {renderClickableCell(item.closed, item.closedTickets, true, "#166534")}
-                  {renderClickableCell(item.partOrdered, item.partOrderedTickets, false, "#92400e")}
-                  {renderClickableCell(item.underObservation, item.underObservationTickets, false, "#1e3a8a")}
-                  {renderClickableCell(item.cxReschedule, item.cxRescheduleTickets, false, "#701a75")}
-                  {renderClickableCell(item.engineerDelay ?? 0, item.engineerDelayTickets, false, "#9a3412")}
+                  {renderClickableCell("Assigned", item.name, item.assigned, item.assignedTickets, false, "#334155")}
+                  {renderClickableCell("Attended", item.name, item.attended, item.attendedTickets, true, "#0f172a", "#f1f5f9")}
+                  {renderClickableCell("Closed", item.name, item.closed, item.closedTickets, true, "#166534")}
+                  {renderClickableCell("Part ordered", item.name, item.partOrdered, item.partOrderedTickets, false, "#92400e")}
+                  {renderClickableCell("Under Observation", item.name, item.underObservation, item.underObservationTickets, false, "#1e3a8a")}
+                  {renderClickableCell("Customer Pending", item.name, item.cxReschedule, item.cxRescheduleTickets, false, "#701a75")}
+                  {renderClickableCell("Engineer Delay", item.name, item.engineerDelay ?? 0, item.engineerDelayTickets, false, "#9a3412")}
                 </tr>
               ))
             ) : loading ? (
@@ -749,13 +905,13 @@ export function ProductivityPage({
                 >
                   Total ({filteredActiveEngineers} {filteredActiveEngineers === 1 ? "engineer" : "engineers"})
                 </td>
-                {renderTotalCell(columnTotals.assigned, columnTotals.assignedTickets, "#334155")}
-                {renderTotalCell(columnTotals.attended, columnTotals.attendedTickets, "#0f172a")}
-                {renderTotalCell(columnTotals.closed, columnTotals.closedTickets, "#166534")}
-                {renderTotalCell(columnTotals.partOrdered, columnTotals.partOrderedTickets, "#92400e")}
-                {renderTotalCell(columnTotals.underObservation, columnTotals.underObservationTickets, "#1e3a8a")}
-                {renderTotalCell(columnTotals.cxReschedule, columnTotals.cxRescheduleTickets, "#701a75")}
-                {renderTotalCell(columnTotals.engineerDelay, columnTotals.engineerDelayTickets, "#9a3412")}
+                {renderTotalCell("Assigned", columnTotals.assigned, columnTotals.assignedTickets, "#334155")}
+                {renderTotalCell("Attended", columnTotals.attended, columnTotals.attendedTickets, "#0f172a")}
+                {renderTotalCell("Closed", columnTotals.closed, columnTotals.closedTickets, "#166534")}
+                {renderTotalCell("Part ordered", columnTotals.partOrdered, columnTotals.partOrderedTickets, "#92400e")}
+                {renderTotalCell("Under Observation", columnTotals.underObservation, columnTotals.underObservationTickets, "#1e3a8a")}
+                {renderTotalCell("Customer Pending", columnTotals.cxReschedule, columnTotals.cxRescheduleTickets, "#701a75")}
+                {renderTotalCell("Engineer Delay", columnTotals.engineerDelay, columnTotals.engineerDelayTickets, "#9a3412")}
               </tr>
             )}
           </tbody>
@@ -769,6 +925,19 @@ export function ProductivityPage({
         loading={loading}
         callsByRegion={engineerProductivityMetrics.callsByRegion}
       />
+
+      {callDayDrill && (
+        <ProductivityCallDaysModal
+          title={callDayDrill.title}
+          callDays={callDayDrill.rows}
+          loading={callDayLoading}
+          error={callDayError}
+          onClose={() => {
+            setCallDayDrill(null);
+            setCallDayError(null);
+          }}
+        />
+      )}
     </div>
   );
 }

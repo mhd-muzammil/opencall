@@ -21,11 +21,13 @@ export {
   isProductivityVisibleRow,
   mergeEngineerProductivityResults,
   morningProductivityStatus,
+  productivityCallDays,
   resolveDayScopedProductivityBucket,
   type ComputeEngineerProductivityOptions,
   type EngineerProductivityEntry,
   type EngineerProductivityResult,
   type ProductivityBucket,
   type ProductivityBucketCounts,
+  type ProductivityCallDay,
   type ProductivityReportRow,
 } from "@opencall/shared";

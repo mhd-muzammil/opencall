@@ -6,6 +6,7 @@ import {
   emptyProductivityBucketCounts,
   isAttendedOutcomeStatus,
   mergeEngineerProductivityResults,
+  productivityCallDays,
   resolveDayScopedProductivityBucket,
   type ProductivityReportRow,
 } from "./engineerProductivity";
@@ -572,5 +573,99 @@ describe("Flex-cancelled closures", () => {
 
     expect(result.list).toHaveLength(1);
     expect(result.list[0]?.assigned).toBe(1);
+  });
+});
+
+describe("productivityCallDays", () => {
+  // The whole point of the function: the summary must be reconstructable from
+  // the call-days, or the Excel detail sheet and the number that was clicked
+  // will disagree and nobody will be able to say which one is wrong.
+  it("emits one call-day per assigned ticket, carrying the day", () => {
+    const day = computeEngineerProductivity([
+      row({ ticketId: "WO-1", morning: "Scheduled", evening: "Case-Closed" }),
+      row({ ticketId: "WO-2", morning: "Scheduled", evening: "SSC Pending" }),
+      row({ ticketId: "WO-3", morning: "Scheduled", evening: "Under Observation" }),
+      row({ ticketId: "WO-4", morning: "Scheduled", evening: "Customer Pending" }),
+      row({ ticketId: "WO-5", morning: "Scheduled", evening: "" }),
+    ]);
+
+    const callDays = productivityCallDays(day, "2026-07-25");
+
+    expect(callDays).toHaveLength(day.list[0]!.assigned);
+    expect(callDays.every((c) => c.date === "2026-07-25")).toBe(true);
+    expect(
+      Object.fromEntries(callDays.map((c) => [c.ticketId, c.bucket])),
+    ).toEqual({
+      "WO-1": "CLOSED",
+      "WO-2": "PART_ORDER",
+      "WO-3": "UNDER_OBSERVATION",
+      "WO-4": "CX_RESCHEDULE",
+      "WO-5": "SCHEDULED",
+    });
+  });
+
+  // Every column in the summary has to fall back out of the bucket column, or
+  // the detail sheet is a second set of numbers rather than the same ones.
+  it("reconciles every summary count from the buckets", () => {
+    const day = computeEngineerProductivity([
+      row({ ticketId: "WO-1", morning: "Scheduled", evening: "Case-Closed" }),
+      row({ ticketId: "WO-2", morning: "Scheduled", evening: "SSC Pending" }),
+      row({ ticketId: "WO-3", morning: "Scheduled", evening: "Customer Pending" }),
+      row({ ticketId: "WO-4", morning: "Scheduled", evening: "" }),
+    ]);
+    const entry = day.list[0]!;
+    const callDays = productivityCallDays(day, "2026-07-25");
+    const inBucket = (bucket: string) =>
+      callDays.filter((c) => c.bucket === bucket).length;
+
+    expect(callDays).toHaveLength(entry.assigned);
+    expect(inBucket("CLOSED")).toBe(entry.closed);
+    expect(inBucket("PART_ORDER")).toBe(entry.partOrdered);
+    expect(inBucket("UNDER_OBSERVATION")).toBe(entry.underObservation);
+    expect(inBucket("CX_RESCHEDULE")).toBe(entry.cxReschedule);
+    expect(inBucket("ENGINEER_DELAY")).toBe(entry.engineerDelay);
+    // Attended is the three named outcomes plus ATTENDED_OTHER — the gap that
+    // makes Closed + Part + Under Observation fall short of Attended on screen.
+    expect(
+      inBucket("CLOSED") +
+        inBucket("PART_ORDER") +
+        inBucket("UNDER_OBSERVATION") +
+        inBucket("ATTENDED_OTHER"),
+    ).toBe(entry.attended);
+  });
+
+  // The reason the function exists: the same WO booked on two days is two
+  // call-days, distinguishable only by their date. Merging per-day results
+  // first would lose that, which is why the docstring forbids it.
+  it("keeps a WO booked on two days as two dated call-days", () => {
+    const monday = computeEngineerProductivity([
+      row({ ticketId: "WO-1", morning: "Scheduled", evening: "" }),
+    ]);
+    const thursday = computeEngineerProductivity([
+      row({ ticketId: "WO-1", morning: "Scheduled", evening: "Case-Closed" }),
+    ]);
+
+    const callDays = [
+      ...productivityCallDays(monday, "2026-07-27"),
+      ...productivityCallDays(thursday, "2026-07-30"),
+    ];
+
+    expect(callDays).toHaveLength(2);
+    expect(callDays.map((c) => [c.date, c.bucket])).toEqual([
+      ["2026-07-27", "SCHEDULED"],
+      ["2026-07-30", "CLOSED"],
+    ]);
+  });
+
+  it("carries the engineer and region so rows stand alone in the sheet", () => {
+    const day = computeEngineerProductivity([
+      row({ ticketId: "WO-1", engineer: "Jeeva CH", morning: "Scheduled" }),
+    ]);
+
+    const [callDay] = productivityCallDays(day, "2026-07-25");
+
+    expect(callDay?.engineer).toBe("Jeeva CH");
+    expect(callDay?.regionCode).toBe("ASPS01461");
+    expect(callDay?.regionName).toBe(day.list[0]?.regionName);
   });
 });

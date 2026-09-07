@@ -398,8 +398,13 @@ export async function getSpecialAccessProductivityRange(
   token: string,
   from: string,
   to: string,
+  opts: { detail?: boolean } = {},
 ): Promise<ReportProductivityRangeResponse> {
-  const query = new URLSearchParams({ from, to }).toString();
+  const query = new URLSearchParams({
+    from,
+    to,
+    ...(opts.detail ? { detail: "1" } : {}),
+  }).toString();
   const response = await fetch(
     url(`/api/v1/special-access/productivity/range?${query}`),
     { headers: authHeaders(token), cache: "no-store" },

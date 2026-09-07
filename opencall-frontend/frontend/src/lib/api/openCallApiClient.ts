@@ -117,6 +117,12 @@ export interface OpenCallApiClient {
     token: string,
     from: string,
     to: string,
+    /**
+     * `detail` additionally returns one row per assigned call-day behind the
+     * counts. Only the export and the range drill-down ask for it — the table
+     * itself renders from the counts alone.
+     */
+    opts?: { detail?: boolean },
   ): Promise<ReportProductivityRangeResponse>;
   closeRegionEod(token: string, regionId: string, workingDate: string): Promise<CloseRegionEodResponse>;
   reopenRegionEod(token: string, regionId: string, workingDate: string): Promise<ReopenRegionEodResponse>;
@@ -332,8 +338,12 @@ export function createOpenCallApiClient({
       return readJson<RegionEodStateResponse>(response);
     },
 
-    async getProductivityRange(token, from, to) {
-      const query = new URLSearchParams({ from, to }).toString();
+    async getProductivityRange(token, from, to, opts) {
+      const query = new URLSearchParams({
+        from,
+        to,
+        ...(opts?.detail ? { detail: "1" } : {}),
+      }).toString();
       const response = await fetchImpl(
         url(`/api/v1/reports/productivity/range?${query}`),
         { headers: authHeaders(token), cache: "no-store" },

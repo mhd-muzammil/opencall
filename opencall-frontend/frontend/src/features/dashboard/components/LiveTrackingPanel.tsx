@@ -1470,6 +1470,21 @@ export default function LiveTrackingPanel({
                           >
                             {eventLabel(e)}
                           </div>
+                          {/* Where it happened. The office reads a day to
+                              answer "where was he at four" and was getting a
+                              pair of coordinates behind a link. */}
+                          {e.address && (
+                            <div
+                              style={{
+                                marginTop: 2,
+                                fontSize: 12,
+                                color: "#6b7280",
+                                overflowWrap: "anywhere",
+                              }}
+                            >
+                              {e.address}
+                            </div>
+                          )}
                           {/* The case and the map link on a line of their own.
                               Inline, "view on map" broke after "view" and left
                               "on map" hanging under the next entry.

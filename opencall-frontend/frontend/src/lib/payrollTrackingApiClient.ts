@@ -115,6 +115,13 @@ export interface EngineerDayEvent {
    * call closed on an earlier day records no event today and is still closed.
    */
   case_status?: string | null;
+  /**
+   * Where this happened, in words. Free for anything tied to a call -- the
+   * customer's address is on the case -- and reverse-geocoded once, then
+   * cached, for a stop away from a customer or a place the trail went dark.
+   * Absent when it could not be resolved, which is not the same as empty.
+   */
+  address?: string | null;
 }
 
 /**

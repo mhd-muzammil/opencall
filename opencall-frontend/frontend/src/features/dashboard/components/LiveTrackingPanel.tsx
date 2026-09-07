@@ -823,7 +823,8 @@ export default function LiveTrackingPanel({
           kind: p.kind,
           latitude: p.latitude as number,
           longitude: p.longitude as number,
-          label: `${p.kind === "in" ? "Punched in" : "Punched out"} ${clock(p.at)}${
+          // kind stays "in"/"out" on the wire; only the words change.
+          label: `${p.kind === "in" ? "Checked in" : "Checked out"} ${clock(p.at)}${
             p.case_number ? ` · ${p.case_number}` : ""
           }`,
         })),

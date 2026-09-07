@@ -249,10 +249,10 @@ export default function LiveTrackingMap({
         <LegendRow color="#d97706" label="No signal" />
         {stops.length > 0 && <LegendRow color="#f59e0b" label="Stopped here" ring="#b45309" />}
         {punches.some((p) => p.kind === "in") && (
-          <LegendRow color="#7c3aed" label="Punched in" ring="#6d28d9" />
+          <LegendRow color="#7c3aed" label="Checked in" ring="#6d28d9" />
         )}
         {punches.some((p) => p.kind === "out") && (
-          <LegendRow color="#ffffff" label="Punched out" ring="#6d28d9" />
+          <LegendRow color="#ffffff" label="Checked out" ring="#6d28d9" />
         )}
         {pathPoints.length > 1 && (
           <>

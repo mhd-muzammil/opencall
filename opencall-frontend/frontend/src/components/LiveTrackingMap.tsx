@@ -247,7 +247,7 @@ export default function LiveTrackingMap({
       >
         <LegendRow color="#2563eb" label="Live position" />
         <LegendRow color="#d97706" label="No signal" />
-        {stops.length > 0 && <LegendRow color="#f59e0b" label="Stopped here" ring="#b45309" />}
+        {stops.length > 0 && <LegendRow color="#f59e0b" label="Waiting here" ring="#b45309" />}
         {punches.some((p) => p.kind === "in") && (
           <LegendRow color="#7c3aed" label="Checked in" ring="#6d28d9" />
         )}

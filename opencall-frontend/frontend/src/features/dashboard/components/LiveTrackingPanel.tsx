@@ -1488,7 +1488,17 @@ export default function LiveTrackingPanel({
                             {eventLabel(e)}
                           </div>
                           {eventMeaning(e) && (
-                            <div style={{ marginTop: 1, fontSize: 12, color: "#4b5563" }}>
+                            // The same colour as its headline, so the two lines
+                            // read as one entry. Left lighter and unbolded so
+                            // the button name still leads.
+                            <div
+                              style={{
+                                marginTop: 1,
+                                fontSize: 12,
+                                color: EVENT_COLOR[e.type] ?? "#4b5563",
+                                opacity: 0.85,
+                              }}
+                            >
                               {eventMeaning(e)}
                             </div>
                           )}

@@ -140,6 +140,27 @@ function Stat({
 }
 
 /**
+ * A region's colour, which is its answer.
+ *
+ * The strip exists to say which branch is short, so the colour says it and the
+ * numbers confirm it. An unmatched engineer outranks everything else on the
+ * card: their calls are being skipped entirely, which is worse than a quiet
+ * branch.
+ */
+function regionTone(region: { total: number; onDuty: number; unmatched: number }) {
+  if (region.unmatched > 0) {
+    return { accent: "#b91c1c", background: "#fef2f2", border: "#fecaca" };
+  }
+  if (region.onDuty === 0) {
+    return { accent: "#b45309", background: "#fffbeb", border: "#fde68a" };
+  }
+  if (region.onDuty === region.total) {
+    return { accent: "#15803d", background: "#f0fdf4", border: "#bbf7d0" };
+  }
+  return { accent: "#1d4ed8", background: "#eff6ff", border: "#bfdbfe" };
+}
+
+/**
  * Which day the board is showing.
  *
  * One component, used above the Track list and inside an engineer's day, so the
@@ -1033,6 +1054,7 @@ export default function LiveTrackingPanel({
         >
           {regions.map((region) => {
             const active = query.trim().toLowerCase() === region.name.toLowerCase();
+            const tone = regionTone(region);
             return (
               <button
                 key={region.name}
@@ -1042,10 +1064,16 @@ export default function LiveTrackingPanel({
                   flex: "0 0 auto",
                   minWidth: 132,
                   textAlign: "left",
-                  padding: "8px 10px",
+                  padding: "8px 10px 8px 12px",
                   borderRadius: 10,
-                  border: `1px solid ${active ? "#2563eb" : "#e5e7eb"}`,
-                  background: active ? "#eff6ff" : "#fff",
+                  border: `1px solid ${tone.border}`,
+                  // The accent bar, so the strip reads as a row of answers even
+                  // at a glance across a wide screen.
+                  borderLeft: `4px solid ${tone.accent}`,
+                  background: tone.background,
+                  // A clicked card keeps a ring, because the tint is already
+                  // spoken for by what the card is telling us.
+                  boxShadow: active ? `0 0 0 2px ${tone.accent}` : "none",
                   cursor: "pointer",
                   font: "inherit",
                 }}
@@ -1074,7 +1102,7 @@ export default function LiveTrackingPanel({
                     style={{
                       fontSize: 16,
                       fontWeight: 700,
-                      color: "#111827",
+                      color: tone.accent,
                       fontVariantNumeric: "tabular-nums",
                     }}
                   >

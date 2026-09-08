@@ -791,13 +791,28 @@ export function ProductivityPage({
                       textDecoration: "underline" 
                     }}
                     onClick={() => {
+                      if (isRangeView) {
+                        // Their whole period, every bucket — the engineer's own
+                        // productivity report. Routed here for the same reason
+                        // the number cells are: Records renders one report and
+                        // could only show the few still open today.
+                        void openCallDayDrill(
+                          `${item.name} - ${productivityDateLabel}`,
+                          { engineer: item.name },
+                        );
+                        return;
+                      }
                       openRecordsWithFilter({
                         region: selectedRegion === "ALL" ? null : selectedRegion,
                         engineers: [item.name],
                         reportDate: reportDay,
                       });
                     }}
-                    title={`Click to view all records for ${item.name}`}
+                    title={
+                      isRangeView
+                        ? `Click for ${item.name}'s calls across this period`
+                        : `Click to view all records for ${item.name}`
+                    }
                   >
                     {item.name}
                   </td>

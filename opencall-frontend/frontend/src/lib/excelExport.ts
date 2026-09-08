@@ -37,6 +37,9 @@ import {
 import type * as XLSXNS from "xlsx";
 const loadXlsx = (): Promise<typeof import("xlsx")> => import("xlsx");
 
+/** The lazily-imported xlsx module, so helpers can take it as a parameter. */
+type XlsxModule = Awaited<ReturnType<typeof loadXlsx>>;
+
 // `exceljs` is only needed by the styled records-view export (SheetJS CE cannot
 // write cell fills/fonts). Loaded lazily for the same bundle-size reason; the
 // CJS module surfaces under `.default` depending on the bundler interop.
@@ -1052,48 +1055,92 @@ export async function downloadEngineerProductivityExcel(
   XLSX.utils.book_append_sheet(wb, ws, "Summary");
 
   if (callDays && callDays.length > 0) {
-    const uniqueRows = uniqueCallRows(callDays);
-
-    // Sheet 2 — one row per assigned call-day. Its row count IS the Assigned
-    // total on Sheet 1, which is what lets a reader check the summary rather
-    // than take it on faith.
-    const detailSheet = XLSX.utils.aoa_to_sheet([
-      [
-        `Date ${dateLabel}`,
-        `${callDays.length} day-bookings across ${distinctCallCount(callDays)} calls`,
-      ],
-      [...DETAIL_SHEET_HEADERS],
-      ...detailSheetRows(callDays),
-    ]);
-    detailSheet["!cols"] = DETAIL_SHEET_HEADERS.map((header) => ({
-      wch: header === "Customer Name" || header === "Product" ? 24 : 16,
-    }));
-    // The header block is two rows, so freeze below it and the column names stay
-    // visible through 2400 rows of scrolling.
-    detailSheet["!freeze"] = { xSplit: "0", ySplit: "2" };
-    XLSX.utils.book_append_sheet(wb, detailSheet, "Detail (by booking)");
-
-    // Sheet 3 — one row per call per engineer. A DIFFERENT number from Sheet 2,
-    // not a corrected one; the note says so on the sheet, because a reader who
-    // takes it for a correction will report the summary as wrong.
-    const uniqueSheet = XLSX.utils.aoa_to_sheet([
-      [
-        `Date ${dateLabel}`,
-        `${uniqueRows.length} engineer-call pairs; ${distinctCallCount(callDays)} distinct calls`,
-      ],
-      [
-        "One row per call PER ENGINEER - a call reassigned mid-cycle appears once for each engineer who was booked on it, so these rows do not sum to the distinct call count.",
-      ],
-      [...UNIQUE_SHEET_HEADERS],
-      ...uniqueSheetRows(uniqueRows),
-    ]);
-    uniqueSheet["!cols"] = UNIQUE_SHEET_HEADERS.map((header) => ({
-      wch: header === "Customer Name" ? 24 : 16,
-    }));
-    uniqueSheet["!freeze"] = { xSplit: "0", ySplit: "3" };
-    XLSX.utils.book_append_sheet(wb, uniqueSheet, "Unique WOs");
+    appendCallDaySheets(XLSX, wb, `Date ${dateLabel}`, callDays);
   }
 
   XLSX.writeFile(wb, `Engineer_Productivity_${regionName}_${dateLabel.replace(/\s+/g, "_")}.xlsx`);
 }
 
+/**
+ * The two sheets that explain a range's numbers, appended to whichever workbook
+ * asked for them.
+ *
+ * Shared rather than duplicated because the drill-down exports one engineer's
+ * slice and the table exports everybody's: same columns, same reconciliation,
+ * same wording about what the unique sheet counts. Two copies would drift, and
+ * the drift would show up as two files that disagree about the same cycle.
+ */
+function appendCallDaySheets(
+  XLSX: XlsxModule,
+  wb: ReturnType<XlsxModule["utils"]["book_new"]>,
+  heading: string,
+  callDays: readonly ProductivityCallDayDetail[],
+): void {
+  const uniqueRows = uniqueCallRows(callDays);
+
+  // One row per assigned call-day. Its row count IS the Assigned total, which
+  // is what lets a reader check the summary rather than take it on faith.
+  const detailSheet = XLSX.utils.aoa_to_sheet([
+    [
+      heading,
+      `${callDays.length} day-bookings across ${distinctCallCount(callDays)} calls`,
+    ],
+    [...DETAIL_SHEET_HEADERS],
+    ...detailSheetRows(callDays),
+  ]);
+  detailSheet["!cols"] = DETAIL_SHEET_HEADERS.map((header) => ({
+    wch: header === "Customer Name" || header === "Product" ? 24 : 16,
+  }));
+  // The heading block is two rows, so freeze below it and the column names stay
+  // visible through 2400 rows of scrolling.
+  detailSheet["!freeze"] = { xSplit: "0", ySplit: "2" };
+  XLSX.utils.book_append_sheet(wb, detailSheet, "Detail (by booking)");
+
+  // One row per call per engineer. A DIFFERENT number from the sheet above, not
+  // a corrected one; the note says so on the sheet, because a reader who takes
+  // it for a correction will report the summary as wrong.
+  const uniqueSheet = XLSX.utils.aoa_to_sheet([
+    [
+      heading,
+      `${uniqueRows.length} engineer-call pairs; ${distinctCallCount(callDays)} distinct calls`,
+    ],
+    [
+      "One row per call PER ENGINEER - a call reassigned mid-cycle appears once for each engineer who was booked on it, so these rows do not sum to the distinct call count.",
+    ],
+    [...UNIQUE_SHEET_HEADERS],
+    ...uniqueSheetRows(uniqueRows),
+  ]);
+  uniqueSheet["!cols"] = UNIQUE_SHEET_HEADERS.map((header) => ({
+    wch: header === "Customer Name" ? 24 : 16,
+  }));
+  uniqueSheet["!freeze"] = { xSplit: "0", ySplit: "3" };
+  XLSX.utils.book_append_sheet(wb, uniqueSheet, "Unique WOs");
+}
+
+/**
+ * The drill-down's own export: the rows currently on screen, nothing else.
+ *
+ * Its own function rather than a flag on the table export because there is no
+ * summary to write — a drill-down is already one cell's worth of work, and a
+ * one-row summary sheet restating the cell would be noise.
+ */
+export async function downloadProductivityCallDaysExcel(
+  title: string,
+  callDays: readonly ProductivityCallDayDetail[],
+): Promise<void> {
+  const XLSX = await loadXlsx();
+  const wb = XLSX.utils.book_new();
+  appendCallDaySheets(XLSX, wb, title, callDays);
+
+  // The title carries whatever the cell was called ("Vignesh - Assigned - Aug
+  // 2026 bill cycle (25 Jul - 24 Aug)"), so anything a filesystem would reject
+  // has to go before it becomes a filename.
+  const safeName =
+    title
+      .replace(/[\/:*?"<>|]/g, "")
+      .replace(/\s+/g, "_")
+      .replace(/_+/g, "_")
+      .slice(0, 120) || "Productivity";
+
+  XLSX.writeFile(wb, `${safeName}.xlsx`);
+}

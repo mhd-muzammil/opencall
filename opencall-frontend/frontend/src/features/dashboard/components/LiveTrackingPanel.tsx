@@ -12,6 +12,7 @@ import {
 import { clearSession } from "../../../lib/session";
 import { isApiAuthError } from "../../../lib/api/http";
 import {
+  bucketOf,
   countBuckets,
   filterRoster,
   isRowSelected,
@@ -852,6 +853,26 @@ export default function LiveTrackingPanel({
   );
   const bucketCounts = useMemo(() => countBuckets(engineers), [engineers]);
 
+  // Region by region, counted through the same bucketOf() the tabs use so the
+  // two can never disagree. Busiest first: a manager reads this to find which
+  // branch is short, and a branch with nobody out is the one to look at.
+  const regions = useMemo(() => {
+    const byBranch = new Map();
+    for (const row of engineers) {
+      const name = (row.branch || "").trim() || "No branch";
+      const entry = byBranch.get(name) ?? { name, total: 0, onDuty: 0, off: 0, unmatched: 0 };
+      entry.total += 1;
+      const bucket = bucketOf(row);
+      if (bucket === "on_duty") entry.onDuty += 1;
+      else if (bucket === "unmatched") entry.unmatched += 1;
+      else entry.off += 1;
+      byBranch.set(name, entry);
+    }
+    return [...byBranch.values()].sort(
+      (a, b) => b.onDuty - a.onDuty || b.total - a.total || a.name.localeCompare(b.name),
+    );
+  }, [engineers]);
+
   // The null check is load-bearing: an engineer Payroll cannot match has
   // engineer_id null, so comparing against a null selectedId matched the first
   // unlinked engineer and the panel opened on its own — and Clear, which sets
@@ -995,6 +1016,94 @@ export default function LiveTrackingPanel({
           />
         </div>
       </div>
+
+      {/* WHICH BRANCH IS SHORT. The board gave one number for five branches,
+          and the question a manager has is about one of them. Scrolls sideways
+          in its own strip rather than wrapping: five cards on a laptop is one
+          row, and on a narrow window it stays one row that moves. */}
+      {regions.length > 1 && (
+        <div
+          style={{
+            display: "flex",
+            gap: 8,
+            marginTop: 12,
+            overflowX: "auto",
+            paddingBottom: 2,
+          }}
+        >
+          {regions.map((region) => {
+            const active = query.trim().toLowerCase() === region.name.toLowerCase();
+            return (
+              <button
+                key={region.name}
+                onClick={() => setQuery(active ? "" : region.name)}
+                title={`Show only ${region.name}`}
+                style={{
+                  flex: "0 0 auto",
+                  minWidth: 132,
+                  textAlign: "left",
+                  padding: "8px 10px",
+                  borderRadius: 10,
+                  border: `1px solid ${active ? "#2563eb" : "#e5e7eb"}`,
+                  background: active ? "#eff6ff" : "#fff",
+                  cursor: "pointer",
+                  font: "inherit",
+                }}
+              >
+                <div
+                  style={{
+                    display: "flex",
+                    alignItems: "baseline",
+                    justifyContent: "space-between",
+                    gap: 8,
+                  }}
+                >
+                  <span
+                    style={{
+                      fontSize: 12.5,
+                      fontWeight: 600,
+                      color: "#111827",
+                      overflow: "hidden",
+                      textOverflow: "ellipsis",
+                      whiteSpace: "nowrap",
+                    }}
+                  >
+                    {region.name}
+                  </span>
+                  <span
+                    style={{
+                      fontSize: 16,
+                      fontWeight: 700,
+                      color: "#111827",
+                      fontVariantNumeric: "tabular-nums",
+                    }}
+                  >
+                    {region.total}
+                  </span>
+                </div>
+                <div
+                  style={{
+                    marginTop: 3,
+                    display: "flex",
+                    gap: 8,
+                    fontSize: 11.5,
+                    fontVariantNumeric: "tabular-nums",
+                  }}
+                >
+                  <span style={{ color: "#15803d" }}>{region.onDuty} on duty</span>
+                  <span style={{ color: "#6b7280" }}>{region.off} off</span>
+                  {/* Only when there are any: a zero here is noise, but a
+                      number is a data problem worth seeing -- those engineers'
+                      cases are being skipped entirely. */}
+                  {region.unmatched > 0 && (
+                    <span style={{ color: "#b91c1c" }}>{region.unmatched} unmatched</span>
+                  )}
+                </div>
+              </button>
+            );
+          })}
+        </div>
+      )}
 
       {/* Says which of the two it is. An expired login and an unconfigured
           integration both leave an empty board, and they need opposite actions. */}

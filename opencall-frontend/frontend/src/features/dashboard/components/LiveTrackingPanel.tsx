@@ -255,7 +255,24 @@ function eventLabel(event: EngineerDayEvent): string {
   if (event.type === "duty_end") {
     return /auto/i.test(event.label ?? "") ? "Logout (auto \u2014 never tapped)" : "Logout";
   }
+  // The two taps at a customer, in the words on the buttons. Mapped here as
+  // well as renamed on the server, so the board reads correctly before the
+  // backend redeploys.
+  if (event.type === "reached") return "Check in";
+  if (event.type === "completed") return "Check out";
   return event.label;
+}
+
+/**
+ * What the tap recorded, under the name of the button that made it.
+ *
+ * "Check in" says which button; "Reached the site" says what it meant. The
+ * office asked for both, in that order -- either alone leaves half the story.
+ */
+function eventMeaning(event: EngineerDayEvent): string | null {
+  if (event.type === "reached") return "Reached the site";
+  if (event.type === "completed") return "Completed the site";
+  return null;
 }
 
 /**
@@ -1470,6 +1487,11 @@ export default function LiveTrackingPanel({
                           >
                             {eventLabel(e)}
                           </div>
+                          {eventMeaning(e) && (
+                            <div style={{ marginTop: 1, fontSize: 12, color: "#4b5563" }}>
+                              {eventMeaning(e)}
+                            </div>
+                          )}
                           {/* Where it happened. The office reads a day to
                               answer "where was he at four" and was getting a
                               pair of coordinates behind a link. */}

@@ -147,10 +147,7 @@ function Stat({
  * card: their calls are being skipped entirely, which is worse than a quiet
  * branch.
  */
-function regionTone(region: { total: number; onDuty: number; unmatched: number }) {
-  if (region.unmatched > 0) {
-    return { accent: "#b91c1c", background: "#fef2f2", border: "#fecaca" };
-  }
+function regionTone(region: { total: number; onDuty: number }) {
   if (region.onDuty === 0) {
     return { accent: "#b45309", background: "#fffbeb", border: "#fde68a" };
   }
@@ -877,15 +874,17 @@ export default function LiveTrackingPanel({
   // Region by region, counted through the same bucketOf() the tabs use so the
   // two can never disagree. Busiest first: a manager reads this to find which
   // branch is short, and a branch with nobody out is the one to look at.
+  // Vendors are NOT part of a branch's headcount. They take calls but they are
+  // not Renderways employees, so counting them into Salem made Salem look like
+  // two engineers with a problem when it is one engineer and a vendor.
   const regions = useMemo(() => {
     const byBranch = new Map();
     for (const row of engineers) {
+      if (bucketOf(row) === "unmatched") continue;
       const name = (row.branch || "").trim() || "No branch";
-      const entry = byBranch.get(name) ?? { name, total: 0, onDuty: 0, off: 0, unmatched: 0 };
+      const entry = byBranch.get(name) ?? { name, total: 0, onDuty: 0, off: 0 };
       entry.total += 1;
-      const bucket = bucketOf(row);
-      if (bucket === "on_duty") entry.onDuty += 1;
-      else if (bucket === "unmatched") entry.unmatched += 1;
+      if (bucketOf(row) === "on_duty") entry.onDuty += 1;
       else entry.off += 1;
       byBranch.set(name, entry);
     }
@@ -1120,16 +1119,59 @@ export default function LiveTrackingPanel({
                 >
                   <span style={{ color: "#15803d" }}>{region.onDuty} on duty</span>
                   <span style={{ color: "#6b7280" }}>{region.off} off</span>
-                  {/* Only when there are any: a zero here is noise, but a
-                      number is a data problem worth seeing -- those engineers'
-                      cases are being skipped entirely. */}
-                  {region.unmatched > 0 && (
-                    <span style={{ color: "#b91c1c" }}>{region.unmatched} unmatched</span>
-                  )}
                 </div>
               </button>
             );
           })}
+          {/* Vendors, on their own and counted on their own. Grey because a
+              vendor on this board is normal, not a fault. */}
+          {bucketCounts.unmatched > 0 && (
+            <button
+              onClick={() =>
+                setStateFilter(stateFilter === "unmatched" ? "all" : "unmatched")
+              }
+              title="Show only vendors"
+              style={{
+                flex: "0 0 auto",
+                minWidth: 132,
+                textAlign: "left",
+                padding: "8px 10px 8px 12px",
+                borderRadius: 10,
+                border: "1px solid #e5e7eb",
+                borderLeft: "4px solid #6b7280",
+                background: "#f9fafb",
+                boxShadow: stateFilter === "unmatched" ? "0 0 0 2px #6b7280" : "none",
+                cursor: "pointer",
+                font: "inherit",
+              }}
+            >
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "baseline",
+                  justifyContent: "space-between",
+                  gap: 8,
+                }}
+              >
+                <span style={{ fontSize: 12.5, fontWeight: 600, color: "#111827" }}>
+                  Vendor
+                </span>
+                <span
+                  style={{
+                    fontSize: 16,
+                    fontWeight: 700,
+                    color: "#374151",
+                    fontVariantNumeric: "tabular-nums",
+                  }}
+                >
+                  {bucketCounts.unmatched}
+                </span>
+              </div>
+              <div style={{ marginTop: 3, fontSize: 11.5, color: "#6b7280" }}>
+                not on the payroll
+              </div>
+            </button>
+          )}
         </div>
       )}
 

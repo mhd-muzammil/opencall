@@ -291,6 +291,13 @@ function eventLabel(event: EngineerDayEvent): string {
 function eventMeaning(event: EngineerDayEvent): string | null {
   if (event.type === "reached") return "Reached the site";
   if (event.type === "completed") return "Completed the site";
+  // The two ends of a dark stretch. Said plainly, because the difference
+  // decides whether anybody rings the engineer: one of them lost kilometres
+  // and the other lost only the live view.
+  if (event.type === "location_off") return "The phone stopped reporting - this stretch is not counted";
+  if (event.type === "location_back") return "The phone is reporting again";
+  if (event.type === "no_network") return "Kept on the phone - the kilometres are not lost";
+  if (event.type === "network_back") return "The held positions arrived";
   return null;
 }
 
@@ -386,6 +393,10 @@ const EVENT_MARK: Record<string, string> = {
   // office the live view.
   location_off: "G",
   no_network: "N",
+  // The same letters coming back, so a hole and its end read as one story
+  // rather than two unrelated marks. Only the colour changes.
+  location_back: "G",
+  network_back: "N",
 };
 
 /** A figure reads faster with a mark beside it than with a longer label. */
@@ -444,6 +455,10 @@ const EVENT_COLOR: Record<string, string> = {
   // quiet slate, deliberately not alarming.
   location_off: "#be123c",
   no_network: "#475569",
+  // Green for both ends coming back: whatever the stretch cost, it is over,
+  // and that is the thing the office is scanning the rail for.
+  location_back: "#16a34a",
+  network_back: "#16a34a",
 };
 
 // Below this, a phone is close enough to flat that it explains a silence.

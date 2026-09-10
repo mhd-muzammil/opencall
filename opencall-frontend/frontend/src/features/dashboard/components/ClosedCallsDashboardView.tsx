@@ -27,6 +27,8 @@ import {
   RegionCardGrid,
   RepeatVisitsPanel,
   SourceComparison,
+  closedCallsExportFilename,
+  closedCallsScopeSheet,
   fieldezCoverage,
   oursCoverage,
   rawCoverage,
@@ -271,18 +273,43 @@ export function ClosedCallsDashboardView({
     }
   }
 
-  /** Exports every filtered record, not just the visible page. */
+  /**
+   * Exports every filtered record, not just the visible page — and says what it is.
+   *
+   * The workbook leads with a Scope sheet (period, region, search, the counts as they
+   * stood) and is named after the PERIOD. It used to be named after the day you pressed
+   * the button, which told you nothing about the 1,185 rows inside it.
+   */
   function handleExport() {
     if (ledgerRows.length === 0) return;
-    const sheet = XLSX.utils.json_to_sheet(ledgerRows.map((row) => row.output));
+
+    const scope = {
+      preset: periodPreset,
+      dateLo,
+      dateHi,
+      cycleLabel: `${period.billCycle.monthLabel} (${period.billCycle.label})`,
+      regionLabel: scopeLabel || "All regions",
+      aspCode: selectedAsp,
+      search: searchQuery,
+      rowCount: ledgerRows.length,
+      ours: oursOutcomeFor(selectedAsp, oursCount),
+      fieldez: sources.fieldezOutcomeFor(selectedAsp),
+      raw: sources.rawOutcomeFor(selectedAsp),
+      generatedAt: new Date(),
+    };
+
     const book = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(book, sheet, "Closed Calls");
-    XLSX.writeFile(
+    XLSX.utils.book_append_sheet(
       book,
-      `Closed_Calls_Ledger_${selectedAsp || "ALL"}_${new Date()
-        .toISOString()
-        .slice(0, 10)}.xlsx`,
+      XLSX.utils.aoa_to_sheet(closedCallsScopeSheet(scope)),
+      "Scope",
     );
+    XLSX.utils.book_append_sheet(
+      book,
+      XLSX.utils.json_to_sheet(ledgerRows.map((row) => row.output)),
+      "Closed Calls",
+    );
+    XLSX.writeFile(book, closedCallsExportFilename(scope));
   }
 
   function openCase(row: ReportRow) {

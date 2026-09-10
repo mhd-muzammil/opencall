@@ -5,6 +5,7 @@
 // meant to be imported from outside.
 export * from "./types";
 export * from "./coverage";
+export * from "./closedCallsExport";
 export * from "./rowFields";
 export * from "./DrillModal";
 export * from "./SyncBadge";

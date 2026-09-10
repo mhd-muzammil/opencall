@@ -9337,10 +9337,22 @@ td {
   font-feature-settings: "tnum" 1;
 }
 
-.closedCalls button {
-  font: inherit;
+/* globals.css paints EVERY <button> with --accent and floors it at 40px tall
+   (the bare `button` rule, specificity 0,0,1). Wrapped in :where() so this reset
+   contributes no specificity of its own and the cc-classes below — which are
+   (0,1,0) and come later — decide how each control actually looks. Without it
+   every drill-down link on this page is a 40px indigo pill. */
+.closedCalls :where(button),
+.ccModalBg :where(button) {
+  min-height: 0;
+  border: 0;
+  border-radius: 0;
+  background: none;
   color: inherit;
+  padding: 0;
+  font: inherit;
   cursor: pointer;
+  text-align: inherit;
 }
 
 .closedCalls select,
@@ -10384,6 +10396,80 @@ td {
   padding: 40px;
   color: var(--cc-ink2);
   font-size: 13px;
+}
+
+/* ---------- interaction states ----------
+
+   globals.css also carries `button:hover:not(:disabled) { background: var(--accent-strong) }`
+   at specificity (0,2,1), which outranks every plain .ccX class and repaints the
+   hovered control solid indigo — a number, a region pill, a bucket, all of it. The
+   blanket below neutralises it at (0,3,1); each family then states its own hover at
+   (0,4,0) or higher so it wins in turn. Same trick the sidebar uses.               */
+
+.closedCalls button:hover:not(:disabled),
+.ccModalBg button:hover:not(:disabled) {
+  background: none;
+}
+
+.closedCalls .ccBtn:hover:not(:disabled),
+.ccModalBg .ccBtn:hover:not(:disabled) {
+  background: #f9fafb;
+  border-color: #d1d5db;
+}
+
+.closedCalls .ccBtn.ccPrimary:hover:not(:disabled),
+.ccModalBg .ccBtn.ccPrimary:hover:not(:disabled) {
+  background: #1d4ed8;
+  border-color: #1d4ed8;
+}
+
+.closedCalls .ccSeg button:hover:not(:disabled) {
+  color: var(--cc-ink);
+}
+
+.closedCalls .ccSeg button.ccOn:hover:not(:disabled) {
+  background: #fff;
+}
+
+.closedCalls .ccRegionTabs button:hover:not(:disabled) {
+  background: #f9fafb;
+  border-color: #c7d2fe;
+}
+
+.closedCalls .ccRegionTabs button.ccOn:hover:not(:disabled) {
+  background: var(--cc-ink);
+  border-color: var(--cc-ink);
+}
+
+.closedCalls .ccBucket:hover:not(:disabled) {
+  background: #fff;
+  border-color: #c7d2fe;
+}
+
+.closedCalls .ccFb:hover:not(:disabled) {
+  background: #f9fafb;
+  border-color: #c7d2fe;
+}
+
+.closedCalls .ccFb.ccDone:hover:not(:disabled) {
+  background: var(--cc-ours-soft);
+  border-color: #6ee7b7;
+}
+
+.ccModalBg .ccX:hover:not(:disabled) {
+  background: #e5e7eb;
+}
+
+/* The row total under our closed count — a sentence, not a figure, so it reads as
+   prose with a dotted underline rather than as a fourth number. */
+.ccTotalLink {
+  text-decoration: underline dotted;
+  text-underline-offset: 2px;
+  color: var(--cc-ink2);
+}
+
+.closedCalls .ccTotalLink:hover:not(:disabled) {
+  color: var(--cc-ink);
 }
 
 /* ---------- responsive ---------- */

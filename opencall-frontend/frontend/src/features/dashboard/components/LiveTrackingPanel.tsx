@@ -298,6 +298,15 @@ function eventMeaning(event: EngineerDayEvent): string | null {
   if (event.type === "location_back") return "The phone is reporting again";
   if (event.type === "no_network") return "Kept on the phone - the kilometres are not lost";
   if (event.type === "network_back") return "The held positions arrived";
+  // The size of what nothing was watching. The kilometres count the straight
+  // line across it -- the least they can have travelled -- so this number is
+  // what is missing, not what was counted.
+  if (event.type === "untracked") {
+    const moved = (event as { moved_km?: number }).moved_km;
+    return moved
+      ? `The app sent nothing while they moved ${moved} km`
+      : "The app sent nothing while they were moving";
+  }
   return null;
 }
 
@@ -397,6 +406,9 @@ const EVENT_MARK: Record<string, string> = {
   // rather than two unrelated marks. Only the colour changes.
   location_back: "G",
   network_back: "N",
+  // A silence the app never admitted to. Its own letter, because it is not the
+  // same fact as location being switched off -- nobody chose this one.
+  untracked: "?",
 };
 
 /** A figure reads faster with a mark beside it than with a longer label. */
@@ -459,6 +471,10 @@ const EVENT_COLOR: Record<string, string> = {
   // and that is the thing the office is scanning the rail for.
   location_back: "#16a34a",
   network_back: "#16a34a",
+  // Amber, not red: kilometres were lost here, but unlike location being
+  // switched off there is nothing to accuse anybody of -- the app stopped and
+  // said nothing.
+  untracked: "#b45309",
 };
 
 // Below this, a phone is close enough to flat that it explains a silence.

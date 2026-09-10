@@ -55,3 +55,6 @@ Thumbs.db
 # Word documents (and temp lock files)
 *.docx
 ~$*.docx
+
+# Output of scripts/shot-closed-calls.mjs — local screenshots, never committed.
+screenshots/

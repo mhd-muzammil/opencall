@@ -11,6 +11,7 @@ import { useMemo } from "react";
 import { classifyFlexClosureOutcome, hasFlexClosureOutcome } from "@opencall/shared";
 import type { ReportRow } from "../types";
 import type { ClosedCallsPeriodPreset } from "../utils/closedCallsPeriod";
+import { isEngineerAssigned } from "../utils/reportUtils";
 import { getRowAspCode, rowOutput } from "../components/closedCalls/rowFields";
 import type { DrillState, OursOutcome } from "../components/closedCalls/types";
 
@@ -71,7 +72,10 @@ export function useClosedCallCounts(params: {
    * it is UNKNOWN, not assumed billable.
    */
   const oursOutcomeByAsp = useMemo(() => {
-    const counts = new Map<string, { closed: number; cancelled: number }>();
+    const counts = new Map<
+      string,
+      { closed: number; cancelled: number; closedWithoutEngineer: number }
+    >();
     for (const row of closedRows) {
       if (!rowInPeriod(row)) continue;
       const output = rowOutput(row);
@@ -79,8 +83,17 @@ export function useClosedCallCounts(params: {
       const outcome = classifyFlexClosureOutcome(output["Flex Status"]);
       if (outcome === "other") continue;
       const asp = getRowAspCode(output);
-      const entry = counts.get(asp) ?? { closed: 0, cancelled: 0 };
+      const entry = counts.get(asp) ?? {
+        closed: 0,
+        cancelled: 0,
+        closedWithoutEngineer: 0,
+      };
       entry[outcome] += 1;
+      // Only completions are asked the engineer question: a cancelled call was never
+      // worked, so nobody being named on it says nothing.
+      if (outcome === "closed" && !isEngineerAssigned(row)) {
+        entry.closedWithoutEngineer += 1;
+      }
       counts.set(asp, entry);
     }
     return counts;
@@ -90,19 +103,27 @@ export function useClosedCallCounts(params: {
     return (aspCode: string, total: number): OursOutcome => {
       let closed = 0;
       let cancelled = 0;
+      let closedWithoutEngineer = 0;
       if (aspCode) {
         const entry = oursOutcomeByAsp.get(aspCode);
         closed = entry?.closed ?? 0;
         cancelled = entry?.cancelled ?? 0;
+        closedWithoutEngineer = entry?.closedWithoutEngineer ?? 0;
       } else {
         for (const entry of oursOutcomeByAsp.values()) {
           closed += entry.closed;
           cancelled += entry.cancelled;
+          closedWithoutEngineer += entry.closedWithoutEngineer;
         }
       }
       // Unknown is the remainder of the card's OWN total, so the three parts always add up
       // to the headline even if the ledger and the region breakdown ever drift apart.
-      return { closed, cancelled, unknown: Math.max(0, total - closed - cancelled) };
+      return {
+        closed,
+        cancelled,
+        unknown: Math.max(0, total - closed - cancelled),
+        closedWithoutEngineer,
+      };
     };
   }, [oursOutcomeByAsp]);
 
@@ -129,6 +150,10 @@ export function useClosedCallCounts(params: {
           : "other";
         if (drill.outcome === "closed") return reported && outcome === "closed";
         if (drill.outcome === "cancelled") return reported && outcome === "cancelled";
+        // The completions nobody is named on — the same rows the coverage line counts.
+        if (drill.outcome === "unassigned") {
+          return reported && outcome === "closed" && !isEngineerAssigned(row);
+        }
         // Unknown is everything the vendor has not reported on, which is exactly the
         // remainder the card counts.
         return !reported || outcome === "other";

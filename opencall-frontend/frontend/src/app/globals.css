@@ -10460,6 +10460,28 @@ td {
   background: #e5e7eb;
 }
 
+/* Engineer coverage of the completions: a sentence, and the count of the ones nobody
+   is named on carries the warning tone because that is the half worth acting on. */
+.ccEngineerLine {
+  color: var(--cc-ink2);
+}
+
+.ccEngineerLine strong {
+  color: var(--cc-ink);
+  font-weight: 600;
+}
+
+.ccUnassignedLink {
+  color: var(--cc-warn);
+  font-weight: 600;
+  text-decoration: underline dotted;
+  text-underline-offset: 2px;
+}
+
+.closedCalls .ccUnassignedLink:hover:not(:disabled) {
+  color: #92400e;
+}
+
 /* The row total under our closed count — a sentence, not a figure, so it reads as
    prose with a dotted underline rather than as a fourth number. */
 .ccTotalLink {

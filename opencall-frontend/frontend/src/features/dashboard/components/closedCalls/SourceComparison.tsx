@@ -132,6 +132,41 @@ export function SourceComparison({
             )}
           </div>
           <Coverage coverage={oursCoverage} />
+          {/* Whether anyone is actually named on these completions in OpenCall.
+              A completion with no engineer is work the vendor was paid for that our own
+              productivity model can never credit — it only counts calls booked to
+              someone — so the answer is stated either way rather than only when it is
+              bad news. */}
+          {oursSplit.closed > 0 && (
+            <div className="ccExtra ccEngineerLine">
+              {oursSplit.closedWithoutEngineer === 0 ? (
+                <>
+                  All <strong>{formatNumber(oursSplit.closed)}</strong> have an engineer
+                  assigned in our CRM.
+                </>
+              ) : (
+                <>
+                  <strong>
+                    {formatNumber(oursSplit.closed - oursSplit.closedWithoutEngineer)}
+                  </strong>{" "}
+                  have an engineer assigned in our CRM ·{" "}
+                  <Drill
+                    className="ccUnassignedLink"
+                    count={oursSplit.closedWithoutEngineer}
+                    label={`${formatNumber(oursSplit.closedWithoutEngineer)} do not`}
+                    onDrill={() =>
+                      onDrill({
+                        kind: "ours",
+                        outcome: "unassigned",
+                        aspCode: "",
+                        label: scope,
+                      })
+                    }
+                  />
+                </>
+              )}
+            </div>
+          )}
           <div className="ccExtra">
             Report rows that disappeared from the Flex WIP file and were stamped CLOSED.{" "}
             {/* The row total still has to be reachable: it is what the ledger below lists

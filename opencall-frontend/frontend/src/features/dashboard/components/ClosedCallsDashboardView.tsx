@@ -45,6 +45,18 @@ export type { BillCycle };
 /** The ledger renders a page at a time; every count and the export use the full set. */
 const LEDGER_PAGE_SIZE = 100;
 
+/** What each half of our own count is called when its records are opened. */
+const OURS_DRILL_TITLES: Record<
+  Extract<DrillState, { kind: "ours" }>["outcome"],
+  string
+> = {
+  all: "Our closed count — every row",
+  closed: "Our closed count — completed",
+  cancelled: "Our closed count — cancelled",
+  unknown: "Our closed count — no Flex outcome yet",
+  unassigned: "Completed, with no engineer in our CRM",
+};
+
 export interface ClosedCallsDashboardViewProps {
   overallClosedCount: number;
   closedRegionBreakdown: Array<{
@@ -423,11 +435,7 @@ export function ClosedCallsDashboardView({
       {drill?.kind === "ours" && (
         <OursDrill
           rows={counts.oursDrillRows(drill)}
-          title={
-            drill.outcome === "all"
-              ? "Our closed count"
-              : `Our closed count — ${drill.outcome}`
-          }
+          title={OURS_DRILL_TITLES[drill.outcome]}
           scope={`${drill.label || "All Regions"} · ${
             periodPreset === "all" ? "all dates" : `${dateLo || "…"} → ${dateHi || "…"}`
           }`}

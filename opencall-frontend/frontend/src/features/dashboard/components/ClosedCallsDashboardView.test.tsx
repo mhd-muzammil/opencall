@@ -20,11 +20,12 @@ function row(input: {
   sameDay?: boolean;
   flexStatus?: string;
   closedDate?: string;
+  engineer?: string;
 }): ReportRow {
   const output: Record<string, unknown> = {
     "Ticket ID": input.ticket,
     "Work Location": input.asp,
-    Engineer: "Jeeva",
+    Engineer: input.engineer ?? "Jeeva",
     "Customer Name": "Prashanth",
     "RTPL status": "Case-Closed",
   };
@@ -126,6 +127,45 @@ describe("ClosedCallsDashboardView", () => {
     // The ledger lists every closed ROW, cancellations included — it is the record list,
     // not the billable count — so it stays at the period total.
     expect(text(render())).toContain("4 in period");
+  });
+
+  it("says whether the completions have an engineer in our CRM", () => {
+    // A completion nobody is named on is work the vendor was paid for that our own
+    // productivity model can never credit — it only counts calls booked to an engineer.
+    expect(text(render())).toContain("All 2 have an engineer assigned in our CRM");
+  });
+
+  it("counts a blank engineer and the placeholder as the same unassigned state", () => {
+    // The generator writes "Manual Entry Required" until a human assigns someone;
+    // treating that as a name is how a call with nobody on it looks booked.
+    const markup = text(
+      render({
+        closedRows: [
+          row({ ticket: "WO-1", asp: "ASPS01461", flexStatus: "WO Closed" }),
+          row({
+            ticket: "WO-2",
+            asp: "ASPS01461",
+            flexStatus: "WO Closed",
+            engineer: "",
+          }),
+          row({
+            ticket: "WO-3",
+            asp: "ASPS01463",
+            flexStatus: "WO Closed",
+            engineer: "Manual Entry Required",
+          }),
+          // A cancelled call was never worked, so nobody being named on it says nothing.
+          row({
+            ticket: "WO-4",
+            asp: "ASPS01463",
+            flexStatus: "Closed - Canceled",
+            engineer: "",
+          }),
+        ],
+      }),
+    );
+    expect(markup).toContain("1 have an engineer assigned in our CRM");
+    expect(markup).toContain("2 do not");
   });
 
   it("hides the import controls without an import token", () => {

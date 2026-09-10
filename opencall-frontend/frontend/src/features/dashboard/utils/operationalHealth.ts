@@ -12,7 +12,12 @@
 // values it matched so the cards can filter the records table on click.
 import { MANUAL_ENTRY_REQUIRED } from "../constants";
 import type { ReportRow } from "../types";
-import { isActionableStatusValue, parseWipAgingValue } from "./reportUtils";
+import {
+  engineerOf,
+  isActionableStatusValue,
+  isEngineerAssigned,
+  parseWipAgingValue,
+} from "./reportUtils";
 
 export const DEFAULT_AGING_THRESHOLD = 10;
 const PLANNED_KEYWORDS = ["assigned", "scheduled", "onsite"];
@@ -25,10 +30,6 @@ const MANUAL_ENTRY_LOWER = MANUAL_ENTRY_REQUIRED.toLowerCase();
 
 function rtplStatusOf(row: ReportRow): string {
   return String(row.output["RTPL status"] ?? "").trim();
-}
-
-function engineerOf(row: ReportRow): string {
-  return String(row.output.Engineer ?? "").trim();
 }
 
 function statusMatches(
@@ -142,10 +143,10 @@ export function computeOperationalHealth(
       }
     }
 
-    // "Unassigned" = no real engineer yet. The backend writes the placeholder
-    // "Manual Entry Required" (or leaves it blank) until a human assigns one.
+    // "Unassigned" = no real engineer yet. The rule lives in reportUtils because
+    // Closed Calls asks the same question of its completions.
     const engineer = engineerOf(row);
-    if (!engineer || engineer === MANUAL_ENTRY_REQUIRED) {
+    if (!isEngineerAssigned(row)) {
       unassignedCount += 1;
       unassignedValues.add(engineer);
     }

@@ -6,6 +6,27 @@ import type { ReportRow, SourceKey, ManualCarryForwardField } from "../types";
 import type { WipAgingSortDirection } from "../../../lib/columnFilter";
 import type { UploadBatch } from "../../../lib/apiClient";
 
+/** The engineer named on a row, trimmed. "" when the column is absent. */
+export function engineerOf(row: ReportRow): string {
+  return String(row.output.Engineer ?? "").trim();
+}
+
+/**
+ * Whether a human has actually put an engineer on this call in OpenCall.
+ *
+ * "Unassigned" is blank OR the placeholder the generator writes until someone
+ * assigns one — the two are the same state, and treating the placeholder as a name
+ * is how a call with nobody on it gets counted as booked work.
+ *
+ * One definition on purpose: the Overview's Unassigned card and the Closed Calls
+ * engineer-coverage line both ask this question, and productivity is only ever
+ * credited to a call that passes it.
+ */
+export function isEngineerAssigned(row: ReportRow): boolean {
+  const engineer = engineerOf(row);
+  return Boolean(engineer) && engineer !== MANUAL_ENTRY_REQUIRED;
+}
+
 export function parseWipAgingValue(value: unknown): number | null {
   const parsed = Number(String(value ?? "").trim());
   return Number.isFinite(parsed) ? parsed : null;

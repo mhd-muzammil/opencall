@@ -20,6 +20,16 @@ export interface OursOutcome {
   cancelled: number;
   /** Flex has not reported a closure for these yet — deliberately neither of the above. */
   unknown: number;
+  /**
+   * Of `closed`, how many carry NO engineer in OpenCall — blank, or still the
+   * "Manual Entry Required" placeholder.
+   *
+   * A completion nobody is named on is work the vendor was paid for that our own
+   * productivity model can never credit: it only counts calls booked to an engineer.
+   * It is a property of our rows alone — FieldEZ and the raw export carry no engineer —
+   * which is why it hangs off this split rather than the comparison sources.
+   */
+  closedWithoutEngineer: number;
 }
 
 /** Which system a number came from. Drives its colour and its drill-down. */
@@ -51,7 +61,8 @@ export type ReconBucketKey =
 export type DrillState =
   | {
       kind: "ours";
-      outcome: "all" | "closed" | "cancelled" | "unknown";
+      /** "unassigned" is the completions with no engineer, not every unassigned row. */
+      outcome: "all" | "closed" | "cancelled" | "unknown" | "unassigned";
       aspCode: string;
       label: string;
     }

@@ -182,10 +182,21 @@ export interface ClosureReconciliation {
   matched: ReconciliationRow[];
   closedHereNotInFlex: ReconciliationRow[];
   closedInFlexNotHere: ReconciliationRow[];
+  /**
+   * Flex closed it and we have NO report row for it at all — not an open one, not a
+   * closed one, on any day. Those never reach the three buckets above, because all three
+   * are built from rows we actually hold, so a closure with no row simply vanished from
+   * the comparison.
+   *
+   * Optional: a backend that predates the fourth bucket sends neither field, and the UI
+   * then says the line is unavailable rather than showing a fabricated zero.
+   */
+  closedInFlexNoRow?: ReconciliationRow[] | undefined;
   counts: {
     matched: number;
     closedHereNotInFlex: number;
     closedInFlexNotHere: number;
+    closedInFlexNoRow?: number | undefined;
   };
 }
 

@@ -9277,3 +9277,1168 @@ td {
     background: var(--accent);
   }
 }
+
+/* =====================================================================
+   Closed Calls (redesign v3)
+   ---------------------------------------------------------------------
+   Scoped under .closedCalls (the page) and .ccModalBg (the portalled
+   modal shell, which renders on document.body and so sits outside the
+   page scope). Tokens are declared on both so the two share one palette.
+
+   Colour meanings are load-bearing and must not be reassigned:
+     --cc-ours     green   our closed count (synthetic CLOSED report rows)
+     --cc-fieldez  purple  FieldEZ closure (case_closure_dates)
+     --cc-raw      orange  raw data (flex_raw_records)
+     --cc-warn     amber   coverage caveats and unpaid / repeat work
+     --cc-bad      red     disagreements against us
+
+   Every class here is cc-prefixed on purpose: globals.css already owns
+   generic names (.card, .btn, .tag, table) that would otherwise collide.
+   ===================================================================== */
+
+.closedCalls,
+.ccModalBg {
+  --cc-bg: #f5f7fb;
+  --cc-card: #ffffff;
+  --cc-line: #e5e9f0;
+  --cc-ink: #111827;
+  --cc-ink2: #4b5563;
+  --cc-ink3: #9ca3af;
+  --cc-primary: #2563eb;
+  --cc-primary-soft: #eef3ff;
+  --cc-ours: #10b981;
+  --cc-ours-soft: #ecfdf5;
+  --cc-fieldez: #7c3aed;
+  --cc-fieldez-soft: #f3eeff;
+  --cc-raw: #ea580c;
+  --cc-raw-soft: #fff1e8;
+  --cc-warn: #b45309;
+  --cc-warn-soft: #fef3c7;
+  --cc-bad: #dc2626;
+  --cc-bad-soft: #fee2e2;
+  --cc-ok: #15803d;
+  --cc-r: 12px;
+  --cc-sh: 0 1px 2px rgba(17, 24, 39, 0.05);
+}
+
+.closedCalls {
+  padding: 18px 24px 60px;
+  min-width: 0;
+  width: 100%;
+  max-width: 100%;
+  overflow-x: hidden;
+  /* The page owns its own surface inside the workspace shell, so it reads as a page
+     rather than a full-bleed block that has lost its container. */
+  border-radius: var(--cc-r);
+  background: var(--cc-bg);
+  color: var(--cc-ink);
+  font-size: 13px;
+  line-height: 1.45;
+  font-feature-settings: "tnum" 1;
+}
+
+.closedCalls button {
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+}
+
+.closedCalls select,
+.closedCalls input {
+  font: inherit;
+  padding: 7px 9px;
+  border: 1px solid var(--cc-line);
+  border-radius: 8px;
+  background: #fff;
+  color: var(--cc-ink);
+}
+
+/* ---------- shared primitives ---------- */
+
+.ccCard {
+  background: var(--cc-card);
+  border: 1px solid var(--cc-line);
+  border-radius: var(--cc-r);
+  box-shadow: var(--cc-sh);
+  padding: 16px 18px;
+}
+
+.ccSec {
+  margin-bottom: 14px;
+}
+
+.ccCard h2,
+.ccH2 {
+  font-size: 14px;
+  font-weight: 600;
+  margin: 0;
+}
+
+.ccHint {
+  color: var(--cc-ink3);
+  font-size: 12px;
+  margin: 2px 0 0;
+}
+
+.ccBtn {
+  padding: 8px 13px;
+  border: 1px solid var(--cc-line);
+  border-radius: 8px;
+  background: #fff;
+  font-weight: 500;
+  box-shadow: var(--cc-sh);
+  white-space: nowrap;
+}
+
+.ccBtn.ccPrimary {
+  background: var(--cc-primary);
+  color: #fff;
+  border-color: var(--cc-primary);
+}
+
+.ccBtn.ccSm {
+  padding: 5px 9px;
+  font-size: 12px;
+}
+
+.ccBtn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.ccTag {
+  display: inline-block;
+  padding: 1px 7px;
+  border-radius: 5px;
+  font-size: 11px;
+  font-weight: 600;
+  background: #f3f4f6;
+  color: var(--cc-ink2);
+}
+
+.ccTag.ccWarn {
+  background: var(--cc-warn-soft);
+  color: var(--cc-warn);
+}
+
+.ccTag.ccNew {
+  background: var(--cc-primary-soft);
+  color: var(--cc-primary);
+}
+
+/* Ticket-style link button. */
+.ccTk {
+  color: var(--cc-primary);
+  font-weight: 600;
+  background: none;
+  border: 0;
+  padding: 0;
+  text-align: left;
+}
+
+.ccTk.ccUnpaid {
+  color: var(--cc-bad);
+}
+
+.ccTk:disabled {
+  color: var(--cc-ink3);
+  cursor: default;
+}
+
+.ccSync {
+  white-space: nowrap;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border-radius: 20px;
+  font-size: 12px;
+  font-weight: 500;
+  background: var(--cc-ours-soft);
+  color: var(--cc-ok);
+}
+
+.ccSync i {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+.ccSync.ccStale {
+  background: var(--cc-bad-soft);
+  color: var(--cc-bad);
+}
+
+.ccSync.ccIdle {
+  background: #f3f4f6;
+  color: var(--cc-ink2);
+}
+
+/* ---------- header ---------- */
+
+.ccCrumb {
+  font-size: 11px;
+  color: var(--cc-ink3);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.ccHead {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 16px;
+  flex-wrap: wrap;
+  margin-bottom: 14px;
+}
+
+.ccHead h1 {
+  font-size: 20px;
+  font-weight: 700;
+  margin: 2px 0 0;
+  color: var(--cc-ink);
+}
+
+.ccHead p {
+  margin: 2px 0 0;
+  color: var(--cc-ink2);
+}
+
+.ccActions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+}
+
+.ccActionNote {
+  flex-basis: 100%;
+  text-align: right;
+  font-size: 11px;
+  color: var(--cc-ink2);
+}
+
+/* ---------- PeriodBar ---------- */
+
+.ccPeriodBar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  padding: 10px 14px;
+}
+
+.ccSeg {
+  display: flex;
+  background: #f3f4f6;
+  border-radius: 8px;
+  padding: 3px;
+}
+
+.ccSeg button {
+  border: 0;
+  background: none;
+  padding: 6px 12px;
+  border-radius: 6px;
+  color: var(--cc-ink2);
+  font-weight: 500;
+}
+
+.ccSeg button.ccOn {
+  background: #fff;
+  color: var(--cc-ink);
+  box-shadow: var(--cc-sh);
+  font-weight: 600;
+}
+
+.ccPeriodBar .ccScope {
+  margin-left: auto;
+  color: var(--cc-ink2);
+}
+
+.ccPeriodBar .ccScope b {
+  color: var(--cc-ink);
+}
+
+.ccRegionTabs {
+  display: flex;
+  gap: 4px;
+  flex-wrap: wrap;
+}
+
+.ccRegionTabs button {
+  border: 1px solid var(--cc-line);
+  background: #fff;
+  border-radius: 20px;
+  padding: 4px 11px;
+  color: var(--cc-ink2);
+}
+
+.ccRegionTabs button.ccOn {
+  background: var(--cc-ink);
+  color: #fff;
+  border-color: var(--cc-ink);
+}
+
+.ccDatePair {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.ccDatePair span {
+  color: var(--cc-ink3);
+}
+
+/* ---------- SourceComparison ---------- */
+
+.ccSources {
+  display: grid;
+  grid-template-columns: 1.4fr 1fr 1fr;
+  gap: 12px;
+  margin-top: 14px;
+}
+
+.ccSrc {
+  border-left: 4px solid var(--cc-c);
+  padding-left: 14px;
+  min-width: 0;
+}
+
+/* Which system the block reports. The accent is the source's identity, so it is a
+   modifier class rather than an inline custom property. */
+.ccSrc.ccSrcOurs {
+  --cc-c: var(--cc-ours);
+}
+
+.ccSrc.ccSrcFieldez {
+  --cc-c: var(--cc-fieldez);
+}
+
+.ccSrc.ccSrcRaw {
+  --cc-c: var(--cc-raw);
+}
+
+.ccSwatchOurs {
+  background: var(--cc-ours);
+}
+
+.ccSwatchFieldez {
+  background: var(--cc-fieldez);
+}
+
+.ccSwatchRaw {
+  background: var(--cc-raw);
+}
+
+.ccSrc .ccLab {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  font-weight: 600;
+  color: var(--cc-c);
+}
+
+.ccSrc .ccVal {
+  font-size: 32px;
+  font-weight: 700;
+  line-height: 1.1;
+  margin: 4px 0;
+}
+
+.ccSrc .ccVal button {
+  background: none;
+  border: 0;
+  padding: 0;
+  color: inherit;
+  font: inherit;
+  border-bottom: 2px solid transparent;
+}
+
+.ccSrc .ccVal button:hover:not(:disabled) {
+  border-color: var(--cc-c);
+}
+
+.ccSrc .ccVal button:disabled {
+  cursor: default;
+}
+
+.ccSplit {
+  color: var(--cc-ink2);
+  font-size: 12px;
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.ccSplit button {
+  background: none;
+  border: 0;
+  padding: 0;
+  text-decoration: underline dotted;
+  text-underline-offset: 3px;
+  color: var(--cc-ink2);
+}
+
+.ccSplit button:hover:not(:disabled) {
+  color: var(--cc-ink);
+}
+
+.ccSplit button:disabled {
+  cursor: default;
+  text-decoration: none;
+}
+
+.ccSrc .ccCov {
+  margin-top: 8px;
+  font-size: 11.5px;
+  color: var(--cc-ink3);
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.ccSrc .ccExtra {
+  margin-top: 8px;
+  font-size: 12px;
+  color: var(--cc-ink2);
+}
+
+.ccSrc .ccExtra b {
+  color: var(--cc-warn);
+}
+
+.ccSrcNote {
+  grid-column: 1 / -1;
+  border-top: 1px solid var(--cc-line);
+  padding-top: 10px;
+  color: var(--cc-ink2);
+  font-size: 12px;
+}
+
+.ccSrcNote b.ccUp {
+  color: var(--cc-bad);
+}
+
+.ccSrcNote b.ccDown {
+  color: var(--cc-ok);
+}
+
+/* ---------- RegionCard ---------- */
+
+.ccRegionGrid {
+  display: grid;
+  grid-template-columns: repeat(6, 1fr);
+  gap: 12px;
+}
+
+.ccRegionCard {
+  text-align: left;
+  padding: 14px 16px;
+  cursor: pointer;
+  min-width: 0;
+}
+
+.ccRegionCard:hover {
+  border-color: #c7d2fe;
+}
+
+.ccRegionCard.ccOn {
+  border-color: var(--cc-primary);
+  box-shadow: 0 0 0 3px var(--cc-primary-soft);
+}
+
+.ccRegionCard.ccAll {
+  background: var(--cc-ours-soft);
+  border-color: #a7f3d0;
+}
+
+.ccRegionCard .ccNm {
+  display: flex;
+  justify-content: space-between;
+  gap: 6px;
+  font-weight: 600;
+}
+
+.ccRegionCard .ccNm span {
+  color: var(--cc-ink3);
+  font-weight: 500;
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+.ccRegionCard .ccN {
+  font-size: 26px;
+  font-weight: 700;
+  color: var(--cc-ours);
+  margin: 2px 0;
+}
+
+.ccRegionCard .ccN small {
+  font-size: 11px;
+  color: var(--cc-ink3);
+  font-weight: 500;
+}
+
+.ccRegionCard .ccOs {
+  font-size: 11.5px;
+  color: var(--cc-ink2);
+  margin-bottom: 8px;
+}
+
+.ccCmp {
+  border-top: 1px dashed var(--cc-line);
+  padding-top: 6px;
+  font-size: 12px;
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 6px;
+}
+
+.ccCmp + .ccCmp {
+  padding-top: 4px;
+  border: 0;
+}
+
+.ccCmp .ccK {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--cc-ink2);
+}
+
+.ccCmp .ccK i {
+  width: 8px;
+  height: 8px;
+  border-radius: 2px;
+  display: inline-block;
+}
+
+.ccCmp b {
+  font-weight: 600;
+}
+
+.ccCmp .ccSub {
+  color: var(--cc-ink3);
+  font-size: 11px;
+  margin-left: 4px;
+}
+
+.ccCmp .ccDiff {
+  font-size: 11px;
+  padding: 0 5px;
+  border-radius: 4px;
+  margin-left: 5px;
+}
+
+.ccCmp button {
+  background: none;
+  border: 0;
+  padding: 0;
+}
+
+.ccDiff.ccNeg {
+  background: var(--cc-bad-soft);
+  color: var(--cc-bad);
+}
+
+.ccDiff.ccPos {
+  background: var(--cc-ours-soft);
+  color: var(--cc-ok);
+}
+
+.ccDiff.ccZero {
+  background: #f3f4f6;
+  color: var(--cc-ink3);
+}
+
+.ccLegend {
+  display: flex;
+  gap: 16px;
+  flex-wrap: wrap;
+  font-size: 11.5px;
+  color: var(--cc-ink2);
+  margin-top: 8px;
+}
+
+.ccLegend i {
+  display: inline-block;
+  width: 9px;
+  height: 9px;
+  border-radius: 2px;
+  margin-right: 5px;
+  vertical-align: -1px;
+}
+
+/* ---------- two-column band: repeat + reconciliation ---------- */
+
+.ccTwo {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  align-items: start;
+}
+
+.ccKpiRow {
+  display: flex;
+  gap: 26px;
+  margin: 8px 0 10px;
+  flex-wrap: wrap;
+}
+
+.ccKpiRow div b {
+  font-size: 24px;
+  font-weight: 700;
+  display: block;
+}
+
+.ccKpiRow div span {
+  font-size: 12px;
+  color: var(--cc-ink2);
+}
+
+.ccKpiRow .ccGood b {
+  color: var(--cc-ok);
+}
+
+.ccKpiRow .ccBadv b {
+  color: var(--cc-bad);
+}
+
+.ccPills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.ccPills span {
+  font-size: 11px;
+  padding: 3px 10px;
+  border-radius: 999px;
+  background: var(--cc-warn-soft);
+  color: #92400e;
+  white-space: nowrap;
+}
+
+/* ---------- tables (page + modal) ---------- */
+
+.ccTable {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.ccTable th,
+.ccTable td {
+  padding: 8px;
+  text-align: left;
+  border-bottom: 1px solid var(--cc-line);
+  white-space: nowrap;
+  vertical-align: top;
+}
+
+.ccTable th {
+  font-size: 11px;
+  color: var(--cc-ink3);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  font-weight: 600;
+  background: var(--cc-card);
+}
+
+.ccTable td.ccNum,
+.ccTable th.ccNum {
+  text-align: right;
+}
+
+.ccTable tr.ccClick {
+  cursor: pointer;
+}
+
+.ccTable tr.ccClick:hover td {
+  background: #f8fafd;
+}
+
+.ccScroll {
+  max-height: 250px;
+  overflow: auto;
+}
+
+.ccScroll .ccTable th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+}
+
+.ccEmpty {
+  padding: 28px;
+  text-align: center;
+  color: var(--cc-ink2);
+  white-space: normal;
+}
+
+.ccGap {
+  display: inline-block;
+  padding: 1px 7px;
+  border-radius: 5px;
+  font-weight: 600;
+  font-size: 11.5px;
+}
+
+.ccGap.ccR {
+  background: var(--cc-bad-soft);
+  color: var(--cc-bad);
+}
+
+.ccGap.ccA {
+  background: var(--cc-warn-soft);
+  color: var(--cc-warn);
+}
+
+.ccGap.ccG {
+  background: #f3f4f6;
+  color: var(--cc-ink2);
+}
+
+.ccMuted {
+  color: var(--cc-ink3);
+}
+
+.ccSubline {
+  font-size: 11px;
+  color: var(--cc-ink3);
+}
+
+.ccSubline.ccFieldezText {
+  color: var(--cc-fieldez);
+}
+
+.ccSubline.ccWarnText {
+  color: var(--cc-warn);
+}
+
+.ccSubline.ccInk2 {
+  color: var(--cc-ink2);
+}
+
+/* ---------- ReconciliationPanel ---------- */
+
+.ccPanelHead {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.ccReconWin {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+  background: #fafafa;
+  border: 1px dashed var(--cc-line);
+  border-radius: 8px;
+  padding: 8px 10px;
+  margin: 10px 0 12px;
+  font-size: 12px;
+  color: var(--cc-ink2);
+}
+
+.ccReconWin strong {
+  color: var(--cc-ink);
+}
+
+.ccReconWin input {
+  padding: 4px 7px;
+}
+
+.ccBuckets {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 10px;
+}
+
+.ccBucket {
+  border: 1px solid var(--cc-line);
+  border-radius: 10px;
+  padding: 12px;
+  text-align: left;
+  background: #fff;
+}
+
+.ccBucket:hover:not(:disabled) {
+  border-color: #c7d2fe;
+}
+
+.ccBucket:disabled {
+  cursor: default;
+}
+
+.ccBucket .ccN {
+  font-size: 24px;
+  font-weight: 700;
+}
+
+.ccBucket .ccL {
+  font-weight: 600;
+  margin-top: 2px;
+}
+
+.ccBucket .ccD {
+  color: var(--cc-ink3);
+  font-size: 11.5px;
+  margin-top: 2px;
+}
+
+.ccBucket.ccOk .ccN {
+  color: var(--cc-ok);
+}
+
+.ccBucket.ccWarnB .ccN {
+  color: var(--cc-warn);
+}
+
+.ccBucket.ccBadB .ccN {
+  color: var(--cc-bad);
+}
+
+.ccNewline {
+  margin-top: 10px;
+  font-size: 12px;
+  color: var(--cc-ink2);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+  border-top: 1px solid var(--cc-line);
+  padding-top: 10px;
+}
+
+.ccNewline .ccTag {
+  margin-left: 6px;
+}
+
+.ccError {
+  font-size: 12px;
+  color: var(--cc-bad);
+  margin: 0 0 10px;
+}
+
+/* ---------- LedgerTable ---------- */
+
+.ccLedgerHead {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-bottom: 10px;
+}
+
+.ccLedgerHead input[type="search"] {
+  min-width: 320px;
+  flex: 1 1 220px;
+}
+
+.ccLedgerHead .ccCnt {
+  color: var(--cc-ink2);
+  margin-left: auto;
+  white-space: nowrap;
+}
+
+.ccLedgerHead .ccCnt b {
+  color: var(--cc-ink);
+}
+
+.ccTbl {
+  overflow-x: auto;
+}
+
+.ccChips {
+  display: flex;
+  flex-wrap: nowrap;
+  gap: 4px;
+  align-items: center;
+}
+
+.ccChips span {
+  background: #f3f4f6;
+  border-radius: 4px;
+  padding: 1px 6px;
+  font-size: 11px;
+  color: var(--cc-ink2);
+}
+
+.ccChips span.ccSegChip {
+  background: var(--cc-primary-soft);
+  color: var(--cc-primary);
+  font-weight: 600;
+}
+
+.ccSt {
+  display: inline-block;
+  padding: 2px 7px;
+  border-radius: 5px;
+  font-size: 11.5px;
+  font-weight: 600;
+}
+
+.ccSt.ccClosed {
+  background: var(--cc-ours-soft);
+  color: var(--cc-ok);
+}
+
+.ccSt.ccCan {
+  background: #f3f4f6;
+  color: var(--cc-ink2);
+}
+
+.ccSt.ccOpen {
+  background: var(--cc-warn-soft);
+  color: var(--cc-warn);
+}
+
+.ccSt.ccNone {
+  background: #f3f4f6;
+  color: var(--cc-ink3);
+  font-weight: 500;
+}
+
+.ccFb {
+  border: 1px solid var(--cc-line);
+  border-radius: 6px;
+  padding: 3px 8px;
+  background: #fff;
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.ccFb.ccDone {
+  border-color: #a7f3d0;
+  background: var(--cc-ours-soft);
+  color: var(--cc-ok);
+}
+
+.ccPager {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+  align-items: center;
+  margin-top: 10px;
+  color: var(--cc-ink2);
+  flex-wrap: wrap;
+}
+
+/* ---------- DrillModal (portalled to <body>) ---------- */
+
+.ccModalBg {
+  position: fixed;
+  inset: 0;
+  background: rgba(17, 24, 39, 0.45);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  padding: 16px;
+  font-size: 13px;
+  line-height: 1.45;
+  color: var(--cc-ink);
+  font-feature-settings: "tnum" 1;
+}
+
+.ccModalBg button {
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+}
+
+.ccModalBg select,
+.ccModalBg input,
+.ccModalBg textarea {
+  font: inherit;
+  padding: 7px 9px;
+  border: 1px solid var(--cc-line);
+  border-radius: 8px;
+  background: #fff;
+  color: var(--cc-ink);
+  width: 100%;
+}
+
+.ccModal {
+  background: #fff;
+  border-radius: 14px;
+  width: min(960px, 94vw);
+  max-height: 86vh;
+  display: flex;
+  flex-direction: column;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.25);
+  overflow: hidden;
+}
+
+.ccModal.ccNarrow {
+  width: min(520px, 94vw);
+}
+
+.ccModal .ccMh {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 16px 20px;
+  border-bottom: 1px solid var(--cc-line);
+}
+
+.ccModal .ccMh h3 {
+  margin: 0;
+  font-size: 15px;
+}
+
+.ccModal .ccMh p {
+  margin: 2px 0 0;
+  color: var(--cc-ink2);
+  font-size: 12px;
+}
+
+.ccModal .ccMb {
+  overflow: auto;
+  padding: 0 20px 20px;
+  flex: 1;
+}
+
+.ccModal .ccMf {
+  padding: 12px 20px;
+  border-top: 1px solid var(--cc-line);
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  align-items: center;
+}
+
+.ccModal .ccMfNote {
+  margin-right: auto;
+  font-size: 12px;
+  color: var(--cc-bad);
+}
+
+.ccX {
+  border: 0;
+  background: #f3f4f6;
+  border-radius: 8px;
+  width: 30px;
+  height: 30px;
+  font-size: 16px;
+  line-height: 1;
+  flex: none;
+}
+
+.ccFbForm {
+  display: grid;
+  grid-template-columns: 150px 1fr;
+  gap: 12px;
+  align-items: center;
+  padding: 20px 0;
+}
+
+.ccFbForm label {
+  color: var(--cc-ink2);
+}
+
+.ccFbForm textarea {
+  resize: vertical;
+  min-height: 68px;
+}
+
+.ccModal .ccTable th {
+  position: sticky;
+  top: 0;
+  background: #fff;
+  z-index: 1;
+}
+
+.ccSearchRow {
+  padding: 12px 0 0;
+}
+
+.ccDl {
+  display: grid;
+  grid-template-columns: 170px 1fr;
+  gap: 6px 12px;
+  padding: 16px 0;
+  margin: 0;
+}
+
+.ccDl dt {
+  color: var(--cc-ink2);
+}
+
+.ccDl dd {
+  margin: 0;
+}
+
+.ccLoading {
+  text-align: center;
+  padding: 40px;
+  color: var(--cc-ink2);
+  font-size: 13px;
+}
+
+/* ---------- responsive ---------- */
+
+@media (max-width: 1400px) {
+  .closedCalls .ccRegionGrid {
+    grid-template-columns: repeat(4, 1fr);
+  }
+}
+
+@media (max-width: 1200px) {
+  .closedCalls .ccRegionGrid {
+    grid-template-columns: repeat(3, 1fr);
+  }
+
+  .closedCalls .ccSources,
+  .closedCalls .ccTwo {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 860px) {
+  .closedCalls {
+    padding: 14px 14px 60px;
+  }
+
+  .closedCalls .ccRegionGrid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  .closedCalls .ccBuckets {
+    grid-template-columns: 1fr;
+  }
+
+  .ccPeriodBar .ccScope {
+    margin-left: 0;
+    flex-basis: 100%;
+  }
+
+  .ccLedgerHead .ccCnt {
+    margin-left: 0;
+    flex-basis: 100%;
+  }
+
+  .ccLedgerHead input[type="search"] {
+    min-width: 0;
+  }
+}
+
+@media (max-width: 560px) {
+  .closedCalls .ccRegionGrid {
+    grid-template-columns: 1fr;
+  }
+
+  .ccFbForm {
+    grid-template-columns: 1fr;
+  }
+}

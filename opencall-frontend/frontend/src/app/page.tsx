@@ -91,6 +91,10 @@ import {
   shouldApplyReportRefresh,
 } from "../features/dashboard/utils/reportRefresh";
 import { engineersForAspCode } from "../features/dashboard/utils/engineerScope";
+import {
+  closedCountForPeriod,
+  useClosedCallsPeriod,
+} from "../features/dashboard/utils/closedCallsPeriod";
 
 import {
   ChangeTypeBadge,
@@ -1105,6 +1109,34 @@ export default function DashboardPage() {
     overallClosedCount,
     closedRegionBreakdown,
   } = useRegionAnalytics({ activeRows, report });
+
+  /**
+   * What the sidebar badge counts: closures in the period the Closed Calls page is
+   * currently showing, with the all-time ledger beside it as the smaller figure.
+   *
+   * The badge used to show `overallClosedCount` alone. That number is the whole ledger —
+   * a closed ticket is re-stamped CLOSED into every later report and nothing prunes it —
+   * so it only ever grows and answered a question nobody was asking. Reading the same
+   * persisted period the page owns means the two can never disagree, and the count keeps
+   * up while the page is open because same-key instances of the stored state are kept in
+   * step with each other.
+   */
+  const closedCallsPeriod = useClosedCallsPeriod();
+  const closedInPeriodCount = useMemo(
+    () =>
+      closedCountForPeriod({
+        rows: closedRows,
+        preset: closedCallsPeriod.periodPreset,
+        rowInPeriod: closedCallsPeriod.rowInPeriod,
+        allTimeCount: overallClosedCount,
+      }),
+    [
+      closedRows,
+      closedCallsPeriod.periodPreset,
+      closedCallsPeriod.rowInPeriod,
+      overallClosedCount,
+    ],
+  );
 
   // Days that actually have a completed report — the productivity "Specific
   // Date" dropdown offers these (day-by-day flow), not case-creation dates.
@@ -4586,7 +4618,14 @@ export default function DashboardPage() {
               <FolderCheck size={18} strokeWidth={2} /> <span className="sidebarText">Closed Calls</span>
             </span>
             {overallClosedCount > 0 && (
-              <span className="sidebarBadge" style={{ background: "#dcfce7", color: "#15803d" }}>{overallClosedCount}</span>
+              <span
+                className="sidebarBadge"
+                style={{ background: "#dcfce7", color: "#15803d" }}
+                title={`${formatNumber(closedInPeriodCount)} closed in the period the Closed Calls page is showing · ${formatNumber(overallClosedCount)} closed all time`}
+              >
+                {formatNumber(closedInPeriodCount)}
+                <small style={{ opacity: 0.7, fontWeight: 500 }}> / {formatNumber(overallClosedCount)}</small>
+              </span>
             )}
           </button>
           )}

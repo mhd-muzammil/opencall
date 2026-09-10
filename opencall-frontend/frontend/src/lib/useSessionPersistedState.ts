@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 /**
  * A string state that survives moving between workspace views, but not closing the tab.
@@ -65,14 +65,58 @@ export function persist(key: string, value: string): void {
  * because the workspace renders only behind a client-side login, so this never runs
  * during server rendering and cannot desync hydration.
  */
+type Listener = (value: string) => void;
+
+/**
+ * Every live hook instance, by key.
+ *
+ * Two components can hold the same stored value — the Closed Calls page owns the period,
+ * and the sidebar badge summarises it — and `sessionStorage` alone does not tell the
+ * second one that the first has written. Without this the badge showed whatever the
+ * period was when it mounted and then quietly went stale, which is worse than not showing
+ * it at all. Same tab, same values, one source of truth.
+ */
+const listeners = new Map<string, Set<Listener>>();
+
+function broadcast(key: string, value: string, self: Listener): void {
+  const subscribers = listeners.get(key);
+  if (!subscribers) return;
+  for (const listener of subscribers) {
+    if (listener !== self) listener(value);
+  }
+}
+
 export function useSessionPersistedState(
   key: string,
   initial: string | (() => string),
 ): [string, (value: string) => void] {
   const [value, setValue] = useState<string>(() => readPersisted(key, initial));
+  const selfRef = useRef<Listener | null>(null);
+
+  // Subscribe FIRST (declaration order is run order), so the write effect below always
+  // has an identity to exclude itself by and can never echo its own update back.
+  useEffect(() => {
+    const listener: Listener = (next) => {
+      setValue((current) => (current === next ? current : next));
+    };
+    selfRef.current = listener;
+
+    let subscribers = listeners.get(key);
+    if (!subscribers) {
+      subscribers = new Set();
+      listeners.set(key, subscribers);
+    }
+    subscribers.add(listener);
+
+    return () => {
+      subscribers.delete(listener);
+      if (subscribers.size === 0) listeners.delete(key);
+    };
+  }, [key]);
 
   useEffect(() => {
     persist(key, value);
+    if (selfRef.current) broadcast(key, value, selfRef.current);
   }, [key, value]);
 
   return [value, setValue];

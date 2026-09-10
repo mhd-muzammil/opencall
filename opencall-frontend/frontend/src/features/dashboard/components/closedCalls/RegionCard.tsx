@@ -66,13 +66,18 @@ export function RegionCard({
         <span>{subLabel}</span>
       </div>
 
+      {/* COMPLETIONS, so the headline can be read straight against the FieldEZ figure on
+          the row below it. Headlining the row total put a cancellation-inclusive number
+          directly above a completions-only one and made every card look like it disagreed
+          with the vendor. `count` — the row total — is stated underneath instead. */}
       <div className="ccN">
-        {formatNumber(count)} <small>closed</small>
+        {formatNumber(split.closed)} <small>closed</small>
       </div>
 
       <div className="ccOs">
-        {formatNumber(split.closed)} closed · {formatNumber(split.cancelled)} cancelled
-        {split.unknown > 0 ? ` · ${formatNumber(split.unknown)} unknown` : ""}
+        + {formatNumber(split.cancelled)} cancelled
+        {split.unknown > 0 ? ` · ${formatNumber(split.unknown)} unknown` : ""} ·{" "}
+        {formatNumber(count)} rows
       </div>
 
       {fieldez && (

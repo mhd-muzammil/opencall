@@ -100,26 +100,23 @@ export function SourceComparison({
         {/* ---- ours ---- */}
         <div className="ccSrc ccSrcOurs">
           <div className="ccLab">Our closed count</div>
+          {/* COMPLETIONS, like the FieldEZ headline beside it. This used to headline the
+              row total — completions + cancellations + unreported — against a FieldEZ
+              figure that has always been completions only, so the two could never be read
+              against each other and the Δ line looked wrong even when it said 0. */}
           <div className="ccVal">
             <Drill
-              count={ours}
-              label={formatNumber(ours)}
+              count={oursSplit.closed}
+              label={formatNumber(oursSplit.closed)}
               onDrill={() =>
-                onDrill({ kind: "ours", outcome: "all", aspCode: "", label: scope })
+                onDrill({ kind: "ours", outcome: "closed", aspCode: "", label: scope })
               }
             />
           </div>
           <div className="ccSplit">
             <Drill
-              count={oursSplit.closed}
-              label={`${formatNumber(oursSplit.closed)} closed`}
-              onDrill={() =>
-                onDrill({ kind: "ours", outcome: "closed", aspCode: "", label: scope })
-              }
-            />
-            <Drill
               count={oursSplit.cancelled}
-              label={`${formatNumber(oursSplit.cancelled)} cancelled`}
+              label={`+ ${formatNumber(oursSplit.cancelled)} cancelled`}
               onDrill={() =>
                 onDrill({ kind: "ours", outcome: "cancelled", aspCode: "", label: scope })
               }
@@ -137,6 +134,16 @@ export function SourceComparison({
           <Coverage coverage={oursCoverage} />
           <div className="ccExtra">
             Report rows that disappeared from the Flex WIP file and were stamped CLOSED.{" "}
+            {/* The row total still has to be reachable: it is what the ledger below lists
+                and what the sidebar badge counts. */}
+            <Drill
+              className="ccTotalLink"
+              count={ours}
+              label={`${formatNumber(ours)} closed rows in this period.`}
+              onDrill={() =>
+                onDrill({ kind: "ours", outcome: "all", aspCode: "", label: scope })
+              }
+            />{" "}
             {oursCoverage.label === "all time" ? (
               <b>All-time — this only ever grows.</b>
             ) : null}

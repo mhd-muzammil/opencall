@@ -94,18 +94,22 @@ describe("ClosedCallsDashboardView", () => {
     expect(markup).toContain("same-day closed rows");
   });
 
-  it("splits our count into completed, cancelled and unknown", () => {
+  it("headlines COMPLETIONS, so it can be read against the FieldEZ figure", () => {
     // Only "WO Closed" is a finished job. "Closed - Canceled" is abandoned, and a row Flex
-    // has not reported on at all is unknown rather than assumed billable.
+    // has not reported on at all is unknown rather than assumed billable. The headline used
+    // to be the row total, which put a cancellation-inclusive number next to a
+    // completions-only one and made the two impossible to compare.
     const markup = text(render());
-    expect(markup).toContain("2 closed");
-    expect(markup).toContain("1 cancelled");
+    expect(markup).toContain("+ 1 cancelled");
     expect(markup).toContain("1 unknown");
+    // The row total stays reachable, as the sentence under the source block.
+    expect(markup).toContain("4 closed rows in this period");
   });
 
   it("makes the region cards sum to the rollup", () => {
     // The rollup once showed today's closures while each region card showed its all-time
-    // ledger, so the parts never came to the whole.
+    // ledger, so the parts never came to the whole. The completions split has to add up
+    // the same way, because that is what the cards now headline.
     const markup = render();
     const cards = markup.match(/class="ccN">([\d,]+) <small>closed<\/small>/g) ?? [];
     const numbers = cards.map((card) =>
@@ -114,10 +118,13 @@ describe("ClosedCallsDashboardView", () => {
     expect(numbers.length).toBe(REGIONS.length + 1);
     const [rollup, ...regions] = numbers as [number, ...number[]];
     expect(rollup).toBe(regions.reduce((sum, value) => sum + value, 0));
-    expect(rollup).toBe(4);
+    // Two completions across four closed rows: one cancelled, one Flex never reported.
+    expect(rollup).toBe(2);
   });
 
   it("counts the ledger for the period, not the all-time badge", () => {
+    // The ledger lists every closed ROW, cancellations included — it is the record list,
+    // not the billable count — so it stays at the period total.
     expect(text(render())).toContain("4 in period");
   });
 

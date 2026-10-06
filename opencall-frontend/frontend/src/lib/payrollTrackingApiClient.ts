@@ -237,6 +237,33 @@ export async function getRoster(token: string, date?: string): Promise<RosterRes
   return readJson<RosterResult>(response);
 }
 
+/** One engineer's kilometres added up over a period. */
+export interface RosterKmTotal {
+  engineer_id: number | null;
+  engineer_name: string;
+  distance_km: number;
+  /** Days in the period with any distance at all. */
+  days_tracked: number;
+}
+
+export interface RosterKmResult {
+  configured: boolean;
+  engineers: RosterKmTotal[];
+}
+
+/**
+ * Kilometres per engineer from `from` to `to` (YYYY-MM-DD, inclusive). Payroll
+ * only records distance per day; the backend asks it day by day and sums.
+ */
+export async function getRosterKm(token: string, from: string, to: string): Promise<RosterKmResult> {
+  const qs = `?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`;
+  const response = await fetch(url(`/api/v1/payroll-tracking/roster/km${qs}`), {
+    headers: authHeaders(token),
+    cache: "no-store",
+  });
+  return readJson<RosterKmResult>(response);
+}
+
 export async function getEngineerDay(
   token: string,
   engineerId: number,

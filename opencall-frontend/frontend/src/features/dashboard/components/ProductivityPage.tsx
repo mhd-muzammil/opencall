@@ -1,7 +1,7 @@
 // Engineer Productivity dashboard page extracted from app/page.tsx (Phase 6.5) and updated to render as a separate page view.
 import { useEffect, useState, useMemo, type Dispatch, type SetStateAction } from "react";
 import { canonicalEngineerName } from "@opencall/shared";
-import { getRoster } from "../../../lib/payrollTrackingApiClient";
+import { getRoster, getRosterKm } from "../../../lib/payrollTrackingApiClient";
 import { readSession } from "../../../lib/session";
 import { productivityReportDay } from "../utils/productivityReportDay";
 import { downloadEngineerProductivityExcel } from "../../../lib/excelExport";
@@ -200,11 +200,11 @@ export function ProductivityPage({
    * entry in that alias table, which then corrects the counts and this column
    * together.
    *
-   * Only for a SINGLE day. Distance is recorded per day, and this view can be
-   * pointed at a month or a range -- showing one day's kilometres beside a
-   * month's calls would be a number that looks like it belongs to the row and
-   * does not. When the range is wider than a day the column says so instead of
-   * guessing.
+   * Distance is recorded per day. For a single day the figure links to that
+   * day's tracking; for a month, bill cycle or range the backend adds the
+   * engineer's days together (/roster/km), so the row's kilometres cover the
+   * same period as its calls. A range figure is plain text: there is no one
+   * day of tracking to open.
    *
    * Keyed on the lower-cased name because that is the only thing the two
    * systems share here; Payroll matches the name to an employee at its end and
@@ -229,21 +229,63 @@ export function ProductivityPage({
     ],
   );
 
-  const [kmByEngineer, setKmByEngineer] = useState<Map<string, { km: number; id: number | null }>>(
-    new Map(),
-  );
+  const [kmByEngineer, setKmByEngineer] = useState<
+    Map<string, { km: number; id: number | null; days?: number }>
+  >(new Map());
   const [kmUnavailable, setKmUnavailable] = useState(false);
+  const [kmLoading, setKmLoading] = useState(false);
+  const kmRangeFrom = reportDay ? null : productivityRangeBounds?.from ?? null;
+  const kmRangeTo = reportDay ? null : productivityRangeBounds?.to ?? null;
+  // The column has something to say for one day, or for a whole range.
+  const hasKmPeriod = Boolean(reportDay || (kmRangeFrom && kmRangeTo));
 
   useEffect(() => {
-    if (!reportDay) {
-      setKmByEngineer(new Map());
-      setKmUnavailable(false);
-      return;
-    }
+    setKmByEngineer(new Map());
+    setKmUnavailable(false);
+    setKmLoading(false);
+    if (!reportDay && !(kmRangeFrom && kmRangeTo)) return;
     const token = readSession()?.token;
     if (!token) return;
 
     let alive = true;
+    if (!reportDay && kmRangeFrom && kmRangeTo) {
+      setKmLoading(true);
+      getRosterKm(token, kmRangeFrom, kmRangeTo)
+        .then((result) => {
+          if (!alive) return;
+          const next = new Map<string, { km: number; id: number | null; days?: number }>();
+          for (const row of result.engineers ?? []) {
+            const key = canonicalEngineerName(String(row.engineer_name || ""))
+              .trim()
+              .toLowerCase();
+            if (!key) continue;
+            // Two register spellings can canonicalise to one engineer; their
+            // kilometres belong together, as their calls already are.
+            const prev = next.get(key);
+            next.set(key, {
+              km: (prev?.km ?? 0) + (row.distance_km ?? 0),
+              id: prev?.id ?? row.engineer_id,
+              days: (prev?.days ?? 0) + (row.days_tracked ?? 0),
+            });
+          }
+          setKmByEngineer(next);
+          setKmUnavailable(!result.configured);
+        })
+        .catch(() => {
+          if (alive) {
+            setKmByEngineer(new Map());
+            setKmUnavailable(true);
+          }
+        })
+        .finally(() => {
+          if (alive) setKmLoading(false);
+        });
+      return () => {
+        alive = false;
+      };
+    }
+    if (!reportDay) return;
+
     getRoster(token, reportDay)
       .then((result) => {
         if (!alive) return;
@@ -268,7 +310,22 @@ export function ProductivityPage({
     return () => {
       alive = false;
     };
-  }, [reportDay]);
+  }, [reportDay, kmRangeFrom, kmRangeTo]);
+
+  /** Kilometres for the engineers on screen, so it follows the region/search filters. */
+  const kmTotal = useMemo(() => {
+    if (!hasKmPeriod) return null;
+    let total = 0;
+    let any = false;
+    for (const item of filteredList) {
+      const found = kmByEngineer.get(canonicalEngineerName(item.name).trim().toLowerCase());
+      if (found) {
+        total += found.km;
+        any = true;
+      }
+    }
+    return any ? total : null;
+  }, [hasKmPeriod, filteredList, kmByEngineer]);
 
   // The range drill-down. Open with the tickets a cell counted, narrowed from the
   // range's call-days — NOT by sending ticket ids to Records, which renders one
@@ -760,7 +817,9 @@ export function ProductivityPage({
                 title={
                   reportDay
                     ? "Distance travelled on this day, from the engineer's phone. Click a figure to open their tracking."
-                    : "Distance is recorded per day - pick a single date to see it"
+                    : hasKmPeriod
+                      ? "Distance travelled across this period: each day's tracking added together"
+                      : "Pick a date or a period to see distance travelled"
                 }
               >
                 KM
@@ -831,13 +890,23 @@ export function ProductivityPage({
                     const found = kmByEngineer.get(
                       canonicalEngineerName(item.name).trim().toLowerCase(),
                     );
-                    if (!reportDay) {
+                    if (!hasKmPeriod) {
                       return (
                         <td
                           style={{ padding: "10px", border: "1px solid #cbd5e1", textAlign: "center", color: "#94a3b8" }}
-                          title="Distance is recorded per day - pick a single date to see it"
+                          title="Pick a date or a period to see distance travelled"
                         >
                           &mdash;
+                        </td>
+                      );
+                    }
+                    if (!found && kmLoading) {
+                      return (
+                        <td
+                          style={{ padding: "10px", border: "1px solid #cbd5e1", textAlign: "center", color: "#94a3b8" }}
+                          title="Adding up each day's tracking for this period"
+                        >
+                          &hellip;
                         </td>
                       );
                     }
@@ -848,7 +917,7 @@ export function ProductivityPage({
                           title={
                             kmUnavailable
                               ? "Tracking is unavailable right now"
-                              : `No tracking record for ${item.name} on this day`
+                              : `No tracking record for ${item.name} ${reportDay ? "on this day" : "in this period"}`
                           }
                         >
                           &mdash;
@@ -856,6 +925,16 @@ export function ProductivityPage({
                       );
                     }
                     const km = `${found.km.toFixed(1)} km`;
+                    if (!reportDay) {
+                      return (
+                        <td
+                          style={{ padding: "10px", border: "1px solid #cbd5e1", textAlign: "center", color: "#334155", fontWeight: "600" }}
+                          title={`${item.name}: ${km} over ${found.days ?? 0} tracked ${found.days === 1 ? "day" : "days"} in this period`}
+                        >
+                          {km}
+                        </td>
+                      );
+                    }
                     if (found.id == null) {
                       return (
                         <td
@@ -910,15 +989,25 @@ export function ProductivityPage({
             )}
             {filteredList.length > 0 && (
               <tr style={{ background: "#fffbeb", fontWeight: "bold" }}>
-                {/* +1 for the KM column. The label stretches over it rather
-                    than the row carrying a fleet total: distance only means
-                    anything per engineer here, and a summed figure beside
-                    per-engineer call counts would invite the wrong reading. */}
                 <td
-                  colSpan={showRegionColumn ? 4 : 3}
+                  colSpan={showRegionColumn ? 3 : 2}
                   style={{ padding: "12px", border: "1px solid #cbd5e1", textAlign: "right", color: "#334155" }}
                 >
                   Total ({filteredActiveEngineers} {filteredActiveEngineers === 1 ? "engineer" : "engineers"})
+                </td>
+                {/* Every engineer on screen added up; follows the region and
+                    search filters like the call totals beside it. */}
+                <td
+                  style={{ padding: "12px", border: "1px solid #cbd5e1", textAlign: "center", fontWeight: "bold", color: "#1e40af", background: "#fef3c7", whiteSpace: "nowrap" }}
+                  title={
+                    kmTotal != null
+                      ? "Total distance travelled by the engineers listed"
+                      : hasKmPeriod
+                        ? "No tracking recorded for these engineers"
+                        : "Pick a date or a period to see distance travelled"
+                  }
+                >
+                  {kmTotal != null ? `${kmTotal.toFixed(1)} km` : kmLoading ? "…" : "—"}
                 </td>
                 {renderTotalCell("Assigned", columnTotals.assigned, columnTotals.assignedTickets, "#334155")}
                 {renderTotalCell("Attended", columnTotals.attended, columnTotals.attendedTickets, "#0f172a")}

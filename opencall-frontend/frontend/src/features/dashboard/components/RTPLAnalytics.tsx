@@ -18,6 +18,7 @@ import {
   isCancelledClosure,
 } from "../utils";
 import type { ReportRow, RtplCaseScope } from "../types";
+import { splitOpenCalls, splitTickets, type OpenCallSplit, type OpenCallSplitPart } from "../utils/openCallSplit";
 import {
   ALL_REGIONS_FILTER,
   RTPL_CARRY_FORWARD_TIME_CARD_ID,
@@ -56,6 +57,31 @@ const BOD_EOD_ROW_ANCHOR: Readonly<Record<string, StatusBucket>> = {
   toBeYank: "TO_BE_YANK",
   addPartOrdered: "ADD_PART_ORDERED",
   toBeCancel: "TO_BE_CANCEL",
+};
+
+/**
+ * Which table row each part of the Open Calls split lives in, so clicking a row
+ * can light up the rows its calls are actually sitting in. Parts with no row of
+ * their own (Other statuses, no status yet, cancelled by Flex) are listed in the
+ * formula line instead. Custom rows use their own key and need no entry.
+ */
+const SPLIT_GROUP_ROW: Readonly<Record<string, string>> = {
+  planned: "planned",
+  plannedOther: "planned",
+  toBeSchedule: "toBeSchedule",
+  toBeScheduleOther: "toBeSchedule",
+  enggOnsite: "enggOnsite",
+  cxReschedule: "cxReschedule",
+  engineerDelay: "engineerDelay",
+  sscPending: "sscPending",
+  elevateTech: "elevateTech",
+  underObservation: "underObservation",
+  toBeYank: "toBeYank",
+  addPartOrdered: "addPartOrdered",
+  toBeCancel: "toBeCancel",
+  closedStatus: "closedCalls",
+  closedCalls: "closedCalls",
+  closedCancelled: "closedCancelled",
 };
 
 // Exported for tests: it is a pure function, and the cancellation rules it
@@ -144,8 +170,11 @@ export function calculateKpiMetricsForCardView(
   const toBeCancelRows = active.filter(inRow("TO_BE_CANCEL"));
   // Rows an admin added for statuses that fit none of the above, by row key.
   const customRowTickets: Record<string, string[]> = {};
+  const customRowLists: Array<{ key: string; label: string; rows: typeof rows }> = [];
   for (const row of getCustomBodEodRows()) {
-    customRowTickets[row.key] = getTicketIds(active.filter(inRow(row.key)));
+    const list = active.filter(inRow(row.key));
+    customRowTickets[row.key] = getTicketIds(list);
+    customRowLists.push({ key: row.key, label: row.label, rows: list });
   }
   
   // Trade now flows from the backend-derived Segment (single source of truth).
@@ -163,6 +192,38 @@ export function calculateKpiMetricsForCardView(
     ...active.filter((r) => isCaseClosedStatusValue(getRowStatus(r))),
     ...closed.filter((r) => !wasCancelled(r)),
   ];
+
+  // Open Calls split-up: each open call in exactly one part, built from the
+  // very lists the rows above count, so the parts always add up to Open Calls
+  // and a part never disagrees with its row. Calls no row counts are named
+  // (no status, cancelled by Flex, or each status whose row is "Other").
+  const openCallSplit: OpenCallSplit = splitOpenCalls(active, {
+    statusOf: getRowStatus,
+    ticketOf: (r) => String(r.output["Ticket ID"] || "").trim(),
+    cancelled: wasCancelled,
+    // Actionable first, split exactly as the Actionable row counts it, so
+    // "Actionable 96 (Scheduled 77 + To be schedule 19)" is the row's own 96.
+    // What the Scheduled / To be schedule rows hold beyond Actionable (Engg
+    // Assigned; "assignment pending" and similar older statuses) follows as
+    // its own part instead of silently inflating Actionable.
+    parts: [
+      { key: "planned", label: "Scheduled", rows: actionableRows.filter(isScheduledStatus), group: "plan" },
+      { key: "toBeSchedule", label: "To be schedule", rows: actionableRows, group: "plan" },
+      { key: "plannedOther", label: "Engg assigned", rows: plannedRows, group: "plan" },
+      { key: "toBeScheduleOther", label: "To be schedule (not in Actionable)", rows: toBeScheduleRows, group: "plan" },
+      { key: "enggOnsite", label: "Engg onsite", rows: enggOnsiteRows },
+      { key: "cxReschedule", label: "Customer Pending", rows: cxRescheduleRows },
+      { key: "engineerDelay", label: "Engineer Delay", rows: engineerDelayRows },
+      { key: "sscPending", label: "SSC Pending", rows: sscPendingRows },
+      { key: "elevateTech", label: "Elevate/Tech Support", rows: elevateTechRows },
+      { key: "underObservation", label: "Under observation", rows: underObservationRows },
+      { key: "toBeYank", label: "To be Yank", rows: toBeYankRows },
+      { key: "addPartOrdered", label: "Add.Part ordered", rows: addPartOrderedRows },
+      { key: "toBeCancel", label: "To be Cancel", rows: toBeCancelRows },
+      { key: "closedStatus", label: "Closed (status)", rows: active.filter((r) => isCaseClosedStatusValue(getRowStatus(r))) },
+      ...customRowLists,
+    ],
+  });
 
   return {
     engineerCount,
@@ -207,6 +268,7 @@ export function calculateKpiMetricsForCardView(
       tradeOpenCalls: getTicketIds(tradeOpenRows),
     },
     customRowTickets,
+    openCallSplit,
   };
 }
 
@@ -286,6 +348,8 @@ export function RTPLDashboard({
   const bodEodTableRefs = useRef(new Map<string, HTMLDivElement>());
   // Which view's Image/Excel chooser is open ("bod" | "eod" | "both" | null).
   const [bodEodFormatPicker, setBodEodFormatPicker] = useState<string | null>(null);
+  // The BOD/EOD row whose split-up is open ("<view>:<row key>"), one at a time.
+  const [expandedBodEodRow, setExpandedBodEodRow] = useState<string | null>(null);
   // The view currently being rendered to PNG (disables its buttons), and the last
   // capture failure — rendering happens in the browser and CAN fail (fonts,
   // memory), which must not end as a silently-dead button.
@@ -1036,12 +1100,21 @@ export function RTPLDashboard({
                     val: number,
                     isAlert: boolean,
                     isEmptyOverride: boolean,
-                    ticketsList: string[]
+                    ticketsList: string[],
+                    // "selected": the clicked row; "portion": a row holding part of it.
+                    tone?: "selected" | "portion",
+                    title?: string,
+                    // The row's highlight colour. Set on every cell, because the
+                    // global table striping paints td backgrounds over the tr's.
+                    rowBg?: string,
                   ) => {
                     const displayVal = isEmptyOverride || val === 0 ? "" : val;
                     const hasValue = displayVal !== "";
-                    const cellBg = isAlert ? "#fef08a" : "transparent";
-                    const cellColor = isAlert ? "#854d0e" : "#0f172a";
+                    const cellBg =
+                      tone === "selected" ? "#fb923c"
+                        : tone === "portion" ? (hasValue ? "#fdba74" : rowBg ?? "#ffffff")
+                        : isAlert ? "#fef08a" : rowBg ?? "transparent";
+                    const cellColor = tone ? "#7c2d12" : isAlert ? "#854d0e" : "#0f172a";
 
                     return (
                       <td
@@ -1064,12 +1137,70 @@ export function RTPLDashboard({
                             });
                           }
                         }}
-                        title={hasValue ? `Show these ${displayVal} records` : undefined}
+                        title={hasValue ? title ?? `Show these ${displayVal} records` : undefined}
                       >
                         {displayVal}
                       </td>
                     );
                   };
+
+                  // Click a row name: the rows its calls are actually in light up
+                  // in orange, each showing how many of the clicked row's calls it
+                  // holds (Morning status for BOD, Evening status for EOD), and a
+                  // formula line under the table spells the split out.
+                  const ticketsOf = (metric: MetricRow, side: "bod" | "eod"): string[] => {
+                    const m = side === "bod" ? card.bodKpiMetrics : card.eodKpiMetrics;
+                    return metric.customKey
+                      ? m.customRowTickets[metric.customKey] ?? []
+                      : m.tickets[metric.key as keyof typeof m.tickets] || [];
+                  };
+                  const selectedPrefix = `${view.mode}:`;
+                  const selectedKey = expandedBodEodRow?.startsWith(selectedPrefix)
+                    ? expandedBodEodRow.slice(selectedPrefix.length)
+                    : null;
+                  const selectedMetric = selectedKey
+                    ? metricsRows.find((m) => m.key === selectedKey) ?? null
+                    : null;
+                  const selectedSplit: Array<{
+                    side: "bod" | "eod";
+                    total: number;
+                    groups: OpenCallSplitPart[];
+                    byRow: Map<string, { count: number; tickets: string[] }>;
+                  }> = [];
+                  if (selectedMetric) {
+                    for (const side of ["bod", "eod"] as const) {
+                      if (side === "bod" ? !view.showBod || selectedMetric.isEodOnly : !view.showEod) continue;
+                      const m = side === "bod" ? card.bodKpiMetrics : card.eodKpiMetrics;
+                      const tickets = ticketsOf(selectedMetric, side);
+                      const groups = splitTickets(
+                        tickets,
+                        m.openCallSplit,
+                        side === "eod"
+                          ? [
+                              { key: "closedCalls", label: "Closed", tickets: m.tickets.closedCalls },
+                              { key: "closedCancelled", label: "Closed cancelled", tickets: m.tickets.closedCancelled },
+                            ]
+                          : [],
+                      );
+                      const byRow = new Map<string, { count: number; tickets: string[] }>();
+                      for (const g of groups) {
+                        const rowKey =
+                          SPLIT_GROUP_ROW[g.key] ??
+                          (metricsRows.some((r) => r.customKey === g.key) ? g.key : undefined);
+                        if (!rowKey) continue;
+                        const current = byRow.get(rowKey) ?? { count: 0, tickets: [] };
+                        current.count += g.count;
+                        current.tickets.push(...g.tickets);
+                        byRow.set(rowKey, current);
+                      }
+                      selectedSplit.push({ side, total: tickets.length, groups, byRow });
+                    }
+                  }
+                  const openTickets = (ticketIds: string[]) =>
+                    openRecordsWithFilter({
+                      region: selectedRtplRegion === ALL_REGIONS_FILTER ? null : selectedRtplRegion,
+                      ticketIds,
+                    });
 
                   return (
                     <div
@@ -1128,15 +1259,35 @@ export function RTPLDashboard({
                             const isAlert = !!metric.alert;
                             const isEodOnly = !!metric.isEodOnly;
 
+                            // Engineer rows count people, not calls: nothing to split.
+                            const splittable = metric.key !== "engineerCount" && metric.key !== "enggPresents";
+                            const rowId = `${view.mode}:${metric.key}`;
+                            const isSelected = selectedKey === metric.key;
+                            const bodPortion = selectedSplit.find((x) => x.side === "bod")?.byRow.get(metric.key);
+                            const eodPortion = selectedSplit.find((x) => x.side === "eod")?.byRow.get(metric.key);
+                            const isPortion = !isSelected && !!(bodPortion || eodPortion);
+                            const isFaded = !!selectedMetric && !isSelected && !isPortion;
+                            const portionTitle = (count: number, own: number) =>
+                              `${count} of the ${selectedMetric?.desc} calls are here (this row has ${own})`;
+
+                            const rowBg = isSelected ? "#fb923c" : isPortion ? "#ffedd5" : selectedMetric ? "#ffffff" : undefined;
+
                             return (
-                              <tr key={metric.key} style={{ background: "#ffffff" }}>
+                              <tr
+                                key={metric.key}
+                                style={{
+                                  background: rowBg ?? "#ffffff",
+                                  opacity: isFaded ? 0.4 : 1,
+                                }}
+                              >
                                 <td
                                   style={{
                                     padding: "2px 4px",
                                     border: "1px solid #000000",
                                     textAlign: "center",
                                     fontWeight: "bold",
-                                    color: "#000000"
+                                    color: "#000000",
+                                    ...(rowBg ? { background: rowBg } : {}),
                                   }}
                                 >
                                   {metric.id}
@@ -1148,17 +1299,89 @@ export function RTPLDashboard({
                                     textAlign: "left",
                                     fontWeight: "bold",
                                     color: "#000000",
-                                    whiteSpace: "nowrap"
+                                    whiteSpace: "nowrap",
+                                    ...(rowBg ? { background: rowBg } : {}),
                                   }}
                                 >
-                                  {metric.desc}
+                                  {splittable ? (
+                                    <button
+                                      type="button"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        setExpandedBodEodRow(isSelected ? null : rowId);
+                                      }}
+                                      aria-pressed={isSelected}
+                                      title={isSelected ? "Click again to clear" : `Highlight the split-up of ${metric.desc}`}
+                                      style={{ all: "unset", cursor: "pointer", fontWeight: "bold", width: "100%" }}
+                                    >
+                                      {metric.desc}
+                                    </button>
+                                  ) : (
+                                    metric.desc
+                                  )}
                                 </td>
-                                {view.showBod && renderCell(bodVal, isAlert, isEodOnly, bodTickets)}
-                                {view.showEod && renderCell(eodVal, isAlert, false, eodTickets)}
+                                {view.showBod &&
+                                  (selectedMetric && !isSelected
+                                    ? renderCell(bodPortion?.count ?? 0, false, false, bodPortion?.tickets ?? [], "portion",
+                                        portionTitle(bodPortion?.count ?? 0, bodVal), rowBg)
+                                    : renderCell(bodVal, isAlert, isEodOnly, bodTickets, isSelected ? "selected" : undefined, undefined, rowBg))}
+                                {view.showEod &&
+                                  (selectedMetric && !isSelected
+                                    ? renderCell(eodPortion?.count ?? 0, false, false, eodPortion?.tickets ?? [], "portion",
+                                        portionTitle(eodPortion?.count ?? 0, eodVal), rowBg)
+                                    : renderCell(eodVal, isAlert, false, eodTickets, isSelected ? "selected" : undefined, undefined, rowBg))}
                               </tr>
                             );
                           })}
                         </tbody>
+                        {/* Inside the table: the Image download captures the table
+                            element only, so the clicked row's formula is in it too. */}
+                        <tfoot>
+                          {selectedMetric && (
+                            <tr>
+                              <td
+                                colSpan={2 + valueColCount}
+                                style={{ padding: "6px 8px", border: "1px solid #000000", background: "#ffedd5", fontSize: "10px", lineHeight: 1.6, color: "#7c2d12", textAlign: "left", whiteSpace: "normal" }}
+                              >
+                                {selectedSplit.length === 0 && (
+                                  <div>
+                                    <strong>{selectedMetric.desc}</strong> is an EOD-only row: see it in the EOD table.
+                                  </div>
+                                )}
+                                {selectedSplit.map(({ side, total, groups }) => (
+                                  <div key={side}>
+                                    <strong>
+                                      {selectedMetric.desc} ({side === "bod" ? "BOD" : "EOD"}) {total}
+                                    </strong>{" "}
+                                    ={" "}
+                                    {groups.length === 0
+                                      ? "0"
+                                      : groups.map((g, i) => (
+                                          <span key={g.key}>
+                                            {i > 0 ? " + " : ""}
+                                            {g.label}{" "}
+                                            <button
+                                              type="button"
+                                              onClick={(e) => {
+                                                e.stopPropagation();
+                                                openTickets(g.tickets);
+                                              }}
+                                              title={`Show these ${g.count} records`}
+                                              style={{ all: "unset", cursor: "pointer", fontWeight: 700, background: "#fdba74", padding: "0 3px", borderRadius: "3px" }}
+                                            >
+                                              {g.count}
+                                            </button>
+                                          </span>
+                                        ))}
+                                  </div>
+                                ))}
+                                <div style={{ color: "#9a3412" }}>
+                                  Orange rows hold these calls. Click {selectedMetric.desc} again to clear.
+                                </div>
+                              </td>
+                            </tr>
+                          )}
+                        </tfoot>
                       </table>
                     </div>
                   );

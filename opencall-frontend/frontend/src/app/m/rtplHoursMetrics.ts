@@ -1,4 +1,9 @@
-import { isAttendedOutcomeStatus } from "@opencall/shared";
+import {
+  isAttendedOutcomeStatus,
+  statusInBodEodRow,
+  withCustomBodEodRows,
+  type StatusBucket,
+} from "@opencall/shared";
 import {
   isTradeCase,
   isActionableStatusValue,
@@ -10,6 +15,21 @@ import {
 import type { GeneratedReportResponse } from "../../lib/api/types";
 
 type Row = GeneratedReportResponse["rows"][number];
+
+/** The built-in rows a custom row can be shown after (same as the web table). */
+const MOBILE_ROW_ANCHOR: Readonly<Record<string, StatusBucket>> = {
+  planned: "SCHEDULED",
+  closedCalls: "CLOSED",
+  enggOnsite: "ONSITE",
+  toBeSchedule: "TO_BE_SCHEDULE",
+  cxReschedule: "CX_RESCHEDULE",
+  sscPending: "SSC_PENDING",
+  elevateTech: "ELEVATE_TECH",
+  underObservation: "UNDER_OBSERVATION",
+  toBeYank: "TO_BE_YANK",
+  addPartOrdered: "ADD_PART_ORDERED",
+  toBeCancel: "TO_BE_CANCEL",
+};
 
 /**
  * Mobile port of `calculateKpiMetricsForCardView` in
@@ -136,13 +156,10 @@ export function calculateRtplHoursMetrics(
   const scheduledRows = active.filter((r) => isScheduled(r) && !wasCancelled(r));
   const presentEngineers = getUniqueEngineers(scheduledRows);
 
-  const matchStatus = (r: Row, keywords: string[], excludes: string[] = []): boolean => {
-    const s = getRowStatus(r).toLowerCase();
-    if (!s || s === "manual entry required") return false;
-    const matchesKeyword = keywords.some((kw) => s.includes(kw.toLowerCase()));
-    const matchesExclude = excludes.some((ex) => s.includes(ex.toLowerCase()));
-    return matchesKeyword && !matchesExclude;
-  };
+  // Each status counts under the row chosen for it on the RTPL Statuses page
+  // (statusInBodEodRow); text not in that list keeps the old keyword rules.
+  const inRow = (bucket: string) => (r: Row): boolean =>
+    statusInBodEodRow(getRowStatus(r), bucket);
 
   // Actionable and Scheduled read as a whole-day population, not an
   // Evening-only snapshot: the live Evening count alone collapses to ~0 once the
@@ -155,20 +172,14 @@ export function calculateRtplHoursMetrics(
     ? active.filter((r) => isPlannedStatusValue(getRowStatus(r)))
     : plannedEodRows;
   const enggOnsiteRows = active.filter((r) => isOnsiteStatusValue(getRowStatus(r)));
-  const toBeScheduleRows = active.filter((r) =>
-    matchStatus(r, ["to be scheduled", "assignment pending", "non avl", "missed to schedule"]));
-  const cxRescheduleRows = active.filter((r) =>
-    matchStatus(r, ["cx pending", "reschedule", "cx", "cust delay", "customer delay", "customer pending"]));
-  const sscPendingRows = active.filter((r) => matchStatus(r, ["ssc pending", "ssc"]));
-  const elevateTechRows = active.filter((r) =>
-    matchStatus(r, ["elevation HP Pending", "elevation Part Pending", "elevation - HP Pending", "elevation - Partner Pending", "elevate"]));
-  const underObservationRows = active.filter((r) =>
-    matchStatus(r, ["CRT Pending", "CT Validation Pending", "observation", "under observation", "crt"]));
-  const toBeYankRows = active.filter((r) => matchStatus(r, ["Need to Yank", "Yank"]));
-  const addPartOrderedRows = active.filter((r) =>
-    matchStatus(r, ["Additional Part", "Part Order Pending", "Parts Hold", "Part need to order"]));
-  const toBeCancelRows = active.filter((r) =>
-    matchStatus(r, ["Need to Cancel", "Need to Cancel Mail", "Request to Cancel"]));
+  const toBeScheduleRows = active.filter(inRow("TO_BE_SCHEDULE"));
+  const cxRescheduleRows = active.filter(inRow("CX_RESCHEDULE"));
+  const sscPendingRows = active.filter(inRow("SSC_PENDING"));
+  const elevateTechRows = active.filter(inRow("ELEVATE_TECH"));
+  const underObservationRows = active.filter(inRow("UNDER_OBSERVATION"));
+  const toBeYankRows = active.filter(inRow("TO_BE_YANK"));
+  const addPartOrderedRows = active.filter(inRow("ADD_PART_ORDERED"));
+  const toBeCancelRows = active.filter(inRow("TO_BE_CANCEL"));
 
   const tradeOpenRows = isBod
     ? rows.filter((r) => isTradeCase(r))
@@ -189,7 +200,7 @@ export function calculateRtplHoursMetrics(
   // Attended is an EOD-only outcome; the BOD side stays empty by definition.
   const attended = isBod ? [] : attendedRows;
 
-  return [
+  const builtIn: RtplHoursMetric[] = [
     { key: "engineerCount", label: "Engineer Count", value: engineerCount, rows: active },
     { key: "enggPresents", label: "No.of Engg Presents", value: presentEngineers.length, rows: scheduledRows },
     { key: "openCalls", label: "Open Calls", value: active.length, rows: active },
@@ -210,4 +221,15 @@ export function calculateRtplHoursMetrics(
     { key: "newCalls", label: "New calls", value: newCallsRows.length, rows: newCallsRows, eodOnly: true },
     { key: "tradeOpenCalls", label: "Trade Open Calls", value: tradeOpenRows.length, rows: tradeOpenRows },
   ];
+
+  // Rows an admin added on the RTPL Statuses page, each directly after the
+  // built-in row it was placed after, exactly as the web table lays them out.
+  return withCustomBodEodRows(
+    builtIn,
+    (metric) => MOBILE_ROW_ANCHOR[metric.key],
+    (row) => {
+      const matching = active.filter(inRow(row.key));
+      return { key: row.key, label: row.label, value: matching.length, rows: matching };
+    },
+  );
 }

@@ -335,10 +335,14 @@ export interface ListEngineersResult {
   total: number;
 }
 
+import type { CustomBodEodRow } from "@opencall/shared";
+
 export interface RtplStatus {
   id: string;
   name: string;
   category: string;
+  /** The BOD/EOD row this status counts under (a StatusBucket); null before migration 068. */
+  bodEodBucket: string | null;
   sortOrder: number;
   isActive: boolean;
   createdBy: string | null;
@@ -351,6 +355,37 @@ export interface DropdownRtplStatus {
   id: string;
   name: string;
   category: string;
+}
+
+/** Every status's BOD/EOD row, inactive statuses included. */
+export interface RtplStatusBucketEntry {
+  name: string;
+  bucket: string | null;
+}
+
+export interface RtplStatusesDropdownResponse {
+  statuses: DropdownRtplStatus[];
+  /** Absent from a backend older than migration 068. */
+  buckets?: RtplStatusBucketEntry[];
+  /** Custom BOD/EOD rows, hidden ones included. Absent before migration 069. */
+  rows?: CustomBodEodRow[];
+}
+
+/** A custom BOD/EOD row as the admin page manages it. */
+export interface AdminBodEodRow extends CustomBodEodRow {
+  id: string;
+  /** How many RTPL statuses point at this row. */
+  statusCount: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface BodEodRowInput {
+  label?: string;
+  productivityBucket?: string;
+  afterRow?: string;
+  sortOrder?: number;
+  isActive?: boolean;
 }
 
 

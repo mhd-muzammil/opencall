@@ -4,6 +4,7 @@ import type {
   ApiErrorBody,
   DropdownEngineer,
   DropdownRtplStatus,
+  RtplStatusesDropdownResponse,
   EditedReportRowResponse,
   GeneratedReportResponse,
   RegionEodStateResponse,
@@ -322,12 +323,12 @@ export async function getSpecialAccessEngineersDropdown(
 
 export async function getSpecialAccessRtplStatusesDropdown(
   token: string,
-): Promise<{ statuses: DropdownRtplStatus[] }> {
+): Promise<RtplStatusesDropdownResponse> {
   const response = await fetch(url("/api/v1/special-access/rtpl-statuses/dropdown"), {
     headers: authHeaders(token),
     cache: "no-store",
   });
-  return readJson<{ statuses: DropdownRtplStatus[] }>(response);
+  return readJson<RtplStatusesDropdownResponse>(response);
 }
 
 // ----------- Record Format (a special-access login's own grid layout) -----------

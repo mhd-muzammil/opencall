@@ -18,6 +18,9 @@ import type {
   ListEngineersResult,
   RtplStatus,
   DropdownRtplStatus,
+  RtplStatusesDropdownResponse,
+  AdminBodEodRow,
+  BodEodRowInput,
 } from "./types";
 
 export type FetchLike = typeof fetch;
@@ -101,12 +104,16 @@ export interface OpenCallApiClient {
   deleteAdminEngineer(token: string, id: string): Promise<{ success: boolean }>;
   getEngineersDropdown(token: string, regionId?: string): Promise<{ engineers: DropdownEngineer[] }>;
   getAdminRtplStatuses(token: string, filters?: { category?: string; search?: string; isActive?: boolean }): Promise<{ statuses: RtplStatus[] }>;
-  createAdminRtplStatus(token: string, input: { name: string; category?: string | null; sortOrder?: number }): Promise<{ status: RtplStatus }>;
-  updateAdminRtplStatus(token: string, id: string, input: { name?: string; category?: string; sortOrder?: number }): Promise<{ status: RtplStatus; renamedRowValues?: number }>;
+  createAdminRtplStatus(token: string, input: { name: string; category?: string | null; sortOrder?: number; bodEodBucket: string }): Promise<{ status: RtplStatus }>;
+  updateAdminRtplStatus(token: string, id: string, input: { name?: string; category?: string; sortOrder?: number; bodEodBucket?: string }): Promise<{ status: RtplStatus; renamedRowValues?: number }>;
   deactivateAdminRtplStatus(token: string, id: string): Promise<{ status: RtplStatus }>;
   reactivateAdminRtplStatus(token: string, id: string): Promise<{ status: RtplStatus }>;
   deleteAdminRtplStatus(token: string, id: string): Promise<{ success: boolean }>;
-  getRtplStatusesDropdown(token: string): Promise<{ statuses: DropdownRtplStatus[] }>;
+  getRtplStatusesDropdown(token: string): Promise<RtplStatusesDropdownResponse>;
+  getAdminBodEodRows(token: string): Promise<{ rows: AdminBodEodRow[] }>;
+  createAdminBodEodRow(token: string, input: BodEodRowInput): Promise<{ row: AdminBodEodRow }>;
+  updateAdminBodEodRow(token: string, id: string, input: BodEodRowInput): Promise<{ row: AdminBodEodRow }>;
+  deleteAdminBodEodRow(token: string, id: string): Promise<{ success: boolean }>;
   getRegionEodState(token: string, workingDate: string): Promise<RegionEodStateResponse>;
   /**
    * Per-region productivity summed across an inclusive day range. Productivity is
@@ -556,7 +563,40 @@ export function createOpenCallApiClient({
         headers: authHeaders(token),
       });
 
-      return readJson<{ statuses: DropdownRtplStatus[] }>(response);
+      return readJson<RtplStatusesDropdownResponse>(response);
+    },
+
+    async getAdminBodEodRows(token) {
+      const response = await fetchImpl(url(`/api/v1/admin/bod-eod-rows`), {
+        headers: authHeaders(token),
+      });
+      return readJson<{ rows: AdminBodEodRow[] }>(response);
+    },
+
+    async createAdminBodEodRow(token, input) {
+      const response = await fetchImpl(url(`/api/v1/admin/bod-eod-rows`), {
+        method: "POST",
+        headers: jsonAuthHeaders(token),
+        body: JSON.stringify(input),
+      });
+      return readJson<{ row: AdminBodEodRow }>(response);
+    },
+
+    async updateAdminBodEodRow(token, id, input) {
+      const response = await fetchImpl(url(`/api/v1/admin/bod-eod-rows/${id}`), {
+        method: "PATCH",
+        headers: jsonAuthHeaders(token),
+        body: JSON.stringify(input),
+      });
+      return readJson<{ row: AdminBodEodRow }>(response);
+    },
+
+    async deleteAdminBodEodRow(token, id) {
+      const response = await fetchImpl(url(`/api/v1/admin/bod-eod-rows/${id}`), {
+        method: "DELETE",
+        headers: authHeaders(token),
+      });
+      return readJson<{ success: boolean }>(response);
     },
   };
 }

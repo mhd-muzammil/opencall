@@ -7,6 +7,8 @@
 // derive from kpiBaseRows), so this hook receives those as inputs and is called after
 // them. kpiBaseRows is extracted with useProductivityAnalytics (hook 6).
 import { useMemo } from "react";
+import { statusInBodEodRow, type StatusBucket } from "@opencall/shared";
+import { useStatusBucketVersion } from "../../../lib/statusBucketsClient";
 import type { GeneratedReportResponse } from "../../../lib/apiClient";
 import type { ReportRow } from "../types";
 import {
@@ -36,6 +38,9 @@ export function useKpiMetrics(params: {
     eodBodFilteredRows,
     eodBodViewMode,
   } = params;
+
+  // Recount when an admin moves a status to another BOD/EOD row.
+  const statusBucketVersion = useStatusBucketVersion();
 
   const activeRegionName = useMemo(() => {
     if (!report || !selectedRegion || selectedRegion === "ALL") return "";
@@ -98,14 +103,18 @@ export function useKpiMetrics(params: {
         !isPlannedStatusValue(evening)
       );
     }).length;
-    const toBeSchedule = active.filter(r => matchStatus(r, ["to be scheduled", "assignment pending", "non avl", "missed to schedule"])).length;
-    const cxReschedule = active.filter(r => matchStatus(r, ["cx pending", "reschedule", "cx", "cust delay", "customer delay", "customer pending"])).length;
-    const sscPending = active.filter(r => matchStatus(r, ["ssc pending", "ssc"])).length;
-    const elevateTech = active.filter(r => matchStatus(r, ["elevation HP Pending", "elevation Part Pending", "elevation - HP Pending", "elevation - Partner Pending", "elevate"])).length;
-    const underObservation = active.filter(r => matchStatus(r, ["CRT Pending", "CT Validation Pending", "observation", "under observation", "crt"])).length;
-    const toBeYank = active.filter(r => matchStatus(r, ["Need to Yank", "Yank"])).length;
-    const addPartOrdered = active.filter(r => matchStatus(r, ["Additional Part", "Part Order Pending", "Parts Hold", "Part need to order"])).length;
-    const toBeCancel = active.filter(r => matchStatus(r, ["Need to Cancel", "Need to Cancel Mail", "Request to Cancel"])).length;
+    // The row chosen for each status on the RTPL Statuses page — the same rows
+    // the BOD/EOD table counts (statusInBodEodRow).
+    const countInRow = (bucket: StatusBucket) =>
+      active.filter((r) => statusInBodEodRow(getRowStatus(r), bucket)).length;
+    const toBeSchedule = countInRow("TO_BE_SCHEDULE");
+    const cxReschedule = countInRow("CX_RESCHEDULE");
+    const sscPending = countInRow("SSC_PENDING");
+    const elevateTech = countInRow("ELEVATE_TECH");
+    const underObservation = countInRow("UNDER_OBSERVATION");
+    const toBeYank = countInRow("TO_BE_YANK");
+    const addPartOrdered = countInRow("ADD_PART_ORDERED");
+    const toBeCancel = countInRow("TO_BE_CANCEL");
     const newCalls = active.filter((r) => r.comparison?.changeType === "NEW").length;
     const tradeOpenCalls = isBod
       ? rows.filter((r) => r.comparison?.changeType !== "NEW" && isTradeCase(r)).length
@@ -158,7 +167,7 @@ export function useKpiMetrics(params: {
       newCalls,
       tradeOpenCalls,
     };
-  }, [report, selectedRegion, tnFilteredRows, tnViewMode]);
+  }, [report, selectedRegion, tnFilteredRows, tnViewMode, statusBucketVersion]);
 
   const chennaiKpiMetrics = useMemo(() => {
     if (!report || !selectedRegion || selectedRegion === "ALL") return null;

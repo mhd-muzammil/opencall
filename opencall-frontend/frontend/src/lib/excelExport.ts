@@ -1,4 +1,10 @@
-import { ASP_CODE_REGION_MAP, DAILY_CALL_PLAN_COLUMNS } from "@opencall/shared";
+import {
+  ASP_CODE_REGION_MAP,
+  DAILY_CALL_PLAN_COLUMNS,
+  statusInBodEodRow,
+  withCustomBodEodRows,
+  type StatusBucket,
+} from "@opencall/shared";
 import type { ProductivityCallDayDetail } from "@opencall/shared";
 import {
   detailSheetRows,
@@ -913,15 +919,19 @@ export async function downloadRegionSummaryExcel(
     const caseClosedCount =
       activeRows.filter((r) => isCaseClosedStatusValue(getRowStatus(r))).length +
       closedRows.filter((r) => !matchStatus(r, ["cancel"])).length;
-    const toBeScheduleCount = activeRows.filter(r => matchStatus(r, ["to be scheduled", "assignment pending", "non avl", "missed to schedule"])).length;
-    const cxRescheduleCount = activeRows.filter(r => matchStatus(r, ["cx pending", "reschedule", "cx", "cust delay", "customer delay", "customer pending"])).length;
-    const engineerDelayCount = activeRows.filter(r => matchStatus(r, ["engineer delay", "eng delay"])).length;
-    const sscPendingCount = activeRows.filter(r => matchStatus(r, ["ssc pending", "ssc"])).length;
-    const elevateTechCount = activeRows.filter(r => matchStatus(r, ["elevation HP Pending", "elevation Part Pending", "elevation - HP Pending", "elevation - Partner Pending", "elevate"])).length;
-    const underObservationCount = activeRows.filter(r => matchStatus(r, ["CRT Pending", "CT Validation Pending", "observation", "under observation", "crt"])).length;
-    const toBeYankCount = activeRows.filter(r => matchStatus(r, ["Need to Yank", "Yank"])).length;
-    const addPartOrderedCount = activeRows.filter(r => matchStatus(r, ["Additional Part", "Part Order Pending", "Parts Hold", "Part need to order"])).length;
-    const toBeCancelCount = activeRows.filter(r => matchStatus(r, ["Need to Cancel", "Need to Cancel Mail", "Request to Cancel"])).length;
+    // The row chosen for each status on the RTPL Statuses page — the same rows
+    // the on-screen BOD/EOD table counts (statusInBodEodRow).
+    const countInRow = (bucket: string) =>
+      activeRows.filter((r) => statusInBodEodRow(getRowStatus(r), bucket)).length;
+    const toBeScheduleCount = countInRow("TO_BE_SCHEDULE");
+    const cxRescheduleCount = countInRow("CX_RESCHEDULE");
+    const engineerDelayCount = countInRow("ENGINEER_DELAY");
+    const sscPendingCount = countInRow("SSC_PENDING");
+    const elevateTechCount = countInRow("ELEVATE_TECH");
+    const underObservationCount = countInRow("UNDER_OBSERVATION");
+    const toBeYankCount = countInRow("TO_BE_YANK");
+    const addPartOrderedCount = countInRow("ADD_PART_ORDERED");
+    const toBeCancelCount = countInRow("TO_BE_CANCEL");
     const newCallsCount = activeRows.filter((r) => r.comparison?.changeType === "NEW").length;
     
     const tradeOpenCallsCount = isBod
@@ -931,29 +941,40 @@ export async function downloadRegionSummaryExcel(
     // Closed cancelled
     const closedCancelledCount = closedRows.filter((r) => matchStatus(r, ["cancel"])).length;
  
+    // [description, count, the built-in row a custom row may follow]
+    const summaryRows: Array<[string, number, StatusBucket?]> = [
+      ["Engineer Count", engineerCount],
+      ["No.of Engg Presents", presentsCount],
+      ["Open Calls", openCallsCount],
+      ["Actionable Calls", actionableCount || 0],
+      ["Scheduled Calls", plannedCount || 0, "SCHEDULED"],
+      ["Attended", isBod ? 0 : attendedCount || 0],
+      ["Closed Calls", caseClosedCount || 0, "CLOSED"],
+      ["Engg onsite", enggOnsiteCount || 0, "ONSITE"],
+      ["To be schedule", toBeScheduleCount || 0, "TO_BE_SCHEDULE"],
+      ["Customer Pending", cxRescheduleCount || 0, "CX_RESCHEDULE"],
+      ["Engineer Delay", engineerDelayCount || 0, "ENGINEER_DELAY"],
+      ["SSC Pending Calls", sscPendingCount || 0, "SSC_PENDING"],
+      ["Elevate/Tech Support Calls", elevateTechCount || 0, "ELEVATE_TECH"],
+      ["Under observation Calls", underObservationCount || 0, "UNDER_OBSERVATION"],
+      ["To be Yank", toBeYankCount || 0, "TO_BE_YANK"],
+      ["Closed cancelled", closedCancelledCount || 0],
+      ["Add.Part ordered", addPartOrderedCount || 0, "ADD_PART_ORDERED"],
+      ["To be Cancel", toBeCancelCount || 0, "TO_BE_CANCEL"],
+      ["New calls", newCallsCount || 0],
+      ["Trade Open Calls", tradeOpenCallsCount || 0],
+    ];
+    // Rows an admin added on the RTPL Statuses page, placed as on screen.
+    const laidOut = withCustomBodEodRows(
+      summaryRows,
+      ([, , anchor]) => anchor,
+      (row): [string, number] => [row.label, countInRow(row.key)],
+    );
+
     aoaData = [
       [reportDate, "", regionName],
       ["S.No", "Description", "Count"],
-      [1, "Engineer Count", engineerCount],
-      [2, "No.of Engg Presents", presentsCount],
-      [3, "Open Calls", openCallsCount],
-      [4, "Actionable Calls", actionableCount || 0],
-      [5, "Scheduled Calls", plannedCount || 0],
-      [6, "Attended", isBod ? 0 : attendedCount || 0],
-      [7, "Closed Calls", caseClosedCount || 0],
-      [8, "Engg onsite", enggOnsiteCount || 0],
-      [9, "To be schedule", toBeScheduleCount || 0],
-      [10, "Customer Pending", cxRescheduleCount || 0],
-      [11, "Engineer Delay", engineerDelayCount || 0],
-      [12, "SSC Pending Calls", sscPendingCount || 0],
-      [13, "Elevate/Tech Support Calls", elevateTechCount || 0],
-      [14, "Under observation Calls", underObservationCount || 0],
-      [15, "To be Yank", toBeYankCount || 0],
-      [16, "Closed cancelled", closedCancelledCount || 0],
-      [17, "Add.Part ordered", addPartOrderedCount || 0],
-      [18, "To be Cancel", toBeCancelCount || 0],
-      [19, "New calls", newCallsCount || 0],
-      [20, "Trade Open Calls", tradeOpenCallsCount || 0],
+      ...laidOut.map(([desc, count], index) => [index + 1, desc, count]),
     ];
  
     merges = [

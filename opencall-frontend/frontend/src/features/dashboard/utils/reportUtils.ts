@@ -1,6 +1,10 @@
 // Pure report/row utilities extracted from app/page.tsx (Phase 3).
 // Moved verbatim — no behavior changes.
-import { DAILY_CALL_PLAN_COLUMNS } from "@opencall/shared";
+import {
+  DAILY_CALL_PLAN_COLUMNS,
+  isActionableStatus,
+  statusInBodEodRow,
+} from "@opencall/shared";
 import { MANUAL_ENTRY_REQUIRED, MANUAL_FIELD_LABELS } from "../constants";
 import type { ReportRow, SourceKey, ManualCarryForwardField } from "../types";
 import type { WipAgingSortDirection } from "../../../lib/columnFilter";
@@ -90,25 +94,18 @@ export function countManualRequiredCells(rows: readonly ReportRow[]): number {
   }, 0);
 }
 
+// The four helpers below read the admin's choice from the RTPL Statuses page
+// (shared statusInBodEodRow); status text that is not in the admin list keeps
+// the exact/keyword tests each one documents.
+
 /**
- * Actionable = calls the team can act on right now: status "Scheduled" or
- * "To Be Scheduled" (exact match, tolerant of casing/punctuation). The single
- * definition behind the overview KPI tile, the BOD/EOD "Actionable Calls" rows
- * (in-app and Excel) and the RTPL Hours Status card.
+ * Actionable = calls the team can act on right now: status "Scheduled" plus
+ * every status under the "To be Schedule" row ("To Be Scheduled" for unmapped
+ * text). The single definition behind the overview KPI tile, the BOD/EOD
+ * "Actionable Calls" rows (in-app and Excel) and the RTPL Hours Status card.
  */
 export function isActionableStatusValue(status: unknown): boolean {
-  const s = String(status ?? "")
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, " ")
-    .trim();
-  return s === "scheduled" || s === "to be scheduled";
-}
-
-function normalizeStatusValue(status: unknown): string {
-  return String(status ?? "")
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, " ")
-    .trim();
+  return isActionableStatus(status);
 }
 
 /**
@@ -118,13 +115,7 @@ function normalizeStatusValue(status: unknown): string {
  * Single definition behind the BOD/EOD and TN VIEW "Planned Calls" rows.
  */
 export function isPlannedStatusValue(status: unknown): boolean {
-  const s = normalizeStatusValue(status);
-  return (
-    s === "scheduled" ||
-    s === "engg assigned" ||
-    s === "eng assigned" ||
-    s === "engineer assigned"
-  );
+  return statusInBodEodRow(status, "SCHEDULED");
 }
 
 /**
@@ -133,7 +124,7 @@ export function isPlannedStatusValue(status: unknown): boolean {
  * Planned, not onsite.
  */
 export function isOnsiteStatusValue(status: unknown): boolean {
-  return normalizeStatusValue(status).includes("onsite");
+  return statusInBodEodRow(status, "ONSITE");
 }
 
 /**
@@ -143,8 +134,7 @@ export function isOnsiteStatusValue(status: unknown): boolean {
  * close is not a completed close.
  */
 export function isCaseClosedStatusValue(status: unknown): boolean {
-  const s = normalizeStatusValue(status);
-  return s.includes("case close") || s.includes("wo close");
+  return statusInBodEodRow(status, "CLOSED");
 }
 
 // The Flex closure verdict now lives in @opencall/shared: the engineer

@@ -1,4 +1,5 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
+import { setCustomBodEodRows, setStatusBucketMap } from "@opencall/shared";
 import type { GeneratedReportResponse } from "../../lib/api/types";
 import {
   buildStatusMaps,
@@ -149,5 +150,39 @@ describe("calculateRtplHoursMetrics — EOD Actionable / Scheduled union", () =>
   it("never lets EOD fall below BOD", () => {
     expect(eod("actionable").value).toBeGreaterThanOrEqual(bod("actionable").value);
     expect(eod("planned").value).toBeGreaterThanOrEqual(bod("planned").value);
+  });
+});
+
+describe("calculateRtplHoursMetrics — rows an admin added", () => {
+  afterEach(() => {
+    setCustomBodEodRows([]);
+    setStatusBucketMap([]);
+  });
+
+  it("show directly after the row they were placed after, with their calls", () => {
+    setCustomBodEodRows([
+      {
+        key: "C_abc1234567",
+        label: "HP Approval",
+        productivityBucket: "CX_RESCHEDULE",
+        afterRow: "CX_RESCHEDULE",
+        sortOrder: 10,
+        isActive: true,
+      },
+    ]);
+    setStatusBucketMap([{ name: "Waiting for HP Approval", bucket: "C_abc1234567" }]);
+    const rows = [
+      row(1, { "RTPL status": "Waiting for HP Approval" }),
+      row(2, { "RTPL status": "Customer Pending" }),
+    ];
+    const maps = buildStatusMaps(rows);
+    const metrics = calculateRtplHoursMetrics(rows, maps.bod, true, maps);
+    const keys = metrics.map((m) => m.key);
+
+    expect(keys.indexOf("C_abc1234567")).toBe(keys.indexOf("cxReschedule") + 1);
+    const custom = metrics.find((m) => m.key === "C_abc1234567")!;
+    expect(custom.label).toBe("HP Approval");
+    expect(custom.value).toBe(1);
+    expect(custom.rows.map((r) => r.output["Ticket ID"])).toEqual(["WO-1"]);
   });
 });

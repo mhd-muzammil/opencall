@@ -1,9 +1,13 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { getReportHistory, generateReport } from "../../lib/apiClient";
+import { getReportHistory, generateReport, getRtplStatusesDropdown } from "../../lib/apiClient";
 import { getLatestCompletedReportSession } from "../../lib/reportHistorySelection";
-import { fetchSpecialAccessReport } from "../../lib/specialAccessApiClient";
+import {
+  fetchSpecialAccessReport,
+  getSpecialAccessRtplStatusesDropdown,
+} from "../../lib/specialAccessApiClient";
+import { applyStatusBuckets } from "../../lib/statusBucketsClient";
 import type { GeneratedReportResponse } from "../../lib/api/types";
 import type { ClientSession } from "../../lib/session";
 
@@ -35,6 +39,16 @@ export function useMobileReport(session: ClientSession | null): MobileReportStat
 
     void (async () => {
       try {
+        // Which BOD/EOD row each status counts under — loaded before the report
+        // so the first render already counts with it. Never blocks the report:
+        // without it the screens fall back to the keyword rules.
+        await (session.user.role === "SPECIAL_ACCESS"
+          ? getSpecialAccessRtplStatusesDropdown(session.token)
+          : getRtplStatusesDropdown(session.token)
+        )
+          .then(applyStatusBuckets)
+          .catch(() => undefined);
+
         if (session.user.role === "SPECIAL_ACCESS") {
           const scoped = await fetchSpecialAccessReport(session.token);
           if (!cancelled) setReport(scoped.report);

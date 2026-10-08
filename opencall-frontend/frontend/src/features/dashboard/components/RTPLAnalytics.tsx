@@ -29,7 +29,34 @@ import {
   normalizeStatusGroupKey,
   rtplEveningFirstStatusForAnalytics,
 } from "../../../lib/reportDashboardAnalytics";
-import { RTPL_STATUS_OPTIONS, isAttendedOutcomeStatus } from "@opencall/shared";
+import { useStatusBucketVersion } from "../../../lib/statusBucketsClient";
+import {
+  RTPL_STATUS_OPTIONS,
+  getCustomBodEodRows,
+  isAttendedOutcomeStatus,
+  statusInBodEodRow,
+  withCustomBodEodRows,
+  type StatusBucket,
+} from "@opencall/shared";
+
+/**
+ * The built-in BOD/EOD table rows that a status row maps to, so a custom row
+ * can be shown directly after the one an admin placed it after.
+ */
+const BOD_EOD_ROW_ANCHOR: Readonly<Record<string, StatusBucket>> = {
+  planned: "SCHEDULED",
+  closedCalls: "CLOSED",
+  enggOnsite: "ONSITE",
+  toBeSchedule: "TO_BE_SCHEDULE",
+  cxReschedule: "CX_RESCHEDULE",
+  engineerDelay: "ENGINEER_DELAY",
+  sscPending: "SSC_PENDING",
+  elevateTech: "ELEVATE_TECH",
+  underObservation: "UNDER_OBSERVATION",
+  toBeYank: "TO_BE_YANK",
+  addPartOrdered: "ADD_PART_ORDERED",
+  toBeCancel: "TO_BE_CANCEL",
+};
 
 // Exported for tests: it is a pure function, and the cancellation rules it
 // encodes move numbers people read every morning.
@@ -87,18 +114,6 @@ export function calculateKpiMetricsForCardView(
   );
   const presentEngineers = getUniqueEngineers(scheduledRows);
 
-  const matchStatus = (
-    r: typeof rows[number],
-    keywords: string[],
-    excludes: string[] = []
-  ): boolean => {
-    const s = getRowStatus(r).toLowerCase();
-    if (!s || s === "manual entry required") return false;
-    const matchesKeyword = keywords.some(kw => s.includes(kw.toLowerCase()));
-    const matchesExclude = excludes.some(ex => s.includes(ex.toLowerCase()));
-    return matchesKeyword && !matchesExclude;
-  };
-
   const getTicketIds = (items: typeof rows) => items.map(r => String(r.output["Ticket ID"] || "").trim());
 
   // Actionable = "Scheduled" + "To Be Scheduled" (shared definition).
@@ -114,16 +129,24 @@ export function calculateKpiMetricsForCardView(
     r => isPlannedStatusValue(getRowStatus(r)) && !wasCancelled(r),
   );
   const enggOnsiteRows = active.filter(r => isOnsiteStatusValue(getRowStatus(r)));
-  const toBeScheduleRows = active.filter(r => matchStatus(r, ["to be scheduled", "assignment pending", "non avl", "missed to schedule"]));
-  const cxRescheduleRows = active.filter(r => matchStatus(r, ["cx pending", "reschedule", "cx", "cust delay", "customer delay", "customer pending"]));
-  // Engineer Delay — mirrors the shared engineer-productivity classifier.
-  const engineerDelayRows = active.filter(r => matchStatus(r, ["engineer delay", "eng delay"]));
-  const sscPendingRows = active.filter(r => matchStatus(r, ["ssc pending", "ssc"]));
-  const elevateTechRows = active.filter(r => matchStatus(r, ["elevation HP Pending", "elevation Part Pending", "elevation - HP Pending", "elevation - Partner Pending", "elevate"]));
-  const underObservationRows = active.filter(r => matchStatus(r, ["CRT Pending", "CT Validation Pending", "observation", "under observation", "crt"]));
-  const toBeYankRows = active.filter(r => matchStatus(r, ["Need to Yank", "Yank"]));
-  const addPartOrderedRows = active.filter(r => matchStatus(r, ["Additional Part", "Part Order Pending", "Parts Hold", "Part need to order"]));
-  const toBeCancelRows = active.filter(r => matchStatus(r, ["Need to Cancel", "Need to Cancel Mail", "Request to Cancel"]));
+  // Each status counts under the row chosen for it on the RTPL Statuses page
+  // (statusInBodEodRow); text not in that list keeps the old keyword rules.
+  const inRow = (bucket: string) => (r: typeof rows[number]) =>
+    statusInBodEodRow(getRowStatus(r), bucket);
+  const toBeScheduleRows = active.filter(inRow("TO_BE_SCHEDULE"));
+  const cxRescheduleRows = active.filter(inRow("CX_RESCHEDULE"));
+  const engineerDelayRows = active.filter(inRow("ENGINEER_DELAY"));
+  const sscPendingRows = active.filter(inRow("SSC_PENDING"));
+  const elevateTechRows = active.filter(inRow("ELEVATE_TECH"));
+  const underObservationRows = active.filter(inRow("UNDER_OBSERVATION"));
+  const toBeYankRows = active.filter(inRow("TO_BE_YANK"));
+  const addPartOrderedRows = active.filter(inRow("ADD_PART_ORDERED"));
+  const toBeCancelRows = active.filter(inRow("TO_BE_CANCEL"));
+  // Rows an admin added for statuses that fit none of the above, by row key.
+  const customRowTickets: Record<string, string[]> = {};
+  for (const row of getCustomBodEodRows()) {
+    customRowTickets[row.key] = getTicketIds(active.filter(inRow(row.key)));
+  }
   
   // Trade now flows from the backend-derived Segment (single source of truth).
   const tradeOpenRows = isBod
@@ -182,7 +205,8 @@ export function calculateKpiMetricsForCardView(
       toBeCancel: getTicketIds(toBeCancelRows),
       newCalls: getTicketIds(newCallsRows),
       tradeOpenCalls: getTicketIds(tradeOpenRows),
-    }
+    },
+    customRowTickets,
   };
 }
 
@@ -302,9 +326,12 @@ export function RTPLDashboard({
     }
   }
 
+  // Re-render (and recount) when an admin moves a status to another BOD/EOD row.
+  const statusBucketVersion = useStatusBucketVersion();
+
   const rtplStatusMetrics = useMemo(
     () => buildRtplOperationalAnalytics(rtplAnalyticsRows),
-    [rtplAnalyticsRows],
+    [rtplAnalyticsRows, statusBucketVersion],
   );
 
   // Actionable = Scheduled + To Be Scheduled, shown as a pinned summary card
@@ -332,14 +359,14 @@ export function RTPLDashboard({
         .map((r) => String(r.output["Ticket ID"] ?? "").trim())
         .filter(Boolean),
     };
-  }, [rtplAnalyticsRows]);
+  }, [rtplAnalyticsRows, statusBucketVersion]);
 
   // Scheduled (Plan) = the day's booked calls (Morning status exactly
   // "Scheduled"), pinned so the count survives the evening-first migration of
   // those calls onto their outcome cards. Always rendered, even at 0.
   const scheduledPlanMetric = useMemo(
     () => buildScheduledPlanMetric(rtplAnalyticsRows),
-    [rtplAnalyticsRows],
+    [rtplAnalyticsRows, statusBucketVersion],
   );
 
   // Ticket ids per evening-first status, keyed the SAME case-insensitive way
@@ -360,7 +387,7 @@ export function RTPLDashboard({
       }
     }
     return map;
-  }, [rtplAnalyticsRows]);
+  }, [rtplAnalyticsRows, statusBucketVersion]);
 
   // Case-Closed uses the same definition as the EOD table's "Closed Calls" row:
   // an explicit Evening closure plus rows that closed by vanishing from the
@@ -415,7 +442,7 @@ export function RTPLDashboard({
       cancelled: { count: cancelled.length, ticketIds: ticketIdsOf(cancelled) },
       unreported: { count: unreported.length, ticketIds: ticketIdsOf(unreported) },
     };
-  }, [rtplAnalyticsRows]);
+  }, [rtplAnalyticsRows, statusBucketVersion]);
 
   const openStatusMetrics = useMemo(
     () => rtplStatusMetrics.filter((m) => !isCaseClosedStatusValue(m.status)),
@@ -967,7 +994,7 @@ export function RTPLDashboard({
                   }
                   const regionLabel = rtplRegionOptions.find((o) => o.value === selectedRtplRegion)?.label || selectedRtplRegion;
 
-                  const metricsRows = [
+                  const builtInRows = [
                     { id: 1, desc: "Engineer Count", key: "engineerCount" },
                     { id: 2, desc: "No.of Engg Presents", key: "enggPresents" },
                     { id: 3, desc: "Open Calls", key: "openCalls" },
@@ -989,6 +1016,21 @@ export function RTPLDashboard({
                     { id: 19, desc: "New calls", key: "newCalls", isEodOnly: true, alert: true },
                     { id: 20, desc: "Trade Open Calls", key: "tradeOpenCalls" },
                   ] as const;
+
+                  // Custom rows slot in after the row an admin placed them
+                  // after; S.No is renumbered so the table stays sequential.
+                  type MetricRow = {
+                    desc: string;
+                    key: string;
+                    isEodOnly?: boolean;
+                    alert?: boolean;
+                    customKey?: string;
+                  };
+                  const metricsRows = withCustomBodEodRows<MetricRow>(
+                    builtInRows,
+                    (metric) => BOD_EOD_ROW_ANCHOR[metric.key],
+                    (row) => ({ desc: row.label, key: row.key, customKey: row.key }),
+                  ).map((metric, index) => ({ ...metric, id: index + 1 }));
 
                   const renderCell = (
                     val: number,
@@ -1069,17 +1111,25 @@ export function RTPLDashboard({
                         </thead>
                         <tbody>
                           {metricsRows.map((metric) => {
-                            const bodVal = card.bodKpiMetrics[metric.key as keyof typeof card.bodKpiMetrics] as number;
-                            const eodVal = card.eodKpiMetrics[metric.key as keyof typeof card.eodKpiMetrics] as number;
+                            const bodTickets = metric.customKey
+                              ? card.bodKpiMetrics.customRowTickets[metric.customKey] ?? []
+                              : card.bodKpiMetrics.tickets[metric.key as keyof typeof card.bodKpiMetrics.tickets] || [];
+                            const eodTickets = metric.customKey
+                              ? card.eodKpiMetrics.customRowTickets[metric.customKey] ?? []
+                              : card.eodKpiMetrics.tickets[metric.key as keyof typeof card.eodKpiMetrics.tickets] || [];
 
-                            const bodTickets = card.bodKpiMetrics.tickets[metric.key as keyof typeof card.bodKpiMetrics.tickets] || [];
-                            const eodTickets = card.eodKpiMetrics.tickets[metric.key as keyof typeof card.eodKpiMetrics.tickets] || [];
+                            const bodVal = metric.customKey
+                              ? bodTickets.length
+                              : (card.bodKpiMetrics[metric.key as keyof typeof card.bodKpiMetrics] as number);
+                            const eodVal = metric.customKey
+                              ? eodTickets.length
+                              : (card.eodKpiMetrics[metric.key as keyof typeof card.eodKpiMetrics] as number);
 
-                            const isAlert = !!(metric as any).alert;
-                            const isEodOnly = !!(metric as any).isEodOnly;
+                            const isAlert = !!metric.alert;
+                            const isEodOnly = !!metric.isEodOnly;
 
                             return (
-                              <tr key={metric.id} style={{ background: "#ffffff" }}>
+                              <tr key={metric.key} style={{ background: "#ffffff" }}>
                                 <td
                                   style={{
                                     padding: "2px 4px",

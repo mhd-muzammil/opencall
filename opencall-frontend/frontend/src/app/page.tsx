@@ -210,6 +210,7 @@ import {
   type RtplTimeCardId,
 } from "../lib/reportDashboardAnalytics";
 import { getLatestCompletedReportSession } from "../lib/reportHistorySelection";
+import { applyStatusBuckets } from "../lib/statusBucketsClient";
 import {
   closeSpecialAccessRegionEod,
   fetchSpecialAccessReport,
@@ -2382,6 +2383,7 @@ export default function DashboardPage() {
       ? getSpecialAccessRtplStatusesDropdown(session.token)
       : getRtplStatusesDropdown(session.token))
       .then((res) => {
+        applyStatusBuckets(res);
         const next = buildStatusGroups(res.statuses);
         // Swap the array only when the vocabulary actually changed, so a poll
         // that finds nothing new never re-renders an open picker.
@@ -5483,7 +5485,10 @@ export default function DashboardPage() {
                         onStatusesChanged={() => {
                           if (!session) return;
                           getRtplStatusesDropdown(session.token)
-                            .then((res) => setRtplStatusGroups(buildStatusGroups(res.statuses)))
+                            .then((res) => {
+                              applyStatusBuckets(res);
+                              setRtplStatusGroups(buildStatusGroups(res.statuses));
+                            })
                             .catch(handleBackgroundError);
                         }}
                       />

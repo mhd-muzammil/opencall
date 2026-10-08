@@ -6,6 +6,7 @@
 // kpiBaseRows lives here (deferred from useKpiMetrics) because tnFilteredRows/
 // eodBodFilteredRows derive from it.
 import { useMemo } from "react";
+import { useStatusBucketVersion } from "../../../lib/statusBucketsClient";
 import {
   hasRequestToCancelFlexStatus,
   isRecordsPageVisibleRow,
@@ -131,6 +132,9 @@ export function useProductivityAnalytics(params: {
    * The caller fetches exactly these bounds, so what is fetched and what is
    * rendered can never be two different periods.
    */
+  // Recount when an admin moves a status to another BOD/EOD row.
+  const statusBucketVersion = useStatusBucketVersion();
+
   const productivityRangeBounds = useMemo((): ProductivityRangeBounds | null => {
     if (productivityFilterType === "Date Range") {
       if (!productivityFromDate || !productivityToDate) return null;
@@ -613,6 +617,7 @@ export function useProductivityAnalytics(params: {
     productivityDayReport,
     historyReportDates,
     eodState,
+    statusBucketVersion,
   ]);
 
   const productivityDateLabel = useMemo(() => {

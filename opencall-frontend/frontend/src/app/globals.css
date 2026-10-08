@@ -4193,6 +4193,22 @@ td.missingCell.carriedForwardCell {
   line-height: 1;
 }
 
+/* RTPL status cards coloured by their BOD/EOD row: --card-accent / --card-tint
+   come from statusCardTone(). Hover keeps the card's own colour. */
+.rtplMetricCard.toned {
+  border-color: color-mix(in srgb, var(--card-accent) 28%, transparent);
+  border-left: 4px solid var(--card-accent);
+  background: var(--card-tint);
+}
+.rtplMetricCard.toned strong {
+  color: var(--card-accent);
+}
+.rtplMetricCard.toned:hover:not(:disabled),
+.rtplMetricCard.toned:focus-visible {
+  border-color: var(--card-accent);
+  background: var(--card-tint);
+}
+
 .rtplEmptyState {
   padding: 18px;
   border: 1px dashed var(--border);

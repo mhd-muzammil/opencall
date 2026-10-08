@@ -18,6 +18,7 @@ import {
   isCancelledClosure,
 } from "../utils";
 import type { ReportRow, RtplCaseScope } from "../types";
+import { CARD_TONES, cardToneStyle, statusCardTone } from "../utils/statusCardTone";
 import { splitOpenCalls, splitTickets, type OpenCallSplit, type OpenCallSplitPart } from "../utils/openCallSplit";
 import {
   ALL_REGIONS_FILTER,
@@ -513,6 +514,51 @@ export function RTPLDashboard({
     [rtplStatusMetrics],
   );
 
+  // The status cards in their colour groups (blue planned, green closed, orange
+  // pending), each still largest count first. The grid shows the groups in that
+  // order, so cards of one colour sit together.
+  const statusCards = useMemo(() => {
+    const groups = {
+      planned: [] as typeof openStatusMetrics,
+      closed: [] as typeof openStatusMetrics,
+      pending: [] as typeof openStatusMetrics,
+    };
+    for (const metric of openStatusMetrics) {
+      const tone = statusCardTone(metric.status);
+      if (tone === CARD_TONES.planned) groups.planned.push(metric);
+      else if (tone === CARD_TONES.closed) groups.closed.push(metric);
+      else groups.pending.push(metric);
+    }
+    return groups;
+  }, [openStatusMetrics, statusBucketVersion]);
+
+  const renderStatusCard = (metric: (typeof openStatusMetrics)[number]) => (
+    <button
+      className="rtplMetricCard toned"
+      key={metric.status || "blank"}
+      type="button"
+      // Coloured by the BOD/EOD row the status counts under.
+      style={cardToneStyle(statusCardTone(metric.status))}
+      onClick={() =>
+        openRecordsWithFilter({
+          region:
+            selectedRtplRegion === ALL_REGIONS_FILTER
+              ? null
+              : selectedRtplRegion,
+          // Evening-first counts can't be reproduced by a Morning-status
+          // filter, so hand over the exact tickets the card counted
+          // (same pattern as the Actionable card).
+          ticketIds:
+            statusTicketIds.get(normalizeStatusGroupKey(metric.status)) ?? null,
+        })
+      }
+      title={`Open ${metric.status} records`}
+    >
+      <span>{metric.status}</span>
+      <strong>{metric.count}</strong>
+    </button>
+  );
+
   const compareStatuses = (a: string, b: string): number => {
     const idxA = statusOrderMap.has(a.toLowerCase()) ? statusOrderMap.get(a.toLowerCase())! : 9999;
     const idxB = statusOrderMap.has(b.toLowerCase()) ? statusOrderMap.get(b.toLowerCase())! : 9999;
@@ -860,9 +906,9 @@ export function RTPLDashboard({
       closureOutcomeMetrics.unreported.count > 0 ? (
         <div className="rtplMetricGrid" style={{ marginBottom: "20px" }}>
           <button
-            className="rtplMetricCard"
+            className="rtplMetricCard toned"
             type="button"
-            style={{ border: "1.5px solid #4f46e5", background: "#eef2ff" }}
+            style={cardToneStyle(CARD_TONES.planned)}
             onClick={() =>
               openRecordsWithFilter({
                 region:
@@ -878,9 +924,9 @@ export function RTPLDashboard({
             <strong>{actionableMetric.count}</strong>
           </button>
           <button
-            className="rtplMetricCard"
+            className="rtplMetricCard toned"
             type="button"
-            style={{ border: "1.5px solid #0f766e", background: "#f0fdfa" }}
+            style={cardToneStyle(CARD_TONES.planned)}
             onClick={() =>
               openRecordsWithFilter({
                 region:
@@ -895,6 +941,7 @@ export function RTPLDashboard({
             <span>Scheduled (Plan)</span>
             <strong>{scheduledPlanMetric.count}</strong>
           </button>
+          {statusCards.planned.map(renderStatusCard)}
           {/* How today's closures actually ended, per FLEX. Kept as three separate
               cards because only "WO Closed" is billable — adding a cancellation to it
               answers no question anyone has. */}
@@ -903,6 +950,7 @@ export function RTPLDashboard({
               {
                 key: "closed",
                 label: "Case-Closed",
+                tone: CARD_TONES.closed,
                 metric: closureOutcomeMetrics.closed,
                 title:
                   "Closed today: Flex reports WO Closed, or one of the team marked the case closed. Cancellations are excluded.",
@@ -910,6 +958,7 @@ export function RTPLDashboard({
               {
                 key: "cancelled",
                 label: "Closed-cancelled",
+                tone: CARD_TONES.closed,
                 metric: closureOutcomeMetrics.cancelled,
                 title:
                   "Closed today that Flex reports as Closed - Canceled — abandoned calls, not billable.",
@@ -917,17 +966,19 @@ export function RTPLDashboard({
               {
                 key: "unreported",
                 label: "Closed (Flex pending)",
+                tone: CARD_TONES.closed,
                 metric: closureOutcomeMetrics.unreported,
                 title:
                   "Left the Flex file, nobody marked the case closed, and Flex has not reported how it ended. The hourly closure sync moves these into one of the other two.",
               },
             ] as const
-          ).map(({ key, label, metric, title }) =>
+          ).map(({ key, label, metric, title, tone }) =>
             metric.count > 0 ? (
               <button
-                className="rtplMetricCard"
+                className="rtplMetricCard toned"
                 key={key}
                 type="button"
+                style={cardToneStyle(tone)}
                 onClick={() =>
                   openRecordsWithFilter({
                     region:
@@ -944,13 +995,15 @@ export function RTPLDashboard({
               </button>
             ) : null,
           )}
+          {statusCards.closed.map(renderStatusCard)}
           {/* Cases the customer has written about. First in the grid because it is about
               somebody waiting on an answer, which outranks a status count. Clicking hands
               the records table the exact tickets counted, like the cards beside it. */}
           {mailMetric.count > 0 ? (
             <button
-              className="rtplMetricCard"
+              className="rtplMetricCard toned"
               type="button"
+              style={cardToneStyle(CARD_TONES.pending)}
               onClick={() =>
                 openRecordsWithFilter({
                   region:
@@ -991,30 +1044,7 @@ export function RTPLDashboard({
               <strong>{mailMetric.count}</strong>
             </button>
           ) : null}
-          {openStatusMetrics.map((metric, metricIndex) => (
-            <button
-              className="rtplMetricCard"
-              key={`${metric.status || "blank"}-${metricIndex}`}
-              type="button"
-              onClick={() =>
-                openRecordsWithFilter({
-                  region:
-                    selectedRtplRegion === ALL_REGIONS_FILTER
-                      ? null
-                      : selectedRtplRegion,
-                  // Evening-first counts can't be reproduced by a Morning-status
-                  // filter, so hand over the exact tickets the card counted
-                  // (same pattern as the Actionable card).
-                  ticketIds:
-                    statusTicketIds.get(normalizeStatusGroupKey(metric.status)) ?? null,
-                })
-              }
-              title={`Open ${metric.status} records`}
-            >
-              <span>{metric.status}</span>
-              <strong>{metric.count}</strong>
-            </button>
-          ))}
+          {statusCards.pending.map(renderStatusCard)}
         </div>
       ) : (
         <div className="rtplEmptyState" style={{ marginBottom: "20px" }}>

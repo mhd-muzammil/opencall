@@ -80,6 +80,13 @@ export interface RosterEngineer {
   // live; a number means the phone was offline that long and has since posted
   // its backlog; null means we cannot tell.
   queued_minutes?: number | null;
+  // The employee's role and department in Payroll. Optional: a Payroll not
+  // yet redeployed sends neither.
+  role?: string | null;
+  department?: string | null;
+  // Payroll staff who are not in our engineer register, shown on the live
+  // tracking board beside the engineers (only when asked for: includeStaff).
+  staff?: boolean;
 }
 
 export interface RosterResult {
@@ -228,8 +235,20 @@ export async function getEngineerPath(
   return readJson<TrackPath>(response);
 }
 
-export async function getRoster(token: string, date?: string): Promise<RosterResult> {
-  const qs = date ? `?date=${encodeURIComponent(date)}` : "";
+/**
+ * The roster for a day. `includeStaff` -- the live tracking board only -- adds
+ * Payroll's other staff after our engineer register; without it the answer is
+ * the register alone, as Engineer Productivity reads it.
+ */
+export async function getRoster(
+  token: string,
+  date?: string,
+  options: { includeStaff?: boolean } = {},
+): Promise<RosterResult> {
+  const params = new URLSearchParams();
+  if (date) params.set("date", date);
+  if (options.includeStaff) params.set("include", "staff");
+  const qs = params.toString() ? `?${params.toString()}` : "";
   const response = await fetch(url(`/api/v1/payroll-tracking/roster${qs}`), {
     headers: authHeaders(token),
     cache: "no-store",

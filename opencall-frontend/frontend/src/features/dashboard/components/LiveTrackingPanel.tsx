@@ -19,6 +19,7 @@ import {
   rosterRowKey,
   type RosterBucket,
 } from "../../../lib/rosterBuckets";
+import { ALL_DEPARTMENTS, departmentOf, departmentOptions, inDepartment } from "../../../lib/rosterDepartments";
 
 // Leaflet touches `window`, so the map is client-only (no SSR).
 const LiveTrackingMap = dynamic(() => import("../../../components/LiveTrackingMap"), {
@@ -808,6 +809,9 @@ export default function LiveTrackingPanel({
   }, [initialDate]);
   const [query, setQuery] = useState("");
   const [stateFilter, setStateFilter] = useState<RosterBucket>("all");
+  // Department by department (12 Oct 2026). Narrows the whole board -- tabs,
+  // counts, regions, map -- and with "All" it is the board as it always was.
+  const [department, setDepartment] = useState<string>(ALL_DEPARTMENTS);
 
   // The board: EVERY engineer for the chosen day, not only those out right now,
   // so a finished shift can still be opened. Only today keeps polling.
@@ -815,7 +819,9 @@ export default function LiveTrackingPanel({
     if (!token || sessionExpired) return;
     let active = true;
     const load = () => {
-      getRoster(token, dayDate)
+      // With Payroll's other staff, not only the engineer register: the office
+      // asked to see everybody on duty here (12 Oct 2026).
+      getRoster(token, dayDate, { includeStaff: true })
         .then((res) => {
           if (!active) return;
           setConfigured(res.configured);
@@ -896,11 +902,25 @@ export default function LiveTrackingPanel({
   // Bucketing lives in lib/rosterBuckets so the tab labels and the rows they show
   // are computed by the same code — they used to be two hand-written conditions
   // that could disagree, and did: "On duty 1" listed everyone Payroll could not match.
-  const filtered = useMemo(
-    () => filterRoster(engineers, stateFilter, query),
-    [engineers, query, stateFilter],
+  // The department chosen, before anything else: every count and the map read
+  // these rows, so they agree with the list.
+  const departments = useMemo(() => departmentOptions(engineers), [engineers]);
+  // The chosen department, while it is still on the board. A refresh without it
+  // falls back to All rather than keeping a filter the dropdown cannot show --
+  // an empty board under a dropdown reading "All Departments".
+  const activeDepartment = useMemo(
+    () => departments.find((d) => d.toLowerCase() === department.trim().toLowerCase()) ?? ALL_DEPARTMENTS,
+    [departments, department],
   );
-  const bucketCounts = useMemo(() => countBuckets(engineers), [engineers]);
+  const boardRows = useMemo(
+    () => inDepartment(engineers, activeDepartment),
+    [engineers, activeDepartment],
+  );
+  const filtered = useMemo(
+    () => filterRoster(boardRows, stateFilter, query),
+    [boardRows, query, stateFilter],
+  );
+  const bucketCounts = useMemo(() => countBuckets(boardRows), [boardRows]);
 
   // Region by region, counted through the same bucketOf() the tabs use so the
   // two can never disagree. Busiest first: a manager reads this to find which
@@ -910,7 +930,7 @@ export default function LiveTrackingPanel({
   // two engineers with a problem when it is one engineer and a vendor.
   const regions = useMemo(() => {
     const byBranch = new Map();
-    for (const row of engineers) {
+    for (const row of boardRows) {
       if (bucketOf(row) === "unmatched") continue;
       const name = (row.branch || "").trim() || "No branch";
       const entry = byBranch.get(name) ?? { name, total: 0, onDuty: 0, off: 0 };
@@ -922,7 +942,7 @@ export default function LiveTrackingPanel({
     return [...byBranch.values()].sort(
       (a, b) => b.onDuty - a.onDuty || b.total - a.total || a.name.localeCompare(b.name),
     );
-  }, [engineers]);
+  }, [boardRows]);
 
   // The null check is load-bearing: an engineer Payroll cannot match has
   // engineer_id null, so comparing against a null selectedId matched the first
@@ -933,10 +953,13 @@ export default function LiveTrackingPanel({
 
   const onDutyCount = bucketCounts.on_duty;
   const totalKm = useMemo(
-    () => engineers.reduce((sum, e) => sum + (e.distance_km ?? 0), 0),
-    [engineers],
+    () => boardRows.reduce((sum, e) => sum + (e.distance_km ?? 0), 0),
+    [boardRows],
   );
-  const staleCount = useMemo(() => engineers.filter((e) => e.stale).length, [engineers]);
+  // The alerts stay about the field engineers' phones, as they always were.
+  // Office staff often Login from a desk browser, which sends no GPS; counted
+  // here they would read as a row of dead phones every day.
+  const staleCount = useMemo(() => boardRows.filter((e) => e.stale && !e.staff).length, [boardRows]);
   // One of the reasons this page gets opened is "whose phone is about to die",
   // and answering it meant reading every row. Counted once, up top.
   // Clicking a headline number should show you the engineers behind it. Kept
@@ -945,18 +968,20 @@ export default function LiveTrackingPanel({
   const [focus, setFocus] = useState<"stale" | "low_battery" | null>(null);
 
   const lowBatteryCount = useMemo(
-    () => engineers.filter((e) => e.state === "on_duty" && batteryTone(e.battery_level, e.is_charging)).length,
-    [engineers],
+    () =>
+      boardRows.filter((e) => !e.staff && e.state === "on_duty" && batteryTone(e.battery_level, e.is_charging))
+        .length,
+    [boardRows],
   );
   // Only people actually out get a live marker; a finished shift would otherwise
   // leave a pin sitting where they were hours ago. An unlinked engineer has no
   // Payroll id and no position, so they never reach the map.
   const liveOnMap = useMemo(
     () =>
-      engineers
+      boardRows
         .filter((e) => e.state === "on_duty" && e.engineer_id != null)
         .map((e) => ({ ...e, engineer_id: e.engineer_id as number })),
-    [engineers],
+    [boardRows],
   );
 
   // Prefer the road version when Payroll has managed to produce one: the fixes
@@ -1026,7 +1051,7 @@ export default function LiveTrackingPanel({
         <div style={{ display: "flex", gap: 10, alignItems: "stretch", flexWrap: "wrap" }}>
           <SummaryStat
             value={String(onDutyCount)}
-            of={`of ${engineers.length}`}
+            of={`of ${boardRows.length}`}
             label="On duty"
             {...(onDutyCount > 0
               ? {
@@ -1813,6 +1838,31 @@ export default function LiveTrackingPanel({
           fontSize: 14,
         }}
       />
+      {departments.length > 0 && (
+        <select
+          aria-label="Department"
+          value={activeDepartment}
+          onChange={(e) => setDepartment(e.target.value)}
+          style={{
+            marginTop: 8,
+            display: "block",
+            width: "100%",
+            maxWidth: 360,
+            padding: "8px 12px",
+            border: "1px solid #d1d5db",
+            borderRadius: 8,
+            fontSize: 14,
+            background: "#fff",
+          }}
+        >
+          <option value={ALL_DEPARTMENTS}>All Departments</option>
+          {departments.map((name) => (
+            <option key={name} value={name}>
+              {name}
+            </option>
+          ))}
+        </select>
+      )}
 
       {/* Pick ANY engineer — on duty, finished, or never started. The whole point
           of the roster is that a shift ending does not take someone off the board.
@@ -1949,6 +1999,23 @@ export default function LiveTrackingPanel({
                         {e.branch}
                       </span>
                     )}
+                    {/* Payroll staff who are not in the engineer register. */}
+                    {e.staff && (
+                      <span
+                        data-testid="staff-tag"
+                        style={{
+                          fontSize: 10,
+                          fontWeight: 600,
+                          padding: "1px 6px",
+                          borderRadius: 999,
+                          background: "#f3f4f6",
+                          color: "#4b5563",
+                          whiteSpace: "nowrap",
+                        }}
+                      >
+                        Staff{departmentOf(e) ? ` · ${departmentOf(e)}` : ""}
+                      </span>
+                    )}
                     {/* On the name line, not under the figures. Four labelled
                         figures and a link do not share a line at the rail's
                         width, so down there it wrapped and cost every row an
@@ -2041,7 +2108,7 @@ export default function LiveTrackingPanel({
               <div style={{ fontSize: 13, color: "#6b7280", lineHeight: 1.5 }}>
               {engineers.length === 0
                 ? "No engineers found. Every active employee appears here once Payroll is reachable."
-                : stateFilter === "unmatched" && !query.trim()
+                : stateFilter === "unmatched" && !query.trim() && !activeDepartment
                   ? "Every engineer in the register is matched in Payroll \u2014 no cases are being skipped."
                   : focus === "stale"
                     ? "Nobody on duty has gone quiet."
@@ -2051,11 +2118,12 @@ export default function LiveTrackingPanel({
                         ? `Nobody matches “${query.trim()}” in this tab.`
                         : "Nobody is in this tab right now."}
               </div>
-              {(query.trim() || stateFilter !== "all" || focus) && (
+              {(query.trim() || stateFilter !== "all" || focus || activeDepartment) && (
                 <button
                   onClick={() => {
                     setQuery("");
                     setStateFilter("all");
+                    setDepartment(ALL_DEPARTMENTS);
                   }}
                   style={{
                     marginTop: 12,

@@ -347,3 +347,154 @@ describe("the tracking board", () => {
     expect(row.textContent).not.toContain("Caught up");
   });
 });
+
+describe("Payroll's other staff, department by department (12 Oct 2026)", () => {
+  const STAFFED: RosterEngineer[] = [
+    engineer({ engineer_name: "Praveen", state: "on_duty", engineer_id: 91, department: "FSE" }),
+    engineer({ engineer_name: "Lava Kumar", state: "unmatched", engineer_id: null }),
+    engineer({
+      engineer_name: "Swetha",
+      state: "on_duty",
+      engineer_id: 21,
+      department: "Office",
+      role: "CALL COORDINATOR",
+      staff: true,
+    }),
+    engineer({ engineer_name: "chakree R", engineer_id: 22, department: "HR", staff: true }),
+  ];
+
+  function departmentSelect() {
+    const select = container.querySelector<HTMLSelectElement>('select[aria-label="Department"]');
+    if (!select) throw new Error("no department filter");
+    return select;
+  }
+
+  async function pickDepartment(value: string) {
+    await act(async () => {
+      const select = departmentSelect();
+      select.value = value;
+      select.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+  }
+
+  it("asks for the other staff, and only this board does", async () => {
+    await mountBoard();
+    expect(getRoster).toHaveBeenCalledWith("test-token", expect.any(String), { includeStaff: true });
+  });
+
+  it("shows them beside the engineers, tagged as staff with their department", async () => {
+    getRoster.mockResolvedValue({ configured: true, engineers: STAFFED });
+    await mountBoard();
+    expect(rowNames()).toEqual(["Praveen", "Lava Kumar", "Swetha", "chakree R"]);
+    const tags = Array.from(container.querySelectorAll('[data-testid="staff-tag"]')).map((t) => t.textContent);
+    expect(tags).toEqual(["Staff · Office", "Staff · HR"]);
+  });
+
+  it("starts on All Departments, the board as it was", async () => {
+    getRoster.mockResolvedValue({ configured: true, engineers: STAFFED });
+    await mountBoard();
+    expect(departmentSelect().value).toBe("");
+    expect(Array.from(departmentSelect().options).map((o) => o.textContent)).toEqual([
+      "All Departments",
+      "FSE",
+      "HR",
+      "Office",
+    ]);
+    expect(tab(/^All/).textContent).toBe("All4");
+  });
+
+  it("a department narrows the rows and the counts together", async () => {
+    getRoster.mockResolvedValue({ configured: true, engineers: STAFFED });
+    await mountBoard();
+    await pickDepartment("Office");
+    expect(rowNames()).toEqual(["Swetha"]);
+    expect(tab(/^All/).textContent).toBe("All1");
+    expect(tab(/^On duty/).textContent).toBe("On duty1");
+    expect(tab(/^Not in Payroll/).textContent).toBe("Not in Payroll0");
+
+    await pickDepartment("");
+    expect(rowNames()).toHaveLength(4);
+  });
+
+  it("with no departments at all -- a Payroll not yet redeployed -- there is no filter", async () => {
+    await mountBoard();
+    expect(container.querySelector('select[aria-label="Department"]')).toBeNull();
+    expect(rowNames()).toHaveLength(26);
+  });
+});
+
+describe("the department filter's edges (review, 12 Oct 2026)", () => {
+  const WITH_STAFF: RosterEngineer[] = [
+    engineer({ engineer_name: "Praveen", state: "on_duty", engineer_id: 91, department: "FSE" }),
+    engineer({ engineer_name: "Lava Kumar", state: "unmatched", engineer_id: null }),
+    engineer({
+      engineer_name: "Swetha",
+      state: "on_duty",
+      engineer_id: 21,
+      department: "Office",
+      staff: true,
+      stale: true,
+    }),
+  ];
+
+  async function pick(value: string) {
+    await act(async () => {
+      const select = container.querySelector<HTMLSelectElement>('select[aria-label="Department"]');
+      if (!select) throw new Error("no department filter");
+      select.value = value;
+      select.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+  }
+
+  it("does not claim every register engineer is matched when a department hides them", async () => {
+    getRoster.mockResolvedValue({ configured: true, engineers: WITH_STAFF });
+    await mountBoard();
+    await pick("FSE");
+    await clickTab(/^Not in Payroll/);
+    expect(container.textContent).not.toContain("Every engineer in the register is matched");
+    expect(container.textContent).toContain("Nobody is in this tab right now.");
+  });
+
+  it("falls back to All, visibly, when the chosen department leaves the board", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      getRoster.mockResolvedValue({ configured: true, engineers: WITH_STAFF });
+      await mountBoard();
+      await pick("Office");
+      expect(rowNames()).toEqual(["Swetha"]);
+
+      // The next 30s refresh has no Office staff (say Payroll could not list them).
+      getRoster.mockResolvedValue({ configured: true, engineers: WITH_STAFF.filter((r) => !r.staff) });
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(31_000);
+      });
+      await act(async () => {});
+
+      const select = container.querySelector<HTMLSelectElement>('select[aria-label="Department"]');
+      expect(select?.value).toBe("");
+      expect(rowNames()).toEqual(["Praveen", "Lava Kumar"]);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("keeps the No signal alert about the engineers' phones", async () => {
+    const alert = '[title^="On duty, but their phone has stopped reporting"]';
+    getRoster.mockResolvedValue({ configured: true, engineers: WITH_STAFF });
+    await mountBoard();
+    // Swetha is stale, but she is staff: her own row says so, the alert does not.
+    expect(container.querySelector(alert)).toBeNull();
+    expect(container.textContent).toContain("Staff · Office");
+
+    // An engineer going quiet still raises it.
+    await act(async () => {
+      root.unmount();
+    });
+    getRoster.mockResolvedValue({
+      configured: true,
+      engineers: WITH_STAFF.map((r) => (r.engineer_name === "Praveen" ? { ...r, stale: true } : r)),
+    });
+    await mountBoard();
+    expect(container.querySelector(alert)?.textContent).toContain("1");
+  });
+});

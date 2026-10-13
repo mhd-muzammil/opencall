@@ -19,9 +19,10 @@ import { VirtualTbody } from "../components/VirtualTbody";
 import {
   LayoutGrid, FolderCheck, LineChart, Activity, Timer, Layers, Map as MapIcon, Zap, TrendingUp,
   Table, Wrench, FileText, Users, UserPlus, ShieldCheck, Tag, Upload, ScrollText,
-  RefreshCw, LogOut, MapPin,
+  RefreshCw, LogOut, MapPin, Route,
 } from "lucide-react";
 import LiveTrackingPanel from "../features/dashboard/components/LiveTrackingPanel";
+import KmReportPanel from "../features/dashboard/components/KmReportPanel";
 import { useColumnFilters } from "../lib/useColumnFilters";
 import { findFinalSessionForDay } from "../lib/dayReportSession";
 import {
@@ -272,6 +273,7 @@ const WORKSPACE_VIEWS = [
   "renewal-pipeline",
   "vendor-dashboard",
   "live-tracking",
+  "km-report",
 ] as const;
 type WorkspaceView = (typeof WORKSPACE_VIEWS)[number];
 
@@ -2247,7 +2249,10 @@ export default function DashboardPage() {
     if (isSpecialAccess || userSections === null) return;
     const roleViews = ["admin-engineers", "admin-rtpl-statuses"];
     if (roleViews.includes(workspaceView)) return;
-    if (!userSections.includes(workspaceView)) {
+    // The KM Report is Live Tracking's kilometres: whoever may see the board
+    // may see it, under the board's own section.
+    const section = workspaceView === "km-report" ? "live-tracking" : workspaceView;
+    if (!userSections.includes(section)) {
       setWorkspaceView((userSections[0] ?? "overview") as typeof workspaceView);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -4803,6 +4808,21 @@ export default function DashboardPage() {
             </button>
           )}
 
+          {/* Right under Live Tracking, for the same people: the board's
+              kilometres, every FSE day by day over a bill cycle. */}
+          {canSeeSection("live-tracking") &&
+            (session.user.role === "SUPER_ADMIN" || session.user.role === "REGION_ADMIN") && (
+            <button
+              type="button"
+              className={`sidebarItem ${workspaceView === "km-report" ? "active" : ""}`}
+              onClick={() => setWorkspaceView("km-report")}
+            >
+              <span className="sidebarIcon">
+                <Route size={18} strokeWidth={2} /> <span className="sidebarText">KM Report</span>
+              </span>
+            </button>
+          )}
+
           {(session.user.role === "SUPER_ADMIN" || session.user.role === "REGION_ADMIN") && (
             <button
               type="button"
@@ -5147,13 +5167,21 @@ export default function DashboardPage() {
                 </section>
               ) : null}
 
+              {/* Payroll's kilometres too, so outside the report gate as well. */}
+              {workspaceView === "km-report" ? (
+                <section className="panel reportPanel" style={{ minWidth: 0 }}>
+                  <KmReportPanel token={session.token} embedded />
+                </section>
+              ) : null}
+
               {report &&
               workspaceView !== "warranty" &&
               workspaceView !== "renewal-pipeline" &&
               workspaceView !== "customer-emails" &&
               workspaceView !== "parts-catalog" &&
               workspaceView !== "quotations" &&
-              workspaceView !== "live-tracking" ? (
+              workspaceView !== "live-tracking" &&
+              workspaceView !== "km-report" ? (
                 <section className="panel reportPanel">
                   <div className="overviewReportContent">
                     {workspaceView === "overview" && (

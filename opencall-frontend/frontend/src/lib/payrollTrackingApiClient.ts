@@ -283,6 +283,46 @@ export async function getRosterKm(token: string, from: string, to: string): Prom
   return readJson<RosterKmResult>(response);
 }
 
+/** One engineer's kilometres over a period, day by day -- a KM Report row. */
+export interface EngineerKmDays {
+  engineer_id: number | null;
+  /** The name in our register, as the live tracking board shows it. */
+  engineer_name: string;
+  /** Resolved in Payroll on at least one day of the period. */
+  matched: boolean;
+  branch: string | null;
+  department: string | null;
+  /** km per YYYY-MM-DD, for every day in `days`; 0 when nothing was travelled. */
+  days: Record<string, number>;
+  /** The period's total -- the figure /roster/km gives Engineer Productivity. */
+  distance_km: number;
+  days_tracked: number;
+}
+
+export interface RosterKmDaysResult {
+  configured: boolean;
+  /** Every day asked about, oldest first, stopping at today. */
+  days: string[];
+  engineers: EngineerKmDays[];
+}
+
+/**
+ * Kilometres per engineer per day from `from` to `to` (YYYY-MM-DD, inclusive),
+ * for the KM Report. The same day-by-day answers getRosterKm adds up, kept apart.
+ */
+export async function getRosterKmDays(
+  token: string,
+  from: string,
+  to: string,
+): Promise<RosterKmDaysResult> {
+  const qs = `?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`;
+  const response = await fetch(url(`/api/v1/payroll-tracking/roster/km/days${qs}`), {
+    headers: authHeaders(token),
+    cache: "no-store",
+  });
+  return readJson<RosterKmDaysResult>(response);
+}
+
 export async function getEngineerDay(
   token: string,
   engineerId: number,

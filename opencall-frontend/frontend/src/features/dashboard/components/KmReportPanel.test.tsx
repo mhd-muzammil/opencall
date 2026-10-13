@@ -119,6 +119,15 @@ describe("KmReportPanel", () => {
     expect(container.textContent).toContain("1 engineer in the register is not in Payroll");
   });
 
+  it("the table is headed RTPL APP KM, and the cycle arrows are dark whatever the app's button colour", async () => {
+    await mount();
+    const title = container.querySelector('[data-testid="km-table-title"]');
+    expect(title?.textContent).toBe("RTPL APP KM");
+    expect(title?.nextElementSibling?.getAttribute("data-testid")).toBe("km-grid");
+    const prev = container.querySelector<HTMLButtonElement>('button[aria-label="Previous cycle"]')!;
+    expect(prev.style.color).toBe("rgb(17, 24, 39)");
+  });
+
   it("a region box narrows the table and the totals to that region", async () => {
     await mount();
     expect(boxes().map((b) => b.textContent)).toEqual(["All Regions2 FSEs", "Chennai1 FSE", "Salem1 FSE"]);

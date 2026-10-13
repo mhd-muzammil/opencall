@@ -195,12 +195,15 @@ export default function KmReportPanel({ token, embedded = false }: KmReportPanel
               aria-label="Previous cycle"
               onClick={() => setCycleKey(previousCycle(cycle).key)}
               style={{
+                font: "inherit",
                 padding: "6px 10px",
                 borderRadius: 8,
                 border: "1px solid #d1d5db",
                 background: "#fff",
+                // Said outright: the app's own button style is white text, and
+                // on this white button the arrow vanished.
+                color: "#111827",
                 cursor: "pointer",
-                font: "inherit",
               }}
             >
               ‹
@@ -228,7 +231,7 @@ export default function KmReportPanel({ token, embedded = false }: KmReportPanel
                 borderRadius: 8,
                 border: "1px solid #d1d5db",
                 background: isCurrent ? "#f3f4f6" : "#fff",
-                color: isCurrent ? "#9ca3af" : "inherit",
+                color: isCurrent ? "#9ca3af" : "#111827",
                 cursor: isCurrent ? "default" : "pointer",
                 font: "inherit",
               }}
@@ -365,10 +368,18 @@ export default function KmReportPanel({ token, embedded = false }: KmReportPanel
       )}
 
       {shown.length > 0 && (
+        <h3
+          data-testid="km-table-title"
+          style={{ margin: "16px 0 8px", fontSize: 16, fontWeight: 700, color: "#111827" }}
+        >
+          RTPL APP KM
+        </h3>
+      )}
+      {shown.length > 0 && (
         <div
           data-testid="km-grid"
           style={{
-            marginTop: 12,
+            marginTop: 0,
             overflow: "auto",
             maxHeight: "calc(100vh - 320px)",
             minHeight: 240,

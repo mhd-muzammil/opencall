@@ -125,6 +125,10 @@ export default function KmReportPanel({ token, embedded = false }: KmReportPanel
     let active = true;
     setLoading(true);
     setError(null);
+    // The last cycle's answer goes the moment another is asked for. Kept, its
+    // km sat in the tiles and the table under the new cycle's label for the
+    // whole of the new load -- and stayed there if that load came back 401.
+    setResult(null);
     getRosterKmDays(token, cycle.fromIso, cycle.toIso)
       .then((res) => {
         if (!active) return;
@@ -163,6 +167,8 @@ export default function KmReportPanel({ token, embedded = false }: KmReportPanel
   const totals = useMemo(() => kmTotals(shown, days), [shown, days]);
   const average = shown.length ? Math.round((totals.total / shown.length) * 100) / 100 : 0;
   const configured = result?.configured ?? true;
+  // A tile with no answer yet says so, rather than reading as 0 km.
+  const tile = (value: string) => (result ? value : loading ? "…" : "—");
 
   const boxes = [
     { key: "", name: "All Regions", count: engineers.length },
@@ -232,9 +238,9 @@ export default function KmReportPanel({ token, embedded = false }: KmReportPanel
           </div>
         </div>
         <div style={{ display: "flex", gap: 10, flexWrap: "wrap", flex: "1 1 auto", justifyContent: "flex-end" }}>
-          <SummaryTile value={formatKm(totals.total) === "-" ? "0" : formatKm(totals.total)} label="Total km" />
-          <SummaryTile value={String(shown.length)} label={shown.length === 1 ? "FSE" : "FSEs"} />
-          <SummaryTile value={formatKm(average) === "-" ? "0" : formatKm(average)} label="Average km per FSE" />
+          <SummaryTile value={tile(formatKm(totals.total) === "-" ? "0" : formatKm(totals.total))} label="Total km" />
+          <SummaryTile value={tile(String(shown.length))} label={shown.length === 1 ? "FSE" : "FSEs"} />
+          <SummaryTile value={tile(formatKm(average) === "-" ? "0" : formatKm(average))} label="Average km per FSE" />
         </div>
       </div>
 
@@ -369,7 +375,6 @@ export default function KmReportPanel({ token, embedded = false }: KmReportPanel
             border: "1px solid #e5e7eb",
             borderRadius: 12,
             background: "#fff",
-            opacity: loading ? 0.6 : 1,
           }}
         >
           <table style={{ borderCollapse: "separate", borderSpacing: 0, fontSize: 13 }}>

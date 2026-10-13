@@ -82,6 +82,11 @@ const rows = () => Array.from(container.querySelectorAll('[data-testid="km-row"]
 const cells = (row: Element) => Array.from(row.querySelectorAll("td")).map((td) => td.textContent?.trim());
 const boxes = () => Array.from(container.querySelectorAll<HTMLButtonElement>('[data-testid="km-region"]'));
 const footer = () => cells(container.querySelector('[data-testid="km-footer"]')!);
+/** The figure on the summary tile with this label. */
+const tileValue = (label: string) =>
+  Array.from(container.querySelectorAll("div"))
+    .find((div) => div.textContent === label && div.previousElementSibling)
+    ?.previousElementSibling?.textContent?.trim();
 
 async function click(element: HTMLElement) {
   await act(async () => {
@@ -139,6 +144,36 @@ describe("KmReportPanel", () => {
     await click(container.querySelector<HTMLButtonElement>('button[aria-label="Previous cycle"]')!);
     expect(getRosterKmDays).toHaveBeenLastCalledWith("t", "2026-08-25", "2026-09-24");
     expect(next.disabled).toBe(false);
+  });
+
+  it("a cycle being loaded shows none of the last cycle's numbers under its label", async () => {
+    await mount();
+    expect(tileValue("Total km")).toBe("86.95");
+    let answer: (value: unknown) => void = () => {};
+    getRosterKmDays.mockReturnValueOnce(new Promise((resolve) => (answer = resolve)));
+    await click(container.querySelector<HTMLButtonElement>('button[aria-label="Previous cycle"]')!);
+    expect(container.querySelector('[data-testid="km-cycle"]')?.textContent).toContain("25 Aug");
+    expect(rows()).toHaveLength(0);
+    expect(boxes()).toHaveLength(0);
+    expect(tileValue("Total km")).toBe("…");
+    expect(tileValue("Average km per FSE")).toBe("…");
+    await act(async () => {
+      answer({ configured: true, days: DAYS, engineers: [engineer("Chitra", "Vellore", [1, 2, 3], { engineer_id: 9 })] });
+    });
+    await act(async () => {});
+    expect(rows().map((r) => cells(r)[1])).toEqual(["Chitra"]);
+    expect(tileValue("Total km")).toBe("6");
+  });
+
+  it("a login that expires on the next cycle leaves nothing of the last one on screen", async () => {
+    await mount();
+    expect(rows()).toHaveLength(2);
+    const { ApiClientError } = await import("../../../lib/api/http");
+    getRosterKmDays.mockRejectedValueOnce(new ApiClientError("Unauthorized", 401, null));
+    await click(container.querySelector<HTMLButtonElement>('button[aria-label="Previous cycle"]')!);
+    expect(container.textContent).toContain("Your login has expired");
+    expect(rows()).toHaveLength(0);
+    expect(tileValue("Total km")).toBe("—");
   });
 
   it("an expired login says so instead of an empty report", async () => {

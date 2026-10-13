@@ -107,6 +107,9 @@ const dayButton: CSSProperties = {
   cursor: "pointer",
   // The focus ring inside the cell, where the next cell cannot paint over it.
   outlineOffset: -2,
+  // A figure can still be double-clicked and copied, as it could as plain text.
+  userSelect: "text",
+  WebkitUserSelect: "text",
 };
 
 // As tall as the table may grow, so the two end together, and never so short
@@ -272,18 +275,19 @@ export default function KmReportPanel({ token, embedded = false }: KmReportPanel
     : "Click a km to see that day's route.";
 
   const pickDay = (engineerId: number, name: string, day: string, km: string) => {
-    // The day already on the map is not asked for again -- unless asking failed.
-    if (pick && pick.engineerId === engineerId && pick.day === day && answer?.status !== "failed") return;
-    pickCount.current += 1;
-    setPick({ engineerId, name, day, km, seq: pickCount.current });
     // Side by side the map is in view. On a narrower screen it sits under the
-    // table, often below the fold, and the click would seem to do nothing.
+    // table, often below the fold, and the click would seem to do nothing --
+    // also a click on the day already shown, so this comes first.
     const box = mapBox.current;
     if (box) {
       const { top, bottom, height } = box.getBoundingClientRect();
       const visible = Math.min(bottom, window.innerHeight) - Math.max(top, 0);
       if (visible < height / 2) box.scrollIntoView?.({ block: "nearest" });
     }
+    // The day already on the map is not asked for again -- unless asking failed.
+    if (pick && pick.engineerId === engineerId && pick.day === day && answer?.status !== "failed") return;
+    pickCount.current += 1;
+    setPick({ engineerId, name, day, km, seq: pickCount.current });
   };
 
   // Another cycle is another table: the day the map was showing is not in it.
@@ -616,6 +620,9 @@ export default function KmReportPanel({ token, embedded = false }: KmReportPanel
                               background: picked ? "#1d4ed8" : isSunday(day) ? "#f8fafc" : "#fff",
                               color: km === "-" ? "#9ca3af" : "#111827",
                               ...(canPick ? { padding: 0, cursor: "pointer" } : {}),
+                              // The app's hovered-row grey replaces only the background;
+                              // this keeps all of a taller, two-line cell blue.
+                              ...(picked ? { boxShadow: "inset 0 0 0 100vmax #1d4ed8" } : {}),
                             }}
                           >
                             {canPick ? (
@@ -727,7 +734,11 @@ export default function KmReportPanel({ token, embedded = false }: KmReportPanel
               </span>
             </div>
             {/* Isolated, so Leaflet's own layers stay inside this box. */}
-            <div ref={mapBox} style={{ position: "relative", isolation: "isolate", height: MAP_HEIGHT }}>
+            <div
+              ref={mapBox}
+              data-testid="km-route-box"
+              style={{ position: "relative", isolation: "isolate", height: MAP_HEIGHT }}
+            >
               <LiveTrackingMap
                 height="100%"
                 engineers={NO_ENGINEERS}

@@ -562,6 +562,45 @@ describe("KmReportPanel: the route map", () => {
     expect(dayCell("Arun", "2026-09-27")!.style.fontWeight).toBe("inherit");
   });
 
+  it("on a narrow screen a click brings the map up, also a click on the day already shown", async () => {
+    await mount();
+    // The map has wrapped under the table, below the fold.
+    const box = container.querySelector<HTMLDivElement>('[data-testid="km-route-box"]')!;
+    box.getBoundingClientRect = () => ({ top: 900, bottom: 1380, height: 480, left: 0, right: 400, width: 400, x: 0, y: 900, toJSON: () => ({}) });
+    const scrollIntoView = vi.fn();
+    box.scrollIntoView = scrollIntoView;
+    getEngineerDay.mockResolvedValue(engineerDay("2026-09-25", ROUTE_25));
+    await click(dayCell("Arun", "2026-09-25")!);
+    expect(scrollIntoView).toHaveBeenCalledTimes(1);
+    expect(scrollIntoView).toHaveBeenLastCalledWith({ block: "nearest" });
+    // Back up at the table, the same day clicked again: no second fetch, but the map comes up.
+    await click(dayCell("Arun", "2026-09-25")!);
+    expect(scrollIntoView).toHaveBeenCalledTimes(2);
+    expect(getEngineerDay).toHaveBeenCalledTimes(1);
+  });
+
+  it("with the map in view a click does not scroll", async () => {
+    await mount();
+    const box = container.querySelector<HTMLDivElement>('[data-testid="km-route-box"]')!;
+    box.getBoundingClientRect = () => ({ top: 300, bottom: 780, height: 480, left: 0, right: 400, width: 400, x: 0, y: 300, toJSON: () => ({}) });
+    const scrollIntoView = vi.fn();
+    box.scrollIntoView = scrollIntoView;
+    getEngineerDay.mockResolvedValue(engineerDay("2026-09-25", ROUTE_25));
+    await click(dayCell("Arun", "2026-09-25")!);
+    expect(scrollIntoView).not.toHaveBeenCalled();
+  });
+
+  it("the picked cell stays blue all over while its row is hovered, and a km can still be selected", async () => {
+    await mount();
+    getEngineerDay.mockResolvedValueOnce(engineerDay("2026-09-25", ROUTE_25));
+    await click(dayCell("Arun", "2026-09-25")!);
+    // The hover rule replaces the background only; an inset shadow survives it.
+    expect(dayCell("Arun", "2026-09-25")!.parentElement!.style.boxShadow).toContain("inset");
+    expect(dayCell("Arun", "2026-09-27")!.parentElement!.style.boxShadow).toBe("");
+    // As plain text could, a figure can be double-clicked and copied.
+    expect(dayCell("Arun", "2026-09-27")!.style.userSelect).toBe("text");
+  });
+
   it("another cycle clears the map: the day it showed is not in that table", async () => {
     await mount();
     getEngineerDay.mockResolvedValueOnce(engineerDay("2026-09-25", ROUTE_25));

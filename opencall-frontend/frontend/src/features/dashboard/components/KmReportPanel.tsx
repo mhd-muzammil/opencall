@@ -1,16 +1,28 @@
 "use client";
 
-import { useEffect, useMemo, useState, type CSSProperties } from "react";
+import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
+import dynamic from "next/dynamic";
 import { clearSession } from "../../../lib/session";
 import { isApiAuthError } from "../../../lib/api/http";
 import {
+  getEngineerDay,
   getRosterKmDays,
+  type EngineerDay,
   type EngineerKmDays,
   type RosterKmDaysResult,
 } from "../../../lib/payrollTrackingApiClient";
+import type { MapEngineer } from "../../../components/LiveTrackingMap";
 import { filterKmRows, formatKm, kmRegions, kmTotals, regionTone } from "../../../lib/kmReport";
+import { dayRouteLayers } from "../../../lib/kmRoute";
 import { billCycleFor, billCycleForKey, type BillCycle } from "../utils/billCycle";
 import { todayIsoDate } from "../utils/dateUtils";
+
+// The live tracking board's own map. Leaflet touches `window`, so it is
+// client-only here too.
+const LiveTrackingMap = dynamic(() => import("../../../components/LiveTrackingMap"), {
+  ssr: false,
+  loading: () => <div style={{ height: "100%" }} />,
+});
 
 /**
  * KM REPORT: how far every FSE travelled, day by day, over a bill cycle.
@@ -80,6 +92,51 @@ const frozen = (left: number, width: number, background: string, z: number): CSS
   zIndex: z,
 });
 
+// A km that can be clicked. Every part of the app's own button look -- a 40px
+// filled pill with white text -- is undone, so the cell still reads as a cell.
+const dayButton: CSSProperties = {
+  font: "inherit",
+  display: "block",
+  width: "100%",
+  minHeight: 0,
+  margin: 0,
+  padding: "8px 10px",
+  border: 0,
+  borderRadius: 0,
+  fontVariantNumeric: "tabular-nums",
+  cursor: "pointer",
+  // The focus ring inside the cell, where the next cell cannot paint over it.
+  outlineOffset: -2,
+};
+
+// As tall as the table may grow, so the two end together, and never so short
+// that a route cannot be read.
+const MAP_HEIGHT = "max(360px, calc(100vh - 320px))";
+
+// The report is history: the map draws the clicked day, no live positions.
+const NO_ENGINEERS: MapEngineer[] = [];
+const ignoreSelect = () => {};
+
+/** The day the map is showing: one cell of the table. */
+interface RoutePick {
+  engineerId: number;
+  name: string;
+  day: string;
+  /** The cell's figure, as the table printed it. */
+  km: string;
+  /**
+   * This pick's own number. The map brings a route into view when its
+   * selection changes, and two days of one engineer share an engineer id; the
+   * answer fetched for a pick carries its number, so one pick's route is never
+   * drawn under another's name.
+   */
+  seq: number;
+}
+
+type RouteAnswer =
+  | { seq: number; status: "ready"; day: EngineerDay }
+  | { seq: number; status: "failed"; message: string };
+
 function SummaryTile({ value, label }: { value: string; label: string }) {
   return (
     <div
@@ -119,6 +176,11 @@ export default function KmReportPanel({ token, embedded = false }: KmReportPanel
   // "" is All Regions.
   const [region, setRegion] = useState("");
   const [query, setQuery] = useState("");
+  // The day clicked in the table, and what came back for it.
+  const [pick, setPick] = useState<RoutePick | null>(null);
+  const [routeAnswer, setRouteAnswer] = useState<RouteAnswer | null>(null);
+  const pickCount = useRef(0);
+  const mapBox = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (!token || sessionExpired) return;
@@ -150,6 +212,85 @@ export default function KmReportPanel({ token, embedded = false }: KmReportPanel
       active = false;
     };
   }, [token, cycle.fromIso, cycle.toIso, sessionExpired]);
+
+  // The clicked day, from the same Payroll answer the board draws a day from.
+  useEffect(() => {
+    if (!token || sessionExpired || !pick) return;
+    let active = true;
+    const { seq } = pick;
+    getEngineerDay(token, pick.engineerId, pick.day)
+      .then((day) => {
+        if (active) setRouteAnswer({ seq, status: "ready", day });
+      })
+      .catch((e) => {
+        if (!active) return;
+        if (isApiAuthError(e)) {
+          // Ends where an expired login on a cycle ends: the banner and nothing
+          // else. Left on screen, the km would be relabelled by the cycle
+          // arrows, which load nothing while the login is gone.
+          setResult(null);
+          setSessionExpired(true);
+          return;
+        }
+        setRouteAnswer({
+          seq,
+          status: "failed",
+          message: e instanceof Error ? e.message : "Failed to load the route",
+        });
+      });
+    return () => {
+      active = false;
+    };
+  }, [token, sessionExpired, pick]);
+
+  // Only the answer for THIS pick. Between a click and its answer the last
+  // pick's route would otherwise stay drawn under the new name.
+  const answer = pick && routeAnswer?.seq === pick.seq ? routeAnswer : null;
+  const routeDay = answer?.status === "ready" ? answer.day : null;
+  const layers = useMemo(() => dayRouteLayers(routeDay), [routeDay]);
+  const routeNote =
+    pick == null || sessionExpired
+      ? null
+      : answer == null
+        ? "Loading the route…"
+        : answer.status === "failed"
+          ? `Could not load the route: ${answer.message}`
+          : layers.pathPoints.length < 2
+            ? "No route was recorded on this day."
+            : null;
+
+  // The route's own distance once it is here: Payroll's figure for that day
+  // now, the one the board shows. The table's is from when the report loaded,
+  // so for today the two can differ -- and then the label says so.
+  const routeKm = routeDay ? formatKm(routeDay.total_km) : null;
+  const routeKmShown = routeKm === "-" ? "0" : routeKm;
+  const kmDiffers = pick != null && routeKmShown != null && routeKmShown !== pick.km;
+  const routeLabel = pick
+    ? `${pick.name} · ${weekday(pick.day)} ${fullDate(pick.day)}${
+        routeKmShown != null ? ` · ${routeKmShown} km` : ""
+      }${kmDiffers ? ` (${pick.km} in the table)` : ""}`
+    : "Click a km to see that day's route.";
+
+  const pickDay = (engineerId: number, name: string, day: string, km: string) => {
+    // The day already on the map is not asked for again -- unless asking failed.
+    if (pick && pick.engineerId === engineerId && pick.day === day && answer?.status !== "failed") return;
+    pickCount.current += 1;
+    setPick({ engineerId, name, day, km, seq: pickCount.current });
+    // Side by side the map is in view. On a narrower screen it sits under the
+    // table, often below the fold, and the click would seem to do nothing.
+    const box = mapBox.current;
+    if (box) {
+      const { top, bottom, height } = box.getBoundingClientRect();
+      const visible = Math.min(bottom, window.innerHeight) - Math.max(top, 0);
+      if (visible < height / 2) box.scrollIntoView?.({ block: "nearest" });
+    }
+  };
+
+  // Another cycle is another table: the day the map was showing is not in it.
+  const goToCycle = (key: string) => {
+    setPick(null);
+    setCycleKey(key);
+  };
 
   const days = useMemo(() => result?.days ?? [], [result]);
   const engineers = useMemo<EngineerKmDays[]>(
@@ -193,7 +334,7 @@ export default function KmReportPanel({ token, embedded = false }: KmReportPanel
             <button
               type="button"
               aria-label="Previous cycle"
-              onClick={() => setCycleKey(previousCycle(cycle).key)}
+              onClick={() => goToCycle(previousCycle(cycle).key)}
               style={{
                 font: "inherit",
                 padding: "6px 10px",
@@ -225,7 +366,7 @@ export default function KmReportPanel({ token, embedded = false }: KmReportPanel
               type="button"
               aria-label="Next cycle"
               disabled={isCurrent}
-              onClick={() => setCycleKey(nextCycle(cycle).key)}
+              onClick={() => goToCycle(nextCycle(cycle).key)}
               style={{
                 padding: "6px 10px",
                 borderRadius: 8,
@@ -367,164 +508,263 @@ export default function KmReportPanel({ token, embedded = false }: KmReportPanel
         </p>
       )}
 
+      {/* The table on the left and, beside it, the map that draws whichever day
+          is clicked in it. Side by side while there is room for both; on a
+          narrow screen the map drops below the table. */}
       {shown.length > 0 && (
-        <h3
-          data-testid="km-table-title"
-          style={{ margin: "16px 0 8px", fontSize: 16, fontWeight: 700, color: "#111827" }}
-        >
-          RTPL APP KM
-        </h3>
-      )}
-      {shown.length > 0 && (
-        <div
-          data-testid="km-grid"
-          style={{
-            marginTop: 0,
-            overflow: "auto",
-            maxHeight: "calc(100vh - 320px)",
-            minHeight: 240,
-            border: "1px solid #e5e7eb",
-            borderRadius: 12,
-            background: "#fff",
-          }}
-        >
-          <table style={{ borderCollapse: "separate", borderSpacing: 0, fontSize: 13 }}>
-            <thead>
-              <tr>
-                <th style={{ ...cellBase, ...frozen(0, SNO_W, "#f9fafb", 4), top: 0, textAlign: "center", color: "#1d4ed8" }}>
-                  S.no
-                </th>
-                <th style={{ ...cellBase, ...frozen(SNO_W, NAME_W, "#f9fafb", 4), top: 0, textAlign: "left", color: "#1d4ed8" }}>
-                  FSE
-                </th>
-                <th
-                  style={{
-                    ...cellBase,
-                    ...frozen(SNO_W + NAME_W, PLACE_W, "#f9fafb", 4),
-                    top: 0,
-                    textAlign: "left",
-                    color: "#1d4ed8",
-                  }}
-                >
-                  Region
-                </th>
-                {days.map((day) => (
-                  <th
-                    key={day}
-                    title={fullDate(day)}
-                    style={{
-                      ...cellBase,
-                      position: "sticky",
-                      top: 0,
-                      zIndex: 3,
-                      minWidth: 60,
-                      textAlign: "center",
-                      // Sundays shaded, so a week reads as a week.
-                      background: isSunday(day) ? "#f1f5f9" : "#f9fafb",
-                      color: "#b45309",
-                    }}
-                  >
-                    <div style={{ fontWeight: 700 }}>{dayOfMonth(day)}</div>
-                    <div style={{ fontSize: 11, fontWeight: 500, color: "#6b7280" }}>{weekday(day)}</div>
-                  </th>
-                ))}
-                <th style={{ ...cellBase, position: "sticky", top: 0, zIndex: 3, background: "#f9fafb", color: "#1d4ed8" }}>
-                  Days
-                </th>
-                <th style={{ ...cellBase, position: "sticky", top: 0, zIndex: 3, background: "#f9fafb", color: "#1d4ed8" }}>
-                  Total km
-                </th>
-              </tr>
-            </thead>
-            <tbody>
-              {shown.map((row, index) => (
-                <tr key={`${row.engineer_id ?? "x"}-${row.engineer_name}`} data-testid="km-row">
-                  <td style={{ ...cellBase, ...frozen(0, SNO_W, "#fff", 2), textAlign: "center" }}>{index + 1}</td>
-                  <td
-                    style={{
-                      ...cellBase,
-                      ...frozen(SNO_W, NAME_W, "#fff", 2),
-                      fontWeight: 600,
-                      whiteSpace: "normal",
-                      overflowWrap: "anywhere",
-                    }}
-                  >
-                    {row.engineer_name}
-                  </td>
-                  <td style={{ ...cellBase, ...frozen(SNO_W + NAME_W, PLACE_W, "#fff", 2) }}>{row.branch ?? "—"}</td>
-                  {days.map((day) => {
-                    const km = formatKm(row.days[day]);
-                    return (
-                      <td
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 16, alignItems: "flex-start" }}>
+          <div style={{ flex: "3 1 520px", minWidth: 0 }}>
+            <h3
+              data-testid="km-table-title"
+              style={{ margin: "16px 0 8px", fontSize: 16, fontWeight: 700, color: "#111827" }}
+            >
+              RTPL APP KM
+            </h3>
+            <div
+              data-testid="km-grid"
+              style={{
+                marginTop: 0,
+                overflow: "auto",
+                maxHeight: "calc(100vh - 320px)",
+                minHeight: 240,
+                border: "1px solid #e5e7eb",
+                borderRadius: 12,
+                background: "#fff",
+              }}
+            >
+              <table style={{ borderCollapse: "separate", borderSpacing: 0, fontSize: 13 }}>
+                <thead>
+                  <tr>
+                    <th style={{ ...cellBase, ...frozen(0, SNO_W, "#f9fafb", 4), top: 0, textAlign: "center", color: "#1d4ed8" }}>
+                      S.no
+                    </th>
+                    <th style={{ ...cellBase, ...frozen(SNO_W, NAME_W, "#f9fafb", 4), top: 0, textAlign: "left", color: "#1d4ed8" }}>
+                      FSE
+                    </th>
+                    <th
+                      style={{
+                        ...cellBase,
+                        ...frozen(SNO_W + NAME_W, PLACE_W, "#f9fafb", 4),
+                        top: 0,
+                        textAlign: "left",
+                        color: "#1d4ed8",
+                      }}
+                    >
+                      Region
+                    </th>
+                    {days.map((day) => (
+                      <th
                         key={day}
-                        title={`${row.engineer_name} · ${fullDate(day)}`}
+                        title={fullDate(day)}
                         style={{
                           ...cellBase,
+                          position: "sticky",
+                          top: 0,
+                          zIndex: 3,
+                          minWidth: 60,
                           textAlign: "center",
-                          background: isSunday(day) ? "#f8fafc" : "#fff",
-                          color: km === "-" ? "#9ca3af" : "#111827",
+                          // Sundays shaded, so a week reads as a week.
+                          background: isSunday(day) ? "#f1f5f9" : "#f9fafb",
+                          color: "#b45309",
                         }}
                       >
-                        {km}
+                        <div style={{ fontWeight: 700 }}>{dayOfMonth(day)}</div>
+                        <div style={{ fontSize: 11, fontWeight: 500, color: "#6b7280" }}>{weekday(day)}</div>
+                      </th>
+                    ))}
+                    <th style={{ ...cellBase, position: "sticky", top: 0, zIndex: 3, background: "#f9fafb", color: "#1d4ed8" }}>
+                      Days
+                    </th>
+                    <th style={{ ...cellBase, position: "sticky", top: 0, zIndex: 3, background: "#f9fafb", color: "#1d4ed8" }}>
+                      Total km
+                    </th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {shown.map((row, index) => (
+                    <tr key={`${row.engineer_id ?? "x"}-${row.engineer_name}`} data-testid="km-row">
+                      <td style={{ ...cellBase, ...frozen(0, SNO_W, "#fff", 2), textAlign: "center" }}>{index + 1}</td>
+                      <td
+                        style={{
+                          ...cellBase,
+                          ...frozen(SNO_W, NAME_W, "#fff", 2),
+                          fontWeight: 600,
+                          whiteSpace: "normal",
+                          overflowWrap: "anywhere",
+                        }}
+                      >
+                        {row.engineer_name}
                       </td>
-                    );
-                  })}
-                  <td style={{ ...cellBase, textAlign: "center" }}>{row.days_tracked}</td>
-                  <td style={{ ...cellBase, textAlign: "right", fontWeight: 700, color: "#1d4ed8" }} data-testid="km-total">
-                    {formatKm(row.distance_km) === "-" ? "0" : formatKm(row.distance_km)}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-            <tfoot>
-              {/* Each day's total over the FSEs on screen, and the cycle's. */}
-              <tr data-testid="km-footer">
-                <td
-                  colSpan={3}
+                      <td style={{ ...cellBase, ...frozen(SNO_W + NAME_W, PLACE_W, "#fff", 2) }}>{row.branch ?? "—"}</td>
+                      {days.map((day) => {
+                        const km = formatKm(row.days[day]);
+                        const engineerId = row.engineer_id;
+                        // A day with distance on it has a route to show; a dash has none.
+                        const canPick = km !== "-" && engineerId != null;
+                        const picked = canPick && pick?.engineerId === engineerId && pick.day === day;
+                        return (
+                          <td
+                            key={day}
+                            title={`${row.engineer_name} · ${fullDate(day)}`}
+                            // All of the cell takes the click, also where a two-line
+                            // name makes it taller than the button. The button is
+                            // the way in for the keyboard; its click lands here too.
+                            onClick={canPick ? () => pickDay(engineerId, row.engineer_name, day, km) : undefined}
+                            style={{
+                              ...cellBase,
+                              textAlign: "center",
+                              background: picked ? "#1d4ed8" : isSunday(day) ? "#f8fafc" : "#fff",
+                              color: km === "-" ? "#9ca3af" : "#111827",
+                              ...(canPick ? { padding: 0, cursor: "pointer" } : {}),
+                            }}
+                          >
+                            {canPick ? (
+                              <button
+                                type="button"
+                                data-testid="km-day"
+                                aria-pressed={picked}
+                                aria-label={`${km} km: show ${row.engineer_name}'s route on ${fullDate(day)}`}
+                                style={{
+                                  ...dayButton,
+                                  // The fill is the button's too: the app paints a
+                                  // hovered row's cells grey with !important, which
+                                  // would leave the white figure on light grey.
+                                  background: picked ? "#1d4ed8" : "transparent",
+                                  color: picked ? "#fff" : "#111827",
+                                  // The cell's own weight, as before, until picked.
+                                  fontWeight: picked ? 700 : "inherit",
+                                }}
+                              >
+                                {km}
+                              </button>
+                            ) : (
+                              km
+                            )}
+                          </td>
+                        );
+                      })}
+                      <td style={{ ...cellBase, textAlign: "center" }}>{row.days_tracked}</td>
+                      <td style={{ ...cellBase, textAlign: "right", fontWeight: 700, color: "#1d4ed8" }} data-testid="km-total">
+                        {formatKm(row.distance_km) === "-" ? "0" : formatKm(row.distance_km)}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+                <tfoot>
+                  {/* Each day's total over the FSEs on screen, and the cycle's. */}
+                  <tr data-testid="km-footer">
+                    <td
+                      colSpan={3}
+                      style={{
+                        ...cellBase,
+                        ...frozen(0, SNO_W + NAME_W + PLACE_W, "#f9fafb", 4),
+                        position: "sticky",
+                        bottom: 0,
+                        fontWeight: 700,
+                      }}
+                    >
+                      Total
+                    </td>
+                    {days.map((day) => (
+                      <td
+                        key={day}
+                        style={{
+                          ...cellBase,
+                          position: "sticky",
+                          bottom: 0,
+                          zIndex: 3,
+                          background: "#f9fafb",
+                          textAlign: "center",
+                          fontWeight: 700,
+                        }}
+                      >
+                        {formatKm(totals.byDay[day])}
+                      </td>
+                    ))}
+                    <td style={{ ...cellBase, position: "sticky", bottom: 0, zIndex: 3, background: "#f9fafb" }} />
+                    <td
+                      style={{
+                        ...cellBase,
+                        position: "sticky",
+                        bottom: 0,
+                        zIndex: 3,
+                        background: "#f9fafb",
+                        textAlign: "right",
+                        fontWeight: 700,
+                        color: "#1d4ed8",
+                      }}
+                    >
+                      {formatKm(totals.total) === "-" ? "0" : formatKm(totals.total)}
+                    </td>
+                  </tr>
+                </tfoot>
+              </table>
+            </div>
+          </div>
+
+          <div data-testid="km-route" style={{ flex: "2 1 360px", minWidth: 0 }}>
+            <div
+              style={{ display: "flex", alignItems: "baseline", gap: 8, margin: "16px 0 8px", minWidth: 0 }}
+            >
+              <h3 style={{ margin: 0, fontSize: 16, fontWeight: 700, color: "#111827", whiteSpace: "nowrap" }}>
+                Route map
+              </h3>
+              <span
+                data-testid="km-route-label"
+                // One line, so the map starts level with the table; a long name
+                // can cut it short, and the whole of it is here.
+                title={routeLabel}
+                style={{
+                  fontSize: 13,
+                  color: pick ? "#374151" : "#6b7280",
+                  whiteSpace: "nowrap",
+                  overflow: "hidden",
+                  textOverflow: "ellipsis",
+                  minWidth: 0,
+                }}
+              >
+                {routeLabel}
+              </span>
+            </div>
+            {/* Isolated, so Leaflet's own layers stay inside this box. */}
+            <div ref={mapBox} style={{ position: "relative", isolation: "isolate", height: MAP_HEIGHT }}>
+              <LiveTrackingMap
+                height="100%"
+                engineers={NO_ENGINEERS}
+                selectedId={pick?.seq ?? null}
+                pathPoints={layers.pathPoints}
+                {...(layers.rawFromIndex !== undefined ? { rawFromIndex: layers.rawFromIndex } : {})}
+                stops={layers.stops}
+                punches={layers.punches}
+                onSelect={ignoreSelect}
+              />
+              {routeNote && (
+                <div
+                  data-testid="km-route-note"
+                  role="status"
                   style={{
-                    ...cellBase,
-                    ...frozen(0, SNO_W + NAME_W + PLACE_W, "#f9fafb", 4),
-                    position: "sticky",
-                    bottom: 0,
-                    fontWeight: 700,
+                    position: "absolute",
+                    top: 10,
+                    left: "50%",
+                    transform: "translateX(-50%)",
+                    zIndex: 1100,
+                    maxWidth: "calc(100% - 120px)",
+                    padding: "6px 12px",
+                    borderRadius: 8,
+                    border: "1px solid #e5e7eb",
+                    background: "rgba(255,255,255,0.96)",
+                    boxShadow: "0 2px 8px rgba(0,0,0,0.08)",
+                    color: answer?.status === "failed" ? "#b91c1c" : "#374151",
+                    fontSize: 12.5,
+                    textAlign: "center",
+                    pointerEvents: "none",
                   }}
                 >
-                  Total
-                </td>
-                {days.map((day) => (
-                  <td
-                    key={day}
-                    style={{
-                      ...cellBase,
-                      position: "sticky",
-                      bottom: 0,
-                      zIndex: 3,
-                      background: "#f9fafb",
-                      textAlign: "center",
-                      fontWeight: 700,
-                    }}
-                  >
-                    {formatKm(totals.byDay[day])}
-                  </td>
-                ))}
-                <td style={{ ...cellBase, position: "sticky", bottom: 0, zIndex: 3, background: "#f9fafb" }} />
-                <td
-                  style={{
-                    ...cellBase,
-                    position: "sticky",
-                    bottom: 0,
-                    zIndex: 3,
-                    background: "#f9fafb",
-                    textAlign: "right",
-                    fontWeight: 700,
-                    color: "#1d4ed8",
-                  }}
-                >
-                  {formatKm(totals.total) === "-" ? "0" : formatKm(totals.total)}
-                </td>
-              </tr>
-            </tfoot>
-          </table>
+                  {routeNote}
+                </div>
+              )}
+            </div>
+          </div>
         </div>
       )}
 

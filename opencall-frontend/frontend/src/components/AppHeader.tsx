@@ -6,7 +6,7 @@ import type {
   RuntimeHealthResponse,
 } from "../lib/apiClient";
 
-export type WorkspaceView = "overview" | "closed-calls" | "records" | "record-format" | "parts-catalog" | "quotations" | "rtpl" | "rtpl-dashboard" | "pivot" | "flex" | "productivity" | "live-tracking" | "km-report" | "tn-view-status" | "sla-tat" | "flex-eod-bod" | "admin-engineers" | "admin-rtpl-statuses" | "warranty" | "customer-emails" | "renewal-pipeline" | "vendor-dashboard";
+export type WorkspaceView = "overview" | "closed-calls" | "records" | "record-format" | "parts-catalog" | "quotations" | "rtpl" | "rtpl-dashboard" | "pivot" | "flex" | "productivity" | "live-tracking" | "tn-view-status" | "sla-tat" | "flex-eod-bod" | "admin-engineers" | "admin-rtpl-statuses" | "warranty" | "customer-emails" | "renewal-pipeline" | "vendor-dashboard";
 
 export const HEADER_COMPACT_STORAGE_KEY = "opencall.headerCompact";
 
@@ -138,8 +138,6 @@ export function AppHeader({
         return "Engineer Productivity";
       case "live-tracking":
         return "Live Engineer Tracking";
-      case "km-report":
-        return "KM Report";
       case "tn-view-status":
         return "TN VIEW Status";
       case "sla-tat":
@@ -183,8 +181,6 @@ export function AppHeader({
         return "Dashboards / Engineer Productivity";
       case "live-tracking":
         return "Dashboards / Live Tracking";
-      case "km-report":
-        return "Dashboards / KM Report";
       case "tn-view-status":
         return "Dashboards / TN VIEW Status";
       case "sla-tat":

@@ -747,8 +747,9 @@ export default function RouteKmSection({
           >
             {routeLabel}
           </span>
-          {/* The same places on Google, to set its km beside Ola's by hand. A
-              link, styled here in full: the app gives links no look of their own. */}
+          {/* The same places on Google, by bike, to set its km beside Ola's by
+              hand. A link, styled here in full: the app gives links no look of
+              their own. */}
           {googleUrl && (
             <a
               data-testid="route-km-google"
@@ -757,13 +758,13 @@ export default function RouteKmSection({
               rel="noopener noreferrer"
               aria-label={
                 points.length > GOOGLE_MAX_STOPS
-                  ? `Open ${GOOGLE_MAX_STOPS} of the ${points.length} places in Google Maps: the first ${GOOGLE_MAX_STOPS - 1} and the last`
-                  : "Open this route in Google Maps"
+                  ? `Open ${GOOGLE_MAX_STOPS} of the ${points.length} places by bike in Google Maps: the first ${GOOGLE_MAX_STOPS - 1} and the last`
+                  : "Open this route by bike in Google Maps"
               }
               title={
                 points.length > GOOGLE_MAX_STOPS
-                  ? `Google's directions take ${GOOGLE_MAX_STOPS} places at most: this opens the first ${GOOGLE_MAX_STOPS - 1} and the last, so Google's km will be shorter than Ola's`
-                  : "The same places, in the same order, on Google Maps"
+                  ? `Google's directions take ${GOOGLE_MAX_STOPS} places at most: this opens the first ${GOOGLE_MAX_STOPS - 1} and the last, by bike, so Google's km will be shorter than Ola's`
+                  : "The same places, in the same order, by bike on Google Maps"
               }
               style={{
                 // Clear of the line's height, so the map does not move down a
@@ -784,8 +785,8 @@ export default function RouteKmSection({
               }}
             >
               {points.length > GOOGLE_MAX_STOPS
-                ? `Google Maps (first ${GOOGLE_MAX_STOPS - 1} + last of ${points.length})`
-                : "Google Maps"}
+                ? `Google Maps · bike (first ${GOOGLE_MAX_STOPS - 1} + last of ${points.length})`
+                : "Google Maps · bike"}
             </a>
           )}
         </div>
@@ -836,7 +837,7 @@ export default function RouteKmSection({
                   points.length > GOOGLE_MAX_STOPS
                     ? `, through the first ${GOOGLE_MAX_STOPS - 1} places and the last`
                     : ""
-                }, with its own km. The km in the table is Ola's.`}
+                }, with its own km: Google's embedded map has no bike route, so the Google Maps button opens it by bike. The km in the table is Ola's.`}
               </div>
             )}
             {/* Google draws its own markers, so the office stand-in is said

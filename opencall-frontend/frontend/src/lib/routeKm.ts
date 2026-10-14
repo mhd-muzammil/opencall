@@ -21,12 +21,20 @@ function googleStops(points: Place[]): Place[] {
 }
 
 /**
- * The same places on Google Maps, so the office can hold Ola's figure up
- * against Google's by hand. Null when there are not two places to go between.
+ * The same places on Google Maps, by bike -- Google's two-wheeler mode, how
+ * the engineers ride -- so the office can hold Ola's figure up against
+ * Google's by hand. Google's documented directions link (api=1). Null when
+ * there are not two places to go between.
  */
 export function googleMapsDirectionsUrl(points: Place[]): string | null {
   if (points.length < 2) return null;
-  return `https://www.google.com/maps/dir/${googleStops(points).map(place).join("/")}`;
+  const stops = googleStops(points);
+  const between = stops.slice(1, -1);
+  return (
+    `https://www.google.com/maps/dir/?api=1&origin=${place(stops[0]!)}&destination=${place(stops[stops.length - 1]!)}` +
+    (between.length ? `&waypoints=${between.map(place).join("%7C")}` : "") +
+    "&travelmode=two-wheeler"
+  );
 }
 
 /**

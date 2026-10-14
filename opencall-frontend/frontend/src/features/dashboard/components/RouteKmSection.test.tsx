@@ -430,7 +430,9 @@ describe("RouteKmSection: the map", () => {
 
     await settle(() => answer.resolve(routeDay()));
     expect(mapSrc()).toBe(DAY_ON_GOOGLE);
-    expect(mapNote()).toBe("Google's own route, by car, with its own km. The km in the table is Ola's.");
+    expect(mapNote()).toBe(
+      "Google's own route, by car, with its own km: Google's embedded map has no bike route, so the Google Maps button opens it by bike. The km in the table is Ola's.",
+    );
     expect(container.querySelector('[data-testid="route-km-map-office"]')).toBeNull();
     expect(routeNote()).toBeNull();
     expect(routeLabel()).toBe(`Arun · Fri ${longDate("2026-09-25")} · 12.74 km · 5 stops`);
@@ -438,12 +440,13 @@ describe("RouteKmSection: the map", () => {
 
     const link = googleLink()!;
     expect(link.getAttribute("href")).toBe(
-      "https://www.google.com/maps/dir/12.7409,77.8253/12.7512,77.8101/12.7633,77.7952/12.7298,77.8317/12.7411,77.8249",
+      "https://www.google.com/maps/dir/?api=1&origin=12.7409,77.8253&destination=12.7411,77.8249" +
+        "&waypoints=12.7512,77.8101%7C12.7633,77.7952%7C12.7298,77.8317&travelmode=two-wheeler",
     );
     expect(link.getAttribute("target")).toBe("_blank");
     expect(link.getAttribute("rel")).toBe("noopener noreferrer");
-    expect(link.getAttribute("aria-label")).toBe("Open this route in Google Maps");
-    expect(link.textContent).toBe("Google Maps");
+    expect(link.getAttribute("aria-label")).toBe("Open this route by bike in Google Maps");
+    expect(link.textContent).toBe("Google Maps · bike");
     // Its own colours: the app gives a link none.
     expect(link.style.color).toBe("rgb(29, 78, 216)");
     expect(link.style.textDecoration).toBe("none");
@@ -676,9 +679,9 @@ describe("RouteKmSection: what the table says about itself", () => {
     const many = Array.from({ length: 12 }, (_, n) => ({ ...DAY_POINTS[1]!, at: at(9, n), latitude: 12.7 + n / 100 }));
     getRouteKmDay.mockResolvedValueOnce(routeDay({ points: many }));
     await click(dayButton("Arun", "2026-09-25")!);
-    expect(googleLink()?.textContent).toBe("Google Maps (first 9 + last of 12)");
+    expect(googleLink()?.textContent).toBe("Google Maps · bike (first 9 + last of 12)");
     expect(googleLink()?.getAttribute("aria-label")).toBe(
-      "Open 10 of the 12 places in Google Maps: the first 9 and the last",
+      "Open 10 of the 12 places by bike in Google Maps: the first 9 and the last",
     );
   });
 
@@ -823,7 +826,8 @@ describe("RouteKmSection: Google's map", () => {
     expect(daddr).toHaveLength(9);
     expect(daddr[daddr.length - 1]).toBe("12.11,77.11");
     expect(mapNote()).toBe(
-      "Google's own route, by car, through the first 9 places and the last, with its own km. The km in the table is Ola's.",
+      "Google's own route, by car, through the first 9 places and the last, with its own km: Google's embedded map has" +
+        " no bike route, so the Google Maps button opens it by bike. The km in the table is Ola's.",
     );
   });
 

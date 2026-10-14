@@ -18,15 +18,44 @@ const ready = (km: number): RouteKmCell => ({ km, points: 3, status: "ready" });
 const FAILED: RouteKmCell = { km: null, points: 4, status: "failed" };
 const PENDING: RouteKmCell = { km: null, points: 0, status: "pending" };
 
+/** The places a directions link goes through, in order. */
+function linkedPlaces(url: string): (string | null)[] {
+  const q = new URL(url).searchParams;
+  const between = q.get("waypoints");
+  return [q.get("origin"), ...(between ? between.split("|") : []), q.get("destination")];
+}
+
 describe("googleMapsDirectionsUrl", () => {
-  it("is Google's directions page through the same places, in order", () => {
+  it("is Google's directions page through the same places, in order, by bike", () => {
     expect(
       googleMapsDirectionsUrl([
         { latitude: 12.7409, longitude: 77.8253 },
         { latitude: 12.7512, longitude: 77.8101 },
         { latitude: 12.7411, longitude: 77.8249 },
       ]),
-    ).toBe("https://www.google.com/maps/dir/12.7409,77.8253/12.7512,77.8101/12.7411,77.8249");
+    ).toBe(
+      "https://www.google.com/maps/dir/?api=1&origin=12.7409,77.8253&destination=12.7411,77.8249" +
+        "&waypoints=12.7512,77.8101&travelmode=two-wheeler",
+    );
+  });
+
+  it("two places need nothing between them", () => {
+    expect(
+      googleMapsDirectionsUrl([
+        { latitude: 12.7409, longitude: 77.8253 },
+        { latitude: 12.7411, longitude: 77.8249 },
+      ]),
+    ).toBe(
+      "https://www.google.com/maps/dir/?api=1&origin=12.7409,77.8253&destination=12.7411,77.8249&travelmode=two-wheeler",
+    );
+  });
+
+  it("opens in Google's two-wheeler mode, how the engineers ride", () => {
+    const url = googleMapsDirectionsUrl([
+      { latitude: 12.7409, longitude: 77.8253 },
+      { latitude: 12.7512, longitude: 77.8101 },
+    ])!;
+    expect(new URL(url).searchParams.get("travelmode")).toBe("two-wheeler");
   });
 
   it("is nothing with fewer than two places", () => {
@@ -36,7 +65,7 @@ describe("googleMapsDirectionsUrl", () => {
 
   it("Google takes ten places: a longer day keeps its first nine and its last", () => {
     const points = Array.from({ length: 12 }, (_, i) => ({ latitude: 12 + i / 100, longitude: 77 + i / 100 }));
-    const stops = googleMapsDirectionsUrl(points)!.replace("https://www.google.com/maps/dir/", "").split("/");
+    const stops = linkedPlaces(googleMapsDirectionsUrl(points)!);
     expect(stops).toHaveLength(10);
     expect(stops.slice(0, 9)).toEqual(points.slice(0, 9).map((p) => `${p.latitude},${p.longitude}`));
     expect(stops[9]).toBe("12.11,77.11");
@@ -44,9 +73,7 @@ describe("googleMapsDirectionsUrl", () => {
 
   it("ten places go as they are", () => {
     const points = Array.from({ length: 10 }, (_, i) => ({ latitude: 12 + i / 100, longitude: 77 + i / 100 }));
-    expect(googleMapsDirectionsUrl(points)!.split("/").slice(-10)).toEqual(
-      points.map((p) => `${p.latitude},${p.longitude}`),
-    );
+    expect(linkedPlaces(googleMapsDirectionsUrl(points)!)).toEqual(points.map((p) => `${p.latitude},${p.longitude}`));
   });
 });
 
@@ -93,7 +120,7 @@ describe("googleMapsEmbedUrl", () => {
   it("takes the same ten places as the directions link: the first nine and the last", () => {
     const points = Array.from({ length: 12 }, (_, i) => ({ latitude: 12 + i / 100, longitude: 77 + i / 100 }));
     const params = new URL(googleMapsEmbedUrl(points)!).searchParams;
-    const linked = googleMapsDirectionsUrl(points)!.replace("https://www.google.com/maps/dir/", "").split("/");
+    const linked = linkedPlaces(googleMapsDirectionsUrl(points)!);
     expect([params.get("saddr"), ...params.get("daddr")!.split(" to:")]).toEqual(linked);
   });
 

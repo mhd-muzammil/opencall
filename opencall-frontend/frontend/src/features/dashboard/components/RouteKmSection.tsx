@@ -329,6 +329,7 @@ export default function RouteKmSection({
   const googleUrl = googleMapsDirectionsUrl(points);
   // Google's map beside the table: the picked day's places, or the region.
   const mapSrc = googleMapsEmbedUrl(points) ?? GOOGLE_AREA_EMBED_URL;
+  const dayAtOffice = points.some((point) => point.office);
   const dayFailed = shownAnswer?.status === "failed" || routeDay?.status === "failed";
   const routeNote =
     pick == null
@@ -363,7 +364,8 @@ export default function RouteKmSection({
     if (box) {
       const { top, bottom, height } = box.getBoundingClientRect();
       const visible = Math.min(bottom, window.innerHeight) - Math.max(top, 0);
-      if (visible < height / 2) box.scrollIntoView?.({ block: "nearest" });
+      // Centred, so the notes under the map come into view with it.
+      if (visible < height / 2) box.scrollIntoView?.({ block: "center" });
     }
     // The day already on the map is not asked for again -- unless asking
     // failed, or Ola had not measured it or could not.
@@ -800,8 +802,12 @@ export default function RouteKmSection({
         >
           {/* Google's own map, embedded the way Google lets anyone embed one:
               no key and no billing. The picked day's places, or the region
-              before one is picked. */}
+              before one is picked. A new frame for each, not the old one
+              sent elsewhere: a frame that navigates adds to the browser's
+              history, and Back would then move the map instead of leaving
+              the page. */}
           <iframe
+            key={mapSrc}
             data-testid="route-km-google-map"
             title={pick ? `Google map: ${routeLabel}` : "Google map"}
             src={mapSrc}
@@ -813,7 +819,7 @@ export default function RouteKmSection({
         </div>
         {/* Under the map, not over it: Google's own card and controls sit on
             the map, and nothing here may cover them. */}
-        {(routeNote || googleUrl) && (
+        {(routeNote || googleUrl || dayAtOffice) && (
           <div style={{ marginTop: 8, display: "grid", gap: 4, fontSize: 12, color: "#6b7280" }}>
             {routeNote && (
               <div
@@ -831,6 +837,16 @@ export default function RouteKmSection({
                     ? `, through the first ${GOOGLE_MAX_STOPS - 1} places and the last`
                     : ""
                 }, with its own km. The km in the table is Ola's.`}
+              </div>
+            )}
+            {/* Google draws its own markers, so the office stand-in is said
+                here, in the table's words. */}
+            {dayAtOffice && (
+              <div data-testid="route-km-map-office">
+                <span aria-hidden="true" style={{ color: "#b45309", fontWeight: 700 }}>
+                  •
+                </span>{" "}
+                {OFFICE_TITLE}: this route starts or ends there, not at a GPS fix.
               </div>
             )}
           </div>

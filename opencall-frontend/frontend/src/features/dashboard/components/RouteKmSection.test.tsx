@@ -431,6 +431,7 @@ describe("RouteKmSection: the map", () => {
     await settle(() => answer.resolve(routeDay()));
     expect(mapSrc()).toBe(DAY_ON_GOOGLE);
     expect(mapNote()).toBe("Google's own route, by car, with its own km. The km in the table is Ola's.");
+    expect(container.querySelector('[data-testid="route-km-map-office"]')).toBeNull();
     expect(routeNote()).toBeNull();
     expect(routeLabel()).toBe(`Arun · Fri ${longDate("2026-09-25")} · 12.74 km · 5 stops`);
     expect(container.querySelector('[data-testid="route-km-label"]')?.getAttribute("title")).toBe(routeLabel());
@@ -571,7 +572,7 @@ describe("RouteKmSection: the map", () => {
     getRouteKmDay.mockResolvedValue(routeDay());
     await click(dayButton("Arun", "2026-09-25")!);
     expect(scrollIntoView).toHaveBeenCalledTimes(1);
-    expect(scrollIntoView).toHaveBeenLastCalledWith({ block: "nearest" });
+    expect(scrollIntoView).toHaveBeenLastCalledWith({ block: "center" });
     await click(dayButton("Arun", "2026-09-25")!);
     expect(scrollIntoView).toHaveBeenCalledTimes(2);
     expect(getRouteKmDay).toHaveBeenCalledTimes(1);
@@ -800,7 +801,9 @@ describe("RouteKmSection: Google's map", () => {
 
     getRouteKmDay.mockResolvedValueOnce(routeDay());
     await click(dayButton("Arun", "2026-09-25")!);
-    expect(frame.title).toBe(`Google map: Arun · Fri ${longDate("2026-09-25")} · 12.74 km · 5 stops`);
+    expect(container.querySelector<HTMLIFrameElement>('[data-testid="route-km-google-map"]')!.title).toBe(
+      `Google map: Arun · Fri ${longDate("2026-09-25")} · 12.74 km · 5 stops`,
+    );
   });
 
   it("a day of more than ten places: Google takes the first nine and the last, and the note says so", async () => {
@@ -834,5 +837,33 @@ describe("RouteKmSection: Google's map", () => {
     const note = container.querySelector('[data-testid="route-km-note"]')!;
     expect(box.contains(note)).toBe(false);
     expect(note.getAttribute("role")).toBe("status");
+  });
+});
+
+describe("RouteKmSection: Google's map, from the review", () => {
+  const frame = () => container.querySelector<HTMLIFrameElement>('[data-testid="route-km-google-map"]')!;
+
+  it("each map is a fresh frame, so the browser's Back leaves the page instead of moving the map", async () => {
+    await mount();
+    const region = frame();
+    getRouteKmDay.mockResolvedValueOnce(routeDay());
+    await click(dayButton("Arun", "2026-09-25")!);
+    const day = frame();
+    expect(day).not.toBe(region);
+    expect(day.getAttribute("src")).toBe(DAY_ON_GOOGLE);
+    // The day already shown keeps its frame; there is only ever one.
+    await click(dayButton("Arun", "2026-09-25")!);
+    expect(frame()).toBe(day);
+    expect(container.querySelectorAll('[data-testid="route-km-google-map"]')).toHaveLength(1);
+  });
+
+  it("a day whose Login or Logout stands at the office says so under the map", async () => {
+    const atOffice = DAY_POINTS.map((point) => (point.kind === "checkin" ? point : { ...point, office: true }));
+    getRouteKmDay.mockResolvedValueOnce(routeDay({ points: atOffice }));
+    await mount();
+    await click(dayButton("Arun", "2026-09-25")!);
+    expect(container.querySelector('[data-testid="route-km-map-office"]')?.textContent).toBe(
+      "• A Login or Logout with no GPS was placed at the FSE's office: this route starts or ends there, not at a GPS fix.",
+    );
   });
 });

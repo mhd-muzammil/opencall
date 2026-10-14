@@ -52,6 +52,18 @@ vi.mock("next/dynamic", async () => {
   const map = await import("../../../components/LiveTrackingMap");
   return { default: () => map.default };
 });
+// The ROUTE KM table under this one has tests of its own. Here it only has to
+// be in its place, and handed this cycle and these rows.
+const routeKmSection = vi.fn();
+vi.mock("./RouteKmSection", async () => {
+  const { createElement: h } = await import("react");
+  return {
+    default: (props: Record<string, unknown>) => {
+      routeKmSection(props);
+      return h("div", { "data-testid": "route-km-section" });
+    },
+  };
+});
 
 const DAYS = ["2026-09-25", "2026-09-26", "2026-09-27"];
 
@@ -613,5 +625,70 @@ describe("KmReportPanel: the route map", () => {
     expect(drawnRoute()).toBeNull();
     expect(container.querySelectorAll('[aria-pressed="true"][data-testid="km-day"]')).toHaveLength(0);
     expect(getEngineerDay).toHaveBeenCalledTimes(1);
+  });
+});
+
+/**
+ * The ROUTE KM table: under the RTPL table and its map, asked about the cycle's
+ * FSEs, showing the ones on screen.
+ */
+
+interface RouteKmProps {
+  token: string;
+  fromIso: string;
+  toIso: string;
+  days: string[];
+  engineers: EngineerKmDays[];
+  shown: EngineerKmDays[];
+  onSessionExpired: () => void;
+}
+const routeKmProps = () => routeKmSection.mock.lastCall?.[0] as RouteKmProps;
+const routeKm = () => container.querySelector('[data-testid="route-km-section"]');
+const names = (list: EngineerKmDays[]) => list.map((row) => row.engineer_name);
+
+describe("KmReportPanel: the ROUTE KM table", () => {
+  it("comes once, after the RTPL table and its map, for the cycle's FSEs", async () => {
+    await mount();
+    expect(container.querySelectorAll('[data-testid="route-km-section"]')).toHaveLength(1);
+    expect(container.querySelector('[data-testid="km-route"]')?.parentElement?.nextElementSibling).toBe(routeKm());
+    expect(routeKmProps()).toMatchObject({ token: "t", fromIso: "2026-09-25", toIso: "2026-10-24", days: DAYS });
+    // The FSEs Payroll knows; the vendor it does not is in neither list.
+    expect(names(routeKmProps().engineers)).toEqual(["Arun", "Bala"]);
+    expect(names(routeKmProps().shown)).toEqual(["Arun", "Bala"]);
+  });
+
+  it("a region box narrows what it shows, not who it asks about", async () => {
+    await mount();
+    await click(boxes()[2]!);
+    expect(names(routeKmProps().engineers)).toEqual(["Arun", "Bala"]);
+    expect(names(routeKmProps().shown)).toEqual(["Bala"]);
+  });
+
+  it("is not there while a cycle loads, nor when the search leaves nobody", async () => {
+    await mount();
+    let answer: (value: unknown) => void = () => {};
+    getRosterKmDays.mockReturnValueOnce(new Promise((resolve) => (answer = resolve)));
+    await click(container.querySelector<HTMLButtonElement>('button[aria-label="Previous cycle"]')!);
+    expect(routeKm()).toBeNull();
+    await act(async () => {
+      answer(REPORT);
+    });
+    await act(async () => {});
+    expect(routeKm()).not.toBeNull();
+    expect(routeKmProps()).toMatchObject({ fromIso: "2026-08-25", toIso: "2026-09-24" });
+
+    await type(container.querySelector<HTMLInputElement>('input[aria-label="Search FSE"]')!, "nobody");
+    expect(routeKm()).toBeNull();
+  });
+
+  it("an expired login inside it ends as one on the report does", async () => {
+    await mount();
+    await act(async () => {
+      routeKmProps().onSessionExpired();
+    });
+    expect(container.textContent).toContain("Your login has expired");
+    expect(rows()).toHaveLength(0);
+    expect(routeKm()).toBeNull();
+    expect(tileValue("Total km")).toBe("—");
   });
 });

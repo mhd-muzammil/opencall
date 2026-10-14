@@ -16,6 +16,7 @@ import { filterKmRows, formatKm, kmRegions, kmTotals, regionTone } from "../../.
 import { dayRouteLayers } from "../../../lib/kmRoute";
 import { billCycleFor, billCycleForKey, type BillCycle } from "../utils/billCycle";
 import { todayIsoDate } from "../utils/dateUtils";
+import RouteKmSection from "./RouteKmSection";
 
 // The live tracking board's own map. Leaflet touches `window`, so it is
 // client-only here too.
@@ -777,6 +778,23 @@ export default function KmReportPanel({ token, embedded = false }: KmReportPanel
             </div>
           </div>
         </div>
+      )}
+
+      {/* ROUTE KM: the same FSEs and days, as the road between the places they
+          marked. Its own table and map, under these. */}
+      {token && shown.length > 0 && result && (
+        <RouteKmSection
+          token={token}
+          fromIso={cycle.fromIso}
+          toIso={cycle.toIso}
+          days={days}
+          engineers={engineers}
+          shown={shown}
+          onSessionExpired={() => {
+            setResult(null);
+            setSessionExpired(true);
+          }}
+        />
       )}
 
       {notInPayroll > 0 && !loading && (

@@ -1,16 +1,17 @@
 import { describe, expect, it } from "vitest";
 import {
+  GOOGLE_AREA_EMBED_URL,
   googleMapsDirectionsUrl,
+  googleMapsEmbedUrl,
   routeKmCellText,
-  routeKmPointLabels,
   routeKmRowTotals,
   routeKmTotals,
 } from "./routeKm";
-import type { RouteKmCell, RouteKmPoint } from "./payrollTrackingApiClient";
+import type { RouteKmCell } from "./payrollTrackingApiClient";
 
 /**
- * ROUTE KM's own arithmetic and words: what a day reads, what adds up, what each
- * place on the map is called, and the same places on Google.
+ * ROUTE KM's own arithmetic and words: what a day reads, what adds up, and the
+ * same places on Google -- its map beside the table and its directions page.
  */
 
 const ready = (km: number): RouteKmCell => ({ km, points: 3, status: "ready" });
@@ -49,6 +50,58 @@ describe("googleMapsDirectionsUrl", () => {
   });
 });
 
+describe("googleMapsEmbedUrl", () => {
+  it("is Google's own embedded map of the route through the same places, in order, with no key", () => {
+    const url = googleMapsEmbedUrl([
+      { latitude: 12.7409, longitude: 77.8253 },
+      { latitude: 12.7512, longitude: 77.8101 },
+      { latitude: 12.7633, longitude: 77.7952 },
+      { latitude: 12.7411, longitude: 77.8249 },
+    ]);
+    expect(url).toBe(
+      "https://maps.google.com/maps?saddr=12.7409,77.8253&daddr=12.7512,77.8101+to:12.7633,77.7952+to:12.7411,77.8249&dirflg=d&output=embed",
+    );
+    expect(url).not.toContain("key=");
+  });
+
+  it("two places are a route from one to the other", () => {
+    expect(
+      googleMapsEmbedUrl([
+        { latitude: 12.7409, longitude: 77.8253 },
+        { latitude: 12.7411, longitude: 77.8249 },
+      ]),
+    ).toBe("https://maps.google.com/maps?saddr=12.7409,77.8253&daddr=12.7411,77.8249&dirflg=d&output=embed");
+  });
+
+  it("routes by car, as the note under the map says: left to itself Google walks a short day", () => {
+    const params = new URL(
+      googleMapsEmbedUrl([
+        { latitude: 12.7409, longitude: 77.8253 },
+        { latitude: 12.7432, longitude: 77.8271 },
+      ])!,
+    ).searchParams;
+    expect(params.get("dirflg")).toBe("d");
+  });
+
+  it("one place is a pin on it; none is nothing to show", () => {
+    expect(googleMapsEmbedUrl([{ latitude: 12.7409, longitude: 77.8253 }])).toBe(
+      "https://maps.google.com/maps?q=12.7409,77.8253&z=15&output=embed",
+    );
+    expect(googleMapsEmbedUrl([])).toBeNull();
+  });
+
+  it("takes the same ten places as the directions link: the first nine and the last", () => {
+    const points = Array.from({ length: 12 }, (_, i) => ({ latitude: 12 + i / 100, longitude: 77 + i / 100 }));
+    const params = new URL(googleMapsEmbedUrl(points)!).searchParams;
+    const linked = googleMapsDirectionsUrl(points)!.replace("https://www.google.com/maps/dir/", "").split("/");
+    expect([params.get("saddr"), ...params.get("daddr")!.split(" to:")]).toEqual(linked);
+  });
+
+  it("the region's map before a day is picked is Google's too, with no key", () => {
+    expect(GOOGLE_AREA_EMBED_URL).toBe("https://maps.google.com/maps?ll=12.6,79.0&z=7&output=embed");
+  });
+});
+
 describe("routeKmCellText", () => {
   it("a measured day is its km, as the RTPL table prints one", () => {
     expect(routeKmCellText(ready(12.74))).toBe("12.74");
@@ -82,49 +135,5 @@ describe("routeKmRowTotals and routeKmTotals", () => {
     const totals = routeKmTotals([{ engineer_id: 7 }, { engineer_id: 8 }, { engineer_id: null }], days, cellsById);
     expect(totals.byDay).toEqual({ "2026-09-25": 12.74, "2026-09-26": 0.3, "2026-09-27": 0 });
     expect(totals.total).toBe(13.04);
-  });
-});
-
-describe("routeKmPointLabels", () => {
-  // Built from local clock times, so the test reads the same in any time zone.
-  const at = (hour: number, minute: number) => new Date(2026, 8, 25, hour, minute).toISOString();
-  const point = (kind: RouteKmPoint["kind"], time: string, case_number: string | null = null): RouteKmPoint => ({
-    kind,
-    at: time,
-    latitude: 12.74,
-    longitude: 77.82,
-    case_number,
-  });
-
-  it("names each place, numbers the check-ins in order, with the time and the case", () => {
-    const labelled = routeKmPointLabels([
-      point("login", at(9, 5)),
-      point("checkin", at(10, 12), "OC-004546"),
-      point("checkin", at(11, 40)),
-      point("logout", at(18, 2)),
-    ]);
-    expect(labelled.map((p) => p.badge)).toEqual(["L", "1", "2", "D"]);
-    expect(labelled.map((p) => p.label)).toEqual([
-      "Login · 09:05",
-      "Check-in 1 · 10:12 · OC-004546",
-      "Check-in 2 · 11:40",
-      "Logout · 18:02",
-    ]);
-    // Each keeps its own place.
-    expect(labelled[1]).toMatchObject({ kind: "checkin", latitude: 12.74, longitude: 77.82 });
-  });
-
-  it("a Login or Logout placed at the office says so", () => {
-    const at = new Date(2026, 8, 25, 9, 5).toISOString();
-    const labels = routeKmPointLabels([
-      { kind: "login", at, latitude: 12.72, longitude: 77.82, case_number: null, office: true },
-      { kind: "logout", at, latitude: 12.72, longitude: 77.82, case_number: null, office: true },
-      { kind: "login", at, latitude: 12.73, longitude: 77.83, case_number: null, office: false },
-    ]).map((p) => p.label);
-    expect(labels).toEqual(["Login (office) · 09:05", "Logout (office) · 09:05", "Login · 09:05"]);
-  });
-
-  it("a time that cannot be read is left out, not printed as NaN", () => {
-    expect(routeKmPointLabels([point("login", "")])[0]!.label).toBe("Login");
   });
 });

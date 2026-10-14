@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
-import dynamic from "next/dynamic";
 import { isApiAuthError } from "../../../lib/api/http";
 import {
   getRouteKm,
@@ -12,13 +11,14 @@ import {
   type RouteKmRange,
 } from "../../../lib/payrollTrackingApiClient";
 import { formatKm } from "../../../lib/kmReport";
-import { googleMapsDirectionsUrl, routeKmCellText, routeKmRowTotals, routeKmTotals } from "../../../lib/routeKm";
-
-// Leaflet touches `window`, so the map is client-only.
-const RouteKmMap = dynamic(() => import("../../../components/RouteKmMap"), {
-  ssr: false,
-  loading: () => <div style={{ height: "100%" }} />,
-});
+import {
+  GOOGLE_AREA_EMBED_URL,
+  googleMapsDirectionsUrl,
+  googleMapsEmbedUrl,
+  routeKmCellText,
+  routeKmRowTotals,
+  routeKmTotals,
+} from "../../../lib/routeKm";
 
 /**
  * ROUTE KM: under the RTPL APP KM table, the same FSEs and days measured another
@@ -122,10 +122,8 @@ const OFFICE_TITLE = "A Login or Logout with no GPS was placed at the FSE's offi
 
 const SUBTITLE = "Login → Check-ins → Logout · road km by Ola Maps";
 
-// Nothing picked, or its answer not here yet: one value each, so the map does
-// not see a new empty route on every render.
+// Nothing picked, or its answer not here yet.
 const NO_POINTS: RouteKmPoint[] = [];
-const NO_PATH: [number, number][] = [];
 
 /** The day the map is showing: one cell of the table. */
 interface RoutePick {
@@ -328,8 +326,9 @@ export default function RouteKmSection({
   }, [answer]);
   const routeDay = shownAnswer?.status === "ready" ? shownAnswer.day : null;
   const points = routeDay?.points ?? NO_POINTS;
-  const path = routeDay?.status === "ready" ? routeDay.path : NO_PATH;
   const googleUrl = googleMapsDirectionsUrl(points);
+  // Google's map beside the table: the picked day's places, or the region.
+  const mapSrc = googleMapsEmbedUrl(points) ?? GOOGLE_AREA_EMBED_URL;
   const dayFailed = shownAnswer?.status === "failed" || routeDay?.status === "failed";
   const routeNote =
     pick == null
@@ -788,39 +787,54 @@ export default function RouteKmSection({
             </a>
           )}
         </div>
-        {/* Isolated, so Leaflet's own layers stay inside this box. */}
         <div
           ref={mapBox}
           data-testid="route-km-box"
-          style={{ position: "relative", isolation: "isolate", height: MAP_HEIGHT }}
+          style={{
+            height: MAP_HEIGHT,
+            boxSizing: "border-box",
+            borderRadius: 12,
+            overflow: "hidden",
+            border: "1px solid #e5e7eb",
+          }}
         >
-          <RouteKmMap height="100%" points={points} path={path} selectedKey={pick?.seq ?? null} />
-          {routeNote && (
-            <div
-              data-testid="route-km-note"
-              role="status"
-              style={{
-                position: "absolute",
-                top: 10,
-                left: "50%",
-                transform: "translateX(-50%)",
-                zIndex: 1100,
-                maxWidth: "calc(100% - 120px)",
-                padding: "6px 12px",
-                borderRadius: 8,
-                border: "1px solid #e5e7eb",
-                background: "rgba(255,255,255,0.96)",
-                boxShadow: "0 2px 8px rgba(0,0,0,0.08)",
-                color: dayFailed ? "#b91c1c" : "#374151",
-                fontSize: 12.5,
-                textAlign: "center",
-                pointerEvents: "none",
-              }}
-            >
-              {routeNote}
-            </div>
-          )}
+          {/* Google's own map, embedded the way Google lets anyone embed one:
+              no key and no billing. The picked day's places, or the region
+              before one is picked. */}
+          <iframe
+            data-testid="route-km-google-map"
+            title={pick ? `Google map: ${routeLabel}` : "Google map"}
+            src={mapSrc}
+            loading="lazy"
+            referrerPolicy="no-referrer-when-downgrade"
+            allowFullScreen
+            style={{ display: "block", width: "100%", height: "100%", border: 0 }}
+          />
         </div>
+        {/* Under the map, not over it: Google's own card and controls sit on
+            the map, and nothing here may cover them. */}
+        {(routeNote || googleUrl) && (
+          <div style={{ marginTop: 8, display: "grid", gap: 4, fontSize: 12, color: "#6b7280" }}>
+            {routeNote && (
+              <div
+                data-testid="route-km-note"
+                role="status"
+                style={{ color: dayFailed ? "#b91c1c" : "#374151", fontSize: 12.5 }}
+              >
+                {routeNote}
+              </div>
+            )}
+            {googleUrl && (
+              <div data-testid="route-km-map-note">
+                {`Google's own route, by car${
+                  points.length > GOOGLE_MAX_STOPS
+                    ? `, through the first ${GOOGLE_MAX_STOPS - 1} places and the last`
+                    : ""
+                }, with its own km. The km in the table is Ola's.`}
+              </div>
+            )}
+          </div>
+        )}
       </div>
     </div>
   );

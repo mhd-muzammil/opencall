@@ -23,20 +23,6 @@ vi.mock("../../../lib/payrollTrackingApiClient", () => ({
   getRouteKmDay: (...args: unknown[]) => getRouteKmDay(...args),
 }));
 
-// The map is Leaflet's business and has tests of its own. Here it is a stub
-// that remembers what it was handed.
-const mapProps = vi.fn();
-vi.mock("next/dynamic", async () => {
-  const { createElement: h } = await import("react");
-  return {
-    default: () =>
-      function RouteKmMapStub(props: Record<string, unknown>) {
-        mapProps(props);
-        return h("div", { "data-testid": "route-km-map" });
-      },
-  };
-});
-
 const DAYS = ["2026-09-25", "2026-09-26", "2026-09-27"];
 
 function fse(engineer_name: string, branch: string, engineer_id: number | null): EngineerKmDays {
@@ -211,14 +197,16 @@ const status = () => container.querySelector('[data-testid="route-km-status"]')?
 const routeLabel = () => container.querySelector('[data-testid="route-km-label"]')?.textContent;
 const routeNote = () => container.querySelector('[data-testid="route-km-note"]')?.textContent ?? null;
 const googleLink = () => container.querySelector<HTMLAnchorElement>('[data-testid="route-km-google"]');
-/** What the map was last handed. */
-const mapGot = () =>
-  mapProps.mock.lastCall?.[0] as {
-    height: string;
-    points: RouteKmPoint[];
-    path: [number, number][];
-    selectedKey: number | null;
-  };
+/** Where Google's map beside the table is pointed. */
+const mapSrc = () =>
+  container.querySelector<HTMLIFrameElement>('[data-testid="route-km-google-map"]')?.getAttribute("src") ?? null;
+const mapNote = () => container.querySelector('[data-testid="route-km-map-note"]')?.textContent ?? null;
+/** Google's map of the region: nothing picked, or the pick's places not here yet. */
+const AREA = "https://maps.google.com/maps?ll=12.6,79.0&z=7&output=embed";
+/** Google's map of Arun's 25th: Login, three check-ins and Logout, in order. */
+const DAY_ON_GOOGLE =
+  "https://maps.google.com/maps?saddr=12.7409,77.8253" +
+  "&daddr=12.7512,77.8101+to:12.7633,77.7952+to:12.7298,77.8317+to:12.7411,77.8249&dirflg=d&output=embed";
 
 /** A day as the section prints it: "25 Sep 2026" ("25 Sept 2026" where ICU says so). */
 const longDate = (iso: string) =>
@@ -300,7 +288,7 @@ describe("RouteKmSection: the table", () => {
     expect(container.querySelector('[data-testid="route-km-title"]')?.textContent).toBe("ROUTE KM");
     expect(container.textContent).toContain("Payroll has no Ola Maps key");
     expect(rows()).toHaveLength(0);
-    expect(container.querySelector('[data-testid="route-km-map"]')).toBeNull();
+    expect(container.querySelector('[data-testid="route-km-google-map"]')).toBeNull();
     expect(status()).toBeNull();
   });
 });
@@ -421,11 +409,12 @@ describe("RouteKmSection: the map", () => {
     expect(routeLabel()).toBe("Click a km to see that day's route.");
     expect(routeNote()).toBeNull();
     expect(googleLink()).toBeNull();
-    expect(mapGot()).toEqual({ height: "100%", points: [], path: [], selectedKey: null });
+    expect(mapSrc()).toBe(AREA);
+    expect(mapNote()).toBeNull();
     expect(getRouteKmDay).not.toHaveBeenCalled();
   });
 
-  it("a clicked km opens that day: its places and Ola's road go to the map, and to Google", async () => {
+  it("a clicked km opens that day: its places go to Google's map beside the table, and to Google Maps", async () => {
     await mount();
     const answer = deferred<RouteKmDay>();
     getRouteKmDay.mockReturnValueOnce(answer.promise);
@@ -434,12 +423,14 @@ describe("RouteKmSection: the map", () => {
     expect(getRouteKmDay).toHaveBeenCalledWith("t", 7, "2026-09-25");
     expect(routeLabel()).toBe(`Arun · Fri ${longDate("2026-09-25")}`);
     expect(routeNote()).toBe("Loading the route…");
-    expect(mapGot()).toMatchObject({ points: [], path: [], selectedKey: 1 });
+    // Not the last pick's places under this pick's name.
+    expect(mapSrc()).toBe(AREA);
     expect(googleLink()).toBeNull();
     expect(dayButton("Arun", "2026-09-25")?.getAttribute("aria-pressed")).toBe("true");
 
     await settle(() => answer.resolve(routeDay()));
-    expect(mapGot()).toEqual({ height: "100%", points: DAY_POINTS, path: ROAD, selectedKey: 1 });
+    expect(mapSrc()).toBe(DAY_ON_GOOGLE);
+    expect(mapNote()).toBe("Google's own route, by car, with its own km. The km in the table is Ola's.");
     expect(routeNote()).toBeNull();
     expect(routeLabel()).toBe(`Arun · Fri ${longDate("2026-09-25")} · 12.74 km · 5 stops`);
     expect(container.querySelector('[data-testid="route-km-label"]')?.getAttribute("title")).toBe(routeLabel());
@@ -468,7 +459,7 @@ describe("RouteKmSection: the map", () => {
     await settle(() => answer.resolve(routeDay()));
     await click(dayButton("Arun", "2026-09-25")!);
     expect(getRouteKmDay).toHaveBeenCalledTimes(1);
-    expect(mapGot()).toMatchObject({ path: ROAD, selectedKey: 1 });
+    expect(mapSrc()).toBe(DAY_ON_GOOGLE);
   });
 
   it("a day that failed to load is asked for again by clicking its km again", async () => {
@@ -477,13 +468,13 @@ describe("RouteKmSection: the map", () => {
     await click(dayButton("Arun", "2026-09-25")!);
     expect(routeNote()).toBe("Could not load the route: Payroll is not answering");
     expect(container.querySelector<HTMLElement>('[data-testid="route-km-note"]')!.style.color).toBe("rgb(185, 28, 28)");
-    expect(mapGot()).toMatchObject({ points: [], path: [] });
+    expect(mapSrc()).toBe(AREA);
 
     getRouteKmDay.mockResolvedValueOnce(routeDay());
     await click(dayButton("Arun", "2026-09-25")!);
     expect(getRouteKmDay).toHaveBeenCalledTimes(2);
     expect(routeNote()).toBeNull();
-    expect(mapGot()).toMatchObject({ points: DAY_POINTS, path: ROAD, selectedKey: 2 });
+    expect(mapSrc()).toBe(DAY_ON_GOOGLE);
   });
 
   it("a day Ola could not route, opened, says so and is asked for again on a click", async () => {
@@ -491,8 +482,8 @@ describe("RouteKmSection: the map", () => {
     getRouteKmDay.mockResolvedValueOnce(routeDay({ status: "failed", km: null, path: [], error: "NOT_FOUND" }));
     await click(dayButton("Arun", "2026-09-25")!);
     expect(routeNote()).toBe("Ola could not measure this day (NOT_FOUND); it is tried again later.");
-    // The places are still worth seeing, and checking on Google.
-    expect(mapGot()).toMatchObject({ points: DAY_POINTS, path: [] });
+    // The places are still worth seeing, and Google may route them.
+    expect(mapSrc()).toBe(DAY_ON_GOOGLE);
     expect(googleLink()).not.toBeNull();
 
     getRouteKmDay.mockResolvedValueOnce(routeDay());
@@ -509,7 +500,8 @@ describe("RouteKmSection: the map", () => {
     await click(dayButton("Arun", "2026-09-25")!);
     expect(routeNote()).toBe("No route: fewer than two places marked this day.");
     expect(routeLabel()).toBe(`Arun · Fri ${longDate("2026-09-25")} · 1 stop`);
-    expect(mapGot()).toMatchObject({ points: [DAY_POINTS[0]], path: [] });
+    expect(mapSrc()).toBe("https://maps.google.com/maps?q=12.7409,77.8253&z=15&output=embed");
+    expect(mapNote()).toBeNull();
     expect(googleLink()).toBeNull();
   });
 
@@ -525,7 +517,9 @@ describe("RouteKmSection: the map", () => {
     await settle(() => second.resolve(later));
     await settle(() => first.resolve(routeDay()));
     expect(routeLabel()).toBe(`Arun · Sun ${longDate("2026-09-27")} · 8.1 km · 3 stops`);
-    expect(mapGot()).toMatchObject({ points: later.points, path: later.path, selectedKey: 2 });
+    expect(mapSrc()).toBe(
+      "https://maps.google.com/maps?saddr=12.7409,77.8253&daddr=12.7512,77.8101+to:12.7633,77.7952&dirflg=d&output=embed",
+    );
   });
 
   it("only a measured km can be clicked: a dash, a failed day and one still waiting cannot", async () => {
@@ -598,11 +592,11 @@ describe("RouteKmSection: the map", () => {
     await mount();
     getRouteKmDay.mockResolvedValueOnce(routeDay());
     await click(dayButton("Arun", "2026-09-25")!);
-    expect(mapGot()).toMatchObject({ path: ROAD, selectedKey: 1 });
+    expect(mapSrc()).toBe(DAY_ON_GOOGLE);
 
     await rerender({ fromIso: "2026-08-25", toIso: "2026-09-24" });
     expect(routeLabel()).toBe("Click a km to see that day's route.");
-    expect(mapGot()).toEqual({ height: "100%", points: [], path: [], selectedKey: null });
+    expect(mapSrc()).toBe(AREA);
     expect(routeNote()).toBeNull();
     expect(googleLink()).toBeNull();
     expect(container.querySelectorAll('[aria-pressed="true"][data-testid="route-km-day"]')).toHaveLength(0);
@@ -791,5 +785,54 @@ describe("RouteKmSection: the second review", () => {
     getRouteKmDay.mockResolvedValueOnce(routeDay({ status: "failed", km: null, path: [], error: "NOT_FOUND", final: true }));
     await click(dayButton("Arun", "2026-09-25")!);
     expect(routeNote()).toBe("Ola could not measure this day (NOT_FOUND).");
+  });
+});
+
+describe("RouteKmSection: Google's map", () => {
+  it("is Google's own map, embedded with no key, and named for the day it shows", async () => {
+    await mount();
+    const frame = container.querySelector<HTMLIFrameElement>('[data-testid="route-km-google-map"]')!;
+    expect(frame.tagName).toBe("IFRAME");
+    expect(frame.title).toBe("Google map");
+    expect(mapSrc()).not.toContain("key=");
+    expect(frame.getAttribute("loading")).toBe("lazy");
+    expect(frame.getAttribute("referrerpolicy")).toBe("no-referrer-when-downgrade");
+
+    getRouteKmDay.mockResolvedValueOnce(routeDay());
+    await click(dayButton("Arun", "2026-09-25")!);
+    expect(frame.title).toBe(`Google map: Arun · Fri ${longDate("2026-09-25")} · 12.74 km · 5 stops`);
+  });
+
+  it("a day of more than ten places: Google takes the first nine and the last, and the note says so", async () => {
+    const many: RouteKmPoint[] = Array.from({ length: 12 }, (_, i) => ({
+      kind: i === 0 ? "login" : i === 11 ? "logout" : "checkin",
+      at: at(9 + Math.floor(i / 2), (i % 2) * 30),
+      latitude: 12 + i / 100,
+      longitude: 77 + i / 100,
+      case_number: null,
+    }));
+    getRouteKmDay.mockResolvedValueOnce(routeDay({ points: many }));
+    await mount();
+    await click(dayButton("Arun", "2026-09-25")!);
+    const src = mapSrc()!;
+    const daddr = new URL(src).searchParams.get("daddr")!.split(" to:");
+    expect(new URL(src).searchParams.get("saddr")).toBe("12,77");
+    expect(daddr).toHaveLength(9);
+    expect(daddr[daddr.length - 1]).toBe("12.11,77.11");
+    expect(mapNote()).toBe(
+      "Google's own route, by car, through the first 9 places and the last, with its own km. The km in the table is Ola's.",
+    );
+  });
+
+  it("nothing is drawn over Google's map: the notes sit under it", async () => {
+    await mount();
+    getRouteKmDay.mockResolvedValueOnce(routeDay({ status: "failed", km: null, path: [], error: "NOT_FOUND" }));
+    await click(dayButton("Arun", "2026-09-25")!);
+    const box = container.querySelector('[data-testid="route-km-box"]')!;
+    expect(box.children).toHaveLength(1);
+    expect(box.firstElementChild?.getAttribute("data-testid")).toBe("route-km-google-map");
+    const note = container.querySelector('[data-testid="route-km-note"]')!;
+    expect(box.contains(note)).toBe(false);
+    expect(note.getAttribute("role")).toBe("status");
   });
 });

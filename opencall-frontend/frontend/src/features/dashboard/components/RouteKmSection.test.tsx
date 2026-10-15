@@ -898,7 +898,7 @@ describe("RouteKmSection: Google's map, from the review", () => {
  * and Cases column as the RTPL table's -- and, without them, the table as it was.
  */
 
-const NONE: CasesByDayCell = { cases: 0, closed: 0 };
+const NONE: CasesByDayCell = { cases: 0, closed: 0, checkins: 0 };
 
 /**
  * Arun: 4 cases on the 25th, 1 closed; 2 on his dash of a 26th; none on the
@@ -906,9 +906,9 @@ const NONE: CasesByDayCell = { cases: 0, closed: 0 };
  * 2 closed. Chitra: none from Payroll. Dev, off the screen: 5.
  */
 const CASES: CasesById = new Map([
-  [7, { "2026-09-25": { cases: 4, closed: 1 }, "2026-09-26": { cases: 2, closed: 0 }, "2026-09-27": NONE }],
-  [8, { "2026-09-25": { cases: 1, closed: 0 }, "2026-09-26": NONE, "2026-09-27": { cases: 3, closed: 2 } }],
-  [10, { "2026-09-25": { cases: 5, closed: 5 }, "2026-09-26": NONE, "2026-09-27": NONE }],
+  [7, { "2026-09-25": { cases: 4, closed: 1, checkins: 1 }, "2026-09-26": { cases: 2, closed: 0, checkins: 0 }, "2026-09-27": NONE }],
+  [8, { "2026-09-25": { cases: 1, closed: 0, checkins: 0 }, "2026-09-26": NONE, "2026-09-27": { cases: 3, closed: 2, checkins: 2 } }],
+  [10, { "2026-09-25": { cases: 5, closed: 5, checkins: 5 }, "2026-09-26": NONE, "2026-09-27": NONE }],
 ]);
 
 /** The line under a day's km, as it reads; null when there is none. */

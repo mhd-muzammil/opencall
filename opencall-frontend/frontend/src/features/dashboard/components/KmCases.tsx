@@ -8,9 +8,9 @@ import type { CasesByDayCell, EngineerKmDays } from "../../../lib/payrollTrackin
  *     assign 8
  *     visits 3
  *
- * "assign" is that day's cases and "visits" the ones closed that day -- the
- * live tracking board's day panel, its "CASES (N)" list and its "Closed" rows,
- * as Payroll counts them. The panel asks once a cycle and hands the answer to
+ * "assign" is that day's cases and "visits" its check-ins -- the live tracking
+ * board's day panel, its "CASES (N)" list and its "CHECK-INS", as Payroll
+ * counts them. The panel asks once a cycle and hands the answer to
  * every table; this is how each of them prints it, so the three read alike.
  */
 
@@ -22,8 +22,9 @@ const count = (value: unknown) => Number(value) || 0;
 /** "assign 8, visits 3", for a day cell's title and aria-label; "" on a day with none, or none known. */
 export function casesWords(cell: CasesByDayCell | undefined): string {
   const cases = count(cell?.cases);
-  if (cases <= 0) return "";
-  return `assign ${cases}, visits ${count(cell?.closed)}`;
+  const visits = count(cell?.checkins);
+  if (cases <= 0 && visits <= 0) return "";
+  return `assign ${cases}, visits ${visits}`;
 }
 
 // One line's height, the same on every line, so the days in a row stand level.
@@ -90,19 +91,19 @@ export function CasesLine({
   labelled?: boolean;
 }) {
   if (!cell) return null;
-  if (count(cell.cases) <= 0) {
+  if (count(cell.cases) <= 0 && count(cell.checkins) <= 0) {
     return <span aria-hidden="true" data-testid="km-cases-none" style={{ display: "block", height: 2 * LINE_HEIGHT }} />;
   }
   return (
     <span {...(labelled ? { "aria-hidden": true } : {})} data-testid="km-cases" style={{ display: "block" }}>
       <span data-testid="km-assign" style={smallLine(picked, ASSIGN_COLOUR)}>{`assign ${count(cell.cases)}`}</span>
-      <span data-testid="km-closed" style={smallLine(picked, VISITS_COLOUR)}>{`visits ${count(cell.closed)}`}</span>
+      <span data-testid="km-closed" style={smallLine(picked, VISITS_COLOUR)}>{`visits ${count(cell.checkins)}`}</span>
     </span>
   );
 }
 
 /**
- * One FSE's cases and closed over the days on screen. Null when Payroll said
+ * One FSE's cases, closed and check-ins over the days on screen. Null when Payroll said
  * nothing for them: the Cases column leaves that blank rather than print a 0.
  */
 export function casesRowTotal(
@@ -112,11 +113,13 @@ export function casesRowTotal(
   if (!days) return null;
   let cases = 0;
   let closed = 0;
+  let checkins = 0;
   for (const day of shownDays) {
     cases += count(days[day]?.cases);
     closed += count(days[day]?.closed);
+    checkins += count(days[day]?.checkins);
   }
-  return { cases, closed };
+  return { cases, closed, checkins };
 }
 
 /**
@@ -132,6 +135,7 @@ export function casesTotals(
   let known = false;
   let cases = 0;
   let closed = 0;
+  let checkins = 0;
   const counted = new Set<number>();
   for (const row of rows) {
     if (row.engineer_id == null || counted.has(row.engineer_id)) continue;
@@ -141,8 +145,9 @@ export function casesTotals(
     known = true;
     cases += one.cases;
     closed += one.closed;
+    checkins += count(one.checkins);
   }
-  return known ? { cases, closed } : null;
+  return known ? { cases, closed, checkins } : null;
 }
 
 /** A Cases column cell: "assign 12 · visits 3", in the lines' colours; nothing when not known. */
@@ -152,7 +157,7 @@ export function CasesTotal({ total }: { total: CasesByDayCell | null }) {
     <>
       <span data-testid="km-total-assign" style={{ color: ASSIGN_COLOUR }}>{`assign ${total.cases}`}</span>
       {" · "}
-      <span data-testid="km-total-visits" style={{ color: VISITS_COLOUR }}>{`visits ${total.closed}`}</span>
+      <span data-testid="km-total-visits" style={{ color: VISITS_COLOUR }}>{`visits ${count(total.checkins)}`}</span>
     </>
   );
 }

@@ -800,7 +800,7 @@ describe("KmReportPanel: the FIELDEZ table", () => {
  * under it.
  */
 
-const NONE: CasesByDayCell = { cases: 0, closed: 0 };
+const NONE: CasesByDayCell = { cases: 0, closed: 0, checkins: 0 };
 
 /**
  * Arun: 4 cases on the 25th, 1 closed; 2 on his dash of a 26th; none on the
@@ -810,8 +810,8 @@ const CASES: CasesByDayRange = {
   configured: true,
   days: DAYS,
   engineers: [
-    { engineer_id: 7, days: { "2026-09-25": { cases: 4, closed: 1 }, "2026-09-26": { cases: 2, closed: 0 }, "2026-09-27": NONE } },
-    { engineer_id: 8, days: { "2026-09-25": NONE, "2026-09-26": { cases: 3, closed: 3 }, "2026-09-27": { cases: 1, closed: 0 } } },
+    { engineer_id: 7, days: { "2026-09-25": { cases: 4, closed: 1, checkins: 1 }, "2026-09-26": { cases: 2, closed: 0, checkins: 0 }, "2026-09-27": NONE } },
+    { engineer_id: 8, days: { "2026-09-25": NONE, "2026-09-26": { cases: 3, closed: 3, checkins: 3 }, "2026-09-27": { cases: 1, closed: 0, checkins: 0 } } },
   ],
 };
 
@@ -918,6 +918,35 @@ describe("KmReportPanel: the cases under each km", () => {
     expect(dayCell("Arun", "2026-09-25")!.style.userSelect).toBe("text");
   });
 
+  it("visits is the day's check-ins, the board's CHECK-INS, not the calls closed", async () => {
+    // Mohan's 13 Oct on the board: 9 cases, 3 closed that day, 4 check-ins.
+    getCasesByDay.mockResolvedValue({
+      configured: true,
+      days: DAYS,
+      engineers: [
+        {
+          engineer_id: 7,
+          days: { "2026-09-25": { cases: 9, closed: 3, checkins: 4 }, "2026-09-26": NONE, "2026-09-27": { cases: 2, closed: 0, checkins: 1 } },
+        },
+      ],
+    });
+    await mount();
+    expect(caseLine(dayTd(0, "2026-09-25"))).toBe("assign 9 · visits 4");
+    expect(dayTd(0, "2026-09-25").title).toBe(`Arun · ${longDate("2026-09-25")} · assign 9, visits 4`);
+    expect(cells(rows()[0]!).at(-1)).toBe("assign 11 · visits 5");
+    expect(footer().at(-1)).toBe("assign 11 · visits 5");
+  });
+
+  it("a Payroll that does not say the check-ins yet reads visits 0", async () => {
+    getCasesByDay.mockResolvedValue({
+      configured: true,
+      days: DAYS,
+      engineers: [{ engineer_id: 7, days: { "2026-09-25": { cases: 4, closed: 1 }, "2026-09-26": NONE, "2026-09-27": NONE } }],
+    });
+    await mount();
+    expect(caseLine(dayTd(0, "2026-09-25"))).toBe("assign 4 · visits 0");
+  });
+
   it("each day reads km, then assign, then closed, as the office asked", async () => {
     getCasesByDay.mockResolvedValue(CASES);
     await mount();
@@ -934,8 +963,8 @@ describe("KmReportPanel: the cases under each km", () => {
   it("hands the very same counts to ROUTE KM and FIELDEZ", async () => {
     getCasesByDay.mockResolvedValue(CASES);
     await mount();
-    expect(routeKmProps().cases?.get(7)?.["2026-09-25"]).toEqual({ cases: 4, closed: 1 });
-    expect(routeKmProps().cases?.get(8)?.["2026-09-26"]).toEqual({ cases: 3, closed: 3 });
+    expect(routeKmProps().cases?.get(7)?.["2026-09-25"]).toEqual({ cases: 4, closed: 1, checkins: 1 });
+    expect(routeKmProps().cases?.get(8)?.["2026-09-26"]).toEqual({ cases: 3, closed: 3, checkins: 3 });
     expect(fieldezKmProps().cases).toBe(routeKmProps().cases);
   });
 
@@ -979,7 +1008,7 @@ describe("KmReportPanel: the cases under each km", () => {
       august.resolve({
         configured: true,
         days: AUGUST.days,
-        engineers: [{ engineer_id: 7, days: { "2026-08-25": { cases: 1, closed: 1 }, "2026-08-26": NONE } }],
+        engineers: [{ engineer_id: 7, days: { "2026-08-25": { cases: 1, closed: 1, checkins: 1 }, "2026-08-26": NONE } }],
       }),
     );
     expect(cells(rows()[0]!).at(-1)).toBe("assign 1 · visits 1");
@@ -1016,7 +1045,7 @@ describe("KmReportPanel: the cases under each km", () => {
       august.resolve({
         configured: true,
         days: AUGUST.days,
-        engineers: [{ engineer_id: 7, days: { "2026-08-25": { cases: 1, closed: 1 }, "2026-08-26": NONE } }],
+        engineers: [{ engineer_id: 7, days: { "2026-08-25": { cases: 1, closed: 1, checkins: 1 }, "2026-08-26": NONE } }],
       }),
     );
     await settle(() => september.resolve(CASES));

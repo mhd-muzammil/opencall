@@ -529,6 +529,8 @@ export async function getFieldezKmDay(token: string, engineerId: number, date: s
 export interface CasesByDayCell {
   cases: number;
   closed: number;
+  /** The day's check-ins, the board's CHECK-INS (shown as "visits"). Absent from a Payroll before 15 Oct 2026. */
+  checkins?: number;
 }
 
 export interface CasesByDayRow {

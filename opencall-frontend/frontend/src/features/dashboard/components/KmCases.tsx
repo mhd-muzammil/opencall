@@ -6,9 +6,9 @@ import type { CasesByDayCell, EngineerKmDays } from "../../../lib/payrollTrackin
  *
  *     km 65.39
  *     assign 8
- *     closed 3
+ *     visits 3
  *
- * "assign" is that day's cases and "closed" the ones closed that day -- the
+ * "assign" is that day's cases and "visits" the ones closed that day -- the
  * live tracking board's day panel, its "CASES (N)" list and its "Closed" rows,
  * as Payroll counts them. The panel asks once a cycle and hands the answer to
  * every table; this is how each of them prints it, so the three read alike.
@@ -19,11 +19,11 @@ export type CasesById = ReadonlyMap<number, Record<string, CasesByDayCell>>;
 
 const count = (value: unknown) => Number(value) || 0;
 
-/** "assign 8, closed 3", for a day cell's title and aria-label; "" on a day with none, or none known. */
+/** "assign 8, visits 3", for a day cell's title and aria-label; "" on a day with none, or none known. */
 export function casesWords(cell: CasesByDayCell | undefined): string {
   const cases = count(cell?.cases);
   if (cases <= 0) return "";
-  return `assign ${cases}, closed ${count(cell?.closed)}`;
+  return `assign ${cases}, visits ${count(cell?.closed)}`;
 }
 
 // One line's height, the same on every line, so the days in a row stand level.
@@ -68,7 +68,7 @@ export function KmLabel({ picked = false }: { picked?: boolean }) {
 }
 
 /**
- * The two lines under a day's km: "assign 8" and "closed 3". Nothing at all
+ * The two lines under a day's km: "assign 8" and "visits 3". Nothing at all
  * when the FSE's days are not known. On a known day with no cases, empty lines
  * of the same height, with no text: the km then sits where its neighbours' do,
  * and a copied or read cell says nothing more than before. Hidden from a
@@ -91,7 +91,7 @@ export function CasesLine({
   return (
     <span {...(labelled ? { "aria-hidden": true } : {})} data-testid="km-cases" style={{ display: "block" }}>
       <span data-testid="km-assign" style={smallLine(picked)}>{`assign ${count(cell.cases)}`}</span>
-      <span data-testid="km-closed" style={smallLine(picked)}>{`closed ${count(cell.closed)}`}</span>
+      <span data-testid="km-closed" style={smallLine(picked)}>{`visits ${count(cell.closed)}`}</span>
     </span>
   );
 }
@@ -140,7 +140,7 @@ export function casesTotals(
   return known ? { cases, closed } : null;
 }
 
-/** A Cases column cell: "assign 12 · closed 3"; nothing when not known. */
+/** A Cases column cell: "assign 12 · visits 3"; nothing when not known. */
 export function CasesTotal({ total }: { total: CasesByDayCell | null }) {
-  return total ? <>{`assign ${total.cases} · closed ${total.closed}`}</> : null;
+  return total ? <>{`assign ${total.cases} · visits ${total.closed}`}</> : null;
 }

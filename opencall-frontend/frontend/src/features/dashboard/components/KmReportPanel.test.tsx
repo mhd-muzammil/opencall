@@ -864,17 +864,17 @@ describe("KmReportPanel: the cases under each km", () => {
     // Arun's 25th: the km as it was, its cases under it and in its words.
     const km = dayCell("Arun", "2026-09-25")!;
     expect(figure(km)).toBe("12.5");
-    expect(caseLine(km)).toBe("assign 4 · closed 1");
+    expect(caseLine(km)).toBe("assign 4 · visits 1");
     expect(km.getAttribute("aria-label")).toBe(
-      `12.5 km, assign 4, closed 1: show Arun's route on ${longDate("2026-09-25")}`,
+      `12.5 km, assign 4, visits 1: show Arun's route on ${longDate("2026-09-25")}`,
     );
-    expect(dayTd(0, "2026-09-25").title).toBe(`Arun · ${longDate("2026-09-25")} · assign 4, closed 1`);
+    expect(dayTd(0, "2026-09-25").title).toBe(`Arun · ${longDate("2026-09-25")} · assign 4, visits 1`);
 
     // A dash with cases has them too, and is still a dash.
     const dash = dayTd(0, "2026-09-26");
     expect(figure(dash)).toBe("-");
-    expect(caseLine(dash)).toBe("assign 2 · closed 0");
-    expect(dash.title).toBe(`Arun · ${longDate("2026-09-26")} · assign 2, closed 0`);
+    expect(caseLine(dash)).toBe("assign 2 · visits 0");
+    expect(dash.title).toBe(`Arun · ${longDate("2026-09-26")} · assign 2, visits 0`);
     expect(dash.querySelector("button")).toBeNull();
     expect(dash.style.color).toBe("rgb(156, 163, 175)");
 
@@ -886,13 +886,13 @@ describe("KmReportPanel: the cases under each km", () => {
     expect(dayTd(0, "2026-09-27").title).toBe(`Arun · ${longDate("2026-09-27")}`);
 
     // Each FSE's cases over the days on screen, then everyone's; the km as they were.
-    expect(cells(rows()[0]!).slice(-3)).toEqual(["2", "45.67", "assign 6 · closed 1"]);
-    expect(cells(rows()[1]!).slice(-3)).toEqual(["2", "41.28", "assign 4 · closed 3"]);
-    expect(footer().slice(-2)).toEqual(["86.95", "assign 10 · closed 4"]);
+    expect(cells(rows()[0]!).slice(-3)).toEqual(["2", "45.67", "assign 6 · visits 1"]);
+    expect(cells(rows()[1]!).slice(-3)).toEqual(["2", "41.28", "assign 4 · visits 3"]);
+    expect(footer().slice(-2)).toEqual(["86.95", "assign 10 · visits 4"]);
 
     // A region box narrows the column's total with the rows.
     await click(boxes()[2]!);
-    expect(footer().slice(-2)).toEqual(["41.28", "assign 4 · closed 3"]);
+    expect(footer().slice(-2)).toEqual(["41.28", "assign 4 · visits 3"]);
   });
 
   it("the line is small and grey, hidden from a reader that has its words, and not copied with the km", async () => {
@@ -918,9 +918,9 @@ describe("KmReportPanel: the cases under each km", () => {
     expect(label.textContent).toBe("km");
     expect(label.getAttribute("aria-hidden")).toBe("true");
     expect(label.style.userSelect).toBe("none");
-    expect(km.textContent).toBe("km12.5assign 4closed 1");
+    expect(km.textContent).toBe("km12.5assign 4visits 1");
     // A dash with no km still says what it is.
-    expect(dayTd(0, "2026-09-26").textContent).toBe("km-assign 2closed 0");
+    expect(dayTd(0, "2026-09-26").textContent).toBe("km-assign 2visits 0");
   });
 
   it("hands the very same counts to ROUTE KM and FIELDEZ", async () => {
@@ -940,8 +940,8 @@ describe("KmReportPanel: the cases under each km", () => {
     await mount();
     expect(caseLines()).toHaveLength(0);
     expect(cells(rows()[0]!)).toEqual(["1", "Arun", "Chennai", "12.5", "-", "33.17", "2", "45.67", ""]);
-    expect(cells(rows()[1]!)).toEqual(["2", "Bala", "Salem", "-", "40.25", "1.03", "2", "41.28", "assign 0 · closed 0"]);
-    expect(footer().at(-1)).toBe("assign 0 · closed 0");
+    expect(cells(rows()[1]!)).toEqual(["2", "Bala", "Salem", "-", "40.25", "1.03", "2", "41.28", "assign 0 · visits 0"]);
+    expect(footer().at(-1)).toBe("assign 0 · visits 0");
   });
 
   it("while the counts are on their way no day has a line, and the tables under it have none", async () => {
@@ -974,9 +974,9 @@ describe("KmReportPanel: the cases under each km", () => {
         engineers: [{ engineer_id: 7, days: { "2026-08-25": { cases: 1, closed: 1 }, "2026-08-26": NONE } }],
       }),
     );
-    expect(cells(rows()[0]!).at(-1)).toBe("assign 1 · closed 1");
+    expect(cells(rows()[0]!).at(-1)).toBe("assign 1 · visits 1");
     // Arun's first day of that cycle, the 25th of August.
-    expect(caseLine(Array.from(rows()[0]!.querySelectorAll("td"))[3]!)).toBe("assign 1 · closed 1");
+    expect(caseLine(Array.from(rows()[0]!.querySelectorAll("td"))[3]!)).toBe("assign 1 · visits 1");
   });
 
   it("a failed request leaves every case line out and says so once, in grey, under the first table", async () => {
@@ -1012,8 +1012,8 @@ describe("KmReportPanel: the cases under each km", () => {
       }),
     );
     await settle(() => september.resolve(CASES));
-    expect(cells(rows()[0]!).at(-1)).toBe("assign 1 · closed 1");
-    expect(caseLine(Array.from(rows()[0]!.querySelectorAll("td"))[3]!)).toBe("assign 1 · closed 1");
+    expect(cells(rows()[0]!).at(-1)).toBe("assign 1 · visits 1");
+    expect(caseLine(Array.from(rows()[0]!.querySelectorAll("td"))[3]!)).toBe("assign 1 · visits 1");
   });
 
   it("a failed re-ask of a cycle shows none of the counts it had for it, only the note", async () => {

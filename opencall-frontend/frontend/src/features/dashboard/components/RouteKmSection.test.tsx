@@ -939,24 +939,24 @@ describe("RouteKmSection: the cases under each km", () => {
     // Arun's 25th: the km as it was, its cases under it and in its words.
     const km = dayButton("Arun", "2026-09-25")!;
     expect(figure(km)).toBe("12.74");
-    expect(caseLine(km)).toBe("assign 4 · closed 1");
+    expect(caseLine(km)).toBe("assign 4 · visits 1");
     expect(km.getAttribute("aria-label")).toBe(
-      `12.74 road km, assign 4, closed 1: show Arun's route on ${longDate("2026-09-25")}`,
+      `12.74 road km, assign 4, visits 1: show Arun's route on ${longDate("2026-09-25")}`,
     );
-    expect(dayCell("Arun", "2026-09-25").title).toBe(`Arun · ${longDate("2026-09-25")} · assign 4, closed 1`);
+    expect(dayCell("Arun", "2026-09-25").title).toBe(`Arun · ${longDate("2026-09-25")} · assign 4, visits 1`);
 
     // A dash, a day Ola could not route and one not measured yet have theirs too.
-    expect(caseLine(dayCell("Arun", "2026-09-26"))).toBe("assign 2 · closed 0");
-    expect(dayCell("Arun", "2026-09-26").title).toBe(`Arun · ${longDate("2026-09-26")} · assign 2, closed 0`);
+    expect(caseLine(dayCell("Arun", "2026-09-26"))).toBe("assign 2 · visits 0");
+    expect(dayCell("Arun", "2026-09-26").title).toBe(`Arun · ${longDate("2026-09-26")} · assign 2, visits 0`);
     const failed = dayCell("Bala", "2026-09-25");
     expect(figure(failed)).toBe("—");
-    expect(caseLine(failed)).toBe("assign 1 · closed 0");
-    expect(failed.getAttribute("aria-label")).toBe("could not be measured, assign 1, closed 0");
-    expect(failed.title).toBe("Ola could not measure this day; it is tried again later · assign 1, closed 0");
+    expect(caseLine(failed)).toBe("assign 1 · visits 0");
+    expect(failed.getAttribute("aria-label")).toBe("could not be measured, assign 1, visits 0");
+    expect(failed.title).toBe("Ola could not measure this day; it is tried again later · assign 1, visits 0");
     expect(failed.style.color).toBe("rgb(185, 28, 28)");
     const waiting = dayCell("Bala", "2026-09-27");
-    expect(caseLine(waiting)).toBe("assign 3 · closed 2");
-    expect(waiting.getAttribute("aria-label")).toBe("not measured yet, assign 3, closed 2");
+    expect(caseLine(waiting)).toBe("assign 3 · visits 2");
+    expect(waiting.getAttribute("aria-label")).toBe("not measured yet, assign 3, visits 2");
 
     // A day with none has no line, and its words are as they were.
     expect(caseLine(dayCell("Arun", "2026-09-27"))).toBeNull();
@@ -967,25 +967,25 @@ describe("RouteKmSection: the cases under each km", () => {
 
     // The km and their totals as they were; each FSE's cases over the days on
     // screen. Chitra has none from Payroll: blank, not 0. Dev is off the screen.
-    expect(cells(rows()[0]!).slice(-3)).toEqual(["2", "20.84", "assign 6 · closed 1"]);
-    expect(cells(rows()[1]!).slice(-3)).toEqual(["0", "0", "assign 4 · closed 2"]);
+    expect(cells(rows()[0]!).slice(-3)).toEqual(["2", "20.84", "assign 6 · visits 1"]);
+    expect(cells(rows()[1]!).slice(-3)).toEqual(["0", "0", "assign 4 · visits 2"]);
     expect(cells(rows()[2]!).slice(-3)).toEqual(["2", "43.75", ""]);
-    expect(footer().slice(-2)).toEqual(["64.59", "assign 10 · closed 3"]);
+    expect(footer().slice(-2)).toEqual(["64.59", "assign 10 · visits 3"]);
   });
 
   it("an FSE with no cases on any day reads 0 in the Cases column, and has no lines", async () => {
     await mount({ cases: new Map([[9, { "2026-09-25": NONE, "2026-09-26": NONE, "2026-09-27": NONE }]]) });
     expect(container.querySelector('[data-testid="km-cases"]')).toBeNull();
-    expect(cells(rows()[2]!).at(-1)).toBe("assign 0 · closed 0");
+    expect(cells(rows()[2]!).at(-1)).toBe("assign 0 · visits 0");
     expect(cells(rows()[0]!).at(-1)).toBe("");
-    expect(footer().at(-1)).toBe("assign 0 · closed 0");
+    expect(footer().at(-1)).toBe("assign 0 · visits 0");
   });
 
   it("one engineer under two register names is counted once in the footer", async () => {
     await mount({ cases: CASES, shown: [ARUN, fse("Arun K", "Chennai", 7)] });
-    expect(cells(rows()[0]!).at(-1)).toBe("assign 6 · closed 1");
-    expect(cells(rows()[1]!).at(-1)).toBe("assign 6 · closed 1");
-    expect(footer().at(-1)).toBe("assign 6 · closed 1");
+    expect(cells(rows()[0]!).at(-1)).toBe("assign 6 · visits 1");
+    expect(cells(rows()[1]!).at(-1)).toBe("assign 6 · visits 1");
+    expect(footer().at(-1)).toBe("assign 6 · visits 1");
   });
 
   it("with the office mark, the mark still follows the km and the line comes under both", async () => {
@@ -995,13 +995,13 @@ describe("RouteKmSection: the cases under each km", () => {
     await mount({ cases: CASES });
     const km = dayButton("Arun", "2026-09-25")!;
     expect(figure(km)).toBe("12.74•");
-    expect(caseLine(km)).toBe("assign 4 · closed 1");
+    expect(caseLine(km)).toBe("assign 4 · visits 1");
     expect(km.querySelector<HTMLElement>('span:not([data-testid="km-label"])')!.textContent).toBe("•");
     expect(km.getAttribute("aria-label")).toBe(
-      `12.74 road km (from or to the office), assign 4, closed 1: show Arun's route on ${longDate("2026-09-25")}`,
+      `12.74 road km (from or to the office), assign 4, visits 1: show Arun's route on ${longDate("2026-09-25")}`,
     );
     expect(dayCell("Arun", "2026-09-25").title).toBe(
-      `Arun · ${longDate("2026-09-25")} · A Login or Logout with no GPS was placed at the FSE's office · assign 4, closed 1`,
+      `Arun · ${longDate("2026-09-25")} · A Login or Logout with no GPS was placed at the FSE's office · assign 4, visits 1`,
     );
   });
 
@@ -1033,8 +1033,8 @@ describe("RouteKmSection: the cases under each km", () => {
     await wait(15_000);
     expect(getRouteKm).toHaveBeenCalledTimes(2);
     expect(figure(dayButton("Bala", "2026-09-27"))).toBe("5.2");
-    expect(caseLine(dayCell("Bala", "2026-09-27"))).toBe("assign 3 · closed 2");
-    expect(cells(rows()[1]!).slice(-3)).toEqual(["1", "5.2", "assign 4 · closed 2"]);
+    expect(caseLine(dayCell("Bala", "2026-09-27"))).toBe("assign 3 · visits 2");
+    expect(cells(rows()[1]!).slice(-3)).toEqual(["1", "5.2", "assign 4 · visits 2"]);
     await wait(60_000);
     expect(getRouteKm).toHaveBeenCalledTimes(2);
   });

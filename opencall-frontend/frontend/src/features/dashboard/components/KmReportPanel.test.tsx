@@ -64,6 +64,17 @@ vi.mock("./RouteKmSection", async () => {
     },
   };
 });
+// So has the FIELDEZ table under that one.
+const fieldezKmSection = vi.fn();
+vi.mock("./FieldezKmSection", async () => {
+  const { createElement: h } = await import("react");
+  return {
+    default: (props: Record<string, unknown>) => {
+      fieldezKmSection(props);
+      return h("div", { "data-testid": "fieldez-km-section" });
+    },
+  };
+});
 
 const DAYS = ["2026-09-25", "2026-09-26", "2026-09-27"];
 
@@ -688,6 +699,63 @@ describe("KmReportPanel: the ROUTE KM table", () => {
     });
     expect(container.textContent).toContain("Your login has expired");
     expect(rows()).toHaveLength(0);
+    expect(routeKm()).toBeNull();
+    expect(tileValue("Total km")).toBe("—");
+  });
+});
+
+/**
+ * The FIELDEZ table: straight under ROUTE KM, handed what ROUTE KM is handed.
+ */
+
+const fieldezKmProps = () => fieldezKmSection.mock.lastCall?.[0] as RouteKmProps;
+const fieldezKm = () => container.querySelector('[data-testid="fieldez-km-section"]');
+
+describe("KmReportPanel: the FIELDEZ table", () => {
+  it("comes once, straight after ROUTE KM, with ROUTE KM's cycle, days and FSEs", async () => {
+    await mount();
+    expect(container.querySelectorAll('[data-testid="fieldez-km-section"]')).toHaveLength(1);
+    expect(routeKm()?.nextElementSibling).toBe(fieldezKm());
+    expect(fieldezKmProps()).toMatchObject({ token: "t", fromIso: "2026-09-25", toIso: "2026-10-24", days: DAYS });
+    // The very lists ROUTE KM is handed.
+    expect(fieldezKmProps().days).toBe(routeKmProps().days);
+    expect(fieldezKmProps().engineers).toBe(routeKmProps().engineers);
+    expect(fieldezKmProps().shown).toBe(routeKmProps().shown);
+    expect(names(fieldezKmProps().engineers)).toEqual(["Arun", "Bala"]);
+  });
+
+  it("a region box narrows what it shows, not who it asks about", async () => {
+    await mount();
+    await click(boxes()[2]!);
+    expect(names(fieldezKmProps().engineers)).toEqual(["Arun", "Bala"]);
+    expect(names(fieldezKmProps().shown)).toEqual(["Bala"]);
+  });
+
+  it("is not there while a cycle loads, nor when the search leaves nobody", async () => {
+    await mount();
+    let answer: (value: unknown) => void = () => {};
+    getRosterKmDays.mockReturnValueOnce(new Promise((resolve) => (answer = resolve)));
+    await click(container.querySelector<HTMLButtonElement>('button[aria-label="Previous cycle"]')!);
+    expect(fieldezKm()).toBeNull();
+    await act(async () => {
+      answer(REPORT);
+    });
+    await act(async () => {});
+    expect(fieldezKm()).not.toBeNull();
+    expect(fieldezKmProps()).toMatchObject({ fromIso: "2026-08-25", toIso: "2026-09-24" });
+
+    await type(container.querySelector<HTMLInputElement>('input[aria-label="Search FSE"]')!, "nobody");
+    expect(fieldezKm()).toBeNull();
+  });
+
+  it("an expired login inside it ends as one on the report does", async () => {
+    await mount();
+    await act(async () => {
+      fieldezKmProps().onSessionExpired();
+    });
+    expect(container.textContent).toContain("Your login has expired");
+    expect(rows()).toHaveLength(0);
+    expect(fieldezKm()).toBeNull();
     expect(routeKm()).toBeNull();
     expect(tileValue("Total km")).toBe("—");
   });

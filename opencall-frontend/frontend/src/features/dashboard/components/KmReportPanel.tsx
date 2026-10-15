@@ -17,6 +17,7 @@ import { dayRouteLayers } from "../../../lib/kmRoute";
 import { billCycleFor, billCycleForKey, type BillCycle } from "../utils/billCycle";
 import { todayIsoDate } from "../utils/dateUtils";
 import RouteKmSection from "./RouteKmSection";
+import FieldezKmSection from "./FieldezKmSection";
 
 // The live tracking board's own map. Leaflet touches `window`, so it is
 // client-only here too.
@@ -784,6 +785,23 @@ export default function KmReportPanel({ token, embedded = false }: KmReportPanel
           marked. Its own table and map, under these. */}
       {token && shown.length > 0 && result && (
         <RouteKmSection
+          token={token}
+          fromIso={cycle.fromIso}
+          toIso={cycle.toIso}
+          days={days}
+          engineers={engineers}
+          shown={shown}
+          onSessionExpired={() => {
+            setResult(null);
+            setSessionExpired(true);
+          }}
+        />
+      )}
+
+      {/* FIELDEZ: ROUTE KM's road with each check-in at FieldEZ's Problem
+          Resolution place. Its own table and map, under ROUTE KM's. */}
+      {token && shown.length > 0 && result && (
+        <FieldezKmSection
           token={token}
           fromIso={cycle.fromIso}
           toIso={cycle.toIso}

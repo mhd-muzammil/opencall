@@ -449,3 +449,74 @@ export async function getRouteKmDay(token: string, engineerId: number, date: str
   });
   return readJson<RouteKmDay>(response);
 }
+
+/**
+ * FIELDEZ: ROUTE KM's road -- Login, each Check-in, Logout, in time order --
+ * with one difference. A Check-in stands where FieldEZ recorded its work
+ * order's "Problem Resolution", not where the app checked in. A check-in
+ * FieldEZ has no such place for is left out, never put back at the app's
+ * position, and counted as missing.
+ *
+ * ROUTE KM's statuses plus "waiting": the FieldEZ tool has not read the day's
+ * work orders yet, so the day is not measured until it has.
+ */
+export type FieldezKmStatus = RouteKmStatus | "waiting";
+
+export interface FieldezKmCell extends Omit<RouteKmCell, "status"> {
+  status: FieldezKmStatus;
+  /** How many of the day's check-ins were left out for want of a FieldEZ place. */
+  missing: number;
+}
+
+export interface FieldezKmRange extends Omit<RouteKmRange, "engineers"> {
+  engineers: Array<{ engineer_id: number; days: Record<string, FieldezKmCell> }>;
+  /** FSE-days waiting for the FieldEZ tool to read their work orders: asked about again until it is 0. */
+  waiting: number;
+}
+
+/** A check-in left out of a FIELDEZ day, and why. */
+export interface FieldezKmMissing {
+  case_number: string | null;
+  /** The check-in's work order; null when its case has none. */
+  wo: string | null;
+  reason: "no_wo" | "fieldez_failed" | "not_in_fieldez" | "no_problem_resolution" | "not_read";
+}
+
+export interface FieldezKmDay extends Omit<RouteKmDay, "status"> {
+  status: FieldezKmStatus;
+  /** The day's check-ins left out of the route. */
+  missing: FieldezKmMissing[];
+  /** How many of the day's check-ins the FieldEZ tool has not read yet. */
+  waiting: number;
+}
+
+/**
+ * Road km per engineer per day for the KM Report's FIELDEZ table, asked as
+ * getRouteKm asks. Payroll measures a few per question, and a day waits until
+ * the FieldEZ tool has read its work orders: the caller asks again until
+ * nothing is pending or waiting.
+ */
+export async function getFieldezKm(
+  token: string,
+  from: string,
+  to: string,
+  engineerIds: number[],
+): Promise<FieldezKmRange> {
+  const response = await fetch(url("/api/v1/payroll-tracking/fieldez-km"), {
+    method: "POST",
+    headers: authHeaders(token),
+    body: JSON.stringify({ from, to, engineer_ids: engineerIds }),
+    cache: "no-store",
+  });
+  return readJson<FieldezKmRange>(response);
+}
+
+/** One engineer's FIELDEZ day: the places, in order, Ola's road through them, and the check-ins left out. */
+export async function getFieldezKmDay(token: string, engineerId: number, date: string): Promise<FieldezKmDay> {
+  const qs = `?date=${encodeURIComponent(date)}`;
+  const response = await fetch(url(`/api/v1/payroll-tracking/fieldez-km/day/engineer/${engineerId}${qs}`), {
+    headers: authHeaders(token),
+    cache: "no-store",
+  });
+  return readJson<FieldezKmDay>(response);
+}

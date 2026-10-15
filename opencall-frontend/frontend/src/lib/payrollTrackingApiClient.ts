@@ -520,3 +520,46 @@ export async function getFieldezKmDay(token: string, engineerId: number, date: s
   });
   return readJson<FieldezKmDay>(response);
 }
+
+/**
+ * One FSE-day's cases, as the live tracking board's day panel lists them:
+ * `cases` its "CASES (N)" rows -- planned, touched or visited that day -- and
+ * `closed` those of them checked out or completed that day.
+ */
+export interface CasesByDayCell {
+  cases: number;
+  closed: number;
+}
+
+export interface CasesByDayRow {
+  engineer_id: number;
+  /** Every day of the period, zeros included. */
+  days: Record<string, CasesByDayCell>;
+}
+
+export interface CasesByDayRange {
+  configured: boolean;
+  /** Every day asked about, oldest first, stopping at today. */
+  days: string[];
+  engineers: CasesByDayRow[];
+}
+
+/**
+ * Cases per engineer per day from `from` to `to` (YYYY-MM-DD, inclusive), for
+ * the case counts under the KM Report's km. Asked as getFieldezKm asks, but
+ * Payroll counts the whole period in one answer: nothing to ask again for.
+ */
+export async function getCasesByDay(
+  token: string,
+  from: string,
+  to: string,
+  engineerIds: number[],
+): Promise<CasesByDayRange> {
+  const response = await fetch(url("/api/v1/payroll-tracking/cases-by-day"), {
+    method: "POST",
+    headers: authHeaders(token),
+    body: JSON.stringify({ from, to, engineer_ids: engineerIds }),
+    cache: "no-store",
+  });
+  return readJson<CasesByDayRange>(response);
+}

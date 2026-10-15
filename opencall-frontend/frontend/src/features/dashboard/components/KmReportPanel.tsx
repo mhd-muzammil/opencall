@@ -5,8 +5,10 @@ import dynamic from "next/dynamic";
 import { clearSession } from "../../../lib/session";
 import { isApiAuthError } from "../../../lib/api/http";
 import {
+  getCasesByDay,
   getEngineerDay,
   getRosterKmDays,
+  type CasesByDayRange,
   type EngineerDay,
   type EngineerKmDays,
   type RosterKmDaysResult,
@@ -18,6 +20,7 @@ import { billCycleFor, billCycleForKey, type BillCycle } from "../utils/billCycl
 import { todayIsoDate } from "../utils/dateUtils";
 import RouteKmSection from "./RouteKmSection";
 import FieldezKmSection from "./FieldezKmSection";
+import { CasesLine, casesRowTotal, casesTotals, casesTotalText, casesWords } from "./KmCases";
 
 // The live tracking board's own map. Leaflet touches `window`, so it is
 // client-only here too.
@@ -186,6 +189,10 @@ export default function KmReportPanel({ token, embedded = false }: KmReportPanel
   const [routeAnswer, setRouteAnswer] = useState<RouteAnswer | null>(null);
   const pickCount = useRef(0);
   const mapBox = useRef<HTMLDivElement>(null);
+  // Each FSE-day's cases, for all three tables. Kept with the question they
+  // answer, so counts for another cycle, or for other FSEs, never show here.
+  const [cases, setCases] = useState<{ key: string; answer: CasesByDayRange } | null>(null);
+  const [casesError, setCasesError] = useState<{ key: string; message: string } | null>(null);
 
   useEffect(() => {
     if (!token || sessionExpired) return;
@@ -312,6 +319,57 @@ export default function KmReportPanel({ token, embedded = false }: KmReportPanel
     [engineers, activeRegion, query],
   );
   const totals = useMemo(() => kmTotals(shown, days), [shown, days]);
+
+  // The case counts are asked about the FSEs ROUTE KM and FIELDEZ ask about:
+  // everyone the cycle matched, whatever the boxes and the search leave on
+  // screen, so narrowing the tables does not ask again.
+  const idsKey = useMemo(
+    () => [...new Set(engineers.flatMap((row) => (row.engineer_id != null ? [row.engineer_id] : [])))].join(","),
+    [engineers],
+  );
+  const casesKey = `${cycle.fromIso}|${cycle.toIso}|${idsKey}`;
+  // For one render after the cycle arrows, the new cycle comes with the old
+  // cycle's FSEs and days; asked then, the answer would be thrown away.
+  const daysFitCycle = days.length === 0 || (days[0]! >= cycle.fromIso && days[days.length - 1]! <= cycle.toIso);
+
+  // Once a cycle: Payroll counts the whole cycle in one answer.
+  useEffect(() => {
+    const engineerIds = idsKey ? idsKey.split(",").map(Number) : [];
+    if (!token || sessionExpired || engineerIds.length === 0 || !daysFitCycle) return;
+    const key = `${cycle.fromIso}|${cycle.toIso}|${idsKey}`;
+    let active = true;
+    setCasesError(null);
+    getCasesByDay(token, cycle.fromIso, cycle.toIso, engineerIds)
+      .then((answer) => {
+        if (active) setCases({ key, answer });
+      })
+      .catch((e) => {
+        if (!active) return;
+        if (isApiAuthError(e)) {
+          // Ends where an expired login anywhere on the report ends.
+          setResult(null);
+          setSessionExpired(true);
+          return;
+        }
+        setCasesError({ key, message: e instanceof Error ? e.message : "Failed to load the case counts" });
+      });
+    return () => {
+      active = false;
+    };
+  }, [token, sessionExpired, cycle.fromIso, cycle.toIso, idsKey, daysFitCycle]);
+
+  // Only the answer to this question. Until it is here, or when asking
+  // failed, no day has a case line and the Cases column is blank -- also when
+  // an earlier answer to the same question is still held: the note says the
+  // counts could not be loaded, and old ones beside it would contradict it.
+  const casesFailed = casesError?.key === casesKey ? casesError.message : null;
+  const casesAnswer = cases?.key === casesKey && casesFailed == null ? cases.answer : null;
+  const casesById = useMemo(
+    () => new Map((casesAnswer?.engineers ?? []).map((row) => [row.engineer_id, row.days] as const)),
+    [casesAnswer],
+  );
+  const caseTotals = useMemo(() => casesTotals(shown, days, casesById), [shown, days, casesById]);
+
   const average = shown.length ? Math.round((totals.total / shown.length) * 100) / 100 : 0;
   const configured = result?.configured ?? true;
   // A tile with no answer yet says so, rather than reading as 0 km.
@@ -584,6 +642,9 @@ export default function KmReportPanel({ token, embedded = false }: KmReportPanel
                     <th style={{ ...cellBase, position: "sticky", top: 0, zIndex: 3, background: "#f9fafb", color: "#1d4ed8" }}>
                       Total km
                     </th>
+                    <th style={{ ...cellBase, position: "sticky", top: 0, zIndex: 3, background: "#f9fafb", color: "#1d4ed8" }}>
+                      Cases
+                    </th>
                   </tr>
                 </thead>
                 <tbody>
@@ -608,10 +669,13 @@ export default function KmReportPanel({ token, embedded = false }: KmReportPanel
                         // A day with distance on it has a route to show; a dash has none.
                         const canPick = km !== "-" && engineerId != null;
                         const picked = canPick && pick?.engineerId === engineerId && pick.day === day;
+                        // The day's cases, on a line under its km and in words.
+                        const dayCases = engineerId != null ? casesById.get(engineerId)?.[day] : undefined;
+                        const caseWords = casesWords(dayCases);
                         return (
                           <td
                             key={day}
-                            title={`${row.engineer_name} · ${fullDate(day)}`}
+                            title={`${row.engineer_name} · ${fullDate(day)}${caseWords ? ` · ${caseWords}` : ""}`}
                             // All of the cell takes the click, also where a two-line
                             // name makes it taller than the button. The button is
                             // the way in for the keyboard; its click lands here too.
@@ -632,7 +696,7 @@ export default function KmReportPanel({ token, embedded = false }: KmReportPanel
                                 type="button"
                                 data-testid="km-day"
                                 aria-pressed={picked}
-                                aria-label={`${km} km: show ${row.engineer_name}'s route on ${fullDate(day)}`}
+                                aria-label={`${km} km${caseWords ? `, ${caseWords}` : ""}: show ${row.engineer_name}'s route on ${fullDate(day)}`}
                                 style={{
                                   ...dayButton,
                                   // The fill is the button's too: the app paints a
@@ -645,9 +709,14 @@ export default function KmReportPanel({ token, embedded = false }: KmReportPanel
                                 }}
                               >
                                 {km}
+                                <CasesLine cell={dayCases} picked={picked} />
                               </button>
                             ) : (
-                              km
+                              <>
+                                {km}
+                                {/* No label on this cell: the line is read as it is. */}
+                                <CasesLine cell={dayCases} labelled={false} />
+                              </>
                             )}
                           </td>
                         );
@@ -655,6 +724,11 @@ export default function KmReportPanel({ token, embedded = false }: KmReportPanel
                       <td style={{ ...cellBase, textAlign: "center" }}>{row.days_tracked}</td>
                       <td style={{ ...cellBase, textAlign: "right", fontWeight: 700, color: "#1d4ed8" }} data-testid="km-total">
                         {formatKm(row.distance_km) === "-" ? "0" : formatKm(row.distance_km)}
+                      </td>
+                      <td style={{ ...cellBase, textAlign: "right" }} data-testid="km-cases-total">
+                        {casesTotalText(
+                          casesRowTotal(row.engineer_id != null ? casesById.get(row.engineer_id) : undefined, days),
+                        )}
                       </td>
                     </tr>
                   ))}
@@ -705,10 +779,29 @@ export default function KmReportPanel({ token, embedded = false }: KmReportPanel
                     >
                       {formatKm(totals.total) === "-" ? "0" : formatKm(totals.total)}
                     </td>
+                    <td
+                      style={{
+                        ...cellBase,
+                        position: "sticky",
+                        bottom: 0,
+                        zIndex: 3,
+                        background: "#f9fafb",
+                        textAlign: "right",
+                        fontWeight: 700,
+                      }}
+                    >
+                      {casesTotalText(caseTotals)}
+                    </td>
                   </tr>
                 </tfoot>
               </table>
             </div>
+            {/* Once, here: the tables under this one have no case counts either. */}
+            {casesFailed && (
+              <div data-testid="km-cases-note" role="status" style={{ marginTop: 8, fontSize: 12, color: "#6b7280" }}>
+                {`Could not load the case counts: ${casesFailed}`}
+              </div>
+            )}
           </div>
 
           <div data-testid="km-route" style={{ flex: "2 1 360px", minWidth: 0 }}>
@@ -791,6 +884,7 @@ export default function KmReportPanel({ token, embedded = false }: KmReportPanel
           days={days}
           engineers={engineers}
           shown={shown}
+          cases={casesById}
           onSessionExpired={() => {
             setResult(null);
             setSessionExpired(true);
@@ -808,6 +902,7 @@ export default function KmReportPanel({ token, embedded = false }: KmReportPanel
           days={days}
           engineers={engineers}
           shown={shown}
+          cases={casesById}
           onSessionExpired={() => {
             setResult(null);
             setSessionExpired(true);

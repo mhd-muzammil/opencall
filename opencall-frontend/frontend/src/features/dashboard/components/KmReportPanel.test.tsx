@@ -2,7 +2,12 @@
 import { createElement, act, type ReactNode } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { EngineerDay, EngineerKmDays } from "../../../lib/payrollTrackingApiClient";
+import type {
+  CasesByDayCell,
+  CasesByDayRange,
+  EngineerDay,
+  EngineerKmDays,
+} from "../../../lib/payrollTrackingApiClient";
 
 /**
  * The KM Report, mounted: who is listed, what the boxes and the search leave on
@@ -13,9 +18,11 @@ vi.mock("../../../lib/session", () => ({ clearSession: vi.fn() }));
 
 const getRosterKmDays = vi.fn();
 const getEngineerDay = vi.fn();
+const getCasesByDay = vi.fn();
 vi.mock("../../../lib/payrollTrackingApiClient", () => ({
   getRosterKmDays: (...args: unknown[]) => getRosterKmDays(...args),
   getEngineerDay: (...args: unknown[]) => getEngineerDay(...args),
+  getCasesByDay: (...args: unknown[]) => getCasesByDay(...args),
 }));
 
 // The board's own map, mounted for real, with Leaflet swapped for plain
@@ -107,6 +114,10 @@ const REPORT = {
   ],
 };
 
+// Payroll's case counts with nobody in them: no day has a case line, and the
+// Cases column is blank.
+const NO_COUNTS: CasesByDayRange = { configured: true, days: DAYS, engineers: [] };
+
 let container: HTMLDivElement;
 let root: Root;
 
@@ -116,6 +127,7 @@ beforeEach(() => {
   vi.useFakeTimers({ toFake: ["Date"] });
   vi.setSystemTime(new Date("2026-10-13T06:00:00Z"));
   getRosterKmDays.mockResolvedValue(REPORT);
+  getCasesByDay.mockResolvedValue(NO_COUNTS);
   // ResizeObserver is not in jsdom; the map only uses it to re-measure.
   (globalThis as { ResizeObserver?: unknown }).ResizeObserver = class {
     observe() {}
@@ -178,9 +190,10 @@ describe("KmReportPanel", () => {
   it("lists the FSEs Payroll knows, each day's km as it came, and the cycle's total", async () => {
     await mount();
     expect(rows()).toHaveLength(2);
-    expect(cells(rows()[0]!)).toEqual(["1", "Arun", "Chennai", "12.5", "-", "33.17", "2", "45.67"]);
-    expect(cells(rows()[1]!)).toEqual(["2", "Bala", "Salem", "-", "40.25", "1.03", "2", "41.28"]);
-    expect(footer()).toEqual(["Total", "12.5", "40.25", "34.2", "", "86.95"]);
+    // The last cell is the Cases column: blank, with no counts from Payroll.
+    expect(cells(rows()[0]!)).toEqual(["1", "Arun", "Chennai", "12.5", "-", "33.17", "2", "45.67", ""]);
+    expect(cells(rows()[1]!)).toEqual(["2", "Bala", "Salem", "-", "40.25", "1.03", "2", "41.28", ""]);
+    expect(footer()).toEqual(["Total", "12.5", "40.25", "34.2", "", "86.95", ""]);
     expect(container.textContent).toContain("1 engineer in the register is not in Payroll");
   });
 
@@ -199,7 +212,7 @@ describe("KmReportPanel", () => {
     await click(boxes()[2]!);
     expect(rows().map((r) => cells(r)[1])).toEqual(["Bala"]);
     expect(cells(rows()[0]!)[0]).toBe("1");
-    expect(footer().at(-1)).toBe("41.28");
+    expect(footer().at(-2)).toBe("41.28");
     expect(boxes()[2]!.getAttribute("aria-pressed")).toBe("true");
     await click(boxes()[0]!);
     expect(rows()).toHaveLength(2);
@@ -386,7 +399,7 @@ describe("KmReportPanel: the route map", () => {
     expect(container.querySelectorAll('[data-testid="km-day"]')).toHaveLength(4);
     expect(dayCell("Arun", "2026-09-25")?.textContent).toBe("12.5");
     expect(dayCell("Arun", "2026-09-26")).toBeUndefined();
-    expect(cells(rows()[0]!)).toEqual(["1", "Arun", "Chennai", "12.5", "-", "33.17", "2", "45.67"]);
+    expect(cells(rows()[0]!)).toEqual(["1", "Arun", "Chennai", "12.5", "-", "33.17", "2", "45.67", ""]);
   });
 
   it("a clicked km draws that engineer's route for that day, and brings it into view", async () => {
@@ -652,6 +665,7 @@ interface RouteKmProps {
   engineers: EngineerKmDays[];
   shown: EngineerKmDays[];
   onSessionExpired: () => void;
+  cases?: ReadonlyMap<number, Record<string, CasesByDayCell>>;
 }
 const routeKmProps = () => routeKmSection.mock.lastCall?.[0] as RouteKmProps;
 const routeKm = () => container.querySelector('[data-testid="route-km-section"]');
@@ -758,5 +772,275 @@ describe("KmReportPanel: the FIELDEZ table", () => {
     expect(fieldezKm()).toBeNull();
     expect(routeKm()).toBeNull();
     expect(tileValue("Total km")).toBe("—");
+  });
+});
+
+/**
+ * The cases under each day's km: the live tracking board's day panel counted
+ * by Payroll, asked once a cycle, printed in this table and handed to the two
+ * under it.
+ */
+
+const NONE: CasesByDayCell = { cases: 0, closed: 0 };
+
+/**
+ * Arun: 4 cases on the 25th, 1 closed; 2 on his dash of a 26th; none on the
+ * 27th. Bala: 3 on the 26th, all closed, and 1 on the 27th.
+ */
+const CASES: CasesByDayRange = {
+  configured: true,
+  days: DAYS,
+  engineers: [
+    { engineer_id: 7, days: { "2026-09-25": { cases: 4, closed: 1 }, "2026-09-26": { cases: 2, closed: 0 }, "2026-09-27": NONE } },
+    { engineer_id: 8, days: { "2026-09-25": NONE, "2026-09-26": { cases: 3, closed: 3 }, "2026-09-27": { cases: 1, closed: 0 } } },
+  ],
+};
+
+/** The cycle before, with its own days. */
+const AUGUST = { ...REPORT, days: ["2026-08-25", "2026-08-26"] };
+
+/** Any day's cell, clickable or not, by row and day. */
+const dayTd = (row: number, iso: string) => Array.from(rows()[row]!.querySelectorAll("td"))[3 + DAYS.indexOf(iso)]!;
+/** The line under a day's km, as it reads; null when there is none. */
+const caseLine = (cell: Element) => cell.querySelector('[data-testid="km-cases"]')?.textContent ?? null;
+const caseLines = () => container.querySelectorAll('[data-testid="km-cases"]');
+const casesNote = () => container.querySelector('[data-testid="km-cases-note"]')?.textContent ?? null;
+const headings = () =>
+  Array.from(container.querySelectorAll('[data-testid="km-grid"] thead th')).map((th) => th.textContent?.trim());
+const previousCycle = () => container.querySelector<HTMLButtonElement>('button[aria-label="Previous cycle"]')!;
+
+describe("KmReportPanel: the cases under each km", () => {
+  it("asks Payroll once a cycle, about the FSEs ROUTE KM and FIELDEZ ask about, whatever is on screen", async () => {
+    await mount();
+    expect(getCasesByDay).toHaveBeenCalledTimes(1);
+    expect(getCasesByDay).toHaveBeenCalledWith("t", "2026-09-25", "2026-10-24", [7, 8]);
+    expect(routeKmProps().engineers.map((row) => row.engineer_id)).toEqual([7, 8]);
+    // The boxes and the search narrow the tables, not the question.
+    await click(boxes()[2]!);
+    await type(container.querySelector<HTMLInputElement>('input[aria-label="Search FSE"]')!, "bal");
+    expect(getCasesByDay).toHaveBeenCalledTimes(1);
+  });
+
+  it("another cycle is asked about once its own days are in, never with the last cycle's", async () => {
+    await mount();
+    getRosterKmDays.mockResolvedValueOnce(AUGUST);
+    await click(previousCycle());
+    expect(getCasesByDay.mock.calls).toEqual([
+      ["t", "2026-09-25", "2026-10-24", [7, 8]],
+      ["t", "2026-08-25", "2026-09-24", [7, 8]],
+    ]);
+  });
+
+  it("puts each day's cases under its km, says them on the cell, and adds them up after Total km", async () => {
+    getCasesByDay.mockResolvedValue(CASES);
+    await mount();
+    expect(headings().slice(-3)).toEqual(["Days", "Total km", "Cases"]);
+
+    // Arun's 25th: the km as it was, its cases under it and in its words.
+    const km = dayCell("Arun", "2026-09-25")!;
+    expect(km.firstChild?.textContent).toBe("12.5");
+    expect(caseLine(km)).toBe("4 · 1 closed");
+    expect(km.getAttribute("aria-label")).toBe(
+      `12.5 km, 4 cases, 1 closed: show Arun's route on ${longDate("2026-09-25")}`,
+    );
+    expect(dayTd(0, "2026-09-25").title).toBe(`Arun · ${longDate("2026-09-25")} · 4 cases, 1 closed`);
+
+    // A dash with cases has them too, and is still a dash.
+    const dash = dayTd(0, "2026-09-26");
+    expect(dash.firstChild?.textContent).toBe("-");
+    expect(caseLine(dash)).toBe("2 · 0 closed");
+    expect(dash.title).toBe(`Arun · ${longDate("2026-09-26")} · 2 cases, 0 closed`);
+    expect(dash.querySelector("button")).toBeNull();
+    expect(dash.style.color).toBe("rgb(156, 163, 175)");
+
+    // A day with none: no line, and its words as they were.
+    expect(caseLine(dayTd(0, "2026-09-27"))).toBeNull();
+    expect(dayCell("Arun", "2026-09-27")!.getAttribute("aria-label")).toBe(
+      `33.17 km: show Arun's route on ${longDate("2026-09-27")}`,
+    );
+    expect(dayTd(0, "2026-09-27").title).toBe(`Arun · ${longDate("2026-09-27")}`);
+
+    // Each FSE's cases over the days on screen, then everyone's; the km as they were.
+    expect(cells(rows()[0]!).slice(-3)).toEqual(["2", "45.67", "6 · 1 closed"]);
+    expect(cells(rows()[1]!).slice(-3)).toEqual(["2", "41.28", "4 · 3 closed"]);
+    expect(footer().slice(-2)).toEqual(["86.95", "10 · 4 closed"]);
+
+    // A region box narrows the column's total with the rows.
+    await click(boxes()[2]!);
+    expect(footer().slice(-2)).toEqual(["41.28", "4 · 3 closed"]);
+  });
+
+  it("the line is small and grey, hidden from a reader that has its words, and not copied with the km", async () => {
+    getCasesByDay.mockResolvedValue(CASES);
+    await mount();
+    const line = dayCell("Arun", "2026-09-25")!.querySelector<HTMLElement>('[data-testid="km-cases"]')!;
+    expect(line.style.fontSize).toBe("11px");
+    expect(line.style.color).toBe("rgb(107, 114, 128)");
+    expect(line.getAttribute("aria-hidden")).toBe("true");
+    expect(line.style.userSelect).toBe("none");
+    // The km can still be selected as before.
+    expect(dayCell("Arun", "2026-09-25")!.style.userSelect).toBe("text");
+  });
+
+  it("hands the very same counts to ROUTE KM and FIELDEZ", async () => {
+    getCasesByDay.mockResolvedValue(CASES);
+    await mount();
+    expect(routeKmProps().cases?.get(7)?.["2026-09-25"]).toEqual({ cases: 4, closed: 1 });
+    expect(routeKmProps().cases?.get(8)?.["2026-09-26"]).toEqual({ cases: 3, closed: 3 });
+    expect(fieldezKmProps().cases).toBe(routeKmProps().cases);
+  });
+
+  it("an FSE Payroll gave no counts for has no lines and a blank Cases cell; one with none at all reads 0", async () => {
+    getCasesByDay.mockResolvedValue({
+      configured: true,
+      days: DAYS,
+      engineers: [{ engineer_id: 8, days: { "2026-09-25": NONE, "2026-09-26": NONE, "2026-09-27": NONE } }],
+    });
+    await mount();
+    expect(caseLines()).toHaveLength(0);
+    expect(cells(rows()[0]!)).toEqual(["1", "Arun", "Chennai", "12.5", "-", "33.17", "2", "45.67", ""]);
+    expect(cells(rows()[1]!)).toEqual(["2", "Bala", "Salem", "-", "40.25", "1.03", "2", "41.28", "0 · 0 closed"]);
+    expect(footer().at(-1)).toBe("0 · 0 closed");
+  });
+
+  it("while the counts are on their way no day has a line, and the tables under it have none", async () => {
+    getCasesByDay.mockReturnValue(new Promise(() => {}));
+    await mount();
+    expect(caseLines()).toHaveLength(0);
+    expect(cells(rows()[0]!).at(-1)).toBe("");
+    expect(footer().at(-1)).toBe("");
+    expect(casesNote()).toBeNull();
+    expect(routeKmProps().cases?.size).toBe(0);
+  });
+
+  it("another cycle shows none of the last cycle's counts while its own are on their way", async () => {
+    getCasesByDay.mockResolvedValueOnce(CASES);
+    await mount();
+    expect(caseLines().length).toBeGreaterThan(0);
+
+    const august = deferred<CasesByDayRange>();
+    getCasesByDay.mockReturnValueOnce(august.promise);
+    getRosterKmDays.mockResolvedValueOnce(AUGUST);
+    await click(previousCycle());
+    expect(rows()).toHaveLength(2);
+    expect(caseLines()).toHaveLength(0);
+    expect(cells(rows()[0]!).at(-1)).toBe("");
+
+    await settle(() =>
+      august.resolve({
+        configured: true,
+        days: AUGUST.days,
+        engineers: [{ engineer_id: 7, days: { "2026-08-25": { cases: 1, closed: 1 }, "2026-08-26": NONE } }],
+      }),
+    );
+    expect(cells(rows()[0]!).at(-1)).toBe("1 · 1 closed");
+    // Arun's first day of that cycle, the 25th of August.
+    expect(caseLine(Array.from(rows()[0]!.querySelectorAll("td"))[3]!)).toBe("1 · 1 closed");
+  });
+
+  it("a failed request leaves every case line out and says so once, in grey, under the first table", async () => {
+    getCasesByDay.mockRejectedValueOnce(new Error("Payroll is not answering"));
+    await mount();
+    expect(casesNote()).toBe("Could not load the case counts: Payroll is not answering");
+    const note = container.querySelector<HTMLElement>('[data-testid="km-cases-note"]')!;
+    expect(note.style.color).toBe("rgb(107, 114, 128)");
+    expect(container.querySelector('[data-testid="km-grid"]')?.nextElementSibling).toBe(note);
+    expect(container.querySelectorAll('[data-testid="km-cases-note"]')).toHaveLength(1);
+    expect(caseLines()).toHaveLength(0);
+    // The km as they were; the Cases column blank.
+    expect(cells(rows()[0]!)).toEqual(["1", "Arun", "Chennai", "12.5", "-", "33.17", "2", "45.67", ""]);
+    expect(footer().at(-1)).toBe("");
+    // Nor have the tables under it any counts.
+    expect(routeKmProps().cases?.size).toBe(0);
+    expect(fieldezKmProps().cases?.size).toBe(0);
+  });
+
+  it("an answer for the last cycle that comes late is never shown under the new one", async () => {
+    const september = deferred<CasesByDayRange>();
+    getCasesByDay.mockReturnValueOnce(september.promise);
+    await mount();
+    const august = deferred<CasesByDayRange>();
+    getCasesByDay.mockReturnValueOnce(august.promise);
+    getRosterKmDays.mockResolvedValueOnce(AUGUST);
+    await click(previousCycle());
+    await settle(() =>
+      august.resolve({
+        configured: true,
+        days: AUGUST.days,
+        engineers: [{ engineer_id: 7, days: { "2026-08-25": { cases: 1, closed: 1 }, "2026-08-26": NONE } }],
+      }),
+    );
+    await settle(() => september.resolve(CASES));
+    expect(cells(rows()[0]!).at(-1)).toBe("1 · 1 closed");
+    expect(caseLine(Array.from(rows()[0]!.querySelectorAll("td"))[3]!)).toBe("1 · 1 closed");
+  });
+
+  it("a failed re-ask of a cycle shows none of the counts it had for it, only the note", async () => {
+    getCasesByDay.mockResolvedValueOnce(CASES);
+    await mount();
+    expect(caseLines().length).toBeGreaterThan(0);
+    getCasesByDay.mockRejectedValueOnce(new Error("Payroll is redeploying"));
+    getRosterKmDays.mockResolvedValueOnce(AUGUST);
+    await click(previousCycle());
+    getCasesByDay.mockRejectedValueOnce(new Error("Payroll is redeploying"));
+    await click(container.querySelector<HTMLButtonElement>('button[aria-label="Next cycle"]')!);
+    expect(casesNote()).toBe("Could not load the case counts: Payroll is redeploying");
+    expect(caseLines()).toHaveLength(0);
+    expect(cells(rows()[0]!).at(-1)).toBe("");
+  });
+
+  it("a known day with no cases keeps an empty line, so the km stand level in a row", async () => {
+    getCasesByDay.mockResolvedValue(CASES);
+    await mount();
+    // Arun's 27th has none: an empty line of the line's height, with no text.
+    const none = dayTd(0, "2026-09-27").querySelector<HTMLElement>('[data-testid="km-cases-none"]')!;
+    expect(none.style.height).toBe("16px");
+    expect(none.textContent).toBe("");
+    expect(dayTd(0, "2026-09-25").querySelector<HTMLElement>('[data-testid="km-cases"]')!.style.height).toBe("16px");
+    // The words on a dash, which has no label, are read as they are.
+    expect(dayTd(0, "2026-09-26").querySelector('[data-testid="km-cases"]')!.hasAttribute("aria-hidden")).toBe(false);
+  });
+
+  it("an FSE with no counts at all has no lines, empty or not", async () => {
+    getCasesByDay.mockResolvedValue({ configured: true, days: DAYS, engineers: [] });
+    await mount();
+    expect(container.querySelectorAll('[data-testid="km-cases-none"], [data-testid="km-cases"]')).toHaveLength(0);
+  });
+
+  it("an expired login on the counts ends as one on the report does", async () => {
+    const { ApiClientError } = await import("../../../lib/api/http");
+    getCasesByDay.mockRejectedValueOnce(new ApiClientError("Unauthorized", 401, null));
+    await mount();
+    expect(container.textContent).toContain("Your login has expired");
+    expect(rows()).toHaveLength(0);
+    expect(tileValue("Total km")).toBe("—");
+    expect(casesNote()).toBeNull();
+  });
+
+  it("a km with its cases under it opens its day as before, also clicked on the line, and reads picked", async () => {
+    getCasesByDay.mockResolvedValue(CASES);
+    await mount();
+    getEngineerDay.mockResolvedValueOnce(engineerDay("2026-09-25", ROUTE_25));
+    await click(dayCell("Arun", "2026-09-25")!.querySelector<HTMLElement>('[data-testid="km-cases"]')!);
+    expect(getEngineerDay).toHaveBeenCalledTimes(1);
+    expect(getEngineerDay).toHaveBeenCalledWith("t", 7, "2026-09-25");
+    expect(routeLabel()).toBe(`Arun · Fri ${longDate("2026-09-25")} · 12.5 km`);
+    expect(drawnRoute()).toEqual(ROUTE_25);
+
+    const picked = dayCell("Arun", "2026-09-25")!;
+    expect(picked.getAttribute("aria-pressed")).toBe("true");
+    expect(picked.style.background).toBe("rgb(29, 78, 216)");
+    expect(picked.style.color).toBe("rgb(255, 255, 255)");
+    expect(picked.parentElement!.style.boxShadow).toContain("inset");
+    // Light on the picked blue, as the picked region box's own small line.
+    expect(picked.querySelector<HTMLElement>('[data-testid="km-cases"]')!.style.color).toBe(
+      "rgba(255, 255, 255, 0.85)",
+    );
+
+    // A dash with cases still takes no click.
+    await click(dayTd(0, "2026-09-26"));
+    expect(getEngineerDay).toHaveBeenCalledTimes(1);
+    // Nor does a click ask for the counts again.
+    expect(getCasesByDay).toHaveBeenCalledTimes(1);
   });
 });

@@ -3,12 +3,14 @@ import { createElement, act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type {
+  CasesByDayCell,
   EngineerKmDays,
   RouteKmCell,
   RouteKmDay,
   RouteKmPoint,
   RouteKmRange,
 } from "../../../lib/payrollTrackingApiClient";
+import type { CasesById } from "./KmCases";
 import type { RouteKmSectionProps } from "./RouteKmSection";
 
 /**
@@ -869,5 +871,145 @@ describe("RouteKmSection: Google's map, from the review", () => {
     expect(container.querySelector('[data-testid="route-km-map-office"]')?.textContent).toBe(
       "• A Login or Logout with no GPS was placed at the FSE's office: this route starts or ends there, not at a GPS fix.",
     );
+  });
+});
+
+/**
+ * The cases under each day's km, as the panel hands them over: the same line
+ * and Cases column as the RTPL table's -- and, without them, the table as it was.
+ */
+
+const NONE: CasesByDayCell = { cases: 0, closed: 0 };
+
+/**
+ * Arun: 4 cases on the 25th, 1 closed; 2 on his dash of a 26th; none on the
+ * 27th. Bala: 1 on the day Ola could not route, 3 on the one not measured yet,
+ * 2 closed. Chitra: none from Payroll. Dev, off the screen: 5.
+ */
+const CASES: CasesById = new Map([
+  [7, { "2026-09-25": { cases: 4, closed: 1 }, "2026-09-26": { cases: 2, closed: 0 }, "2026-09-27": NONE }],
+  [8, { "2026-09-25": { cases: 1, closed: 0 }, "2026-09-26": NONE, "2026-09-27": { cases: 3, closed: 2 } }],
+  [10, { "2026-09-25": { cases: 5, closed: 5 }, "2026-09-26": NONE, "2026-09-27": NONE }],
+]);
+
+/** The line under a day's km, as it reads; null when there is none. */
+const caseLine = (cell: Element) => cell.querySelector('[data-testid="km-cases"]')?.textContent ?? null;
+const headings = () =>
+  Array.from(container.querySelectorAll('[data-testid="route-km-grid"] thead th')).map((th) => th.textContent?.trim());
+
+describe("RouteKmSection: the cases under each km", () => {
+  it("without them the table is as it was: no Cases column and no case lines", async () => {
+    await mount();
+    expect(headings().at(-1)).toBe("Total km");
+    expect(container.querySelector('[data-testid="km-cases"]')).toBeNull();
+    expect(container.querySelector('[data-testid="route-km-cases-total"]')).toBeNull();
+    expect(cells(rows()[0]!)).toEqual(["1", "Arun", "Chennai", "12.74", "-", "8.1", "2", "20.84"]);
+    expect(footer()).toEqual(["Total", "16.24", "40.25", "8.1", "", "64.59"]);
+  });
+
+  it("puts each day's cases under its km, says them on the cell, and adds them up after Total km", async () => {
+    await mount({ cases: CASES });
+    expect(headings().slice(-3)).toEqual(["Days", "Total km", "Cases"]);
+
+    // Arun's 25th: the km as it was, its cases under it and in its words.
+    const km = dayButton("Arun", "2026-09-25")!;
+    expect(km.firstChild?.textContent).toBe("12.74");
+    expect(caseLine(km)).toBe("4 · 1 closed");
+    expect(km.getAttribute("aria-label")).toBe(
+      `12.74 road km, 4 cases, 1 closed: show Arun's route on ${longDate("2026-09-25")}`,
+    );
+    expect(dayCell("Arun", "2026-09-25").title).toBe(`Arun · ${longDate("2026-09-25")} · 4 cases, 1 closed`);
+
+    // A dash, a day Ola could not route and one not measured yet have theirs too.
+    expect(caseLine(dayCell("Arun", "2026-09-26"))).toBe("2 · 0 closed");
+    expect(dayCell("Arun", "2026-09-26").title).toBe(`Arun · ${longDate("2026-09-26")} · 2 cases, 0 closed`);
+    const failed = dayCell("Bala", "2026-09-25");
+    expect(failed.firstChild?.textContent).toBe("—");
+    expect(caseLine(failed)).toBe("1 · 0 closed");
+    expect(failed.getAttribute("aria-label")).toBe("could not be measured, 1 case, 0 closed");
+    expect(failed.title).toBe("Ola could not measure this day; it is tried again later · 1 case, 0 closed");
+    expect(failed.style.color).toBe("rgb(185, 28, 28)");
+    const waiting = dayCell("Bala", "2026-09-27");
+    expect(caseLine(waiting)).toBe("3 · 2 closed");
+    expect(waiting.getAttribute("aria-label")).toBe("not measured yet, 3 cases, 2 closed");
+
+    // A day with none has no line, and its words are as they were.
+    expect(caseLine(dayCell("Arun", "2026-09-27"))).toBeNull();
+    expect(dayButton("Arun", "2026-09-27")!.getAttribute("aria-label")).toBe(
+      `8.1 road km: show Arun's route on ${longDate("2026-09-27")}`,
+    );
+    expect(caseLine(dayCell("Bala", "2026-09-26"))).toBeNull();
+
+    // The km and their totals as they were; each FSE's cases over the days on
+    // screen. Chitra has none from Payroll: blank, not 0. Dev is off the screen.
+    expect(cells(rows()[0]!).slice(-3)).toEqual(["2", "20.84", "6 · 1 closed"]);
+    expect(cells(rows()[1]!).slice(-3)).toEqual(["0", "0", "4 · 2 closed"]);
+    expect(cells(rows()[2]!).slice(-3)).toEqual(["2", "43.75", ""]);
+    expect(footer().slice(-2)).toEqual(["64.59", "10 · 3 closed"]);
+  });
+
+  it("an FSE with no cases on any day reads 0 in the Cases column, and has no lines", async () => {
+    await mount({ cases: new Map([[9, { "2026-09-25": NONE, "2026-09-26": NONE, "2026-09-27": NONE }]]) });
+    expect(container.querySelector('[data-testid="km-cases"]')).toBeNull();
+    expect(cells(rows()[2]!).at(-1)).toBe("0 · 0 closed");
+    expect(cells(rows()[0]!).at(-1)).toBe("");
+    expect(footer().at(-1)).toBe("0 · 0 closed");
+  });
+
+  it("one engineer under two register names is counted once in the footer", async () => {
+    await mount({ cases: CASES, shown: [ARUN, fse("Arun K", "Chennai", 7)] });
+    expect(cells(rows()[0]!).at(-1)).toBe("6 · 1 closed");
+    expect(cells(rows()[1]!).at(-1)).toBe("6 · 1 closed");
+    expect(footer().at(-1)).toBe("6 · 1 closed");
+  });
+
+  it("with the office mark, the mark still follows the km and the line comes under both", async () => {
+    getRouteKm.mockResolvedValue(
+      range({ engineers: [{ engineer_id: 7, days: { "2026-09-25": { ...ready(12.74, 5), office: true } } }] }),
+    );
+    await mount({ cases: CASES });
+    const km = dayButton("Arun", "2026-09-25")!;
+    expect(km.textContent).toBe("12.74•4 · 1 closed");
+    expect(km.querySelector("span")!.textContent).toBe("•");
+    expect(km.getAttribute("aria-label")).toBe(
+      `12.74 road km (from or to the office), 4 cases, 1 closed: show Arun's route on ${longDate("2026-09-25")}`,
+    );
+    expect(dayCell("Arun", "2026-09-25").title).toBe(
+      `Arun · ${longDate("2026-09-25")} · A Login or Logout with no GPS was placed at the FSE's office · 4 cases, 1 closed`,
+    );
+  });
+
+  it("a km with its cases under it opens its day as before, also clicked on the line, and reads picked", async () => {
+    await mount({ cases: CASES });
+    getRouteKmDay.mockResolvedValueOnce(routeDay());
+    await click(dayButton("Arun", "2026-09-25")!.querySelector<HTMLElement>('[data-testid="km-cases"]')!);
+    expect(getRouteKmDay).toHaveBeenCalledTimes(1);
+    expect(getRouteKmDay).toHaveBeenCalledWith("t", 7, "2026-09-25");
+    expect(routeLabel()).toBe(`Arun · Fri ${longDate("2026-09-25")} · 12.74 km · 5 stops`);
+    expect(mapSrc()).toBe(DAY_ON_GOOGLE);
+
+    const picked = dayButton("Arun", "2026-09-25")!;
+    expect(picked.getAttribute("aria-pressed")).toBe("true");
+    expect(picked.style.background).toBe("rgb(29, 78, 216)");
+    expect(picked.style.color).toBe("rgb(255, 255, 255)");
+    expect(picked.querySelector<HTMLElement>('[data-testid="km-cases"]')!.style.color).toBe(
+      "rgba(255, 255, 255, 0.85)",
+    );
+    // A dash with cases still takes no click.
+    await click(dayCell("Arun", "2026-09-26"));
+    expect(getRouteKmDay).toHaveBeenCalledTimes(1);
+  });
+
+  it("the counts stay through the table's own asking again", async () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    getRouteKm.mockResolvedValueOnce(range()).mockResolvedValueOnce(DONE);
+    await mount({ cases: CASES });
+    await wait(15_000);
+    expect(getRouteKm).toHaveBeenCalledTimes(2);
+    expect(dayButton("Bala", "2026-09-27")!.firstChild?.textContent).toBe("5.2");
+    expect(caseLine(dayCell("Bala", "2026-09-27"))).toBe("3 · 2 closed");
+    expect(cells(rows()[1]!).slice(-3)).toEqual(["1", "5.2", "4 · 2 closed"]);
+    await wait(60_000);
+    expect(getRouteKm).toHaveBeenCalledTimes(2);
   });
 });

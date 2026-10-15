@@ -22,6 +22,7 @@ import {
   routeKmRowTotals,
   routeKmTotals,
 } from "../../../lib/routeKm";
+import { CasesLine, casesRowTotal, casesTotals, casesTotalText, casesWords, type CasesById } from "./KmCases";
 
 /**
  * FIELDEZ: under ROUTE KM, the same FSEs, days and road, with one difference.
@@ -195,6 +196,11 @@ export interface FieldezKmSectionProps {
   /** What the region box and the search leave on screen: what is shown. */
   shown: EngineerKmDays[];
   onSessionExpired: () => void;
+  /**
+   * Each FSE's cases per day, asked by the panel: a line under each day's km
+   * and a Cases column after Total km. Without it the table is as it was.
+   */
+  cases?: CasesById;
 }
 
 export default function FieldezKmSection({
@@ -205,6 +211,7 @@ export default function FieldezKmSection({
   engineers,
   shown,
   onSessionExpired,
+  cases,
 }: FieldezKmSectionProps) {
   // Answers are kept with the question they answer, so one for another cycle,
   // or for other FSEs, is never shown under this one.
@@ -368,6 +375,7 @@ export default function FieldezKmSection({
     [fieldezCellsById],
   );
   const totals = useMemo(() => routeKmTotals(shown, days, cellsById), [shown, days, cellsById]);
+  const caseTotals = useMemo(() => (cases ? casesTotals(shown, days, cases) : null), [cases, shown, days]);
 
   // Only the answer for THIS pick. Between a click and its answer the last
   // pick's route would otherwise stay drawn under the new name.
@@ -656,6 +664,11 @@ export default function FieldezKmSection({
                 <th style={{ ...cellBase, position: "sticky", top: 0, zIndex: 3, background: "#f9fafb", color: "#1d4ed8" }}>
                   Total km
                 </th>
+                {cases && (
+                  <th style={{ ...cellBase, position: "sticky", top: 0, zIndex: 3, background: "#f9fafb", color: "#1d4ed8" }}>
+                    Cases
+                  </th>
+                )}
               </tr>
             </thead>
             <tbody>
@@ -732,25 +745,28 @@ export default function FieldezKmSection({
                           *
                         </span>
                       );
+                      // The day's cases, on a line under its km and in words.
+                      const dayCases = engineerId != null ? cases?.get(engineerId)?.[day] : undefined;
+                      const caseWords = casesWords(dayCases);
                       return (
                         <td
                           key={day}
                           title={
-                            failed
+                            (failed
                               ? cell.final
                                 ? FAILED_FINAL_TITLE
                                 : FAILED_TITLE
                               : `${row.engineer_name} · ${fullDate(day)}${atOffice ? ` · ${OFFICE_TITLE}` : ""}${
                                   missing > 0 ? ` · ${missingTitle(missing)}` : ""
-                                }`
+                                }`) + (caseWords ? ` · ${caseWords}` : "")
                           }
                           // What a glyph means, for a reader that cannot see it.
                           {...(failed
-                            ? { "aria-label": "could not be measured" }
+                            ? { "aria-label": `could not be measured${caseWords ? `, ${caseWords}` : ""}` }
                             : forFieldez
-                              ? { "aria-label": "waiting for FieldEZ" }
+                              ? { "aria-label": `waiting for FieldEZ${caseWords ? `, ${caseWords}` : ""}` }
                               : waiting
-                                ? { "aria-label": "not measured yet" }
+                                ? { "aria-label": `not measured yet${caseWords ? `, ${caseWords}` : ""}` }
                                 : {})}
                           // All of the cell takes the click, also where a two-line
                           // name makes it taller than the button. The button is
@@ -774,7 +790,7 @@ export default function FieldezKmSection({
                               aria-pressed={picked}
                               aria-label={`${km} road km${atOffice ? " (from or to the office)" : ""}${
                                 missing > 0 ? ` (${missingTitle(missing)})` : ""
-                              }: show ${row.engineer_name}'s route on ${fullDate(day)}`}
+                              }${caseWords ? `, ${caseWords}` : ""}: show ${row.engineer_name}'s route on ${fullDate(day)}`}
                               style={{
                                 ...dayButton,
                                 // The fill is the button's too: the app paints a
@@ -789,12 +805,15 @@ export default function FieldezKmSection({
                               {km}
                               {officeMark}
                               {missingMark}
+                              <CasesLine cell={dayCases} picked={picked} />
                             </button>
                           ) : (
                             <>
                               {km}
                               {officeMark}
                               {missingMark}
+                              {/* Read as it is unless the cell's label says it. */}
+                              <CasesLine cell={dayCases} labelled={failed || forFieldez || waiting} />
                             </>
                           )}
                         </td>
@@ -807,6 +826,13 @@ export default function FieldezKmSection({
                     >
                       {formatKm(rowTotals.km) === "-" ? "0" : formatKm(rowTotals.km)}
                     </td>
+                    {cases && (
+                      <td style={{ ...cellBase, textAlign: "right" }} data-testid="fieldez-km-cases-total">
+                        {casesTotalText(
+                          casesRowTotal(row.engineer_id != null ? cases.get(row.engineer_id) : undefined, days),
+                        )}
+                      </td>
+                    )}
                   </tr>
                 );
               })}
@@ -858,6 +884,21 @@ export default function FieldezKmSection({
                 >
                   {formatKm(totals.total) === "-" ? "0" : formatKm(totals.total)}
                 </td>
+                {cases && (
+                  <td
+                    style={{
+                      ...cellBase,
+                      position: "sticky",
+                      bottom: 0,
+                      zIndex: 3,
+                      background: "#f9fafb",
+                      textAlign: "right",
+                      fontWeight: 700,
+                    }}
+                  >
+                    {casesTotalText(caseTotals)}
+                  </td>
+                )}
               </tr>
             </tfoot>
           </table>

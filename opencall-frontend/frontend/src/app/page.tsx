@@ -476,6 +476,10 @@ export default function DashboardPage() {
 
   const draftOutputRef = useRef(draftOutput);
   const hasAutoRestoredHistoryRef = useRef(false);
+  // True while the first history fetch after login is in flight. Without it the
+  // workspace sat completely blank (no report, no overlay) until /report-history
+  // answered — seconds on prod — which users read as the app being stuck.
+  const [isLoadingInitialHistory, setIsLoadingInitialHistory] = useState(false);
   const recordsTableWrapRef = useRef<HTMLDivElement | null>(null);
   const recordsScrollTopRef = useRef<HTMLDivElement | null>(null);
   const recordsScrollTopSpacerRef = useRef<HTMLDivElement | null>(null);
@@ -2417,6 +2421,8 @@ export default function DashboardPage() {
       // login. They restore nothing from history (their report comes from the scoped
       // endpoint), so don't fire a call that can only fail.
       if (!isSpecialAccess) {
+        const isInitialLoad = !hasAutoRestoredHistoryRef.current && !report && !upload;
+        if (isInitialLoad) setIsLoadingInitialHistory(true);
         getReportHistory(session.token).then((sessions) => {
           setHistorySessions(sessions);
 
@@ -2428,7 +2434,10 @@ export default function DashboardPage() {
               void handleHistoryOpen(sessionToRestore);
             }
           }
-        }).catch(handleBackgroundError);
+        }).catch(handleBackgroundError)
+          .finally(() => {
+            if (isInitialLoad) setIsLoadingInitialHistory(false);
+          });
       }
       // A special-access credential is not a row in `users`, so it can never satisfy the
       // role guard on the admin dropdown endpoints — those calls 401 and left the Work
@@ -5952,7 +5961,11 @@ export default function DashboardPage() {
 
       {/* Full-screen loader for long operations (generate/upload/preview).
           Fades in only after ~250ms of busy, so quick actions never flash it. */}
-      {isBusy && <BusyOverlay />}
+      {isBusy ? (
+        <BusyOverlay />
+      ) : isLoadingInitialHistory ? (
+        <BusyOverlay label="Loading your workspace…" sublabel="Finding today's report" />
+      ) : null}
 
       {/* 3. Super Admin Engineer Productivity Dashboard Page */}
       {/* Replaced with direct panel rendering under workspaceView === "productivity" */}

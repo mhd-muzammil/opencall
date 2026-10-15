@@ -29,16 +29,21 @@ export function casesWords(cell: CasesByDayCell | undefined): string {
 // One line's height, the same on every line, so the days in a row stand level.
 const LINE_HEIGHT = 16;
 
-const smallLine = (picked: boolean) =>
+// The office's colours for the two lines (15 Oct 2026): assign blue and
+// visits green, as the live board's "On the way" and "Closed".
+const ASSIGN_COLOUR = "#2563eb";
+const VISITS_COLOUR = "#15803d";
+
+const smallLine = (picked: boolean, colour: string) =>
   ({
     display: "block",
     height: LINE_HEIGHT,
     lineHeight: `${LINE_HEIGHT}px`,
     fontSize: 11,
     fontWeight: 400,
-    // Grey on white; on a picked day's blue, as light as the picked region
-    // box's own small line.
-    color: picked ? "rgba(255,255,255,0.85)" : "#6b7280",
+    // Its own colour on white; on a picked day's blue, which would swallow
+    // blue text, as light as the picked region box's own small line.
+    color: picked ? "rgba(255,255,255,0.85)" : colour,
     fontVariantNumeric: "tabular-nums",
     userSelect: "none",
     WebkitUserSelect: "none",
@@ -90,8 +95,8 @@ export function CasesLine({
   }
   return (
     <span {...(labelled ? { "aria-hidden": true } : {})} data-testid="km-cases" style={{ display: "block" }}>
-      <span data-testid="km-assign" style={smallLine(picked)}>{`assign ${count(cell.cases)}`}</span>
-      <span data-testid="km-closed" style={smallLine(picked)}>{`visits ${count(cell.closed)}`}</span>
+      <span data-testid="km-assign" style={smallLine(picked, ASSIGN_COLOUR)}>{`assign ${count(cell.cases)}`}</span>
+      <span data-testid="km-closed" style={smallLine(picked, VISITS_COLOUR)}>{`visits ${count(cell.closed)}`}</span>
     </span>
   );
 }
@@ -140,7 +145,14 @@ export function casesTotals(
   return known ? { cases, closed } : null;
 }
 
-/** A Cases column cell: "assign 12 · visits 3"; nothing when not known. */
+/** A Cases column cell: "assign 12 · visits 3", in the lines' colours; nothing when not known. */
 export function CasesTotal({ total }: { total: CasesByDayCell | null }) {
-  return total ? <>{`assign ${total.cases} · visits ${total.closed}`}</> : null;
+  if (!total) return null;
+  return (
+    <>
+      <span data-testid="km-total-assign" style={{ color: ASSIGN_COLOUR }}>{`assign ${total.cases}`}</span>
+      {" · "}
+      <span data-testid="km-total-visits" style={{ color: VISITS_COLOUR }}>{`visits ${total.closed}`}</span>
+    </>
+  );
 }

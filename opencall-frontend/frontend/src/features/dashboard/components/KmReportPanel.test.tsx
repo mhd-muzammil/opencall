@@ -895,17 +895,25 @@ describe("KmReportPanel: the cases under each km", () => {
     expect(footer().slice(-2)).toEqual(["41.28", "assign 4 · visits 3"]);
   });
 
-  it("the line is small and grey, hidden from a reader that has its words, and not copied with the km", async () => {
+  it("the lines are small, assign blue and visits green, hidden from a reader that has their words, and not copied with the km", async () => {
     getCasesByDay.mockResolvedValue(CASES);
     await mount();
     const lines = dayCell("Arun", "2026-09-25")!.querySelector<HTMLElement>('[data-testid="km-cases"]')!;
     expect(lines.getAttribute("aria-hidden")).toBe("true");
-    for (const id of ["km-assign", "km-closed"]) {
+    for (const [id, colour] of [
+      ["km-assign", "rgb(37, 99, 235)"],
+      ["km-closed", "rgb(21, 128, 61)"],
+    ] as const) {
       const line = lines.querySelector<HTMLElement>(`[data-testid="${id}"]`)!;
       expect(line.style.fontSize).toBe("11px");
-      expect(line.style.color).toBe("rgb(107, 114, 128)");
+      expect(line.style.color).toBe(colour);
       expect(line.style.userSelect).toBe("none");
     }
+    // The Cases column in the same colours, and the km black as before.
+    const total = Array.from(rows()[0]!.querySelectorAll("td")).at(-1)!;
+    expect(total.querySelector<HTMLElement>('[data-testid="km-total-assign"]')!.style.color).toBe("rgb(37, 99, 235)");
+    expect(total.querySelector<HTMLElement>('[data-testid="km-total-visits"]')!.style.color).toBe("rgb(21, 128, 61)");
+    expect(dayCell("Arun", "2026-09-25")!.style.color).toBe("rgb(17, 24, 39)");
     // The km can still be selected as before.
     expect(dayCell("Arun", "2026-09-25")!.style.userSelect).toBe("text");
   });

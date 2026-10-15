@@ -19,7 +19,7 @@ import {
   routeKmRowTotals,
   routeKmTotals,
 } from "../../../lib/routeKm";
-import { CasesLine, casesRowTotal, casesTotals, casesTotalText, casesWords, type CasesById } from "./KmCases";
+import { CasesLine, CasesTotal, KmLabel, casesRowTotal, casesTotals, casesWords, type CasesById } from "./KmCases";
 
 /**
  * ROUTE KM: under the RTPL APP KM table, the same FSEs and days measured another
@@ -668,12 +668,14 @@ export default function RouteKmSection({
                                 fontWeight: picked ? 700 : "inherit",
                               }}
                             >
+                              <KmLabel picked={picked} />
                               {km}
                               {officeMark}
                               <CasesLine cell={dayCases} picked={picked} />
                             </button>
                           ) : (
                             <>
+                              <KmLabel />
                               {km}
                               {officeMark}
                               {/* Read as it is unless the cell's label says it. */}
@@ -692,9 +694,7 @@ export default function RouteKmSection({
                     </td>
                     {cases && (
                       <td style={{ ...cellBase, textAlign: "right" }} data-testid="route-km-cases-total">
-                        {casesTotalText(
-                          casesRowTotal(row.engineer_id != null ? cases.get(row.engineer_id) : undefined, days),
-                        )}
+                        <CasesTotal total={casesRowTotal(row.engineer_id != null ? cases.get(row.engineer_id) : undefined, days)} />
                       </td>
                     )}
                   </tr>
@@ -760,7 +760,7 @@ export default function RouteKmSection({
                       fontWeight: 700,
                     }}
                   >
-                    {casesTotalText(caseTotals)}
+                    <CasesTotal total={caseTotals} />
                   </td>
                 )}
               </tr>

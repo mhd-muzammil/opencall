@@ -156,7 +156,26 @@ async function mount() {
 }
 
 const rows = () => Array.from(container.querySelectorAll('[data-testid="km-row"]'));
-const cells = (row: Element) => Array.from(row.querySelectorAll("td")).map((td) => td.textContent?.trim());
+/**
+ * A cell's text as these tests read it: the figure and its marks, without the
+ * grey "km" before it or the assign/closed lines under it (read with
+ * caseLine); a Cases column cell as "assign N · closed M".
+ */
+/** A day cell's or button's figure and marks, without the grey "km" before it or the lines under it. */
+const figure = (el: Element | null | undefined) => {
+  if (!el) return null;
+  const clone = el.cloneNode(true) as Element;
+  clone.querySelectorAll('[data-testid="km-label"], [data-testid="km-cases"]').forEach((node) => node.remove());
+  return clone.textContent;
+};
+const cellText = (td: Element) => {
+  const clone = td.cloneNode(true) as Element;
+  clone.querySelectorAll('[data-testid="km-label"], [data-testid="km-cases"]').forEach((node) => node.remove());
+  const assign = clone.querySelector('[data-testid="km-assign"]');
+  if (assign) return `${assign.textContent} · ${clone.querySelector('[data-testid="km-closed"]')?.textContent}`;
+  return clone.textContent?.trim();
+};
+const cells = (row: Element) => Array.from(row.querySelectorAll("td")).map(cellText);
 const boxes = () => Array.from(container.querySelectorAll<HTMLButtonElement>('[data-testid="km-region"]'));
 const footer = () => cells(container.querySelector('[data-testid="km-footer"]')!);
 /** The figure on the summary tile with this label. */
@@ -397,7 +416,7 @@ describe("KmReportPanel: the route map", () => {
   it("every km can be clicked, a dash cannot, and the cells read as before", async () => {
     await mount();
     expect(container.querySelectorAll('[data-testid="km-day"]')).toHaveLength(4);
-    expect(dayCell("Arun", "2026-09-25")?.textContent).toBe("12.5");
+    expect(figure(dayCell("Arun", "2026-09-25"))).toBe("12.5");
     expect(dayCell("Arun", "2026-09-26")).toBeUndefined();
     expect(cells(rows()[0]!)).toEqual(["1", "Arun", "Chennai", "12.5", "-", "33.17", "2", "45.67", ""]);
   });
@@ -580,7 +599,7 @@ describe("KmReportPanel: the route map", () => {
 
   it("a dash's cell takes no click", async () => {
     await mount();
-    const dash = Array.from(rows()[0]!.querySelectorAll("td")).find((td) => td.textContent === "-")!;
+    const dash = Array.from(rows()[0]!.querySelectorAll("td")).find((td) => figure(td) === "-")!;
     await click(dash);
     expect(getEngineerDay).not.toHaveBeenCalled();
     expect(routeLabel()).toBe("Click a km to see that day's route.");
@@ -802,7 +821,13 @@ const AUGUST = { ...REPORT, days: ["2026-08-25", "2026-08-26"] };
 /** Any day's cell, clickable or not, by row and day. */
 const dayTd = (row: number, iso: string) => Array.from(rows()[row]!.querySelectorAll("td"))[3 + DAYS.indexOf(iso)]!;
 /** The line under a day's km, as it reads; null when there is none. */
-const caseLine = (cell: Element) => cell.querySelector('[data-testid="km-cases"]')?.textContent ?? null;
+/** A day's assign/closed lines as "assign N · closed M", or null when it has none. */
+const caseLine = (cell: Element) => {
+  const lines = cell.querySelector('[data-testid="km-cases"]');
+  if (!lines) return null;
+  const read = (id: string) => lines.querySelector(`[data-testid="${id}"]`)?.textContent;
+  return `${read("km-assign")} · ${read("km-closed")}`;
+};
 const caseLines = () => container.querySelectorAll('[data-testid="km-cases"]');
 const casesNote = () => container.querySelector('[data-testid="km-cases-note"]')?.textContent ?? null;
 const headings = () =>
@@ -838,18 +863,18 @@ describe("KmReportPanel: the cases under each km", () => {
 
     // Arun's 25th: the km as it was, its cases under it and in its words.
     const km = dayCell("Arun", "2026-09-25")!;
-    expect(km.firstChild?.textContent).toBe("12.5");
-    expect(caseLine(km)).toBe("4 · 1 closed");
+    expect(figure(km)).toBe("12.5");
+    expect(caseLine(km)).toBe("assign 4 · closed 1");
     expect(km.getAttribute("aria-label")).toBe(
-      `12.5 km, 4 cases, 1 closed: show Arun's route on ${longDate("2026-09-25")}`,
+      `12.5 km, assign 4, closed 1: show Arun's route on ${longDate("2026-09-25")}`,
     );
-    expect(dayTd(0, "2026-09-25").title).toBe(`Arun · ${longDate("2026-09-25")} · 4 cases, 1 closed`);
+    expect(dayTd(0, "2026-09-25").title).toBe(`Arun · ${longDate("2026-09-25")} · assign 4, closed 1`);
 
     // A dash with cases has them too, and is still a dash.
     const dash = dayTd(0, "2026-09-26");
-    expect(dash.firstChild?.textContent).toBe("-");
-    expect(caseLine(dash)).toBe("2 · 0 closed");
-    expect(dash.title).toBe(`Arun · ${longDate("2026-09-26")} · 2 cases, 0 closed`);
+    expect(figure(dash)).toBe("-");
+    expect(caseLine(dash)).toBe("assign 2 · closed 0");
+    expect(dash.title).toBe(`Arun · ${longDate("2026-09-26")} · assign 2, closed 0`);
     expect(dash.querySelector("button")).toBeNull();
     expect(dash.style.color).toBe("rgb(156, 163, 175)");
 
@@ -861,25 +886,41 @@ describe("KmReportPanel: the cases under each km", () => {
     expect(dayTd(0, "2026-09-27").title).toBe(`Arun · ${longDate("2026-09-27")}`);
 
     // Each FSE's cases over the days on screen, then everyone's; the km as they were.
-    expect(cells(rows()[0]!).slice(-3)).toEqual(["2", "45.67", "6 · 1 closed"]);
-    expect(cells(rows()[1]!).slice(-3)).toEqual(["2", "41.28", "4 · 3 closed"]);
-    expect(footer().slice(-2)).toEqual(["86.95", "10 · 4 closed"]);
+    expect(cells(rows()[0]!).slice(-3)).toEqual(["2", "45.67", "assign 6 · closed 1"]);
+    expect(cells(rows()[1]!).slice(-3)).toEqual(["2", "41.28", "assign 4 · closed 3"]);
+    expect(footer().slice(-2)).toEqual(["86.95", "assign 10 · closed 4"]);
 
     // A region box narrows the column's total with the rows.
     await click(boxes()[2]!);
-    expect(footer().slice(-2)).toEqual(["41.28", "4 · 3 closed"]);
+    expect(footer().slice(-2)).toEqual(["41.28", "assign 4 · closed 3"]);
   });
 
   it("the line is small and grey, hidden from a reader that has its words, and not copied with the km", async () => {
     getCasesByDay.mockResolvedValue(CASES);
     await mount();
-    const line = dayCell("Arun", "2026-09-25")!.querySelector<HTMLElement>('[data-testid="km-cases"]')!;
-    expect(line.style.fontSize).toBe("11px");
-    expect(line.style.color).toBe("rgb(107, 114, 128)");
-    expect(line.getAttribute("aria-hidden")).toBe("true");
-    expect(line.style.userSelect).toBe("none");
+    const lines = dayCell("Arun", "2026-09-25")!.querySelector<HTMLElement>('[data-testid="km-cases"]')!;
+    expect(lines.getAttribute("aria-hidden")).toBe("true");
+    for (const id of ["km-assign", "km-closed"]) {
+      const line = lines.querySelector<HTMLElement>(`[data-testid="${id}"]`)!;
+      expect(line.style.fontSize).toBe("11px");
+      expect(line.style.color).toBe("rgb(107, 114, 128)");
+      expect(line.style.userSelect).toBe("none");
+    }
     // The km can still be selected as before.
     expect(dayCell("Arun", "2026-09-25")!.style.userSelect).toBe("text");
+  });
+
+  it("each day reads km, then assign, then closed, as the office asked", async () => {
+    getCasesByDay.mockResolvedValue(CASES);
+    await mount();
+    const km = dayCell("Arun", "2026-09-25")!;
+    const label = km.querySelector<HTMLElement>('[data-testid="km-label"]')!;
+    expect(label.textContent).toBe("km");
+    expect(label.getAttribute("aria-hidden")).toBe("true");
+    expect(label.style.userSelect).toBe("none");
+    expect(km.textContent).toBe("km12.5assign 4closed 1");
+    // A dash with no km still says what it is.
+    expect(dayTd(0, "2026-09-26").textContent).toBe("km-assign 2closed 0");
   });
 
   it("hands the very same counts to ROUTE KM and FIELDEZ", async () => {
@@ -899,8 +940,8 @@ describe("KmReportPanel: the cases under each km", () => {
     await mount();
     expect(caseLines()).toHaveLength(0);
     expect(cells(rows()[0]!)).toEqual(["1", "Arun", "Chennai", "12.5", "-", "33.17", "2", "45.67", ""]);
-    expect(cells(rows()[1]!)).toEqual(["2", "Bala", "Salem", "-", "40.25", "1.03", "2", "41.28", "0 · 0 closed"]);
-    expect(footer().at(-1)).toBe("0 · 0 closed");
+    expect(cells(rows()[1]!)).toEqual(["2", "Bala", "Salem", "-", "40.25", "1.03", "2", "41.28", "assign 0 · closed 0"]);
+    expect(footer().at(-1)).toBe("assign 0 · closed 0");
   });
 
   it("while the counts are on their way no day has a line, and the tables under it have none", async () => {
@@ -933,9 +974,9 @@ describe("KmReportPanel: the cases under each km", () => {
         engineers: [{ engineer_id: 7, days: { "2026-08-25": { cases: 1, closed: 1 }, "2026-08-26": NONE } }],
       }),
     );
-    expect(cells(rows()[0]!).at(-1)).toBe("1 · 1 closed");
+    expect(cells(rows()[0]!).at(-1)).toBe("assign 1 · closed 1");
     // Arun's first day of that cycle, the 25th of August.
-    expect(caseLine(Array.from(rows()[0]!.querySelectorAll("td"))[3]!)).toBe("1 · 1 closed");
+    expect(caseLine(Array.from(rows()[0]!.querySelectorAll("td"))[3]!)).toBe("assign 1 · closed 1");
   });
 
   it("a failed request leaves every case line out and says so once, in grey, under the first table", async () => {
@@ -971,8 +1012,8 @@ describe("KmReportPanel: the cases under each km", () => {
       }),
     );
     await settle(() => september.resolve(CASES));
-    expect(cells(rows()[0]!).at(-1)).toBe("1 · 1 closed");
-    expect(caseLine(Array.from(rows()[0]!.querySelectorAll("td"))[3]!)).toBe("1 · 1 closed");
+    expect(cells(rows()[0]!).at(-1)).toBe("assign 1 · closed 1");
+    expect(caseLine(Array.from(rows()[0]!.querySelectorAll("td"))[3]!)).toBe("assign 1 · closed 1");
   });
 
   it("a failed re-ask of a cycle shows none of the counts it had for it, only the note", async () => {
@@ -992,11 +1033,13 @@ describe("KmReportPanel: the cases under each km", () => {
   it("a known day with no cases keeps an empty line, so the km stand level in a row", async () => {
     getCasesByDay.mockResolvedValue(CASES);
     await mount();
-    // Arun's 27th has none: an empty line of the line's height, with no text.
+    // Arun's 27th has none: empty lines of the two lines' height, with no text.
     const none = dayTd(0, "2026-09-27").querySelector<HTMLElement>('[data-testid="km-cases-none"]')!;
-    expect(none.style.height).toBe("16px");
+    expect(none.style.height).toBe("32px");
     expect(none.textContent).toBe("");
-    expect(dayTd(0, "2026-09-25").querySelector<HTMLElement>('[data-testid="km-cases"]')!.style.height).toBe("16px");
+    for (const id of ["km-assign", "km-closed"]) {
+      expect(dayTd(0, "2026-09-25").querySelector<HTMLElement>(`[data-testid="${id}"]`)!.style.height).toBe("16px");
+    }
     // The words on a dash, which has no label, are read as they are.
     expect(dayTd(0, "2026-09-26").querySelector('[data-testid="km-cases"]')!.hasAttribute("aria-hidden")).toBe(false);
   });
@@ -1033,7 +1076,7 @@ describe("KmReportPanel: the cases under each km", () => {
     expect(picked.style.color).toBe("rgb(255, 255, 255)");
     expect(picked.parentElement!.style.boxShadow).toContain("inset");
     // Light on the picked blue, as the picked region box's own small line.
-    expect(picked.querySelector<HTMLElement>('[data-testid="km-cases"]')!.style.color).toBe(
+    expect(picked.querySelector<HTMLElement>('[data-testid="km-assign"]')!.style.color).toBe(
       "rgba(255, 255, 255, 0.85)",
     );
 

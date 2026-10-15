@@ -1,11 +1,17 @@
 import type { CasesByDayCell, EngineerKmDays } from "../../../lib/payrollTrackingApiClient";
 
 /**
- * CASES: under each FSE-day's km, in all three KM Report tables, that day's
- * cases and how many of them were closed that day -- the live tracking board's
- * day panel, its "CASES (N)" list and its "Closed" rows, as Payroll counts
- * them. The panel asks once a cycle and hands the answer to every table; this
- * is how each of them prints it, so the three read alike.
+ * CASES: in every FSE-day cell of the three KM Report tables, the day as the
+ * office asked to read it (15 Oct 2026):
+ *
+ *     km 65.39
+ *     assign 8
+ *     closed 3
+ *
+ * "assign" is that day's cases and "closed" the ones closed that day -- the
+ * live tracking board's day panel, its "CASES (N)" list and its "Closed" rows,
+ * as Payroll counts them. The panel asks once a cycle and hands the answer to
+ * every table; this is how each of them prints it, so the three read alike.
  */
 
 /** Each FSE's cases per YYYY-MM-DD, by Payroll employee id. */
@@ -13,25 +19,61 @@ export type CasesById = ReadonlyMap<number, Record<string, CasesByDayCell>>;
 
 const count = (value: unknown) => Number(value) || 0;
 
-/** "4 cases, 1 closed", for a day cell's title and aria-label; "" on a day with none, or none known. */
+/** "assign 8, closed 3", for a day cell's title and aria-label; "" on a day with none, or none known. */
 export function casesWords(cell: CasesByDayCell | undefined): string {
   const cases = count(cell?.cases);
   if (cases <= 0) return "";
-  return `${cases} ${cases === 1 ? "case" : "cases"}, ${count(cell?.closed)} closed`;
+  return `assign ${cases}, closed ${count(cell?.closed)}`;
 }
 
-// One line's height, set on the line and on the empty line alike, so a day
-// with cases and one without stand level in a row.
+// One line's height, the same on every line, so the days in a row stand level.
 const LINE_HEIGHT = 16;
 
+const smallLine = (picked: boolean) =>
+  ({
+    display: "block",
+    height: LINE_HEIGHT,
+    lineHeight: `${LINE_HEIGHT}px`,
+    fontSize: 11,
+    fontWeight: 400,
+    // Grey on white; on a picked day's blue, as light as the picked region
+    // box's own small line.
+    color: picked ? "rgba(255,255,255,0.85)" : "#6b7280",
+    fontVariantNumeric: "tabular-nums",
+    userSelect: "none",
+    WebkitUserSelect: "none",
+  }) as const;
+
 /**
- * The second line under a day's km: "4 · 1 closed". Nothing at all when the
- * FSE's days are not known. On a known day with no cases, an empty line of the
- * same height, with no text: the km then sits where its neighbours' do, and a
- * copied or read cell says nothing more than before. Hidden from a reader
- * where the cell's button or label already says it in words (`labelled`);
- * read as it is where nothing else does. Like the marks beside a km, left out
- * when the km is selected and copied.
+ * The "km" before a day's figure. Grey, so the figure still reads first; left
+ * out when the figure is selected and copied; not read out, as every label
+ * already says "km".
+ */
+export function KmLabel({ picked = false }: { picked?: boolean }) {
+  return (
+    <span
+      aria-hidden="true"
+      data-testid="km-label"
+      style={{
+        marginRight: 4,
+        fontWeight: 400,
+        color: picked ? "rgba(255,255,255,0.85)" : "#6b7280",
+        userSelect: "none",
+        WebkitUserSelect: "none",
+      }}
+    >
+      km
+    </span>
+  );
+}
+
+/**
+ * The two lines under a day's km: "assign 8" and "closed 3". Nothing at all
+ * when the FSE's days are not known. On a known day with no cases, empty lines
+ * of the same height, with no text: the km then sits where its neighbours' do,
+ * and a copied or read cell says nothing more than before. Hidden from a
+ * reader where the cell's button or label already says it in words
+ * (`labelled`); read as it is where nothing else does.
  */
 export function CasesLine({
   cell,
@@ -43,29 +85,13 @@ export function CasesLine({
   labelled?: boolean;
 }) {
   if (!cell) return null;
-  const cases = count(cell.cases);
-  if (cases <= 0) {
-    return <span aria-hidden="true" data-testid="km-cases-none" style={{ display: "block", height: LINE_HEIGHT }} />;
+  if (count(cell.cases) <= 0) {
+    return <span aria-hidden="true" data-testid="km-cases-none" style={{ display: "block", height: 2 * LINE_HEIGHT }} />;
   }
   return (
-    <span
-      {...(labelled ? { "aria-hidden": true } : {})}
-      data-testid="km-cases"
-      style={{
-        display: "block",
-        height: LINE_HEIGHT,
-        lineHeight: `${LINE_HEIGHT}px`,
-        fontSize: 11,
-        fontWeight: 400,
-        // Grey on white; on a picked day's blue, as light as the picked
-        // region box's own small line.
-        color: picked ? "rgba(255,255,255,0.85)" : "#6b7280",
-        fontVariantNumeric: "tabular-nums",
-        userSelect: "none",
-        WebkitUserSelect: "none",
-      }}
-    >
-      {`${cases} · ${count(cell.closed)} closed`}
+    <span {...(labelled ? { "aria-hidden": true } : {})} data-testid="km-cases" style={{ display: "block" }}>
+      <span data-testid="km-assign" style={smallLine(picked)}>{`assign ${count(cell.cases)}`}</span>
+      <span data-testid="km-closed" style={smallLine(picked)}>{`closed ${count(cell.closed)}`}</span>
     </span>
   );
 }
@@ -114,6 +140,7 @@ export function casesTotals(
   return known ? { cases, closed } : null;
 }
 
-/** A Cases column cell: "12 · 3 closed"; "" when not known. */
-export const casesTotalText = (total: CasesByDayCell | null): string =>
-  total ? `${total.cases} · ${total.closed} closed` : "";
+/** A Cases column cell: "assign 12 · closed 3"; nothing when not known. */
+export function CasesTotal({ total }: { total: CasesByDayCell | null }) {
+  return total ? <>{`assign ${total.cases} · closed ${total.closed}`}</> : null;
+}

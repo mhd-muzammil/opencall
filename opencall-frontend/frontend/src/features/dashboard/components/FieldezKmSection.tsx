@@ -22,7 +22,7 @@ import {
   routeKmRowTotals,
   routeKmTotals,
 } from "../../../lib/routeKm";
-import { CasesLine, casesRowTotal, casesTotals, casesTotalText, casesWords, type CasesById } from "./KmCases";
+import { CasesLine, CasesTotal, KmLabel, casesRowTotal, casesTotals, casesWords, type CasesById } from "./KmCases";
 
 /**
  * FIELDEZ: under ROUTE KM, the same FSEs, days and road, with one difference.
@@ -802,6 +802,7 @@ export default function FieldezKmSection({
                                 fontWeight: picked ? 700 : "inherit",
                               }}
                             >
+                              <KmLabel picked={picked} />
                               {km}
                               {officeMark}
                               {missingMark}
@@ -809,6 +810,7 @@ export default function FieldezKmSection({
                             </button>
                           ) : (
                             <>
+                              <KmLabel />
                               {km}
                               {officeMark}
                               {missingMark}
@@ -828,9 +830,7 @@ export default function FieldezKmSection({
                     </td>
                     {cases && (
                       <td style={{ ...cellBase, textAlign: "right" }} data-testid="fieldez-km-cases-total">
-                        {casesTotalText(
-                          casesRowTotal(row.engineer_id != null ? cases.get(row.engineer_id) : undefined, days),
-                        )}
+                        <CasesTotal total={casesRowTotal(row.engineer_id != null ? cases.get(row.engineer_id) : undefined, days)} />
                       </td>
                     )}
                   </tr>
@@ -896,7 +896,7 @@ export default function FieldezKmSection({
                       fontWeight: 700,
                     }}
                   >
-                    {casesTotalText(caseTotals)}
+                    <CasesTotal total={caseTotals} />
                   </td>
                 )}
               </tr>

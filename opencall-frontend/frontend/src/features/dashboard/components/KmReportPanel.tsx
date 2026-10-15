@@ -20,7 +20,7 @@ import { billCycleFor, billCycleForKey, type BillCycle } from "../utils/billCycl
 import { todayIsoDate } from "../utils/dateUtils";
 import RouteKmSection from "./RouteKmSection";
 import FieldezKmSection from "./FieldezKmSection";
-import { CasesLine, casesRowTotal, casesTotals, casesTotalText, casesWords } from "./KmCases";
+import { CasesLine, CasesTotal, KmLabel, casesRowTotal, casesTotals, casesWords } from "./KmCases";
 
 // The live tracking board's own map. Leaflet touches `window`, so it is
 // client-only here too.
@@ -708,11 +708,13 @@ export default function KmReportPanel({ token, embedded = false }: KmReportPanel
                                   fontWeight: picked ? 700 : "inherit",
                                 }}
                               >
+                                <KmLabel picked={picked} />
                                 {km}
                                 <CasesLine cell={dayCases} picked={picked} />
                               </button>
                             ) : (
                               <>
+                                <KmLabel />
                                 {km}
                                 {/* No label on this cell: the line is read as it is. */}
                                 <CasesLine cell={dayCases} labelled={false} />
@@ -726,9 +728,7 @@ export default function KmReportPanel({ token, embedded = false }: KmReportPanel
                         {formatKm(row.distance_km) === "-" ? "0" : formatKm(row.distance_km)}
                       </td>
                       <td style={{ ...cellBase, textAlign: "right" }} data-testid="km-cases-total">
-                        {casesTotalText(
-                          casesRowTotal(row.engineer_id != null ? casesById.get(row.engineer_id) : undefined, days),
-                        )}
+                        <CasesTotal total={casesRowTotal(row.engineer_id != null ? casesById.get(row.engineer_id) : undefined, days)} />
                       </td>
                     </tr>
                   ))}
@@ -790,7 +790,7 @@ export default function KmReportPanel({ token, embedded = false }: KmReportPanel
                         fontWeight: 700,
                       }}
                     >
-                      {casesTotalText(caseTotals)}
+                      <CasesTotal total={caseTotals} />
                     </td>
                   </tr>
                 </tfoot>

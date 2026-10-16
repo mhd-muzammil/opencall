@@ -466,6 +466,12 @@ export interface FieldezKmCell extends Omit<RouteKmCell, "status"> {
   status: FieldezKmStatus;
   /** How many of the day's check-ins were left out for want of a FieldEZ place. */
   missing: number;
+  /**
+   * How many of the day's check-ins had their FieldEZ Problem Resolution pressed
+   * more than 1 km from where the FSE checked in. Absent from a Payroll older
+   * than 16 Oct 2026.
+   */
+  away?: number;
 }
 
 export interface FieldezKmRange extends Omit<RouteKmRange, "engineers"> {
@@ -482,12 +488,31 @@ export interface FieldezKmMissing {
   reason: "no_wo" | "fieldez_failed" | "not_in_fieldez" | "no_problem_resolution" | "not_read";
 }
 
+/**
+ * A check-in whose FieldEZ Problem Resolution was pressed more than 1 km from
+ * where the FSE checked in -- pressed later, from somewhere else.
+ */
+export interface FieldezKmAway {
+  case_number: string | null;
+  wo: string | null;
+  /** When the FSE checked in. */
+  at: string;
+  /** When the Problem Resolution was pressed. */
+  resolved_at: string | null;
+  /** Where it was pressed, as FieldEZ wrote it; "" when FieldEZ wrote none. */
+  address: string;
+  /** How far that is from the check-in, in km. */
+  away_km: number;
+}
+
 export interface FieldezKmDay extends Omit<RouteKmDay, "status"> {
   status: FieldezKmStatus;
   /** The day's check-ins left out of the route. */
   missing: FieldezKmMissing[];
   /** How many of the day's check-ins the FieldEZ tool has not read yet. */
   waiting: number;
+  /** The day's check-ins whose Problem Resolution was pressed away from the call. Absent from an older Payroll. */
+  away?: FieldezKmAway[];
 }
 
 /**

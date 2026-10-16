@@ -1436,3 +1436,131 @@ describe("FieldezKmSection: the cases under each km", () => {
     expect(getFieldezKm).toHaveBeenCalledTimes(2);
   });
 });
+
+describe("FieldezKmSection: a Problem Resolution pressed away from the call", () => {
+  // Mohan's 13 Oct: the Anna Nagar call's Problem Resolution, pressed at 8:30 PM
+  // from the next call in Madha Nagar, 11.7 km off.
+  const AWAY_CALL = {
+    case_number: "OC-004075",
+    wo: "WO-035990164",
+    at: "2026-09-25T11:01:00+00:00",
+    resolved_at: "2026-09-25T15:00:39+00:00",
+    address: "Madha Nagar Main Road, Mugalivakkam",
+    away_km: 11.7,
+  };
+  const ONE_AWAY = "1 call's FieldEZ Problem Resolution pressed more than 1 km from the check-in";
+  const awayNote = () => container.querySelector('[data-testid="fieldez-km-away-note"]')?.textContent ?? null;
+  const awayBox = () => container.querySelector<HTMLElement>('[data-testid="fieldez-km-away"]');
+  const awayMark = (el: Element | null | undefined) =>
+    el?.querySelector<HTMLElement>('[data-testid="fieldez-km-away-mark"]') ?? null;
+  const withAway = (away: number) =>
+    range({
+      engineers: [{ engineer_id: 7, days: { "2026-09-25": { ...ready(12.74, 5), away }, "2026-09-27": ready(8.1) } }],
+    });
+
+  it("a day with a call pressed away from it carries a red ! that is not copied, and says what it means", async () => {
+    getFieldezKm.mockResolvedValue(withAway(1));
+    await mount();
+    const button = dayButton("Arun", "2026-09-25")!;
+    expect(figure(button)).toBe("12.74!");
+    const mark = awayMark(button)!;
+    expect(mark.textContent).toBe("!");
+    expect(mark.getAttribute("aria-hidden")).toBe("true");
+    expect(mark.style.userSelect).toBe("none");
+    expect(mark.style.color).toBe("rgb(220, 38, 38)");
+    expect(mark.title).toBe(ONE_AWAY);
+    // Said to a reader that cannot see the mark, and on the cell's own title.
+    expect(button.getAttribute("aria-label")).toBe(
+      `12.74 road km (${ONE_AWAY}): show Arun's route on ${longDate("2026-09-25")}`,
+    );
+    expect(dayCell("Arun", "2026-09-25").title).toBe(`Arun · ${longDate("2026-09-25")} · ${ONE_AWAY}`);
+    // The km is the km: the totals add the figure itself.
+    expect(cells(rows()[0]!).at(-1)).toBe("20.84");
+    // The 27th had none.
+    expect(figure(dayButton("Arun", "2026-09-27"))).toBe("8.1");
+  });
+
+  it("two calls are said in the plural", async () => {
+    getFieldezKm.mockResolvedValue(withAway(2));
+    await mount();
+    expect(awayMark(dayButton("Arun", "2026-09-25"))!.title).toBe(
+      "2 calls' FieldEZ Problem Resolution pressed more than 1 km from the check-in",
+    );
+  });
+
+  it("the note under the table says what the red ! means", async () => {
+    getFieldezKm.mockResolvedValue(withAway(1));
+    await mount();
+    expect(awayNote()).toBe(
+      "! A call's FieldEZ Problem Resolution was pressed more than 1 km from where the FSE checked in: pressed" +
+        " later, from somewhere else, so that day's km goes through that place. Click a km to see which.",
+    );
+    const bang = container.querySelector('[data-testid="fieldez-km-away-note"] span') as HTMLElement;
+    expect(bang.style.color).toBe("rgb(220, 38, 38)");
+  });
+
+  it("no ! and no note when no call was pressed away, nor from a Payroll that does not say", async () => {
+    await mount();
+    expect(awayNote()).toBeNull();
+    expect(container.querySelector('[data-testid="fieldez-km-away-mark"]')).toBeNull();
+  });
+
+  it("a day not measured yet has decided nothing: no mark", async () => {
+    getFieldezKm.mockResolvedValue(
+      range({ engineers: [{ engineer_id: 7, days: { "2026-09-25": { ...WAITING, away: 1 } } }] }),
+    );
+    await mount();
+    expect(awayMark(dayCell("Arun", "2026-09-25"))).toBeNull();
+    expect(awayNote()).toBeNull();
+  });
+
+  it("with an office stand-in and a check-in left out too, all three marks follow the figure", async () => {
+    getFieldezKm.mockResolvedValue(
+      range({
+        engineers: [{ engineer_id: 7, days: { "2026-09-25": { ...ready(12.74, 4, 2), office: true, away: 1 } } }],
+      }),
+    );
+    await mount();
+    expect(figure(dayButton("Arun", "2026-09-25"))).toBe("12.74•*!");
+  });
+
+  it("a picked day names under the map, in red, each call pressed away from it", async () => {
+    getFieldezKm.mockResolvedValue(withAway(1));
+    await mount();
+    getFieldezKmDay.mockResolvedValueOnce(fieldezDay({ away: [AWAY_CALL] }));
+    await click(dayButton("Arun", "2026-09-25")!);
+    expect(awayBox()?.textContent).toBe(
+      "! OC-004075 · WO-035990164: checked in at 4:31 PM; FieldEZ Problem Resolution pressed at 8:30 PM," +
+        " 11.7 km away (Madha Nagar Main Road, Mugalivakkam).",
+    );
+    expect(awayBox()!.style.color).toBe("rgb(185, 28, 28)");
+    // Under the map, not over it.
+    expect(container.querySelector('[data-testid="fieldez-km-box"]')!.contains(awayBox())).toBe(false);
+    // The picked cell keeps its mark, light on the blue, and the day's own
+    // answer agreed with it: asked once.
+    const mark = awayMark(dayButton("Arun", "2026-09-25"))!;
+    expect(mark.style.color).toBe("rgb(254, 202, 202)");
+    expect(getFieldezKmDay).toHaveBeenCalledTimes(1);
+  });
+
+  it("a call with no time or place from FieldEZ still says how far", async () => {
+    getFieldezKm.mockResolvedValue(withAway(1));
+    await mount();
+    getFieldezKmDay.mockResolvedValueOnce(
+      fieldezDay({ away: [{ ...AWAY_CALL, case_number: null, resolved_at: null, address: "", away_km: 3 }] }),
+    );
+    await click(dayButton("Arun", "2026-09-25")!);
+    expect(awayBox()?.textContent).toBe(
+      "! — · WO-035990164: checked in at 4:31 PM; FieldEZ Problem Resolution pressed, 3.0 km away.",
+    );
+  });
+
+  it("a day whose answer says none any more loses the mark once opened", async () => {
+    getFieldezKm.mockResolvedValue(withAway(1));
+    await mount();
+    getFieldezKmDay.mockResolvedValueOnce(fieldezDay({ away: [] }));
+    await click(dayButton("Arun", "2026-09-25")!);
+    expect(awayBox()).toBeNull();
+    expect(figure(dayButton("Arun", "2026-09-25"))).toBe("12.74");
+  });
+});

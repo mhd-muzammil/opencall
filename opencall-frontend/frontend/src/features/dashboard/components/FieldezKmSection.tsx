@@ -6,6 +6,7 @@ import {
   getFieldezKm,
   getFieldezKmDay,
   type EngineerKmDays,
+  type FieldezKmAway,
   type FieldezKmCell,
   type FieldezKmDay,
   type FieldezKmMissing,
@@ -136,6 +137,27 @@ const SUBTITLE = "Login → Problem Resolution places (FieldEZ) → Logout · ro
 const missingTitle = (count: number) =>
   `${count} check-${count === 1 ? "in" : "ins"} had no FieldEZ Problem Resolution location`;
 
+// A call's Problem Resolution pressed away from the call (asked 16 Oct 2026):
+// pressed later, from somewhere else -- on 13 Oct an Anna Nagar call's, at
+// 8:30 PM from the next call in Madha Nagar. Red, as the office asked.
+const AWAY_RED = "#dc2626";
+// On a picked day's blue, where red would sink: as light as the other marks there.
+const AWAY_RED_PICKED = "#fecaca";
+
+/** What the red "!" on a day says. */
+const awayTitle = (count: number) =>
+  `${count} ${count === 1 ? "call's" : "calls'"} FieldEZ Problem Resolution pressed more than 1 km from the check-in`;
+
+/**
+ * "2026-10-13T15:00:39Z" -> "8:30 PM", on the office's clock. Newer ICU puts a
+ * narrow no-break space before "PM"; a plain one reads and copies the same
+ * everywhere.
+ */
+const clock = (iso: string) =>
+  new Date(iso)
+    .toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", timeZone: "Asia/Kolkata" })
+    .replace(/[\u202f\u00a0]/g, " ");
+
 /** Why a check-in was left out of its day, in words. */
 const MISSING_REASON: Record<FieldezKmMissing["reason"], string> = {
   no_wo: "the case has no WO",
@@ -163,10 +185,18 @@ const asRouteCell = (cell: FieldezKmCell): RouteKmCell => ({
 const leftOut = (cell: FieldezKmCell | undefined) =>
   cell && cell.status !== "pending" && cell.status !== "waiting" ? Number(cell.missing) || 0 : 0;
 
+/**
+ * How many of a day's calls had their Problem Resolution pressed away from the
+ * call, by leftOut's rule; 0 from a Payroll that does not say.
+ */
+const awayOf = (cell: FieldezKmCell | undefined) =>
+  cell && cell.status !== "pending" && cell.status !== "waiting" ? Number(cell.away) || 0 : 0;
+
 // Nothing picked, or its answer not here yet.
 const NO_POINTS: RouteKmPoint[] = [];
 // Nothing picked, or Payroll's answer before it read anything (no Ola key).
 const NO_MISSING: FieldezKmMissing[] = [];
+const NO_AWAY: FieldezKmAway[] = [];
 
 /** The day the map is showing: one cell of the table. */
 interface RoutePick {
@@ -316,6 +346,7 @@ export default function FieldezKmSection({
           status: day.status,
           office: day.points.some((point) => point.office),
           missing: day.missing?.length ?? 0,
+          away: day.away?.length ?? 0,
         };
         setRange((current) =>
           current
@@ -399,7 +430,8 @@ export default function FieldezKmSection({
       cell?.status === "ready" &&
       (cell.km !== shownAnswer.day.km ||
         cell.points !== shownAnswer.day.points.length ||
-        leftOut(cell) !== (shownAnswer.day.missing?.length ?? 0));
+        leftOut(cell) !== (shownAnswer.day.missing?.length ?? 0) ||
+        awayOf(cell) !== (shownAnswer.day.away?.length ?? 0));
     if (turned || moved) {
       pickCount.current += 1;
       setPick({ ...pick, seq: pickCount.current });
@@ -409,6 +441,7 @@ export default function FieldezKmSection({
   const routeDay = shownAnswer?.status === "ready" ? shownAnswer.day : null;
   const points = routeDay?.points ?? NO_POINTS;
   const missingList = routeDay?.missing ?? NO_MISSING;
+  const awayList = routeDay?.away ?? NO_AWAY;
   const googleUrl = googleMapsDirectionsUrl(points);
   // Google's map beside the table: the picked day's places, or the region.
   const mapSrc = googleMapsEmbedUrl(points) ?? GOOGLE_AREA_EMBED_URL;
@@ -514,6 +547,10 @@ export default function FieldezKmSection({
     const cells = row.engineer_id != null ? fieldezCellsById.get(row.engineer_id) : undefined;
     return days.some((day) => leftOut(cells?.[day]) > 0);
   });
+  const awayShown = shown.some((row) => {
+    const cells = row.engineer_id != null ? fieldezCellsById.get(row.engineer_id) : undefined;
+    return days.some((day) => awayOf(cells?.[day]) > 0);
+  });
 
   // One line, so the table starts level with the map beside it. What is still
   // being measured is said under the table instead, where it has room on any
@@ -581,6 +618,15 @@ export default function FieldezKmSection({
           </span>{" "}
           A check-in with no FieldEZ Problem Resolution location is left out of that day&apos;s km, never put at the
           app&apos;s check-in place instead. Click a km to see which.
+        </div>
+      )}
+      {awayShown && (
+        <div data-testid="fieldez-km-away-note">
+          <span aria-hidden="true" style={{ color: AWAY_RED, fontWeight: 700 }}>
+            !
+          </span>{" "}
+          A call&apos;s FieldEZ Problem Resolution was pressed more than 1 km from where the FSE checked in: pressed
+          later, from somewhere else, so that day&apos;s km goes through that place. Click a km to see which.
         </div>
       )}
     </div>
@@ -698,11 +744,16 @@ export default function FieldezKmSection({
                       // A km with check-ins left out for want of a FieldEZ
                       // place: marked, so it does not pass for the whole day's.
                       const missing = leftOut(fieldezCells?.[day]);
+                      // A km through a call's Problem Resolution pressed away
+                      // from the call: marked red, so it is not taken for the
+                      // road travelled.
+                      const away = awayOf(fieldezCells?.[day]);
                       // A measured road has a route to show; so does any day
-                      // that left a check-in out -- its list, under the map. A
-                      // plain dash, a day Ola could not route and one still
-                      // waiting have neither.
-                      const canPick = engineerId != null && ((cell?.status === "ready" && km !== "-") || missing > 0);
+                      // that left a check-in out, or placed one away from the
+                      // call -- its list, under the map. A plain dash, a day
+                      // Ola could not route and one still waiting have neither.
+                      const canPick =
+                        engineerId != null && ((cell?.status === "ready" && km !== "-") || missing > 0 || away > 0);
                       const picked = canPick && pick?.engineerId === engineerId && pick.day === day;
                       const failed = cell?.status === "failed";
                       // Not measured yet: Ola has not got to it, or the FieldEZ
@@ -745,6 +796,22 @@ export default function FieldezKmSection({
                           *
                         </span>
                       );
+                      const awayMark = away > 0 && (
+                        <span
+                          aria-hidden="true"
+                          data-testid="fieldez-km-away-mark"
+                          title={awayTitle(away)}
+                          style={{
+                            marginLeft: 2,
+                            color: picked ? AWAY_RED_PICKED : AWAY_RED,
+                            fontWeight: 700,
+                            userSelect: "none",
+                            WebkitUserSelect: "none",
+                          }}
+                        >
+                          !
+                        </span>
+                      );
                       // The day's cases, on a line under its km and in words.
                       const dayCases = engineerId != null ? cases?.get(engineerId)?.[day] : undefined;
                       const caseWords = casesWords(dayCases);
@@ -758,7 +825,7 @@ export default function FieldezKmSection({
                                 : FAILED_TITLE
                               : `${row.engineer_name} · ${fullDate(day)}${atOffice ? ` · ${OFFICE_TITLE}` : ""}${
                                   missing > 0 ? ` · ${missingTitle(missing)}` : ""
-                                }`) + (caseWords ? ` · ${caseWords}` : "")
+                                }${away > 0 ? ` · ${awayTitle(away)}` : ""}`) + (caseWords ? ` · ${caseWords}` : "")
                           }
                           // What a glyph means, for a reader that cannot see it.
                           {...(failed
@@ -790,7 +857,9 @@ export default function FieldezKmSection({
                               aria-pressed={picked}
                               aria-label={`${km} road km${atOffice ? " (from or to the office)" : ""}${
                                 missing > 0 ? ` (${missingTitle(missing)})` : ""
-                              }${caseWords ? `, ${caseWords}` : ""}: show ${row.engineer_name}'s route on ${fullDate(day)}`}
+                              }${away > 0 ? ` (${awayTitle(away)})` : ""}${
+                                caseWords ? `, ${caseWords}` : ""
+                              }: show ${row.engineer_name}'s route on ${fullDate(day)}`}
                               style={{
                                 ...dayButton,
                                 // The fill is the button's too: the app paints a
@@ -806,6 +875,7 @@ export default function FieldezKmSection({
                               {km}
                               {officeMark}
                               {missingMark}
+                              {awayMark}
                               <CasesLine cell={dayCases} picked={picked} />
                             </button>
                           ) : (
@@ -814,6 +884,7 @@ export default function FieldezKmSection({
                               {km}
                               {officeMark}
                               {missingMark}
+                              {awayMark}
                               {/* Read as it is unless the cell's label says it. */}
                               <CasesLine cell={dayCases} labelled={failed || forFieldez || waiting} />
                             </>
@@ -1000,7 +1071,7 @@ export default function FieldezKmSection({
         </div>
         {/* Under the map, not over it: Google's own card and controls sit on
             the map, and nothing here may cover them. */}
-        {(routeNote || googleUrl || dayAtOffice || missingList.length > 0) && (
+        {(routeNote || googleUrl || dayAtOffice || missingList.length > 0 || awayList.length > 0) && (
           <div style={{ marginTop: 8, display: "grid", gap: 4, fontSize: 12, color: "#6b7280" }}>
             {routeNote && (
               <div
@@ -1044,6 +1115,23 @@ export default function FieldezKmSection({
                     </li>
                   ))}
                 </ul>
+              </div>
+            )}
+            {/* The calls the red "!" in the table is about: where FieldEZ's
+                Problem Resolution was pressed, and how far from the call. */}
+            {awayList.length > 0 && (
+              <div data-testid="fieldez-km-away" style={{ color: "#b91c1c", display: "grid", gap: 2 }}>
+                {awayList.map((item, index) => (
+                  // By place in the list, as the left-out list is keyed.
+                  <div key={index}>
+                    <span aria-hidden="true" style={{ fontWeight: 700 }}>
+                      !
+                    </span>{" "}
+                    {`${item.case_number ?? "—"} · ${item.wo ?? "—"}: checked in at ${clock(item.at)}; ` +
+                      `FieldEZ Problem Resolution pressed${item.resolved_at ? ` at ${clock(item.resolved_at)}` : ""}, ` +
+                      `${Number(item.away_km).toFixed(1)} km away${item.address ? ` (${item.address})` : ""}.`}
+                  </div>
+                ))}
               </div>
             )}
           </div>

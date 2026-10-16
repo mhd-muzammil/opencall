@@ -19,9 +19,10 @@ import { VirtualTbody } from "../components/VirtualTbody";
 import {
   LayoutGrid, FolderCheck, LineChart, Activity, Timer, Layers, Map as MapIcon, Zap, TrendingUp,
   Table, Wrench, FileText, Users, UserPlus, ShieldCheck, Tag, Upload, ScrollText,
-  RefreshCw, LogOut, MapPin,
+  RefreshCw, LogOut, MapPin, Truck,
 } from "lucide-react";
 import LiveTrackingSection from "../features/dashboard/components/LiveTrackingSection";
+import { canSeeDeliveryChallans } from "../lib/deliveryChallanAccess";
 import { useColumnFilters } from "../lib/useColumnFilters";
 import { findFinalSessionForDay } from "../lib/dayReportSession";
 import {
@@ -106,6 +107,7 @@ import {
   ClosedCallsDashboardView,
   PartsCatalogPage,
   QuotationsPage,
+  DeliveryChallansPage,
   MatchPreviewSection,
   RTPLTimeModal,
   ProductivityPage,
@@ -257,6 +259,7 @@ const WORKSPACE_VIEWS = [
   "record-format",
   "parts-catalog",
   "quotations",
+  "delivery-challans",
   "rtpl",
   "rtpl-dashboard",
   "pivot",
@@ -4730,7 +4733,7 @@ export default function DashboardPage() {
             (!isSpecialAccess && canSeeSection("warranty")) ||
             (!isSpecialAccess && canSeeSection("renewal-pipeline")) ||
             (session.user.role === "SUPER_ADMIN" && !isSpecialAccess) ||
-            (isSpecialAccess && (canSeeSection("parts-catalog") || canSeeSection("quotations")))) && (
+            (isSpecialAccess && (canSeeSection("parts-catalog") || canSeeSection("quotations") || canSeeSection("delivery-challans")))) && (
             <div className="sidebarSection">Data & Operations</div>
           )}
 
@@ -4776,6 +4779,21 @@ export default function DashboardPage() {
             >
               <span className="sidebarIcon">
                 <FileText size={18} strokeWidth={2} /> <span className="sidebarText">Quotations</span>
+              </span>
+            </button>
+          )}
+
+          {/* Delivery Challan — directly below Quotations and seen by the same rule, with
+              a key of its own: SUPER_ADMIN always; a special-access login only when the
+              "delivery-challans" section is granted. Region admins do not see it. */}
+          {canSeeDeliveryChallans({ role: session.user.role, isSpecialAccess, canSeeSection }) && (
+            <button
+              type="button"
+              className={`sidebarItem ${workspaceView === "delivery-challans" ? "active" : ""}`}
+              onClick={() => setWorkspaceView("delivery-challans")}
+            >
+              <span className="sidebarIcon">
+                <Truck size={18} strokeWidth={2} /> <span className="sidebarText">Delivery Challan</span>
               </span>
             </button>
           )}
@@ -5121,6 +5139,19 @@ export default function DashboardPage() {
                 </section>
               ) : null}
 
+              {/* Delivery Challan — its own data like Quotations above, and `minWidth: 0`
+                  for the same reason. Shown only to whoever has the sidebar entry, so a
+                  view remembered from another login on this browser opens nothing. */}
+              {workspaceView === "delivery-challans" &&
+              canSeeDeliveryChallans({ role: session.user.role, isSpecialAccess, canSeeSection }) ? (
+                <section className="panel reportPanel" style={{ minWidth: 0 }}>
+                  <DeliveryChallansPage
+                    token={session.token}
+                    canEditBranches={!isSpecialAccess && session.user.role === "SUPER_ADMIN"}
+                  />
+                </section>
+              ) : null}
+
               {/* Renewal Pipeline — derived from the warranty cache, so like Warranty
                   Lookup it needs no generated report.
                   `minWidth: 0` is required and is deliberately inline (NOT a `.panel` rule
@@ -5163,6 +5194,7 @@ export default function DashboardPage() {
               workspaceView !== "customer-emails" &&
               workspaceView !== "parts-catalog" &&
               workspaceView !== "quotations" &&
+              workspaceView !== "delivery-challans" &&
               workspaceView !== "live-tracking" ? (
                 <section className="panel reportPanel">
                   <div className="overviewReportContent">

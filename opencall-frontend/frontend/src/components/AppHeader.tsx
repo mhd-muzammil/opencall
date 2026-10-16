@@ -6,7 +6,7 @@ import type {
   RuntimeHealthResponse,
 } from "../lib/apiClient";
 
-export type WorkspaceView = "overview" | "closed-calls" | "records" | "record-format" | "parts-catalog" | "quotations" | "rtpl" | "rtpl-dashboard" | "pivot" | "flex" | "productivity" | "live-tracking" | "tn-view-status" | "sla-tat" | "flex-eod-bod" | "admin-engineers" | "admin-rtpl-statuses" | "warranty" | "customer-emails" | "renewal-pipeline" | "vendor-dashboard";
+export type WorkspaceView = "overview" | "closed-calls" | "records" | "record-format" | "parts-catalog" | "quotations" | "delivery-challans" | "rtpl" | "rtpl-dashboard" | "pivot" | "flex" | "productivity" | "live-tracking" | "tn-view-status" | "sla-tat" | "flex-eod-bod" | "admin-engineers" | "admin-rtpl-statuses" | "warranty" | "customer-emails" | "renewal-pipeline" | "vendor-dashboard";
 
 export const HEADER_COMPACT_STORAGE_KEY = "opencall.headerCompact";
 
@@ -126,6 +126,8 @@ export function AppHeader({
         return "Parts Catalog";
       case "quotations":
         return "Quotations";
+      case "delivery-challans":
+        return "Delivery Challan";
       case "rtpl":
         return "RTPL Analytics";
       case "rtpl-dashboard":
@@ -169,6 +171,8 @@ export function AppHeader({
         return "Data & Operations / Parts Catalog";
       case "quotations":
         return "Data & Operations / Quotations";
+      case "delivery-challans":
+        return "Data & Operations / Delivery Challan";
       case "rtpl":
         return "Dashboards / RTPL";
       case "rtpl-dashboard":

@@ -346,6 +346,126 @@ describe("the tracking board", () => {
     expect(row.textContent).toContain("On duty");
     expect(row.textContent).not.toContain("Caught up");
   });
+
+  // ---- GPS off, and how old a position is (17 Oct 2026) -------------------
+  //
+  // Payroll now hears from the phone while it stands still, so last_seen_minutes
+  // became the age of the last contact and the age of the last FIX comes as
+  // last_fix_minutes. A phone with Location switched off says so, and the board
+  // says GPS off, with the time, where it would have said No signal. All three
+  // fields are absent from a Payroll not yet redeployed.
+
+  const GPS_OFF_TILE = '[title*="on duty with Location (GPS) switched off"]';
+  const NO_SIGNAL_TILE = '[title^="On duty, but their phone has stopped reporting"]';
+
+  /** The number on a header tile. */
+  function tileValue(selector: string) {
+    return container.querySelector(selector)?.querySelector("span")?.textContent ?? null;
+  }
+
+  it("says GPS off, and since when, where it would have said No signal", async () => {
+    const row = await boardWith({
+      stale: true,
+      gps_off_since: "2026-10-17T15:10:00Z",
+      last_seen_minutes: 1,
+      last_fix_minutes: 30,
+      battery_level: 80,
+    });
+    expect(row.textContent).toContain("GPS off · since 8:40 PM");
+    expect(row.textContent).not.toContain("No signal");
+    // The battery line explains a silence; this one has its reason already.
+    expect(row.textContent).not.toContain("signal, not charge");
+  });
+
+  it("keeps Logout for a finished shift, whatever the phone last said about GPS", async () => {
+    const row = await boardWith({
+      state: "checked_out",
+      on_duty: false,
+      duty_ended_at: "2026-10-17T13:00:00Z",
+      gps_off_since: "2026-10-17T12:30:00Z",
+    });
+    expect(row.textContent).toContain("Logout");
+    expect(row.textContent).not.toContain("GPS off");
+  });
+
+  it("counts GPS off on a tile of its own, and not again under No signal", async () => {
+    getRoster.mockResolvedValue({
+      configured: true,
+      engineers: [
+        engineer({
+          engineer_name: "Praveen",
+          engineer_id: 7,
+          state: "on_duty",
+          stale: true,
+          gps_off_since: "2026-10-17T15:10:00Z",
+        }),
+        engineer({ engineer_name: "Arun", engineer_id: 8, state: "on_duty", stale: true, last_seen_minutes: 25 }),
+        engineer({ engineer_name: "Ravi", engineer_id: 9, state: "on_duty" }),
+        // Staff stay out of the alerts, as they always have.
+        engineer({
+          engineer_name: "Swetha",
+          engineer_id: 21,
+          state: "on_duty",
+          staff: true,
+          stale: true,
+          gps_off_since: "2026-10-17T15:10:00Z",
+        }),
+      ],
+    });
+    await mountBoard();
+    expect(tileValue(GPS_OFF_TILE)).toBe("1");
+    expect(tileValue(NO_SIGNAL_TILE)).toBe("1");
+  });
+
+  it("reads as it always did from a Payroll that sends none of the new fields", async () => {
+    const row = await boardWith({ stale: true, last_seen_minutes: 30, battery_level: 80 });
+    expect(row.textContent).toContain("No signal · 30m ago");
+    expect(row.innerHTML).toContain("signal, not charge");
+    expect(container.querySelector(GPS_OFF_TILE)).toBeNull();
+    expect(tileValue(NO_SIGNAL_TILE)).toBe("1");
+  });
+
+  it("ages No signal by the last fix, not by the app's last check-in", async () => {
+    const row = await boardWith({ stale: true, last_seen_minutes: 0, last_fix_minutes: 45 });
+    expect(row.textContent).toContain("No signal · 45m ago");
+  });
+
+  it("still says no fix yet when the app checks in but no position has come", async () => {
+    const row = await boardWith({ stale: true, last_seen_minutes: 0, last_fix_minutes: null });
+    expect(row.textContent).toContain("No signal · no fix yet");
+  });
+
+  it("ages No signal by the last contact once the phone itself has gone quiet", async () => {
+    // Parked for two hours with the app checking in, then the battery died:
+    // eleven minutes without a word, not two hours.
+    const row = await boardWith({ stale: true, last_seen_minutes: 11, last_fix_minutes: 120 });
+    expect(row.textContent).toContain("No signal · 11m ago");
+  });
+
+  it("still says no fix yet when a phone that never sent a position goes quiet", async () => {
+    const row = await boardWith({ stale: true, last_seen_minutes: 25, last_fix_minutes: null });
+    expect(row.textContent).toContain("No signal · no fix yet");
+  });
+
+  /** "Last seen" in the panel of the engineer whose row is clicked. */
+  async function lastSeenOf(row: Element) {
+    await act(async () => {
+      row.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+    await act(async () => {});
+    const label = Array.from(container.querySelectorAll("dt")).find((dt) => dt.textContent === "Last seen");
+    return label?.nextElementSibling?.textContent ?? null;
+  }
+
+  it("gives Last seen as the age of the last fix in the engineer's panel", async () => {
+    const row = await boardWith({ stale: true, last_seen_minutes: 2, last_fix_minutes: 45 });
+    expect(await lastSeenOf(row)).toBe("45m ago");
+  });
+
+  it("gives Last seen from last_seen_minutes when Payroll sends no last_fix_minutes", async () => {
+    const row = await boardWith({ stale: true, last_seen_minutes: 30 });
+    expect(await lastSeenOf(row)).toBe("30m ago");
+  });
 });
 
 describe("Payroll's other staff, department by department (12 Oct 2026)", () => {

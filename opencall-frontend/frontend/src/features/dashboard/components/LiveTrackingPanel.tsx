@@ -56,6 +56,17 @@ function clock(iso: string): string {
 }
 
 /**
+ * "2026-10-17T15:10:00Z" -> "8:40 PM", on the office's clock and in 12-hour form
+ * whatever the browser's own locale would make of it. Newer ICU puts a narrow
+ * no-break space before "PM"; a plain one reads the same.
+ */
+function officeClock(iso: string): string {
+  return new Date(iso)
+    .toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", timeZone: "Asia/Kolkata" })
+    .replace(/[\u202f\u00a0]/g, " ");
+}
+
+/**
  * A moment as the day it fell on, in the office's own timezone.
  *
  * NOT toISOString().slice(0, 10), which is UTC. India is five and a half hours
@@ -284,6 +295,19 @@ function eventLabel(event: EngineerDayEvent): string {
 }
 
 /**
+ * What Payroll's kilometres did with a dark stretch, as the end of the line
+ * under it -- and nothing at all where Payroll does not say. A Payroll older
+ * than 17 Oct 2026 sends no `counted`, and under its rule a stretch of the
+ * same kind was sometimes counted and sometimes left out, so the board does
+ * not guess.
+ */
+function countedTail(event: EngineerDayEvent): string {
+  if (event.counted === true) return " — counted as a straight line";
+  if (event.counted === false) return " — this stretch is not counted";
+  return "";
+}
+
+/**
  * What the tap recorded, under the name of the button that made it.
  *
  * "Check in" says which button; "Reached the site" says what it meant. The
@@ -295,19 +319,37 @@ function eventMeaning(event: EngineerDayEvent): string | null {
   // The two ends of a dark stretch. Said plainly, because the difference
   // decides whether anybody rings the engineer: one of them lost kilometres
   // and the other lost only the live view.
-  if (event.type === "location_off") return "The phone stopped reporting - this stretch is not counted";
+  if (event.type === "location_off") {
+    // Payroll's km rule of 17 Oct 2026 leaves out only a Login and GPS
+    // switched off. It marks an older kind of stretch that the kilometres now
+    // count, and the line must not go on saying the opposite.
+    return event.counted
+      ? "Counted as a straight line"
+      : "The phone stopped reporting - this stretch is not counted";
+  }
   if (event.type === "location_back") return "The phone is reporting again";
   if (event.type === "no_network") return "Kept on the phone - the kilometres are not lost";
   if (event.type === "network_back") return "The held positions arrived";
-  // The size of what nothing was watching. The kilometres count the straight
-  // line across it -- the least they can have travelled -- so this number is
-  // what is missing, not what was counted.
+  // The size of what nothing was watching. Whether the kilometres took the
+  // straight line across it is Payroll's to say: they do under the km rule of
+  // 17 Oct 2026, but on a day before it a flagged fix the accuracy filter
+  // dropped inside the stretch left it out.
   if (event.type === "untracked") {
-    const moved = (event as { moved_km?: number }).moved_km;
-    return moved
-      ? `The app sent nothing while they moved ${moved} km`
+    const gap = event.moved_km
+      ? `The app sent nothing while they moved ${event.moved_km} km`
       : "The app sent nothing while they were moving";
+    return `${gap}${countedTail(event)}`;
   }
+  // What the phone itself reported (17 Oct 2026). GPS switched off is the dark
+  // stretch the kilometres leave out -- the engineer chose it -- but not when
+  // the phone said so too late or had stopped the app first, so that too is
+  // Payroll's to say. Found off when tracking started says only how the phone was.
+  if (event.type === "gps_off") {
+    const off = event.found ? "Location was found off on the phone" : "Location switched off on the phone";
+    return `${off}${countedTail(event)}`;
+  }
+  if (event.type === "net_off") return "No internet — positions kept on the phone, km not lost";
+  if (event.type === "tracker_stopped") return "The phone closed the app — counted as a straight line";
   return null;
 }
 
@@ -410,6 +452,15 @@ const EVENT_MARK: Record<string, string> = {
   // A silence the app never admitted to. Its own letter, because it is not the
   // same fact as location being switched off -- nobody chose this one.
   untracked: "?",
+  // What the phone itself reported (17 Oct 2026), lettered by what went off
+  // and came back: G the GPS, N the network, A the app. A is also the letter
+  // of assigned and carried, but neither of those ever reaches the rail.
+  gps_off: "G",
+  gps_on: "G",
+  net_off: "N",
+  net_on: "N",
+  tracker_stopped: "A",
+  tracker_started: "A",
 };
 
 /** A figure reads faster with a mark beside it than with a longer label. */
@@ -476,7 +527,27 @@ const EVENT_COLOR: Record<string, string> = {
   // switched off there is nothing to accuse anybody of -- the app stopped and
   // said nothing.
   untracked: "#b45309",
+  // The phone's own reports, coloured like the stretches they explain: GPS
+  // off red, being the one the kilometres leave out; the network slate, since
+  // nothing is lost; the phone stopping the app amber, since nobody chose it;
+  // and green for each of them coming back.
+  gps_off: "#be123c",
+  gps_on: "#16a34a",
+  net_off: "#475569",
+  net_on: "#16a34a",
+  tracker_stopped: "#b45309",
+  tracker_started: "#16a34a",
 };
+
+/**
+ * The kind a rail entry is lettered and coloured as. A Tracking stopped that
+ * the kilometres counted after all is the app having stopped -- what the phone
+ * itself now reports as tracker_stopped -- so it takes that amber A, not the
+ * red G of a stretch they left out.
+ */
+function railKind(event: EngineerDayEvent): string {
+  return event.type === "location_off" && event.counted === true ? "tracker_stopped" : event.type;
+}
 
 // Below this, a phone is close enough to flat that it explains a silence.
 const LOW_BATTERY_PERCENT = 15;
@@ -635,11 +706,57 @@ function RowStat({
 }
 
 /**
+ * How many minutes old the newest position is.
+ *
+ * Payroll's last_seen_minutes was exactly that until 17 Oct 2026. Now it counts
+ * from the last time the phone was heard from at all, and the fix's own age
+ * comes as last_fix_minutes -- which is what every age on this board has always
+ * meant, beside a last known position or as "no fix yet". From a Payroll not
+ * yet redeployed the two are the same number, so it falls back.
+ */
+function fixAge(row: Pick<RosterEngineer, "last_seen_minutes" | "last_fix_minutes">): number | null {
+  return row.last_fix_minutes !== undefined ? row.last_fix_minutes : row.last_seen_minutes;
+}
+
+// Payroll calls a phone on duty quiet once it has heard nothing from it for
+// this long (its LIVE_WINDOW_MINUTES).
+const NO_CONTACT_MINUTES = 10;
+
+/**
+ * How long the phone behind a No signal chip has been quiet.
+ *
+ * Gone quiet itself -- nothing heard for Payroll's ten minutes -- it is the time
+ * since it was last heard from: a phone parked for two hours with the app
+ * checking in, whose battery then died, has been quiet for eleven minutes, not
+ * two hours. Still checking in, the row is stale for want of a position, and
+ * the age is that of its newest fix, or "no fix yet". From a Payroll older
+ * than 17 Oct 2026 both are the one number it sends.
+ */
+function quietAge(row: Pick<RosterEngineer, "last_seen_minutes" | "last_fix_minutes">): number | null {
+  return row.last_seen_minutes != null &&
+    row.last_seen_minutes >= NO_CONTACT_MINUTES &&
+    row.last_fix_minutes !== null
+    ? row.last_seen_minutes
+    : fixAge(row);
+}
+
+/**
+ * Since when the phone of an engineer on duty has had its Location switched
+ * off, or null. The phone said so itself, so it is a known reason and not a
+ * silence. Absent from a Payroll older than 17 Oct 2026, and then every row
+ * reads as it always did.
+ */
+function gpsOffSince(row: Pick<RosterEngineer, "state" | "gps_off_since">): string | null {
+  return row.state === "on_duty" && row.gps_off_since ? row.gps_off_since : null;
+}
+
+/**
  * Where an engineer stands, in one chip. Three states, not two: on duty and
  * reporting, on duty but the phone has gone quiet (amber — the case that used to
  * make them vanish from the board), and finished for the day.
  */
 function DutyBadge({ row }: { row: RosterEngineer }) {
+  const gpsOff = gpsOffSince(row);
   const [background, color, dot, text, title] =
     row.state === "unmatched"
       ? [
@@ -662,12 +779,23 @@ function DutyBadge({ row }: { row: RosterEngineer }) {
             `Logout${row.duty_ended_at ? ` · ${clock(row.duty_ended_at)}` : ""}`,
             row.auto_closed ? "Auto-closed — they never tapped Logout" : "Shift finished",
           ]
+        // Location switched off, in the phone's own words. Before No signal:
+        // Payroll marks the row stale as well, so a board that predates this
+        // still flags it, but this one can say why.
+        : gpsOff
+          ? [
+              "#ffe4e6",
+              "#be123c",
+              "#f43f5e",
+              `GPS off · since ${officeClock(gpsOff)}`,
+              `On duty, but Location (GPS) has been off on the phone since ${officeClock(gpsOff)}. No position comes in until it is switched back on.`,
+            ]
         : row.stale
           ? [
               "#fef3c7",
               "#b45309",
               "#f59e0b",
-              `No signal · ${relativeAge(row.last_seen_minutes)}`,
+              `No signal · ${relativeAge(quietAge(row))}`,
               // Going dark looks identical either way, and the charge on the
               // last fix is the only thing that tells them apart. Saying which
               // is the difference between "chase them" and "they will be back".
@@ -959,7 +1087,13 @@ export default function LiveTrackingPanel({
   // The alerts stay about the field engineers' phones, as they always were.
   // Office staff often Login from a desk browser, which sends no GPS; counted
   // here they would read as a row of dead phones every day.
-  const staleCount = useMemo(() => boardRows.filter((e) => e.stale && !e.staff).length, [boardRows]);
+  // A phone with GPS switched off is stale too, but its chip says GPS off, so
+  // it is counted on that tile and not twice.
+  const staleCount = useMemo(
+    () => boardRows.filter((e) => e.stale && !gpsOffSince(e) && !e.staff).length,
+    [boardRows],
+  );
+  const gpsOffCount = useMemo(() => boardRows.filter((e) => !e.staff && gpsOffSince(e)).length, [boardRows]);
   // One of the reasons this page gets opened is "whose phone is about to die",
   // and answering it meant reading every row. Counted once, up top.
   // Clicking a headline number should show you the engineers behind it. Kept
@@ -1063,6 +1197,16 @@ export default function LiveTrackingPanel({
                 }
               : {})}
           />
+          {/* Apart from No signal: the phone has said why there is no
+              position, and switching Location back on is the engineer's to do. */}
+          {gpsOffCount > 0 && (
+            <SummaryStat
+              value={String(gpsOffCount)}
+              label="GPS off"
+              tone="warn"
+              hint={`${gpsOffCount} on duty with Location (GPS) switched off on the phone — no position comes in until it is back on`}
+            />
+          )}
           {staleCount > 0 && (
             <SummaryStat
               value={String(staleCount)}
@@ -1455,7 +1599,7 @@ export default function LiveTrackingPanel({
           >
             <Fact label="Active case">{selected.active_case_number ?? "—"}</Fact>
             <Fact label="Status">{selected.status || "—"}</Fact>
-            <Fact label="Last seen">{relativeAge(selected.last_seen_minutes)}</Fact>
+            <Fact label="Last seen">{relativeAge(fixAge(selected))}</Fact>
             <Fact label={selected.stale ? "Last known" : "Position"}>
               {selected.latitude != null && selected.longitude != null ? (
                 <>
@@ -1649,6 +1793,7 @@ export default function LiveTrackingPanel({
                   {timeline.map((e, i) => {
                     const last = i === timeline.length - 1;
                     const mapped = e.latitude != null && e.longitude != null;
+                    const kind = railKind(e);
                     return (
                       <li
                         key={`${e.at}-${i}`}
@@ -1670,8 +1815,10 @@ export default function LiveTrackingPanel({
                         >
                           {/* A call carried in from an earlier day has no clock
                               time of its own. Stamping it 12:00 AM said it
-                              happened at midnight, which nobody did. */}
-                          {e.type === "carried" ? "—" : clock(e.at)}
+                              happened at midnight, which nobody did. The rest
+                              in 12-hour form on the office's clock, whatever
+                              the browser's locale, like the GPS off chip. */}
+                          {e.type === "carried" ? "—" : officeClock(e.at)}
                         </span>
                         {/* A lettered badge on a line running to the next
                             entry, so the day reads as one sequence AND each
@@ -1690,12 +1837,12 @@ export default function LiveTrackingPanel({
                               fontSize: 10,
                               fontWeight: 700,
                               lineHeight: 1,
-                              color: EVENT_COLOR[e.type] ?? "#6b7280",
-                              background: `${EVENT_COLOR[e.type] ?? "#6b7280"}1f`,
-                              border: `1px solid ${EVENT_COLOR[e.type] ?? "#6b7280"}59`,
+                              color: EVENT_COLOR[kind] ?? "#6b7280",
+                              background: `${EVENT_COLOR[kind] ?? "#6b7280"}1f`,
+                              border: `1px solid ${EVENT_COLOR[kind] ?? "#6b7280"}59`,
                             }}
                           >
-                            {EVENT_MARK[e.type] ?? "·"}
+                            {EVENT_MARK[kind] ?? "·"}
                           </span>
                           {!last && (
                             <span
@@ -1717,7 +1864,7 @@ export default function LiveTrackingPanel({
                             style={{
                               fontSize: 13,
                               fontWeight: 600,
-                              color: EVENT_COLOR[e.type] ?? "#111827",
+                              color: EVENT_COLOR[kind] ?? "#111827",
                             }}
                           >
                             {eventLabel(e)}
@@ -1730,7 +1877,7 @@ export default function LiveTrackingPanel({
                               style={{
                                 marginTop: 1,
                                 fontSize: 12,
-                                color: EVENT_COLOR[e.type] ?? "#4b5563",
+                                color: EVENT_COLOR[kind] ?? "#4b5563",
                                 opacity: 0.85,
                               }}
                             >
@@ -2046,8 +2193,9 @@ export default function LiveTrackingPanel({
 
                   {/* The reason, on the row rather than in a tooltip nobody
                       hovers for. Only on rows that have actually gone quiet, so
-                      an ordinary row costs no height. */}
-                  {e.state === "on_duty" && e.stale && e.battery_level != null && (
+                      an ordinary row costs no height -- and not under GPS off,
+                      whose chip already gives the reason. */}
+                  {e.state === "on_duty" && e.stale && !gpsOffSince(e) && e.battery_level != null && (
                     <div style={{ marginTop: 3, fontSize: 11, color: "#b45309" }}>
                       {e.battery_level <= LOW_BATTERY_PERCENT
                         ? `Was on ${e.battery_level}% — phone has probably gone flat`

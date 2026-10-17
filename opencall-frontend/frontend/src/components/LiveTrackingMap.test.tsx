@@ -186,3 +186,30 @@ describe("picking an engineer on the map", () => {
     expect(container.querySelectorAll('[data-leaflet="polyline"]')).toHaveLength(0);
   });
 });
+
+describe("a quiet engineer's marker", () => {
+  // Since 17 Oct 2026 Payroll's last_seen_minutes counts from the last time the
+  // phone was heard from at all, and the age of the position under the marker
+  // comes as last_fix_minutes. An older Payroll sends only the first, which is
+  // then that same age.
+
+  it("says how old the position is, by the last fix", async () => {
+    await render({
+      ...base,
+      engineers: [{ ...engineer(91, 11.664, 78.146), stale: true, last_seen_minutes: 2, last_fix_minutes: 45 }],
+      selectedId: null,
+      pathPoints: [],
+    });
+    expect(container.textContent).toContain("No signal for 45m — last seen here");
+  });
+
+  it("falls back to last_seen_minutes from a Payroll that sends no last_fix_minutes", async () => {
+    await render({
+      ...base,
+      engineers: [{ ...engineer(91, 11.664, 78.146), stale: true, last_seen_minutes: 30 }],
+      selectedId: null,
+      pathPoints: [],
+    });
+    expect(container.textContent).toContain("No signal for 30m — last seen here");
+  });
+});

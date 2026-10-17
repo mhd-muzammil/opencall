@@ -97,6 +97,10 @@ export interface MapEngineer {
   duty_minutes: number;
   distance_km: number;
   last_seen_minutes: number | null;
+  // How old the position under the marker is, from a Payroll of 17 Oct 2026 or
+  // later, whose last_seen_minutes counts from the last contact of any kind.
+  // Absent from an older one, where last_seen_minutes is this same number.
+  last_fix_minutes?: number | null;
   status: string;
   timestamp: string | null;
   active_case_number: string | null;
@@ -439,7 +443,9 @@ export default function LiveTrackingMap({
                   <br />
                   <span style={{ color: e.stale ? "#b45309" : "#9ca3af" }}>
                     {e.stale
-                      ? `No signal for ${e.last_seen_minutes ?? "?"}m — last seen here`
+                      ? `No signal for ${
+                          (e.last_fix_minutes !== undefined ? e.last_fix_minutes : e.last_seen_minutes) ?? "?"
+                        }m — last seen here`
                       : e.timestamp
                         ? new Date(e.timestamp).toLocaleTimeString()
                         : ""}

@@ -87,6 +87,17 @@ export interface RosterEngineer {
   // Payroll staff who are not in our engineer register, shown on the live
   // tracking board beside the engineers (only when asked for: includeStaff).
   staff?: boolean;
+  // From 17 Oct 2026, and absent from a Payroll older than that.
+  // last_seen_minutes then counts from the last time the phone was heard from
+  // at all -- a fix, or the app checking in while the engineer stands still --
+  // so the age of the newest FIX travels on its own here. Null: no fix.
+  last_fix_minutes?: number | null;
+  // When the phone reported its Location switched off (ISO), for as long as it
+  // still is: cleared by the next GPS on or the next fix. Payroll marks such a
+  // row stale as well, so a board that does not know this field says No signal.
+  gps_off_since?: string | null;
+  // The last time the phone was heard from at all (ISO).
+  last_contact_at?: string | null;
 }
 
 export interface RosterResult {
@@ -129,6 +140,19 @@ export interface EngineerDayEvent {
    * Absent when it could not be resolved, which is not the same as empty.
    */
   address?: string | null;
+  /** On "untracked": how far they had moved by the time the app spoke again. */
+  moved_km?: number;
+  /**
+   * Whether Payroll's kilometres took the straight line across this dark
+   * stretch -- read on "location_off", "untracked" and "gps_off". Absent from
+   * a Payroll older than 17 Oct 2026, and wherever Payroll does not say.
+   */
+  counted?: boolean;
+  /**
+   * On "gps_off"/"gps_on": the phone found Location already off (or on) when
+   * tracking started, rather than seeing it switched while it ran.
+   */
+  found?: boolean;
 }
 
 /**

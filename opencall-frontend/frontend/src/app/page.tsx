@@ -19,7 +19,7 @@ import { VirtualTbody } from "../components/VirtualTbody";
 import {
   LayoutGrid, FolderCheck, LineChart, Activity, Timer, Layers, Map as MapIcon, Zap, TrendingUp,
   Table, Wrench, FileText, Users, UserPlus, ShieldCheck, Tag, Upload, ScrollText,
-  RefreshCw, LogOut, MapPin, Truck,
+  RefreshCw, LogOut, MapPin, Truck, Cctv,
 } from "lucide-react";
 import LiveTrackingSection from "../features/dashboard/components/LiveTrackingSection";
 import { canSeeDeliveryChallans } from "../lib/deliveryChallanAccess";
@@ -108,6 +108,7 @@ import {
   PartsCatalogPage,
   QuotationsPage,
   DeliveryChallansPage,
+  CameraMonitoringPage,
   MatchPreviewSection,
   RTPLTimeModal,
   ProductivityPage,
@@ -275,6 +276,7 @@ const WORKSPACE_VIEWS = [
   "renewal-pipeline",
   "vendor-dashboard",
   "live-tracking",
+  "camera-monitoring",
 ] as const;
 type WorkspaceView = (typeof WORKSPACE_VIEWS)[number];
 
@@ -4830,6 +4832,20 @@ export default function DashboardPage() {
             </button>
           )}
 
+          {/* Camera Monitoring — SUPER_ADMIN only, below Live Tracking until the office
+              says where it belongs. Not a special-access section. */}
+          {isSuperAdmin && (
+            <button
+              type="button"
+              className={`sidebarItem ${workspaceView === "camera-monitoring" ? "active" : ""}`}
+              onClick={() => setWorkspaceView("camera-monitoring")}
+            >
+              <span className="sidebarIcon">
+                <Cctv size={18} strokeWidth={2} /> <span className="sidebarText">Camera Monitoring</span>
+              </span>
+            </button>
+          )}
+
           {(session.user.role === "SUPER_ADMIN" || session.user.role === "REGION_ADMIN") && (
             <button
               type="button"
@@ -5188,6 +5204,14 @@ export default function DashboardPage() {
                 </section>
               ) : null}
 
+              {/* Camera Monitoring — SUPER_ADMIN only, like its sidebar entry, so a view
+                  remembered from another login on this browser opens nothing. */}
+              {workspaceView === "camera-monitoring" && isSuperAdmin ? (
+                <section className="panel reportPanel" style={{ minWidth: 0 }}>
+                  <CameraMonitoringPage />
+                </section>
+              ) : null}
+
               {report &&
               workspaceView !== "warranty" &&
               workspaceView !== "renewal-pipeline" &&
@@ -5195,7 +5219,8 @@ export default function DashboardPage() {
               workspaceView !== "parts-catalog" &&
               workspaceView !== "quotations" &&
               workspaceView !== "delivery-challans" &&
-              workspaceView !== "live-tracking" ? (
+              workspaceView !== "live-tracking" &&
+              workspaceView !== "camera-monitoring" ? (
                 <section className="panel reportPanel">
                   <div className="overviewReportContent">
                     {workspaceView === "overview" && (

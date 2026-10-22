@@ -26,6 +26,8 @@ const ALL_NAV: NavItem[] = [
   { href: "/admin/engineers", label: "Engineers", roles: ["SUPER_ADMIN", "REGION_ADMIN"] },
   { href: "/admin/tracking", label: "Live Tracking", roles: ["SUPER_ADMIN", "REGION_ADMIN"] },
   { href: "/admin/rtpl-statuses", label: "RTPL statuses", roles: ["SUPER_ADMIN"] },
+  // Renderways (RTPL customer app) customers and their tickets, read live.
+  { href: "/admin/ticketing", label: "Ticketing System", roles: ["SUPER_ADMIN"] },
   {
     href: "/admin/record-format",
     label: "Record Format",

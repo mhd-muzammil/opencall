@@ -94,12 +94,12 @@ export const TICKET_PRIORITY_OPTIONS: { value: string; label: string }[] = [
   { value: "low", label: "Low" },
 ];
 
-/** Shown while the backend has no Renderways credentials. */
+/** Shown while the backend has no Renderways service key. */
 export function NotConfiguredNotice() {
   return (
     <div className="adminError">
-      Renderways is not connected yet. Set RENDERWAYS_API_URL, RENDERWAYS_API_USER and
-      RENDERWAYS_API_PASSWORD on the OpenCall backend, then refresh.
+      Renderways is not connected yet. Set RENDERWAYS_API_URL and RENDERWAYS_API_KEY on the
+      OpenCall backend (the key is SERVICE_API_KEY on the Renderways backend), then refresh.
     </div>
   );
 }

@@ -5,9 +5,6 @@ import {
   DAY_REPORT_ROWS,
   clockTime,
   dayReportTotals,
-  dayTimeline,
-  initials,
-  longDate,
   dayCount,
   dayReportColumns,
   dayReportFilename,
@@ -211,50 +208,8 @@ describe("rows", () => {
         column({ engineerId: 8, cell: cell({ km: 12.25 }) }),
         column({ day: "2026-10-11", cell: cell({ km: 0.1 }) }),
       ]),
-    ).toEqual({ km: 77.74, fses: 2, checkIns: 2, closed: 3 });
-    expect(dayReportTotals([])).toEqual({ km: 0, fses: 0, checkIns: 0, closed: 0 });
-  });
-
-  it("a card's day: every moment in the order it happened, each with its time and place", () => {
-    const moments = dayTimeline(column());
-    expect(moments.map((m) => [m.kind, m.title, m.time])).toEqual([
-      ["login", "Login", "10:00 AM"],
-      ["wait", "Waiting · 3h 5m", "10:00 AM"],
-      ["check_in", "Check in · OC-1", "10:05 AM"],
-      ["check_out", "Check out · OC-1", "10:25 AM"],
-      ["gps_off", "GPS off", "11:00 AM"],
-      ["net_off", "Net off", "12:00 PM"],
-      ["net_on", "Net on", "12:10 PM"],
-      ["check_in", "Check in · OC-2", "12:40 PM"],
-      ["gps_on", "GPS on", "2:00 PM"],
-      ["logout", "Logout", "6:30 PM"],
-    ]);
-    expect(moments[2]!.place).toEqual({
-      text: "12, Gandhi Street, Hosur",
-      href: "https://maps.google.com/?q=12.750000,77.750000",
-    });
-    expect(moments[5]!.place).toEqual({ text: "Place not recorded", tone: "muted" });
-    expect(moments.some((m) => m.auto)).toBe(false);
-  });
-
-  it("an auto logout says so, and one after midnight gives its date", () => {
-    const late = column({
-      day: "2026-09-02",
-      cell: cell({
-        logins: [{ at: "2026-09-02T09:00:00+05:30", ...bare }],
-        logouts: [{ at: "2026-09-03T05:50:40+05:30", auto: true, ...bare }],
-      }),
-    });
-    expect(dayTimeline(late).map((m) => [m.title, m.time, m.auto ?? false])).toEqual([
-      ["Login", "9:00 AM", false],
-      ["Auto logout", "5:50 AM (03-09-2026)", true],
-    ]);
-    expect(dayTimeline(column({ cell: cell() }))).toEqual([]);
-  });
-
-  it("names and dates for the cards", () => {
-    expect(["Arun Kumar", "samim", "Lava kumar  V", ""].map(initials)).toEqual(["AK", "S", "LV", "?"]);
-    expect(longDate("2026-10-25")).toBe("Sun, 25 Oct 2026");
+    ).toEqual({ km: 77.74, fses: 2, checkIns: 2 });
+    expect(dayReportTotals([])).toEqual({ km: 0, fses: 0, checkIns: 0 });
   });
 
   it("the sheet writes a coordinate as its Google Maps link, one line each, and a dash for none", () => {

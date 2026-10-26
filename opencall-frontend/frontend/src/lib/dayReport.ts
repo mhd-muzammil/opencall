@@ -311,96 +311,18 @@ export function dayReportColumns(
   return columns;
 }
 
-/** The tiles above the report: what the FSE-days on screen add up to. */
+/** The tiles above the table: what the columns on screen add up to. */
 export function dayReportTotals(columns: DayReportColumn[]): {
   km: number;
   fses: number;
   checkIns: number;
-  closed: number;
 } {
   const km = columns.reduce((sum, column) => sum + (Number(column.cell.km) || 0), 0);
   return {
     km: Math.round(km * 100) / 100,
     fses: new Set(columns.map((column) => column.engineerId)).size,
     checkIns: columns.reduce((sum, column) => sum + column.cell.check_ins.length, 0),
-    closed: columns.reduce((sum, column) => sum + (column.cell.closed ?? 0), 0),
   };
-}
-
-export type TimelineKind =
-  | "login"
-  | "logout"
-  | "check_in"
-  | "check_out"
-  | "wait"
-  | "gps_off"
-  | "gps_on"
-  | "net_off"
-  | "net_on";
-
-/** One moment of an FSE-day on its card, in the order the day happened. */
-export interface TimelineEntry {
-  at: string;
-  kind: TimelineKind;
-  /** "Login", "Check in · OC-2501", "Waiting · 50 min", "Auto logout", ... */
-  title: string;
-  /** "9:12 AM", with its date when it fell on another day. */
-  time: string;
-  place: DayReportLine;
-  /** A Logout the app closed, not the engineer. */
-  auto?: boolean;
-}
-
-/** Every Login, Logout, check in and out, wait, and GPS and Net off and on of the day, oldest first. */
-export function dayTimeline(column: DayReportColumn): TimelineEntry[] {
-  const { cell, day } = column;
-  const entry = (
-    moment: DayReportMoment,
-    kind: TimelineKind,
-    title: string,
-    place: DayReportLine = placeLine(moment),
-  ): TimelineEntry => {
-    const on = indiaDay(moment.at);
-    return {
-      at: moment.at,
-      kind,
-      title,
-      time: `${clockTime(moment.at)}${on !== day ? ` (${sheetDate(on)})` : ""}`,
-      place,
-    };
-  };
-  const entries: TimelineEntry[] = [
-    ...cell.logins.map((m) => entry(m, "login", "Login")),
-    ...cell.logouts.map((m) =>
-      m.auto ? { ...entry(m, "logout", "Auto logout"), auto: true } : entry(m, "logout", "Logout"),
-    ),
-    ...cell.check_ins.map((m) => entry(m, "check_in", `Check in${call(m.case_number)}`)),
-    ...cell.check_outs.map((m) => entry(m, "check_out", `Check out${call(m.case_number)}`)),
-    ...cell.waits.map((m) => entry(m, "wait", `Waiting · ${hoursWords(m.minutes)}`)),
-    ...cell.gps_offs.map((m) => entry(m, "gps_off", "GPS off")),
-    ...cell.gps_ons.map((m) => entry(m, "gps_on", "GPS on")),
-    ...cell.net_offs.map((m) => entry(m, "net_off", "Net off")),
-    ...cell.net_ons.map((m) => entry(m, "net_on", "Net on")),
-  ];
-  return entries.sort((a, b) => Date.parse(a.at) - Date.parse(b.at));
-}
-
-const WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
-const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
-
-/** "Sun, 25 Oct 2026" -- a date heading, spelt the same in every browser. */
-export function longDate(iso: string): string {
-  const date = new Date(`${iso}T00:00:00Z`);
-  const day = String(date.getUTCDate()).padStart(2, "0");
-  return `${WEEKDAYS[date.getUTCDay()]}, ${day} ${MONTHS[date.getUTCMonth()]} ${date.getUTCFullYear()}`;
-}
-
-/** "Arun Kumar" -> "AK", "samim" -> "S": the avatar on a card. */
-export function initials(name: string): string {
-  const words = name.trim().split(/\s+/).filter(Boolean);
-  if (words.length === 0) return "?";
-  const letters = words.length === 1 ? words[0]!.slice(0, 1) : words[0]!.slice(0, 1) + words[words.length - 1]!.slice(0, 1);
-  return letters.toUpperCase();
 }
 
 /** Days from `from` to `to` inclusive, or null when they are not a period of 1 to MAX_DAY_REPORT_DAYS days. */

@@ -1,7 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState, type ComponentType, type CSSProperties } from "react";
-import { CircleCheck, LayoutGrid, MapPin, Route, Table2, Users } from "lucide-react";
+import { Fragment, useEffect, useMemo, useState, type CSSProperties } from "react";
 import { clearSession } from "../../../lib/session";
 import { isApiAuthError } from "../../../lib/api/http";
 import {
@@ -12,30 +11,54 @@ import {
 } from "../../../lib/payrollTrackingApiClient";
 import { filterKmRows, formatKm, kmRegions, regionTone } from "../../../lib/kmReport";
 import {
+  DAY_REPORT_ROWS,
   MAX_DAY_REPORT_DAYS,
   dayCount,
   dayReportColumns,
   dayReportFilename,
   dayReportTotals,
   sheetDate,
+  type DayReportLine,
 } from "../../../lib/dayReport";
 import { downloadDayReportExcel } from "../../../lib/dayReportExcel";
 import { todayIsoDate } from "../utils/dateUtils";
-import DayReportCards from "./DayReportCards";
-import DayReportTable from "./DayReportTable";
 
 /**
  * DAY REPORT: what the Live Tracking day panel says about each FSE-day -- Login,
  * Logout, check-ins and outs, Assigned / Attended / Closed, waiting, GPS and Net
  * off and on, km, with where each happened -- for everybody, one region or one
- * person, to read here as cards or as the office's sheet, and to download as
- * that sheet in Excel.
+ * person, to read here and download as the office's Excel sheet.
  *
  * Asked for with Show, not on every change: a month of every FSE is hundreds of
  * FSE-days, and a search typed letter by letter must not ask for each one. What
  * is on screen is always the answer to the last Show, named as such, and the
  * download is exactly what is on screen.
  */
+
+// Frozen label column, and the two header rows, at fixed sizes so each knows
+// where the next begins.
+const LABEL_W = 168;
+const HEAD_H = 30;
+// Each FSE-day's width. A long address wraps inside it rather than running on
+// over the next FSE's column.
+const COLUMN_W = 260;
+
+// The app's table rules (globals.css) make every cell nowrap and every th an
+// uppercase header stuck to the top; each is said otherwise here, for this
+// table only.
+const cellBase: CSSProperties = {
+  padding: "6px 10px",
+  borderBottom: "1px solid #e5e7eb",
+  borderRight: "1px solid #e5e7eb",
+  verticalAlign: "top",
+  boxSizing: "border-box",
+  fontSize: 12.5,
+  lineHeight: 1.45,
+  whiteSpace: "normal",
+  textTransform: "none",
+  letterSpacing: "normal",
+  color: "#111827",
+};
 
 const inputStyle: CSSProperties = {
   padding: "8px 12px",
@@ -60,35 +83,51 @@ const actionButton = (enabled: boolean, filled: boolean): CSSProperties => ({
   cursor: enabled ? "pointer" : "default",
 });
 
-type Icon = ComponentType<{ size?: number; strokeWidth?: number }>;
-
-/** A figure above the report, with its icon in its colour. */
-function SummaryTile({ value, label, Icon, color, tint }: { value: string; label: string; Icon: Icon; color: string; tint: string }) {
+/** A figure above the table, in the KM Report's tile. */
+function SummaryTile({ value, label }: { value: string; label: string }) {
   return (
     <div
       data-testid="day-report-tile"
+      style={{ padding: "8px 14px", borderRadius: 10, border: "1px solid #e5e7eb", background: "#fff", minWidth: 110 }}
+    >
+      <div style={{ fontSize: 20, fontWeight: 700, color: "#111827", fontVariantNumeric: "tabular-nums" }}>{value}</div>
+      <div style={{ fontSize: 12, color: "#6b7280" }}>{label}</div>
+    </div>
+  );
+}
+
+const TONE_COLOR: Record<NonNullable<DayReportLine["tone"]>, string> = {
+  alert: "#b91c1c",
+  warn: "#b45309",
+  good: "#15803d",
+  muted: "#9ca3af",
+};
+
+/** One line of a cell: its time in bold, its place a link, its colour its meaning. */
+function LineView({ line }: { line: DayReportLine }) {
+  if (line.text === "-" && !line.tone) return <div style={{ color: "#9ca3af" }}>-</div>;
+  const lead = line.lead && line.text.startsWith(line.lead) ? line.lead : "";
+  const rest = line.text.slice(lead.length);
+  // The dot after the time stays out of the link, so only the place is underlined.
+  const dot = lead && rest.startsWith(" · ") ? " · " : "";
+  const tail = rest.slice(dot.length);
+  return (
+    <div
       style={{
-        display: "flex",
-        alignItems: "center",
-        gap: 12,
-        padding: "10px 16px 10px 12px",
-        borderRadius: 12,
-        border: "1px solid #e5e7eb",
-        background: "#fff",
-        minWidth: 150,
-        boxShadow: "0 1px 2px rgba(16, 24, 40, 0.04)",
+        color: line.tone ? TONE_COLOR[line.tone] : undefined,
+        fontWeight: line.tone === "alert" || line.tone === "good" ? 700 : undefined,
+        fontStyle: line.tone === "muted" ? "italic" : undefined,
       }}
     >
-      <span
-        aria-hidden
-        style={{ width: 38, height: 38, borderRadius: 10, background: tint, color, display: "grid", placeItems: "center" }}
-      >
-        <Icon size={19} strokeWidth={2.2} />
-      </span>
-      <div>
-        <div style={{ fontSize: 21, fontWeight: 800, color: "#111827", lineHeight: 1.1, fontVariantNumeric: "tabular-nums" }}>{value}</div>
-        <div style={{ fontSize: 12, color: "#6b7280" }}>{label}</div>
-      </div>
+      {lead && <strong style={{ fontWeight: 700, color: line.tone ? undefined : "#111827" }}>{lead}</strong>}
+      {dot}
+      {line.href ? (
+        <a href={line.href} target="_blank" rel="noreferrer" style={{ color: "#2563eb" }}>
+          {tail}
+        </a>
+      ) : (
+        tail
+      )}
     </div>
   );
 }
@@ -103,8 +142,6 @@ interface Asked {
   scope: string;
 }
 
-type View = "cards" | "table";
-
 export interface DayReportPanelProps {
   token: string | null;
 }
@@ -116,7 +153,6 @@ export default function DayReportPanel({ token }: DayReportPanelProps) {
   // "" is All Regions.
   const [region, setRegion] = useState("");
   const [query, setQuery] = useState("");
-  const [view, setView] = useState<View>("cards");
 
   const [engineers, setEngineers] = useState<RosterEngineer[] | null>(null);
   const [rosterConfigured, setRosterConfigured] = useState(true);
@@ -162,10 +198,6 @@ export default function DayReportPanel({ token }: DayReportPanelProps) {
   );
   const nameById = useMemo(
     () => new Map((engineers ?? []).map((row) => [row.engineer_id as number, row.engineer_name] as const)),
-    [engineers],
-  );
-  const regionById = useMemo(
-    () => new Map((engineers ?? []).map((row) => [row.engineer_id as number, row.branch] as const)),
     [engineers],
   );
 
@@ -400,8 +432,8 @@ export default function DayReportPanel({ token }: DayReportPanelProps) {
       {downloadError && <p style={{ color: "#dc2626", marginTop: 12 }}>{downloadError}</p>}
 
       {asked && !sessionExpired && (
-        <div style={{ marginTop: 18, display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
-          <h3 data-testid="day-report-title" style={{ margin: 0, fontSize: 18, fontWeight: 800, color: "#111827" }}>
+        <div style={{ marginTop: 16, display: "flex", alignItems: "baseline", gap: 12, flexWrap: "wrap" }}>
+          <h3 data-testid="day-report-title" style={{ margin: 0, fontSize: 16, fontWeight: 700, color: "#111827" }}>
             {asked.scope} · {periodWords(asked)}
           </h3>
           {loading && (
@@ -414,48 +446,6 @@ export default function DayReportPanel({ token }: DayReportPanelProps) {
               The dates, region or search have changed since. Press Show to load them.
             </span>
           )}
-          {/* Cards to read a day by; the table to compare them, as the sheet lays them out. */}
-          {columns.length > 0 && (
-            <div
-              role="group"
-              aria-label="View"
-              style={{ marginLeft: "auto", display: "inline-flex", border: "1px solid #c7d2fe", borderRadius: 10, overflow: "hidden" }}
-            >
-              {(
-                [
-                  ["cards", "Cards", LayoutGrid],
-                  ["table", "Table", Table2],
-                ] as const
-              ).map(([value, label, ViewIcon]) => {
-                const on = view === value;
-                return (
-                  <button
-                    key={value}
-                    type="button"
-                    aria-pressed={on}
-                    onClick={() => setView(value)}
-                    style={{
-                      font: "inherit",
-                      display: "inline-flex",
-                      alignItems: "center",
-                      gap: 6,
-                      minHeight: 0,
-                      padding: "6px 14px",
-                      border: "none",
-                      borderRadius: 0,
-                      background: on ? "#4f46e5" : "#fff",
-                      color: on ? "#fff" : "#4338ca",
-                      fontWeight: 700,
-                      fontSize: 13,
-                      cursor: "pointer",
-                    }}
-                  >
-                    <ViewIcon size={15} strokeWidth={2.2} /> {label}
-                  </button>
-                );
-              })}
-            </div>
-          )}
         </div>
       )}
       {answer && columns.length === 0 && (
@@ -463,44 +453,176 @@ export default function DayReportPanel({ token }: DayReportPanelProps) {
       )}
 
       {columns.length > 0 && (
-        <div style={{ display: "flex", gap: 12, flexWrap: "wrap", marginTop: 12 }}>
-          <SummaryTile
-            value={formatKm(totals.km) === "-" ? "0" : formatKm(totals.km)}
-            label="Total km"
-            Icon={Route}
-            color="#4f46e5"
-            tint="#eef2ff"
-          />
-          <SummaryTile
-            value={String(totals.fses)}
-            label={totals.fses === 1 ? "FSE" : "FSEs"}
-            Icon={Users}
-            color="#0284c7"
-            tint="#e0f2fe"
-          />
-          <SummaryTile
-            value={String(totals.checkIns)}
-            label={totals.checkIns === 1 ? "Check in" : "Check ins"}
-            Icon={MapPin}
-            color="#2563eb"
-            tint="#dbeafe"
-          />
-          <SummaryTile
-            value={String(totals.closed)}
-            label="Closed"
-            Icon={CircleCheck}
-            color="#7c3aed"
-            tint="#ede9fe"
-          />
+        <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginTop: 10 }}>
+          <SummaryTile value={formatKm(totals.km) === "-" ? "0" : formatKm(totals.km)} label="Total km" />
+          <SummaryTile value={String(totals.fses)} label={totals.fses === 1 ? "FSE" : "FSEs"} />
+          <SummaryTile value={String(totals.checkIns)} label={totals.checkIns === 1 ? "Check in" : "Check ins"} />
         </div>
       )}
 
-      {columns.length > 0 &&
-        (view === "cards" ? (
-          <DayReportCards columns={columns} regionById={regionById} />
-        ) : (
-          <DayReportTable columns={columns} />
-        ))}
+      {columns.length > 0 && (
+        <div
+          data-testid="day-report-grid"
+          style={{
+            marginTop: 10,
+            overflow: "auto",
+            maxHeight: "calc(100vh - 320px)",
+            minHeight: 240,
+            border: "1px solid #e5e7eb",
+            borderRadius: 12,
+            background: "#fff",
+          }}
+        >
+          <table style={{ borderCollapse: "separate", borderSpacing: 0 }}>
+            <thead>
+              {DAY_REPORT_ROWS.slice(0, 2).map((spec, index) => (
+                <tr key={spec.key}>
+                  <th
+                    scope="row"
+                    style={{
+                      ...cellBase,
+                      position: "sticky",
+                      left: 0,
+                      top: index * HEAD_H,
+                      zIndex: 3,
+                      width: LABEL_W,
+                      minWidth: LABEL_W,
+                      maxWidth: LABEL_W,
+                      height: HEAD_H,
+                      background: "#eef2ff",
+                      textAlign: "left",
+                      fontWeight: 700,
+                    }}
+                  >
+                    {spec.label}
+                  </th>
+                  {columns.map((column) => (
+                    <th
+                      key={`${column.day}|${column.engineerId}`}
+                      style={{
+                        ...cellBase,
+                        position: "sticky",
+                        top: index * HEAD_H,
+                        zIndex: 2,
+                        height: HEAD_H,
+                        width: COLUMN_W + 20,
+                        minWidth: COLUMN_W + 20,
+                        background: "#eef2ff",
+                        whiteSpace: "nowrap",
+                        textAlign: "center",
+                        // The name is what a column is read by; the date sits above it, quieter.
+                        fontWeight: spec.key === "name" ? 700 : 600,
+                        fontSize: spec.key === "name" ? 13.5 : 12,
+                        color: spec.key === "name" ? "#111827" : "#4b5563",
+                      }}
+                    >
+                      {spec.lines(column)[0]?.text}
+                    </th>
+                  ))}
+                </tr>
+              ))}
+            </thead>
+            <tbody>
+              {DAY_REPORT_ROWS.slice(2).map((spec, index, rows) => (
+                <Fragment key={spec.key}>
+                  {/* A band where each group of rows begins: Duty, Calls, ... */}
+                  {spec.group !== rows[index - 1]?.group && (
+                    <tr data-testid="day-report-band">
+                      <th
+                        scope="rowgroup"
+                        style={{
+                          ...cellBase,
+                          position: "sticky",
+                          left: 0,
+                          top: "auto",
+                          zIndex: 1,
+                          width: LABEL_W,
+                          minWidth: LABEL_W,
+                          maxWidth: LABEL_W,
+                          background: "#e0e7ff",
+                          color: "#3730a3",
+                          textAlign: "left",
+                          fontSize: 11.5,
+                          fontWeight: 700,
+                          letterSpacing: "0.06em",
+                          textTransform: "uppercase",
+                          padding: "4px 10px",
+                        }}
+                      >
+                        {spec.group}
+                      </th>
+                      <td
+                        colSpan={columns.length}
+                        style={{ ...cellBase, background: "#e0e7ff", padding: "4px 10px" }}
+                      />
+                    </tr>
+                  )}
+                  <tr>
+                    <th
+                      scope="row"
+                      style={{
+                        ...cellBase,
+                        position: "sticky",
+                        left: 0,
+                        // Not stuck to the top as the app's th is: only the two
+                        // header rows are.
+                        top: "auto",
+                        zIndex: 1,
+                        width: LABEL_W,
+                        minWidth: LABEL_W,
+                        maxWidth: LABEL_W,
+                        background: "#f9fafb",
+                        textAlign: "left",
+                        fontWeight: 600,
+                      }}
+                    >
+                      {spec.label}
+                    </th>
+                    {columns.map((column) => {
+                      const lines = spec.lines(column);
+                      const value = lines[0]?.text;
+                      return (
+                        <td
+                          key={`${column.day}|${column.engineerId}`}
+                          style={{
+                            ...cellBase,
+                            textAlign: spec.list ? "left" : "center",
+                            fontVariantNumeric: "tabular-nums",
+                            ...(spec.key === "km" ? { fontWeight: 700, fontSize: 14 } : {}),
+                          }}
+                        >
+                          <div style={{ width: COLUMN_W, overflowWrap: "anywhere" }}>
+                            {lines.length === 0 ? (
+                              <span style={{ color: "#9ca3af" }}>-</span>
+                            ) : spec.chip && value !== "-" ? (
+                              // A count as a pill in its own colour, as the KM Report colours them.
+                              <span
+                                style={{
+                                  display: "inline-block",
+                                  minWidth: 32,
+                                  padding: "1px 10px",
+                                  borderRadius: 999,
+                                  background: spec.chip.tint,
+                                  color: spec.chip.accent,
+                                  fontWeight: 700,
+                                }}
+                              >
+                                {value}
+                              </span>
+                            ) : (
+                              lines.map((line, lineIndex) => <LineView key={lineIndex} line={line} />)
+                            )}
+                          </div>
+                        </td>
+                      );
+                    })}
+                  </tr>
+                </Fragment>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
     </div>
   );
 }

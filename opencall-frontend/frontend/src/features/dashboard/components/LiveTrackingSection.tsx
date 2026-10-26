@@ -1,25 +1,27 @@
 "use client";
 
 import { useState } from "react";
-import { MapPin, Route } from "lucide-react";
+import { FileSpreadsheet, MapPin, Route } from "lucide-react";
 import LiveTrackingPanel from "./LiveTrackingPanel";
 import KmReportPanel from "./KmReportPanel";
+import DayReportPanel from "./DayReportPanel";
 
 /**
  * The Live Tracking section of the main app: the live board, and the KM Report
  * beside it as a second tab -- the office asked for the kilometres INSIDE Live
- * Tracking, not as a page of their own.
+ * Tracking, not as a page of their own -- and the Day Report as a third.
  *
  * Only the open tab is mounted. The board polls Payroll every 30 seconds and
- * the report asks it once per day of a cycle; neither has any business running
- * while the other is on screen.
+ * the reports ask it once per day of a period; none of them has any business
+ * running while another is on screen.
  */
 
-type Tab = "board" | "km";
+type Tab = "board" | "km" | "day";
 
 const TABS: { key: Tab; label: string; Icon: typeof MapPin }[] = [
   { key: "board", label: "Live Tracking", Icon: MapPin },
   { key: "km", label: "KM Report", Icon: Route },
+  { key: "day", label: "Day Report", Icon: FileSpreadsheet },
 ];
 
 export default function LiveTrackingSection({ token }: { token: string | null }) {
@@ -65,8 +67,10 @@ export default function LiveTrackingSection({ token }: { token: string | null })
       </div>
       {tab === "board" ? (
         <LiveTrackingPanel token={token} embedded />
-      ) : (
+      ) : tab === "km" ? (
         <KmReportPanel token={token} embedded />
+      ) : (
+        <DayReportPanel token={token} />
       )}
     </div>
   );

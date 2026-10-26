@@ -32,6 +32,14 @@ vi.mock("./KmReportPanel", async () => {
   };
 });
 
+vi.mock("./DayReportPanel", async () => {
+  const { createElement: h } = await import("react");
+  return {
+    default: (props: { token: string | null }) =>
+      h("div", { "data-testid": "day", "data-token": props.token }, "day"),
+  };
+});
+
 let container: HTMLDivElement;
 let root: Root;
 
@@ -63,11 +71,12 @@ const tab = (name: string) =>
   )!;
 
 describe("LiveTrackingSection", () => {
-  it("opens on the live board, embedded, with the KM Report as a second tab", async () => {
+  it("opens on the live board, embedded, with the KM Report and the Day Report as further tabs", async () => {
     await mount();
     expect(Array.from(container.querySelectorAll('[role="tab"]')).map((b) => b.textContent?.trim())).toEqual([
       "Live Tracking",
       "KM Report",
+      "Day Report",
     ]);
     expect(tab("Live Tracking").getAttribute("aria-selected")).toBe("true");
     expect(container.querySelector('[data-testid="board"]')).not.toBeNull();
@@ -86,6 +95,18 @@ describe("LiveTrackingSection", () => {
     expect(container.querySelector('[data-testid="board"]')).toBeNull();
     expect(boardUnmounted).toHaveBeenCalledTimes(1);
     expect(tab("KM Report").getAttribute("aria-selected")).toBe("true");
+  });
+
+  it("the Day Report tab shows that report alone, and takes the board down", async () => {
+    await mount();
+    await act(async () => {
+      tab("Day Report").click();
+    });
+    expect(container.querySelector('[data-testid="day"]')?.getAttribute("data-token")).toBe("t");
+    expect(container.querySelector('[data-testid="board"]')).toBeNull();
+    expect(container.querySelector('[data-testid="km"]')).toBeNull();
+    expect(boardUnmounted).toHaveBeenCalledTimes(1);
+    expect(tab("Day Report").getAttribute("aria-selected")).toBe("true");
   });
 
   it("back to the board", async () => {

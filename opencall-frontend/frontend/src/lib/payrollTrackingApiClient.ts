@@ -614,3 +614,70 @@ export async function getCasesByDay(
   });
   return readJson<CasesByDayRange>(response);
 }
+
+/**
+ * One moment of an FSE-day and where it happened: the customer's address for
+ * anything tied to a call, else one Payroll already had for the place, else
+ * only the coordinates. Payroll never looks an address up for the Day Report.
+ */
+export interface DayReportMoment {
+  at: string;
+  address: string | null;
+  latitude: number | null;
+  longitude: number | null;
+}
+
+export interface DayReportCall extends DayReportMoment {
+  case_number: string | null;
+  case_ref: string | null;
+}
+
+/** What the Live Tracking day panel says about one FSE-day, for the Day Report tab. */
+export interface DayReportCell {
+  logins: DayReportMoment[];
+  logouts: (DayReportMoment & { auto: boolean })[];
+  /** A duty begun that day and not ended yet. */
+  on_duty: boolean;
+  check_ins: DayReportCall[];
+  check_outs: DayReportCall[];
+  /** OpenCall's numbers for the day, as Engineer Productivity shows them; null when none were filed. */
+  assigned: number | null;
+  attended: number | null;
+  closed: number | null;
+  waiting_minutes: number;
+  waits: (DayReportMoment & { minutes: number; case_number: string | null })[];
+  /** How long GPS was off while they were on duty. */
+  gps_off_minutes: number;
+  gps_offs: DayReportMoment[];
+  gps_ons: DayReportMoment[];
+  /** How long the network was off while they were on duty. */
+  net_off_minutes: number;
+  net_offs: DayReportMoment[];
+  net_ons: DayReportMoment[];
+  /** The day's km, as the KM Report shows it. */
+  km: number;
+}
+
+export interface DayReportResult {
+  configured: boolean;
+  /** Every day asked about, oldest first, stopping at today. */
+  days: string[];
+  /** Each FSE asked about, in the order asked, with every day. */
+  engineers: { engineer_id: number; days: Record<string, DayReportCell> }[];
+}
+
+/** The Day Report from `from` to `to` (YYYY-MM-DD, inclusive, at most 31 days) for these FSEs. */
+export async function getDayReport(
+  token: string,
+  from: string,
+  to: string,
+  engineerIds: number[],
+): Promise<DayReportResult> {
+  const response = await fetch(url("/api/v1/payroll-tracking/day-report"), {
+    method: "POST",
+    headers: authHeaders(token),
+    body: JSON.stringify({ from, to, engineer_ids: engineerIds }),
+    cache: "no-store",
+  });
+  return readJson<DayReportResult>(response);
+}

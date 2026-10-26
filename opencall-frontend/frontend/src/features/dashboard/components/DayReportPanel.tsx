@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState, type CSSProperties } from "react";
+import { Fragment, useEffect, useMemo, useState, type CSSProperties } from "react";
 import { clearSession } from "../../../lib/session";
 import { isApiAuthError } from "../../../lib/api/http";
 import {
@@ -9,14 +9,16 @@ import {
   type DayReportResult,
   type RosterEngineer,
 } from "../../../lib/payrollTrackingApiClient";
-import { filterKmRows, kmRegions, regionTone } from "../../../lib/kmReport";
+import { filterKmRows, formatKm, kmRegions, regionTone } from "../../../lib/kmReport";
 import {
   DAY_REPORT_ROWS,
   MAX_DAY_REPORT_DAYS,
   dayCount,
   dayReportColumns,
   dayReportFilename,
+  dayReportTotals,
   sheetDate,
+  type DayReportLine,
 } from "../../../lib/dayReport";
 import { downloadDayReportExcel } from "../../../lib/dayReportExcel";
 import { todayIsoDate } from "../utils/dateUtils";
@@ -80,6 +82,55 @@ const actionButton = (enabled: boolean, filled: boolean): CSSProperties => ({
   fontWeight: 600,
   cursor: enabled ? "pointer" : "default",
 });
+
+/** A figure above the table, in the KM Report's tile. */
+function SummaryTile({ value, label }: { value: string; label: string }) {
+  return (
+    <div
+      data-testid="day-report-tile"
+      style={{ padding: "8px 14px", borderRadius: 10, border: "1px solid #e5e7eb", background: "#fff", minWidth: 110 }}
+    >
+      <div style={{ fontSize: 20, fontWeight: 700, color: "#111827", fontVariantNumeric: "tabular-nums" }}>{value}</div>
+      <div style={{ fontSize: 12, color: "#6b7280" }}>{label}</div>
+    </div>
+  );
+}
+
+const TONE_COLOR: Record<NonNullable<DayReportLine["tone"]>, string> = {
+  alert: "#b91c1c",
+  warn: "#b45309",
+  good: "#15803d",
+  muted: "#9ca3af",
+};
+
+/** One line of a cell: its time in bold, its place a link, its colour its meaning. */
+function LineView({ line }: { line: DayReportLine }) {
+  if (line.text === "-" && !line.tone) return <div style={{ color: "#9ca3af" }}>-</div>;
+  const lead = line.lead && line.text.startsWith(line.lead) ? line.lead : "";
+  const rest = line.text.slice(lead.length);
+  // The dot after the time stays out of the link, so only the place is underlined.
+  const dot = lead && rest.startsWith(" · ") ? " · " : "";
+  const tail = rest.slice(dot.length);
+  return (
+    <div
+      style={{
+        color: line.tone ? TONE_COLOR[line.tone] : undefined,
+        fontWeight: line.tone === "alert" || line.tone === "good" ? 700 : undefined,
+        fontStyle: line.tone === "muted" ? "italic" : undefined,
+      }}
+    >
+      {lead && <strong style={{ fontWeight: 700, color: line.tone ? undefined : "#111827" }}>{lead}</strong>}
+      {dot}
+      {line.href ? (
+        <a href={line.href} target="_blank" rel="noreferrer" style={{ color: "#2563eb" }}>
+          {tail}
+        </a>
+      ) : (
+        tail
+      )}
+    </div>
+  );
+}
 
 /** The question behind what is on screen. */
 interface Asked {
@@ -190,6 +241,7 @@ export default function DayReportPanel({ token }: DayReportPanelProps) {
   const loading = asked != null && answer == null && failed?.key !== asked.key && !sessionExpired;
   const error = asked && failed?.key === asked.key ? failed.message : null;
   const columns = useMemo(() => (answer ? dayReportColumns(answer, nameById) : []), [answer, nameById]);
+  const totals = useMemo(() => dayReportTotals(columns), [columns]);
   // The boxes, the search or the dates moved since the last Show.
   const changed = asked != null && asked.key !== key;
 
@@ -401,10 +453,18 @@ export default function DayReportPanel({ token }: DayReportPanelProps) {
       )}
 
       {columns.length > 0 && (
+        <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginTop: 10 }}>
+          <SummaryTile value={formatKm(totals.km) === "-" ? "0" : formatKm(totals.km)} label="Total km" />
+          <SummaryTile value={String(totals.fses)} label={totals.fses === 1 ? "FSE" : "FSEs"} />
+          <SummaryTile value={String(totals.checkIns)} label={totals.checkIns === 1 ? "Check in" : "Check ins"} />
+        </div>
+      )}
+
+      {columns.length > 0 && (
         <div
           data-testid="day-report-grid"
           style={{
-            marginTop: 8,
+            marginTop: 10,
             overflow: "auto",
             maxHeight: "calc(100vh - 320px)",
             minHeight: 240,
@@ -450,7 +510,10 @@ export default function DayReportPanel({ token }: DayReportPanelProps) {
                         background: "#eef2ff",
                         whiteSpace: "nowrap",
                         textAlign: "center",
-                        fontWeight: 700,
+                        // The name is what a column is read by; the date sits above it, quieter.
+                        fontWeight: spec.key === "name" ? 700 : 600,
+                        fontSize: spec.key === "name" ? 13.5 : 12,
+                        color: spec.key === "name" ? "#111827" : "#4b5563",
                       }}
                     >
                       {spec.lines(column)[0]?.text}
@@ -460,58 +523,101 @@ export default function DayReportPanel({ token }: DayReportPanelProps) {
               ))}
             </thead>
             <tbody>
-              {DAY_REPORT_ROWS.slice(2).map((spec) => (
-                <tr key={spec.key}>
-                  <th
-                    scope="row"
-                    style={{
-                      ...cellBase,
-                      position: "sticky",
-                      left: 0,
-                      // Not stuck to the top as the app's th is: only the two
-                      // header rows are.
-                      top: "auto",
-                      zIndex: 1,
-                      width: LABEL_W,
-                      minWidth: LABEL_W,
-                      maxWidth: LABEL_W,
-                      background: "#f9fafb",
-                      textAlign: "left",
-                      fontWeight: 600,
-                    }}
-                  >
-                    {spec.label}
-                  </th>
-                  {columns.map((column) => {
-                    const lines = spec.lines(column);
-                    return (
-                      <td
-                        key={`${column.day}|${column.engineerId}`}
+              {DAY_REPORT_ROWS.slice(2).map((spec, index, rows) => (
+                <Fragment key={spec.key}>
+                  {/* A band where each group of rows begins: Duty, Calls, ... */}
+                  {spec.group !== rows[index - 1]?.group && (
+                    <tr data-testid="day-report-band">
+                      <th
+                        scope="rowgroup"
                         style={{
                           ...cellBase,
-                          textAlign: spec.list ? "left" : "center",
-                          fontVariantNumeric: "tabular-nums",
+                          position: "sticky",
+                          left: 0,
+                          top: "auto",
+                          zIndex: 1,
+                          width: LABEL_W,
+                          minWidth: LABEL_W,
+                          maxWidth: LABEL_W,
+                          background: "#e0e7ff",
+                          color: "#3730a3",
+                          textAlign: "left",
+                          fontSize: 11.5,
+                          fontWeight: 700,
+                          letterSpacing: "0.06em",
+                          textTransform: "uppercase",
+                          padding: "4px 10px",
                         }}
                       >
-                        <div style={{ width: COLUMN_W, overflowWrap: "anywhere" }}>
-                          {lines.length === 0
-                            ? "-"
-                            : lines.map((line, index) => (
-                                <div key={index}>
-                                  {line.href ? (
-                                    <a href={line.href} target="_blank" rel="noreferrer" style={{ color: "#2563eb" }}>
-                                      {line.text}
-                                    </a>
-                                  ) : (
-                                    line.text
-                                  )}
-                                </div>
-                              ))}
-                        </div>
-                      </td>
-                    );
-                  })}
-                </tr>
+                        {spec.group}
+                      </th>
+                      <td
+                        colSpan={columns.length}
+                        style={{ ...cellBase, background: "#e0e7ff", padding: "4px 10px" }}
+                      />
+                    </tr>
+                  )}
+                  <tr>
+                    <th
+                      scope="row"
+                      style={{
+                        ...cellBase,
+                        position: "sticky",
+                        left: 0,
+                        // Not stuck to the top as the app's th is: only the two
+                        // header rows are.
+                        top: "auto",
+                        zIndex: 1,
+                        width: LABEL_W,
+                        minWidth: LABEL_W,
+                        maxWidth: LABEL_W,
+                        background: "#f9fafb",
+                        textAlign: "left",
+                        fontWeight: 600,
+                      }}
+                    >
+                      {spec.label}
+                    </th>
+                    {columns.map((column) => {
+                      const lines = spec.lines(column);
+                      const value = lines[0]?.text;
+                      return (
+                        <td
+                          key={`${column.day}|${column.engineerId}`}
+                          style={{
+                            ...cellBase,
+                            textAlign: spec.list ? "left" : "center",
+                            fontVariantNumeric: "tabular-nums",
+                            ...(spec.key === "km" ? { fontWeight: 700, fontSize: 14 } : {}),
+                          }}
+                        >
+                          <div style={{ width: COLUMN_W, overflowWrap: "anywhere" }}>
+                            {lines.length === 0 ? (
+                              <span style={{ color: "#9ca3af" }}>-</span>
+                            ) : spec.chip && value !== "-" ? (
+                              // A count as a pill in its own colour, as the KM Report colours them.
+                              <span
+                                style={{
+                                  display: "inline-block",
+                                  minWidth: 32,
+                                  padding: "1px 10px",
+                                  borderRadius: 999,
+                                  background: spec.chip.tint,
+                                  color: spec.chip.accent,
+                                  fontWeight: 700,
+                                }}
+                              >
+                                {value}
+                              </span>
+                            ) : (
+                              lines.map((line, lineIndex) => <LineView key={lineIndex} line={line} />)
+                            )}
+                          </div>
+                        </td>
+                      );
+                    })}
+                  </tr>
+                </Fragment>
               ))}
             </tbody>
           </table>

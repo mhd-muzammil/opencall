@@ -1,8 +1,10 @@
 import { describe, expect, it } from "vitest";
 import type { DayReportCell } from "./payrollTrackingApiClient";
 import {
+  DAY_REPORT_GROUPS,
   DAY_REPORT_ROWS,
   clockTime,
+  dayReportTotals,
   dayCount,
   dayReportColumns,
   dayReportFilename,
@@ -102,6 +104,7 @@ describe("wording", () => {
     });
     expect(placeLine({ at: at("10:00"), address: null, latitude: null, longitude: null })).toEqual({
       text: "Place not recorded",
+      tone: "muted",
     });
   });
 });
@@ -171,6 +174,42 @@ describe("rows", () => {
     expect(linesOf("assigned", empty)).toEqual(["-"]);
     expect(linesOf("waiting", empty)).toEqual(["-"]);
     expect(linesOf("km", empty)).toEqual(["-"]);
+  });
+
+  it("sit in bands on screen, each band's rows together, in order", () => {
+    const groups = DAY_REPORT_ROWS.map((row) => row.group);
+    expect(groups.slice(0, 2)).toEqual(["", ""]);
+    const bands = groups.slice(2).filter((group, index, all) => group !== all[index - 1]);
+    expect(bands).toEqual([...DAY_REPORT_GROUPS]);
+  });
+
+  it("the screen sets each time in bold and colours what needs a look; the sheet is the same words", () => {
+    const line = (key: string, c = column()) => DAY_REPORT_ROWS.find((row) => row.key === key)!.lines(c);
+    expect(line("check_in").map((l) => l.lead)).toEqual(["1. 10:05 AM", "2. 12:40 PM"]);
+    expect(line("check_out")[0]).toMatchObject({ text: "10:25 AM · OC-1", lead: "10:25 AM" });
+    expect(line("gps_on_location")[0]).toMatchObject({ lead: "2:00 PM" });
+    expect(line("waiting_location")[0]).toMatchObject({ lead: "10:00 AM · 3h 5m" });
+    expect(line("gps")[0]).toMatchObject({ text: "3h", tone: "alert" });
+    expect(line("net")[0]).toMatchObject({ text: "10 min", tone: "alert" });
+    expect(line("gps", column({ cell: cell() }))[0]).toEqual({ text: "-" });
+    expect(line("net_off_location")[0]).toMatchObject({ text: "12:00 PM · Place not recorded", tone: "muted" });
+    const auto = column({ cell: cell({ logouts: [{ at: at("23:30"), auto: true, ...bare }], on_duty: true }) });
+    expect(line("logout", auto)).toEqual([
+      { text: "11:30 PM (auto, no Logout)", lead: "11:30 PM", tone: "warn" },
+      { text: "On duty", tone: "good" },
+    ]);
+    expect(DAY_REPORT_ROWS.filter((row) => row.chip).map((row) => row.key)).toEqual(["assigned", "attended", "closed"]);
+  });
+
+  it("the tiles add up the columns on screen", () => {
+    expect(
+      dayReportTotals([
+        column(),
+        column({ engineerId: 8, cell: cell({ km: 12.25 }) }),
+        column({ day: "2026-10-11", cell: cell({ km: 0.1 }) }),
+      ]),
+    ).toEqual({ km: 77.74, fses: 2, checkIns: 2 });
+    expect(dayReportTotals([])).toEqual({ km: 0, fses: 0, checkIns: 0 });
   });
 
   it("the sheet writes a coordinate as its Google Maps link, one line each, and a dash for none", () => {

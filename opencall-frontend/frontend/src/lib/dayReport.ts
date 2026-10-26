@@ -19,12 +19,16 @@ export interface DayReportColumn {
 
 /**
  * One line of a cell. `href` makes it a link on screen; `sheet` is what the
- * downloaded sheet says instead of `text`, when the two differ.
+ * downloaded sheet says instead of `text`, when the two differ. `lead` -- the
+ * start of `text`, its time -- and `tone` are for the screen only; the sheet
+ * is plain.
  */
 export interface DayReportLine {
   text: string;
   href?: string;
   sheet?: string;
+  lead?: string;
+  tone?: "alert" | "warn" | "good" | "muted";
 }
 
 const CLOCK = new Intl.DateTimeFormat("en-US", {
@@ -37,7 +41,7 @@ const CLOCK = new Intl.DateTimeFormat("en-US", {
 /** "2026-10-10T04:30:00Z" -> "10:00 AM", on the clock in India. */
 export function clockTime(iso: string): string {
   // Newer ICU puts a narrow no-break space before AM/PM; a plain one reads the same.
-  return CLOCK.format(new Date(iso)).replace(/ /g, " ");
+  return CLOCK.format(new Date(iso)).replace(/\u202f/g, " ");
 }
 
 const INDIA_DAY = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Kolkata" });
@@ -81,7 +85,7 @@ export function placeLine(moment: DayReportMoment): DayReportLine {
       sheet: href,
     };
   }
-  return { text: "Place not recorded" };
+  return { text: "Place not recorded", tone: "muted" };
 }
 
 /** Numbered when there is more than one, so a time row and its place row line up. */
@@ -89,96 +93,195 @@ function numbered(lines: DayReportLine[]): DayReportLine[] {
   if (lines.length < 2) return lines;
   return lines.map((line, index) => {
     const prefix = `${index + 1}. `;
-    return line.sheet != null
-      ? { ...line, text: prefix + line.text, sheet: prefix + line.sheet }
-      : { ...line, text: prefix + line.text };
+    const out: DayReportLine = { ...line, text: prefix + line.text };
+    if (line.sheet != null) out.sheet = prefix + line.sheet;
+    if (line.lead != null) out.lead = prefix + line.lead;
+    return out;
   });
 }
 
 const single = (text: string): DayReportLine[] => [{ text }];
 const count = (value: number | null) => single(value == null ? "-" : String(value));
 const call = (number: string | null) => (number ? ` · ${number}` : "");
+/** A stretch off, red on screen when there was any. */
+const offFor = (minutes: number): DayReportLine[] =>
+  minutes ? [{ text: hoursWords(minutes), tone: "alert" }] : single("-");
+
+/** The bands the rows are grouped under on screen, in order. */
+export const DAY_REPORT_GROUPS = ["Duty", "Calls", "OpenCall", "Waiting", "GPS", "Network", "Distance"] as const;
 
 /** The rows, in the office's order, and how each column fills them. */
 export const DAY_REPORT_ROWS: {
   key: string;
   label: string;
+  /** The band it sits under on screen; "" for the Date and Name heading rows. */
+  group: "" | (typeof DAY_REPORT_GROUPS)[number];
   /** A list, one line per moment; else one value, centred. */
   list?: boolean;
+  /** A count shown on screen as a pill in this colour. */
+  chip?: { accent: string; tint: string };
   lines: (column: DayReportColumn) => DayReportLine[];
 }[] = [
-  { key: "date", label: "Date", lines: (c) => single(sheetDate(c.day)) },
-  { key: "name", label: "Name", lines: (c) => single(c.name) },
+  { key: "date", label: "Date", group: "", lines: (c) => single(sheetDate(c.day)) },
+  { key: "name", label: "Name", group: "", lines: (c) => single(c.name) },
   {
     key: "login",
     label: "Login",
+    group: "Duty",
     list: true,
-    lines: (c) => numbered(c.cell.logins.map((m) => ({ text: clockTime(m.at) }))),
+    lines: (c) =>
+      numbered(
+        c.cell.logins.map((m) => {
+          const time = clockTime(m.at);
+          return { text: time, lead: time };
+        }),
+      ),
   },
-  { key: "login_location", label: "Login location", list: true, lines: (c) => numbered(c.cell.logins.map(placeLine)) },
+  {
+    key: "login_location",
+    label: "Login location",
+    group: "Duty",
+    list: true,
+    lines: (c) => numbered(c.cell.logins.map(placeLine)),
+  },
   {
     key: "logout",
     label: "Logout",
+    group: "Duty",
     list: true,
     lines: (c) => [
       ...numbered(
-        c.cell.logouts.map((m) => {
+        c.cell.logouts.map((m): DayReportLine => {
           // A duty that ran past midnight ended on another day, and says which.
           const day = indiaDay(m.at);
           const date = day !== c.day ? ` (${sheetDate(day)})` : "";
-          return { text: `${clockTime(m.at)}${date}${m.auto ? " (auto, no Logout)" : ""}` };
+          const time = clockTime(m.at);
+          const text = `${time}${date}${m.auto ? " (auto, no Logout)" : ""}`;
+          return m.auto ? { text, lead: time, tone: "warn" } : { text, lead: time };
         }),
       ),
-      ...(c.cell.on_duty ? single("On duty") : []),
+      ...(c.cell.on_duty ? [{ text: "On duty", tone: "good" as const }] : []),
     ],
   },
-  { key: "logout_location", label: "Logout location", list: true, lines: (c) => numbered(c.cell.logouts.map(placeLine)) },
+  {
+    key: "logout_location",
+    label: "Logout location",
+    group: "Duty",
+    list: true,
+    lines: (c) => numbered(c.cell.logouts.map(placeLine)),
+  },
   {
     key: "check_in",
     label: "Check in",
+    group: "Calls",
     list: true,
-    lines: (c) => numbered(c.cell.check_ins.map((m) => ({ text: `${clockTime(m.at)}${call(m.case_number)}` }))),
+    lines: (c) => numbered(c.cell.check_ins.map((m) => timedCall(m.at, m.case_number))),
   },
-  { key: "check_in_location", label: "Check in locations", list: true, lines: (c) => numbered(c.cell.check_ins.map(placeLine)) },
+  {
+    key: "check_in_location",
+    label: "Check in locations",
+    group: "Calls",
+    list: true,
+    lines: (c) => numbered(c.cell.check_ins.map(placeLine)),
+  },
   {
     key: "check_out",
     label: "Check out",
+    group: "Calls",
     list: true,
-    lines: (c) => numbered(c.cell.check_outs.map((m) => ({ text: `${clockTime(m.at)}${call(m.case_number)}` }))),
+    lines: (c) => numbered(c.cell.check_outs.map((m) => timedCall(m.at, m.case_number))),
   },
-  { key: "check_out_location", label: "Check out locations", list: true, lines: (c) => numbered(c.cell.check_outs.map(placeLine)) },
-  { key: "assigned", label: "Assigned", lines: (c) => count(c.cell.assigned) },
-  { key: "attended", label: "Attended", lines: (c) => count(c.cell.attended) },
-  { key: "closed", label: "Closed", lines: (c) => count(c.cell.closed) },
-  { key: "waiting", label: "Waiting hours", lines: (c) => single(hoursWords(c.cell.waiting_minutes)) },
+  {
+    key: "check_out_location",
+    label: "Check out locations",
+    group: "Calls",
+    list: true,
+    lines: (c) => numbered(c.cell.check_outs.map(placeLine)),
+  },
+  {
+    key: "assigned",
+    label: "Assigned",
+    group: "OpenCall",
+    chip: { accent: "#2563eb", tint: "#eff6ff" },
+    lines: (c) => count(c.cell.assigned),
+  },
+  {
+    key: "attended",
+    label: "Attended",
+    group: "OpenCall",
+    chip: { accent: "#15803d", tint: "#f0fdf4" },
+    lines: (c) => count(c.cell.attended),
+  },
+  {
+    key: "closed",
+    label: "Closed",
+    group: "OpenCall",
+    chip: { accent: "#7c3aed", tint: "#f5f3ff" },
+    lines: (c) => count(c.cell.closed),
+  },
+  { key: "waiting", label: "Waiting hours", group: "Waiting", lines: (c) => single(hoursWords(c.cell.waiting_minutes)) },
   {
     key: "waiting_location",
     label: "Waiting locations",
+    group: "Waiting",
     list: true,
     lines: (c) =>
       numbered(
         c.cell.waits.map((m) => {
           const place = placeLine(m);
-          const head = `${clockTime(m.at)} · ${hoursWords(m.minutes)} · `;
-          return { ...place, text: head + place.text, sheet: head + (place.sheet ?? place.text) };
+          // The time and how long, in bold; the place after them.
+          const lead = `${clockTime(m.at)} · ${hoursWords(m.minutes)}`;
+          const head = `${lead} · `;
+          return { ...place, text: head + place.text, sheet: head + (place.sheet ?? place.text), lead };
         }),
       ),
   },
-  { key: "gps", label: "GPS off hours", lines: (c) => single(hoursWords(c.cell.gps_off_minutes)) },
-  { key: "gps_on_location", label: "GPS on locations", list: true, lines: (c) => numbered(timedPlaces(c.cell.gps_ons)) },
-  { key: "gps_off_location", label: "GPS off locations", list: true, lines: (c) => numbered(timedPlaces(c.cell.gps_offs)) },
-  { key: "net", label: "Net off hours", lines: (c) => single(hoursWords(c.cell.net_off_minutes)) },
-  { key: "net_on_location", label: "Net on locations", list: true, lines: (c) => numbered(timedPlaces(c.cell.net_ons)) },
-  { key: "net_off_location", label: "Net off locations", list: true, lines: (c) => numbered(timedPlaces(c.cell.net_offs)) },
-  { key: "km", label: "Total km", lines: (c) => single(formatKm(c.cell.km)) },
+  { key: "gps", label: "GPS off hours", group: "GPS", lines: (c) => offFor(c.cell.gps_off_minutes) },
+  {
+    key: "gps_on_location",
+    label: "GPS on locations",
+    group: "GPS",
+    list: true,
+    lines: (c) => numbered(timedPlaces(c.cell.gps_ons)),
+  },
+  {
+    key: "gps_off_location",
+    label: "GPS off locations",
+    group: "GPS",
+    list: true,
+    lines: (c) => numbered(timedPlaces(c.cell.gps_offs)),
+  },
+  { key: "net", label: "Net off hours", group: "Network", lines: (c) => offFor(c.cell.net_off_minutes) },
+  {
+    key: "net_on_location",
+    label: "Net on locations",
+    group: "Network",
+    list: true,
+    lines: (c) => numbered(timedPlaces(c.cell.net_ons)),
+  },
+  {
+    key: "net_off_location",
+    label: "Net off locations",
+    group: "Network",
+    list: true,
+    lines: (c) => numbered(timedPlaces(c.cell.net_offs)),
+  },
+  { key: "km", label: "Total km", group: "Distance", lines: (c) => single(formatKm(c.cell.km)) },
 ];
+
+/** "10:05 AM · OC-2501": a check in or out, its time first. */
+function timedCall(at: string, caseNumber: string | null): DayReportLine {
+  const time = clockTime(at);
+  return { text: `${time}${call(caseNumber)}`, lead: time };
+}
 
 /** "11:30 AM · <place>" for each moment: when the GPS or the network came and went. */
 function timedPlaces(moments: DayReportMoment[]): DayReportLine[] {
   return moments.map((m) => {
     const place = placeLine(m);
-    const head = `${clockTime(m.at)} · `;
-    return { ...place, text: head + place.text, sheet: head + (place.sheet ?? place.text) };
+    const time = clockTime(m.at);
+    const head = `${time} · `;
+    return { ...place, text: head + place.text, sheet: head + (place.sheet ?? place.text), lead: time };
   });
 }
 
@@ -206,6 +309,20 @@ export function dayReportColumns(
     }
   }
   return columns;
+}
+
+/** The tiles above the table: what the columns on screen add up to. */
+export function dayReportTotals(columns: DayReportColumn[]): {
+  km: number;
+  fses: number;
+  checkIns: number;
+} {
+  const km = columns.reduce((sum, column) => sum + (Number(column.cell.km) || 0), 0);
+  return {
+    km: Math.round(km * 100) / 100,
+    fses: new Set(columns.map((column) => column.engineerId)).size,
+    checkIns: columns.reduce((sum, column) => sum + column.cell.check_ins.length, 0),
+  };
 }
 
 /** Days from `from` to `to` inclusive, or null when they are not a period of 1 to MAX_DAY_REPORT_DAYS days. */

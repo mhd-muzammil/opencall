@@ -108,7 +108,7 @@ async function mount() {
 }
 
 const button = (name: string) =>
-  Array.from(container.querySelectorAll<HTMLButtonElement>("button")).find((b) => b.textContent?.includes(name))!;
+  Array.from(container.querySelectorAll<HTMLButtonElement>("button")).find((b) => b.textContent?.trim() === name)!;
 const region = (name: string) =>
   Array.from(container.querySelectorAll<HTMLButtonElement>('[data-testid="day-report-region"]')).find((b) =>
     b.textContent?.includes(name),
@@ -148,11 +148,35 @@ describe("DayReportPanel", () => {
     expect(button("Download Excel").disabled).toBe(true);
   });
 
-  it("Show asks for everybody on today, and puts each FSE-day in a column by name", async () => {
+  it("Show asks for everybody on today, and shows a card for each FSE-day, by name", async () => {
     await mount();
     await click(button("Show"));
     expect(getDayReport).toHaveBeenCalledWith("t", TODAY, TODAY, [7, 8]);
     expect(title()).toBe("All Regions · 26-10-2026");
+    const cards = Array.from(container.querySelectorAll('[data-testid="day-card"]'));
+    expect(cards.map((card) => card.querySelector('[data-testid="day-card-name"]')?.textContent)).toEqual([
+      "Arun",
+      "Bala",
+    ]);
+    expect(cards.map((card) => card.querySelector('[data-testid="day-card-km"]')?.textContent)).toEqual(["7", "8"]);
+    expect(cards[0]!.querySelector('[data-testid="day-card-duty"]')?.textContent).toContain("10:00 AM");
+    expect(cards[0]!.querySelector('[data-testid="day-card-duty"]')?.textContent).toContain("On duty now");
+    expect(cards[0]!.textContent).toContain("Chennai · Mon, 26 Oct 2026");
+    expect(
+      Array.from(cards[0]!.querySelectorAll('[data-testid="day-card-moment"]')).map((m) => m.textContent),
+    ).toEqual(["Login10:00 AM12.70000, 77.70000"]);
+    expect(container.querySelector('[data-testid="day-report-date"]')?.textContent).toBe("Mon, 26 Oct 2026· 2 FSEs");
+    expect(
+      Array.from(container.querySelectorAll('[data-testid="day-report-tile"]')).map((t) => t.textContent),
+    ).toEqual(["15Total km", "2FSEs", "0Check ins", "2Closed"]);
+    expect(container.querySelector('[data-testid="day-report-grid"]')).toBeNull();
+  });
+
+  it("the Table view lays the same FSE-days out as the sheet, a column each", async () => {
+    await mount();
+    await click(button("Show"));
+    await click(button("Table"));
+    expect(container.querySelector('[data-testid="day-report-cards"]')).toBeNull();
     expect(headers()).toEqual([
       ["Date", "26-10-2026", "26-10-2026"],
       ["Name", "Arun", "Bala"],
@@ -172,6 +196,48 @@ describe("DayReportPanel", () => {
       .querySelector("a")!;
     expect(link.getAttribute("href")).toBe("https://maps.google.com/?q=12.700000,77.700000");
     expect(link.getAttribute("target")).toBe("_blank");
+    // And back.
+    await click(button("Cards"));
+    expect(container.querySelectorAll('[data-testid="day-card"]')).toHaveLength(2);
+  });
+
+  it("a card flags what needs a look, and a long day folds to its first moments", async () => {
+    const busy = {
+      ...cell(12),
+      on_duty: false,
+      logouts: [{ at: `${TODAY}T23:30:00+05:30`, auto: true, address: null, latitude: null, longitude: null }],
+      gps_off_minutes: 45,
+      net_off_minutes: 20,
+      waiting_minutes: 90,
+      waits: Array.from({ length: 9 }, (_, n) => ({
+        at: `${TODAY}T1${n}:00:00+05:30`,
+        minutes: 10,
+        case_number: null,
+        address: `Stop ${n + 1}`,
+        latitude: 12.7,
+        longitude: 77.7,
+      })),
+    };
+    getDayReport.mockResolvedValue({ configured: true, days: [TODAY], engineers: [{ engineer_id: 7, days: { [TODAY]: busy } }] });
+    await mount();
+    await click(region("Chennai"));
+    await click(button("Show"));
+    const card = container.querySelector('[data-testid="day-card"]')!;
+    expect(Array.from(card.querySelectorAll('[data-testid="day-card-badge"]')).map((b) => b.textContent)).toEqual([
+      "GPS off 45 min",
+      "Net off 20 min",
+      "Waiting 1h 30m",
+      "Auto logout",
+    ]);
+    // A Login, nine stops and a Logout: eleven moments, eight on show.
+    expect(card.querySelectorAll('[data-testid="day-card-moment"]')).toHaveLength(8);
+    await click(button("Show all 11"));
+    expect(card.querySelectorAll('[data-testid="day-card-moment"]')).toHaveLength(11);
+    expect(Array.from(card.querySelectorAll('[data-testid="day-card-moment"]')).at(-1)?.textContent).toContain(
+      "Auto logout",
+    );
+    await click(button("Show less"));
+    expect(card.querySelectorAll('[data-testid="day-card-moment"]')).toHaveLength(8);
   });
 
   it("a region box, then Show, asks for that region; one FSE left is named", async () => {
@@ -189,6 +255,10 @@ describe("DayReportPanel", () => {
     await click(button("Show"));
     expect(getDayReport).toHaveBeenLastCalledWith("t", "2026-10-24", TODAY, [7]);
     expect(title()).toBe("Arun · 24-10-2026 to 26-10-2026");
+    expect(
+      Array.from(container.querySelectorAll('[data-testid="day-report-date"]')).map((h) => h.textContent),
+    ).toEqual(["Sat, 24 Oct 2026· 1 FSE", "Sun, 25 Oct 2026· 1 FSE", "Mon, 26 Oct 2026· 1 FSE"]);
+    await click(button("Table"));
     expect(headers()[0]).toEqual(["Date", "24-10-2026", "25-10-2026", "26-10-2026"]);
   });
 

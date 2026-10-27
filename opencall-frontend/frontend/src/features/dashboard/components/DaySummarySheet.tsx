@@ -6,8 +6,8 @@ import { DAY_SUMMARY_ROWS, type DayReportColumn, type DayReportLine } from "../.
 /**
  * The Summary as the office's own sheet looks: a plain black grid on white,
  * black text, the field names on the left and every value centred -- their
- * sample, on screen. The Date and Name rows and the field names stay in view
- * while a wide or long sheet scrolls.
+ * sample, on screen -- under a heading in the app's indigo. The Date and Name
+ * rows and the field names stay in view while a wide or long sheet scrolls.
  */
 
 const LABEL_W = 190;
@@ -48,6 +48,13 @@ const labelCell: CSSProperties = {
   textAlign: "left",
 };
 
+/** The Date and Name rows: the heading, white on the app's indigo; the names bold. */
+const heading = (key: string): CSSProperties => ({
+  background: "#4f46e5",
+  color: "#fff",
+  fontWeight: key === "name" ? 700 : 600,
+});
+
 /** One line of a cell, in black; a place is a link, coloured as Excel colours one. */
 function SheetLine({ line }: { line: DayReportLine }) {
   return (
@@ -73,7 +80,7 @@ export default function DaySummarySheet({ columns }: { columns: DayReportColumn[
         <thead>
           {DAY_SUMMARY_ROWS.slice(0, 2).map((spec, index) => (
             <tr key={spec.key}>
-              <th scope="row" style={{ ...labelCell, top: index * HEAD_H, zIndex: 3, height: HEAD_H }}>
+              <th scope="row" style={{ ...labelCell, ...heading(spec.key), top: index * HEAD_H, zIndex: 3, height: HEAD_H }}>
                 {spec.label}
               </th>
               {columns.map((column) => (
@@ -81,6 +88,7 @@ export default function DaySummarySheet({ columns }: { columns: DayReportColumn[
                   key={`${column.day}|${column.engineerId}`}
                   style={{
                     ...cellBase,
+                    ...heading(spec.key),
                     position: "sticky",
                     top: index * HEAD_H,
                     zIndex: 2,

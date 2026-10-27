@@ -24,7 +24,6 @@ import {
 import { downloadDayReportExcel } from "../../../lib/dayReportExcel";
 import { todayIsoDate } from "../utils/dateUtils";
 import DayReportCards from "./DayReportCards";
-import DayReportTable from "./DayReportTable";
 import DaySummarySheet from "./DaySummarySheet";
 
 /**
@@ -512,7 +511,8 @@ export default function DayReportPanel({ token }: DayReportPanelProps) {
         ) : view === "summary" ? (
           <DaySummarySheet columns={columns} />
         ) : (
-          <DayReportTable columns={columns} />
+          // The full rows, in the Summary's sheet.
+          <DaySummarySheet columns={columns} rows={DAY_REPORT_ROWS} testId="day-report-grid" />
         ))}
     </div>
   );

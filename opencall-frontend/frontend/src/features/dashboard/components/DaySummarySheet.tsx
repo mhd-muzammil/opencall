@@ -1,13 +1,15 @@
 "use client";
 
 import type { CSSProperties } from "react";
-import { DAY_SUMMARY_ROWS, type DayReportColumn, type DayReportLine } from "../../../lib/dayReport";
+import { DAY_SUMMARY_ROWS, type DayReportColumn, type DayReportLine, type DayReportRowSpec } from "../../../lib/dayReport";
 
 /**
- * The Summary as the office's own sheet looks: a plain black grid on white,
- * black text, the field names on the left and every value centred -- their
- * sample, on screen -- under a heading in the app's indigo. The Date and Name
- * rows and the field names stay in view while a wide or long sheet scrolls.
+ * A Day Report sheet as the office's own sheet looks: a plain black grid on
+ * white, black text, the field names on the left and every value centred --
+ * their sample, on screen -- under a heading in the app's indigo. The Date and
+ * Name rows and the field names stay in view while a wide or long sheet
+ * scrolls. The Summary's short rows by default; the Table view lays the full
+ * rows out the same way.
  */
 
 const LABEL_W = 190;
@@ -61,30 +63,44 @@ const SIDE_TINT = "#e0e7ff";
 /** The Total Km row, its name and its values, on a light green. */
 const KM_TINT = "#dcfce7";
 
-/** One line of a cell, in black; a place is a link, coloured as Excel colours one. */
+/**
+ * One line of a cell, in black; a place is a link, coloured as Excel colours
+ * one. A time before the place stays out of the link, so only the place is
+ * underlined.
+ */
 function SheetLine({ line }: { line: DayReportLine }) {
+  if (!line.href) return <div>{line.text}</div>;
+  const lead = line.lead && line.text.startsWith(line.lead) ? line.lead : "";
+  const rest = line.text.slice(lead.length);
+  const dot = lead && rest.startsWith(" · ") ? " · " : "";
   return (
     <div>
-      {line.href ? (
-        <a href={line.href} target="_blank" rel="noreferrer" style={{ color: "#0563c1" }}>
-          {line.text}
-        </a>
-      ) : (
-        line.text
-      )}
+      {lead}
+      {dot}
+      <a href={line.href} target="_blank" rel="noreferrer" style={{ color: "#0563c1" }}>
+        {rest.slice(dot.length)}
+      </a>
     </div>
   );
 }
 
-export default function DaySummarySheet({ columns }: { columns: DayReportColumn[] }) {
+export default function DaySummarySheet({
+  columns,
+  rows = DAY_SUMMARY_ROWS,
+  testId = "day-summary-sheet",
+}: {
+  columns: DayReportColumn[];
+  rows?: DayReportRowSpec[];
+  testId?: string;
+}) {
   return (
     <div
-      data-testid="day-summary-sheet"
+      data-testid={testId}
       style={{ marginTop: 10, overflow: "auto", maxHeight: "calc(100vh - 320px)", minHeight: 240, background: "#fff" }}
     >
       <table style={{ borderCollapse: "separate", borderSpacing: 0, borderTop: GRID, borderLeft: GRID }}>
         <thead>
-          {DAY_SUMMARY_ROWS.slice(0, 2).map((spec, index) => (
+          {rows.slice(0, 2).map((spec, index) => (
             <tr key={spec.key}>
               <th scope="row" style={{ ...labelCell, ...heading(spec.key), top: index * HEAD_H, zIndex: 3, height: HEAD_H }}>
                 {spec.label}
@@ -111,7 +127,7 @@ export default function DaySummarySheet({ columns }: { columns: DayReportColumn[
           ))}
         </thead>
         <tbody>
-          {DAY_SUMMARY_ROWS.slice(2).map((spec) => (
+          {rows.slice(2).map((spec) => (
             <tr key={spec.key}>
               <th scope="row" style={{ ...labelCell, background: spec.key === "km" ? KM_TINT : SIDE_TINT, top: "auto", zIndex: 1 }}>
                 {spec.label}

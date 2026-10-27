@@ -70,7 +70,7 @@ const LOCATION: Record<number, string | null> = {
 const report = () => buildDayKm(COLUMNS, (id) => LOCATION[id], [D1, D2, D3]);
 
 describe("the Day-wise KM Report", () => {
-  it("a line per FSE, A-Z: each day's km, the total, and the days with a Login", () => {
+  it("a line per FSE, A-Z: each day's km, the total, and the days present", () => {
     const { days, fses } = report();
     expect(days).toEqual([D1, D2, D3]);
     expect(fses.map((line) => [line.name, line.location, line.km, line.total, line.present])).toEqual([
@@ -82,6 +82,23 @@ describe("the Day-wise KM Report", () => {
       ["Raghav", "Chennai", [0, 0, 0], 0, 2],
       ["samim", "CHENNAI", [70.4, 0, 0], 70.4, 1],
     ]);
+  });
+
+  it("a day with km is a day present, with or without a Login on it", () => {
+    // Prasanth, 25-26 Oct 2026: a duty begun on the Saturday evening ran into
+    // the Sunday, so the Sunday has 53 km and no Login of its own.
+    const { fses, total } = buildDayKm(
+      [
+        column("2026-10-25", 7, "Prasanth", 53, false),
+        column("2026-10-26", 7, "Prasanth", 95.5),
+        column("2026-10-27", 7, "Prasanth", 0, false),
+      ],
+      () => "Salem",
+    );
+    expect(fses.map((line) => [line.km, line.total, line.present, kmPerPresentDayText(line)])).toEqual([
+      [[53, 95.5, 0], 148.5, 2, "74.3"],
+    ]);
+    expect(total.present).toBe(2);
   });
 
   it("a line per location, the most FSEs first; one place however it is written", () => {

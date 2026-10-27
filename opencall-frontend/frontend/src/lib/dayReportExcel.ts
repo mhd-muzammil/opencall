@@ -96,7 +96,7 @@ export async function buildDayKmWorkbook(report: DayKmReport): Promise<Uint8Arra
   title.value = "Day-wise KM Report (Engineer-wise)";
   title.font = { bold: true, size: 16, color: { argb: NAVY } };
   const source = sheet.getCell(2, 1);
-  source.value = 'Source: the Total km row of the Day Report. "-" = no km that day. Days Present = days with a Login.';
+  source.value = 'Source: the Total km row of the Day Report. "-" = no km that day. Days Present = days with a Login or km.';
   source.font = { italic: true, color: { argb: "FF595959" } };
 
   /** A heading row: `lead` from column `from`, then the days and the three totals. */

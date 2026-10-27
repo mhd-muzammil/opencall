@@ -240,7 +240,7 @@ export default function DayKmSheet({ report }: { report: DayKmReport }) {
     <div data-testid="day-km-report" style={{ marginTop: 10, display: "grid", gap: 6 }}>
       <h4 style={{ ...titleStyle, fontSize: 20 }}>Day-wise KM Report (Engineer-wise)</h4>
       <p style={{ margin: 0, fontFamily: SHEET_FONT, fontStyle: "italic", fontSize: 13, color: "#595959" }}>
-        Source: the Total km row of the Day Report. &quot;-&quot; = no km that day. Days Present = days with a Login.
+        Source: the Total km row of the Day Report. &quot;-&quot; = no km that day. Days Present = days with a Login or km.
       </p>
       <KmTable
         testId="day-km-fses"

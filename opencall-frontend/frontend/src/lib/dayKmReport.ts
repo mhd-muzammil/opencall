@@ -17,7 +17,7 @@ export interface DayKmLine {
   /** The km of each day, in the report's day order; 0 for none. */
   km: number[];
   total: number;
-  /** Days with a Login. */
+  /** Days with a Login or with km. */
   present: number;
 }
 
@@ -74,7 +74,10 @@ export function buildDayKm(
     const index = dayIndex.get(column.day)!;
     line.km[index] = round2(line.km[index]! + km);
     line.total = round2(line.total + km);
-    if (column.cell.logins.length > 0) line.present += 1;
+    // A day with km is a day present, Login or not: a duty begun the day
+    // before, or km imported from the old app. Counted by Logins alone, that
+    // km was shared over too few days and the average came out too high.
+    if (column.cell.logins.length > 0 || km > 0) line.present += 1;
   }
   const fses = [...byFse.values()].sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: "base" }));
 

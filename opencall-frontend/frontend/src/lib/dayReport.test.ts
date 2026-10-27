@@ -3,6 +3,7 @@ import type { DayReportCell } from "./payrollTrackingApiClient";
 import {
   DAY_REPORT_GROUPS,
   DAY_REPORT_ROWS,
+  DAY_SUMMARY_ROWS,
   clockTime,
   dayReportTotals,
   dayTimeline,
@@ -266,6 +267,92 @@ describe("rows", () => {
     expect(rows.gps_off_location).toBe("11:00 AM · https://maps.google.com/?q=12.700000,77.700000");
     expect(sheetText([])).toBe("-");
   });
+});
+
+describe("the short sheet", () => {
+  const summaryOf = (c: DayReportColumn) =>
+    Object.fromEntries(DAY_SUMMARY_ROWS.map((row) => [row.label, sheetText(row.lines(c))]));
+
+  it("has the office's sample's rows, in its order and words", () => {
+    expect(DAY_SUMMARY_ROWS.map((row) => row.label)).toEqual([
+      "DATE",
+      "NAME",
+      "In Time",
+      "In Time Location",
+      "Out Time",
+      "Out Time Location",
+      "Assigned",
+      "Attended",
+      "Closed",
+      "GPS Off Hrs",
+      "Total Km",
+    ]);
+    expect(DAY_SUMMARY_ROWS.every((row) => row.group === "")).toBe(true);
+  });
+
+  it("is the first Login and the last Logout with where, the counts, GPS off and the km", () => {
+    expect(summaryOf(column())).toEqual({
+      DATE: "10-10-2026",
+      NAME: "PRASANTH",
+      "In Time": "10:00 AM",
+      "In Time Location": "https://maps.google.com/?q=12.700000,77.700000",
+      "Out Time": "6:30 PM",
+      "Out Time Location": "https://maps.google.com/?q=12.700000,77.700000",
+      Assigned: "6",
+      Attended: "3",
+      Closed: "3",
+      "GPS Off Hrs": "3h",
+      "Total Km": "65.39",
+    });
+    const two = column({
+      cell: cell({
+        logins: [{ at: at("09:00"), ...here }, { at: at("14:00"), ...bare }],
+        logouts: [{ at: at("12:00"), auto: false, ...bare }, { at: at("19:15"), auto: false, ...here }],
+      }),
+    });
+    expect([summaryOf(two)["In Time"], summaryOf(two)["In Time Location"]]).toEqual(["9:00 AM", here.address]);
+    expect([summaryOf(two)["Out Time"], summaryOf(two)["Out Time Location"]]).toEqual(["7:15 PM", here.address]);
+  });
+
+  it("a duty still running, one the app closed, one past midnight, and a day with nothing", () => {
+    const running = column({ cell: cell({ logins: [{ at: at("09:00"), ...bare }], on_duty: true }) });
+    expect([summaryOf(running)["Out Time"], summaryOf(running)["Out Time Location"]]).toEqual(["On duty", "-"]);
+    const auto = column({
+      day: "2026-09-02",
+      cell: cell({ logouts: [{ at: "2026-09-03T05:50:40+05:30", auto: true, ...bare }] }),
+    });
+    expect(summaryOf(auto)["Out Time"]).toBe("5:50 AM (03-09-2026) (auto)");
+    expect(summaryOf(column({ cell: cell() }))).toMatchObject({
+      "In Time": "-",
+      "In Time Location": "-",
+      "Out Time": "-",
+      "Out Time Location": "-",
+      Assigned: "-",
+      "GPS Off Hrs": "-",
+      "Total Km": "-",
+    });
+  });
+
+  it("downloads under its own name", () => {
+    expect(dayReportFilename("Hosur", "2026-10-25", "2026-10-25", true)).toBe("Day_Summary_Hosur_2026-10-25.xlsx");
+  });
+
+  it("as Excel: its eleven rows down, the FSE-days across", async () => {
+    const columns = [column(), column({ engineerId: 8, name: "JAYAKUMAR", cell: cell({ km: 12 }) })];
+    const bytes = await buildDayReportWorkbook(columns, DAY_SUMMARY_ROWS);
+    const ExcelJS = (await import("exceljs")).default ?? (await import("exceljs"));
+    const workbook = new ExcelJS.Workbook();
+    await workbook.xlsx.load(bytes.buffer as ArrayBuffer);
+    const sheet = workbook.getWorksheet("Day Report")!;
+    expect(sheet.rowCount).toBe(11);
+    DAY_SUMMARY_ROWS.forEach((row, index) => {
+      expect(sheet.getRow(index + 1).getCell(1).value).toBe(row.label);
+      columns.forEach((c, columnIndex) => {
+        expect(sheet.getRow(index + 1).getCell(columnIndex + 2).value).toBe(sheetText(row.lines(c)));
+      });
+    });
+    expect(sheet.getRow(11).getCell(3).value).toBe("12");
+  }, 60_000);
 });
 
 describe("columns", () => {

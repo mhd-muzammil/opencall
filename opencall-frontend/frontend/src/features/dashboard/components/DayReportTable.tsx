@@ -1,12 +1,18 @@
 "use client";
 
 import { Fragment, type CSSProperties } from "react";
-import { DAY_REPORT_ROWS, type DayReportColumn, type DayReportLine } from "../../../lib/dayReport";
+import {
+  DAY_REPORT_ROWS,
+  type DayReportColumn,
+  type DayReportLine,
+  type DayReportRowSpec,
+} from "../../../lib/dayReport";
 
 /**
  * The Day Report as the office's sheet: the fields down, one column per
  * FSE-day across -- the layout of the downloaded Excel, for comparing many
- * FSE-days side by side.
+ * FSE-days side by side. `rows` is the full sheet, or the short one
+ * (DAY_SUMMARY_ROWS); both begin with their Date and Name rows.
  */
 
 // Frozen label column, and the two header rows, at fixed sizes so each knows
@@ -70,7 +76,13 @@ function LineView({ line }: { line: DayReportLine }) {
   );
 }
 
-export default function DayReportTable({ columns }: { columns: DayReportColumn[] }) {
+export default function DayReportTable({
+  columns,
+  rows = DAY_REPORT_ROWS,
+}: {
+  columns: DayReportColumn[];
+  rows?: DayReportRowSpec[];
+}) {
   return (
     <div
       data-testid="day-report-grid"
@@ -86,7 +98,7 @@ export default function DayReportTable({ columns }: { columns: DayReportColumn[]
     >
       <table style={{ borderCollapse: "separate", borderSpacing: 0 }}>
         <thead>
-          {DAY_REPORT_ROWS.slice(0, 2).map((spec, index) => (
+          {rows.slice(0, 2).map((spec, index) => (
             <tr key={spec.key}>
               <th
                 scope="row"
@@ -134,10 +146,10 @@ export default function DayReportTable({ columns }: { columns: DayReportColumn[]
           ))}
         </thead>
         <tbody>
-          {DAY_REPORT_ROWS.slice(2).map((spec, index, rows) => (
+          {rows.slice(2).map((spec, index, body) => (
             <Fragment key={spec.key}>
-              {/* A band where each group of rows begins: Duty, Calls, ... */}
-              {spec.group !== rows[index - 1]?.group && (
+              {/* A band where each group of rows begins: Duty, Calls, ... The short sheet has none. */}
+              {spec.group && spec.group !== body[index - 1]?.group && (
                 <tr data-testid="day-report-band">
                   <th
                     scope="rowgroup"

@@ -3,7 +3,7 @@
 // rows the screen shows (dayReport.ts), so the file and the screen agree.
 
 import type * as ExcelJSNS from "exceljs";
-import { DAY_REPORT_ROWS, sheetText, type DayReportColumn } from "./dayReport";
+import { DAY_REPORT_ROWS, sheetText, type DayReportColumn, type DayReportRowSpec } from "./dayReport";
 
 // Loaded at download time, as the other exports load it, so it stays out of
 // the page's first bundle. The CJS module surfaces under `.default` depending
@@ -18,8 +18,11 @@ const XLSX_MIME = "application/vnd.openxmlformats-officedocument.spreadsheetml.s
 const THIN = { style: "thin" as const, color: { argb: "FF000000" } };
 const BOX = { top: THIN, left: THIN, bottom: THIN, right: THIN };
 
-/** The workbook's bytes. */
-export async function buildDayReportWorkbook(columns: DayReportColumn[]): Promise<Uint8Array> {
+/** The workbook's bytes: `rows` down -- the full sheet, or the short one -- the FSE-days across. */
+export async function buildDayReportWorkbook(
+  columns: DayReportColumn[],
+  rows: DayReportRowSpec[] = DAY_REPORT_ROWS,
+): Promise<Uint8Array> {
   const ExcelJS = await loadExcelJs();
   const workbook = new ExcelJS.Workbook();
   // The field names and the Date and Name rows stay in view while scrolling.
@@ -31,7 +34,7 @@ export async function buildDayReportWorkbook(columns: DayReportColumn[]): Promis
     sheet.getColumn(index + 2).width = 32;
   });
 
-  DAY_REPORT_ROWS.forEach((spec, rowIndex) => {
+  rows.forEach((spec, rowIndex) => {
     const row = sheet.getRow(rowIndex + 1);
     const label = row.getCell(1);
     label.value = spec.label;
@@ -50,8 +53,12 @@ export async function buildDayReportWorkbook(columns: DayReportColumn[]): Promis
 }
 
 /** Builds the sheet and hands it to the browser as a download. */
-export async function downloadDayReportExcel(columns: DayReportColumn[], filename: string): Promise<void> {
-  const bytes = await buildDayReportWorkbook(columns);
+export async function downloadDayReportExcel(
+  columns: DayReportColumn[],
+  filename: string,
+  rows: DayReportRowSpec[] = DAY_REPORT_ROWS,
+): Promise<void> {
+  const bytes = await buildDayReportWorkbook(columns, rows);
   const blob = new Blob([new Uint8Array(bytes)], { type: XLSX_MIME });
   const link = document.createElement("a");
   link.href = URL.createObjectURL(blob);

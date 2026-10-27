@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState, type ComponentType, type CSSProperties } from "react";
-import { CircleCheck, LayoutGrid, MapPin, Route, Table2, Users } from "lucide-react";
+import { CircleCheck, ClipboardCheck, LayoutGrid, MapPin, Route, Table2, Users } from "lucide-react";
 import { clearSession } from "../../../lib/session";
 import { isApiAuthError } from "../../../lib/api/http";
 import {
@@ -12,6 +12,8 @@ import {
 } from "../../../lib/payrollTrackingApiClient";
 import { filterKmRows, formatKm, kmRegions, regionTone } from "../../../lib/kmReport";
 import {
+  DAY_REPORT_ROWS,
+  DAY_SUMMARY_ROWS,
   MAX_DAY_REPORT_DAYS,
   dayCount,
   dayReportColumns,
@@ -103,7 +105,8 @@ interface Asked {
   scope: string;
 }
 
-type View = "cards" | "table";
+// Summary is the office's own short sheet (DAY_SUMMARY_ROWS).
+type View = "cards" | "table" | "summary";
 
 export interface DayReportPanelProps {
   token: string | null;
@@ -224,7 +227,13 @@ export default function DayReportPanel({ token }: DayReportPanelProps) {
     setDownloading(true);
     setDownloadError(null);
     try {
-      await downloadDayReportExcel(columns, dayReportFilename(asked.scope, asked.from, asked.to));
+      // Summary on screen downloads the short sheet; Cards and Table, the full one.
+      const summary = view === "summary";
+      await downloadDayReportExcel(
+        columns,
+        dayReportFilename(asked.scope, asked.from, asked.to, summary),
+        summary ? DAY_SUMMARY_ROWS : DAY_REPORT_ROWS,
+      );
     } catch (e) {
       setDownloadError(e instanceof Error ? e.message : "Could not make the Excel file");
     } finally {
@@ -425,6 +434,7 @@ export default function DayReportPanel({ token }: DayReportPanelProps) {
                 [
                   ["cards", "Cards", LayoutGrid],
                   ["table", "Table", Table2],
+                  ["summary", "Summary", ClipboardCheck],
                 ] as const
               ).map(([value, label, ViewIcon]) => {
                 const on = view === value;
@@ -499,7 +509,7 @@ export default function DayReportPanel({ token }: DayReportPanelProps) {
         (view === "cards" ? (
           <DayReportCards columns={columns} regionById={regionById} />
         ) : (
-          <DayReportTable columns={columns} />
+          <DayReportTable columns={columns} rows={view === "summary" ? DAY_SUMMARY_ROWS : DAY_REPORT_ROWS} />
         ))}
     </div>
   );

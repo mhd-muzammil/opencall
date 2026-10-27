@@ -110,18 +110,21 @@ const offFor = (minutes: number): DayReportLine[] =>
 /** The bands the rows are grouped under on screen, in order. */
 export const DAY_REPORT_GROUPS = ["Duty", "Calls", "OpenCall", "Waiting", "GPS", "Network", "Distance"] as const;
 
-/** The rows, in the office's order, and how each column fills them. */
-export const DAY_REPORT_ROWS: {
+/** One row of a sheet, and how each column fills it. */
+export interface DayReportRowSpec {
   key: string;
   label: string;
-  /** The band it sits under on screen; "" for the Date and Name heading rows. */
+  /** The band it sits under on screen; "" for none (the Date and Name heading rows). */
   group: "" | (typeof DAY_REPORT_GROUPS)[number];
   /** A list, one line per moment; else one value, centred. */
   list?: boolean;
   /** A count shown on screen as a pill in this colour. */
   chip?: { accent: string; tint: string };
   lines: (column: DayReportColumn) => DayReportLine[];
-}[] = [
+}
+
+/** The rows, in the office's order, and how each column fills them. */
+export const DAY_REPORT_ROWS: DayReportRowSpec[] = [
   { key: "date", label: "Date", group: "", lines: (c) => single(sheetDate(c.day)) },
   { key: "name", label: "Name", group: "", lines: (c) => single(c.name) },
   {
@@ -269,6 +272,61 @@ export const DAY_REPORT_ROWS: {
   { key: "km", label: "Total km", group: "Distance", lines: (c) => single(formatKm(c.cell.km)) },
 ];
 
+/** The day's last Logout, if it had one. */
+const lastLogout = (c: DayReportColumn) => c.cell.logouts[c.cell.logouts.length - 1];
+
+/**
+ * The office's short sheet, laid out as their own sample is: one line a field
+ * -- the day's first Login and last Logout with where, Assigned / Attended /
+ * Closed, the GPS off time and the km.
+ */
+export const DAY_SUMMARY_ROWS: DayReportRowSpec[] = [
+  { key: "date", label: "DATE", group: "", lines: (c) => single(sheetDate(c.day)) },
+  { key: "name", label: "NAME", group: "", lines: (c) => single(c.name) },
+  {
+    key: "in_time",
+    label: "In Time",
+    group: "",
+    lines: (c) => (c.cell.logins[0] ? single(clockTime(c.cell.logins[0].at)) : []),
+  },
+  {
+    key: "in_location",
+    label: "In Time Location",
+    group: "",
+    list: true,
+    lines: (c) => (c.cell.logins[0] ? [placeLine(c.cell.logins[0])] : []),
+  },
+  {
+    key: "out_time",
+    label: "Out Time",
+    group: "",
+    lines: (c): DayReportLine[] => {
+      if (c.cell.on_duty) return [{ text: "On duty", tone: "good" }];
+      const m = lastLogout(c);
+      if (!m) return [];
+      // A duty that ran past midnight ended on another day, and says which.
+      const day = indiaDay(m.at);
+      const text = `${clockTime(m.at)}${day !== c.day ? ` (${sheetDate(day)})` : ""}`;
+      return m.auto ? [{ text: `${text} (auto)`, tone: "warn" }] : single(text);
+    },
+  },
+  {
+    key: "out_location",
+    label: "Out Time Location",
+    group: "",
+    list: true,
+    lines: (c) => {
+      const m = lastLogout(c);
+      return m && !c.cell.on_duty ? [placeLine(m)] : [];
+    },
+  },
+  { key: "assigned", label: "Assigned", group: "", lines: (c) => count(c.cell.assigned) },
+  { key: "attended", label: "Attended", group: "", lines: (c) => count(c.cell.attended) },
+  { key: "closed", label: "Closed", group: "", lines: (c) => count(c.cell.closed) },
+  { key: "gps", label: "GPS Off Hrs", group: "", lines: (c) => offFor(c.cell.gps_off_minutes) },
+  { key: "km", label: "Total Km", group: "", lines: (c) => single(formatKm(c.cell.km)) },
+];
+
 /** "10:05 AM · OC-2501": a check in or out, its time first. */
 function timedCall(at: string, caseNumber: string | null): DayReportLine {
   const time = clockTime(at);
@@ -412,9 +470,12 @@ export function dayCount(from: string, to: string): number | null {
   return days <= MAX_DAY_REPORT_DAYS ? days : null;
 }
 
-/** "Day_Report_Hosur_2026-10-01_to_2026-10-26.xlsx", one day named once. */
-export function dayReportFilename(scope: string, from: string, to: string): string {
+/**
+ * "Day_Report_Hosur_2026-10-01_to_2026-10-26.xlsx", one day named once; the
+ * short sheet is "Day_Summary_...".
+ */
+export function dayReportFilename(scope: string, from: string, to: string, summary = false): string {
   const who = scope.trim().replace(/[^A-Za-z0-9]+/g, "_").replace(/^_+|_+$/g, "") || "All_Regions";
   const when = from === to ? from : `${from}_to_${to}`;
-  return `Day_Report_${who}_${when}.xlsx`;
+  return `${summary ? "Day_Summary" : "Day_Report"}_${who}_${when}.xlsx`;
 }

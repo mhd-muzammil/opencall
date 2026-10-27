@@ -4,6 +4,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { DayReportCell, RosterEngineer } from "../../../lib/payrollTrackingApiClient";
 import { ApiClientError } from "../../../lib/api/http";
+import { DAY_REPORT_ROWS, DAY_SUMMARY_ROWS } from "../../../lib/dayReport";
 
 /**
  * The Day Report tab, mounted: who it lists, what the boxes, the search and the
@@ -280,6 +281,44 @@ describe("DayReportPanel", () => {
     const [columns, filename] = downloadDayReportExcel.mock.calls[0]!;
     expect((columns as { name: string; day: string }[]).map((c) => [c.name, c.day])).toEqual([["Arun", TODAY]]);
     expect(filename).toBe(`Day_Report_Arun_${TODAY}.xlsx`);
+    expect(downloadDayReportExcel.mock.calls[0]![2]).toBe(DAY_REPORT_ROWS);
+  });
+
+  it("the Summary view is the short sheet, and Download in it hands over the short sheet", async () => {
+    await mount();
+    await click(button("Show"));
+    await click(button("Summary"));
+    expect(container.querySelector('[data-testid="day-report-cards"]')).toBeNull();
+    expect(headers()).toEqual([
+      ["DATE", "26-10-2026", "26-10-2026"],
+      ["NAME", "Arun", "Bala"],
+    ]);
+    const rows = Array.from(container.querySelectorAll('[data-testid="day-report-grid"] tbody tr'));
+    expect(rows.map((tr) => tr.querySelector("th")?.textContent)).toEqual([
+      "In Time",
+      "In Time Location",
+      "Out Time",
+      "Out Time Location",
+      "Assigned",
+      "Attended",
+      "Closed",
+      "GPS Off Hrs",
+      "Total Km",
+    ]);
+    expect(container.querySelector('[data-testid="day-report-band"]')).toBeNull();
+    const row = (label: string) =>
+      Array.from(rows.find((tr) => tr.querySelector("th")?.textContent === label)!.querySelectorAll("td")).map(
+        (td) => td.textContent,
+      );
+    expect(row("In Time")).toEqual(["10:00 AM", "10:00 AM"]);
+    expect(row("Out Time")).toEqual(["On duty", "On duty"]);
+    expect(row("Closed")).toEqual(["1", "1"]);
+    expect(row("Total Km")).toEqual(["7", "8"]);
+    await click(button("Download Excel"));
+    const [columns, filename, sheetRows] = downloadDayReportExcel.mock.calls[0]!;
+    expect((columns as unknown[]).length).toBe(2);
+    expect(filename).toBe(`Day_Summary_All_Regions_${TODAY}.xlsx`);
+    expect(sheetRows).toBe(DAY_SUMMARY_ROWS);
   });
 
   it("refuses a period longer than 31 days, or one that runs backwards", async () => {

@@ -328,13 +328,15 @@ describe("DayReportPanel", () => {
     ]);
     expect(rows[0]!.querySelector("th")!.style.textAlign).toBe("left");
     // The heading white -- the Date row on indigo, the Name row on sky blue --
-    // and the field names down the side on a light indigo.
+    // the field names down the side on a light indigo, and the Total Km row on a light green.
     const looks = (selector: string) =>
       [...new Set(Array.from(sheet.querySelectorAll<HTMLElement>(selector)).map((el) => `${el.style.background} / ${el.style.color}`))];
     expect(looks("thead tr:first-child th")).toEqual(["rgb(79, 70, 229) / rgb(255, 255, 255)"]);
     expect(looks("thead tr:last-child th")).toEqual(["rgb(2, 132, 199) / rgb(255, 255, 255)"]);
-    expect(looks("tbody th")).toEqual(["rgb(224, 231, 255) / rgb(0, 0, 0)"]);
-    expect(looks("tbody td")).toEqual(["rgb(255, 255, 255) / rgb(0, 0, 0)"]);
+    expect(looks("tbody tr:not(:last-child) th")).toEqual(["rgb(224, 231, 255) / rgb(0, 0, 0)"]);
+    expect(looks("tbody tr:not(:last-child) td")).toEqual(["rgb(255, 255, 255) / rgb(0, 0, 0)"]);
+    expect(sheet.querySelector("tbody tr:last-child th")!.textContent).toBe("Total Km");
+    expect(looks("tbody tr:last-child th, tbody tr:last-child td")).toEqual(["rgb(220, 252, 231) / rgb(0, 0, 0)"]);
     await click(button("Download Excel"));
     const [columns, filename, sheetRows] = downloadDayReportExcel.mock.calls[0]!;
     expect((columns as unknown[]).length).toBe(2);

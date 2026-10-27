@@ -58,6 +58,9 @@ const heading = (key: string): CSSProperties => ({
 /** The field names down the side, on a light indigo. */
 const SIDE_TINT = "#e0e7ff";
 
+/** The Total Km row, its name and its values, on a light green. */
+const KM_TINT = "#dcfce7";
+
 /** One line of a cell, in black; a place is a link, coloured as Excel colours one. */
 function SheetLine({ line }: { line: DayReportLine }) {
   return (
@@ -110,7 +113,7 @@ export default function DaySummarySheet({ columns }: { columns: DayReportColumn[
         <tbody>
           {DAY_SUMMARY_ROWS.slice(2).map((spec) => (
             <tr key={spec.key}>
-              <th scope="row" style={{ ...labelCell, background: SIDE_TINT, top: "auto", zIndex: 1 }}>
+              <th scope="row" style={{ ...labelCell, background: spec.key === "km" ? KM_TINT : SIDE_TINT, top: "auto", zIndex: 1 }}>
                 {spec.label}
               </th>
               {columns.map((column) => {
@@ -118,7 +121,14 @@ export default function DaySummarySheet({ columns }: { columns: DayReportColumn[
                 return (
                   <td
                     key={`${column.day}|${column.engineerId}`}
-                    style={{ ...cellBase, width: COLUMN_W, minWidth: COLUMN_W, maxWidth: COLUMN_W, overflowWrap: "anywhere" }}
+                    style={{
+                      ...cellBase,
+                      background: spec.key === "km" ? KM_TINT : "#fff",
+                      width: COLUMN_W,
+                      minWidth: COLUMN_W,
+                      maxWidth: COLUMN_W,
+                      overflowWrap: "anywhere",
+                    }}
                   >
                     {lines.length === 0 ? "-" : lines.map((line, lineIndex) => <SheetLine key={lineIndex} line={line} />)}
                   </td>

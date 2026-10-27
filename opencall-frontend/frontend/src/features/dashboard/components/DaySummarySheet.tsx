@@ -48,12 +48,15 @@ const labelCell: CSSProperties = {
   textAlign: "left",
 };
 
-/** The Date and Name rows: the heading, white on the app's indigo; the names bold. */
+/** The Date and Name rows: the heading, white -- the dates on the app's indigo, the names bold on sky blue. */
 const heading = (key: string): CSSProperties => ({
-  background: "#4f46e5",
+  background: key === "name" ? "#0284c7" : "#4f46e5",
   color: "#fff",
   fontWeight: key === "name" ? 700 : 600,
 });
+
+/** The field names down the side, on a light indigo. */
+const SIDE_TINT = "#e0e7ff";
 
 /** One line of a cell, in black; a place is a link, coloured as Excel colours one. */
 function SheetLine({ line }: { line: DayReportLine }) {
@@ -107,7 +110,7 @@ export default function DaySummarySheet({ columns }: { columns: DayReportColumn[
         <tbody>
           {DAY_SUMMARY_ROWS.slice(2).map((spec) => (
             <tr key={spec.key}>
-              <th scope="row" style={{ ...labelCell, top: "auto", zIndex: 1 }}>
+              <th scope="row" style={{ ...labelCell, background: SIDE_TINT, top: "auto", zIndex: 1 }}>
                 {spec.label}
               </th>
               {columns.map((column) => {

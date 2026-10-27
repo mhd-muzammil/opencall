@@ -327,13 +327,14 @@ describe("DayReportPanel", () => {
       false,
     ]);
     expect(rows[0]!.querySelector("th")!.style.textAlign).toBe("left");
-    // The heading -- the Date and Name rows -- white on indigo.
-    expect(
-      [...new Set(Array.from(sheet.querySelectorAll("thead th")).map((th) => {
-        const style = (th as HTMLElement).style;
-        return `${style.background} / ${style.color}`;
-      }))],
-    ).toEqual(["rgb(79, 70, 229) / rgb(255, 255, 255)"]);
+    // The heading white -- the Date row on indigo, the Name row on sky blue --
+    // and the field names down the side on a light indigo.
+    const looks = (selector: string) =>
+      [...new Set(Array.from(sheet.querySelectorAll<HTMLElement>(selector)).map((el) => `${el.style.background} / ${el.style.color}`))];
+    expect(looks("thead tr:first-child th")).toEqual(["rgb(79, 70, 229) / rgb(255, 255, 255)"]);
+    expect(looks("thead tr:last-child th")).toEqual(["rgb(2, 132, 199) / rgb(255, 255, 255)"]);
+    expect(looks("tbody th")).toEqual(["rgb(224, 231, 255) / rgb(0, 0, 0)"]);
+    expect(looks("tbody td")).toEqual(["rgb(255, 255, 255) / rgb(0, 0, 0)"]);
     await click(button("Download Excel"));
     const [columns, filename, sheetRows] = downloadDayReportExcel.mock.calls[0]!;
     expect((columns as unknown[]).length).toBe(2);

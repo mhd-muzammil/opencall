@@ -50,18 +50,26 @@ const labelCell: CSSProperties = {
   textAlign: "left",
 };
 
-/** The Date and Name rows: the heading, white -- the dates on the app's indigo, the names bold on sky blue. */
-const heading = (key: string): CSSProperties => ({
-  background: key === "name" ? "#0284c7" : "#4f46e5",
+/** A sheet's colours: the Date row, the Name row, the field names down the side, the Total km row. */
+export interface SheetColours {
+  date: string;
+  name: string;
+  side: string;
+  km: string;
+}
+
+/** The Summary's: the dates on the app's indigo, the names on sky blue, light indigo down the side, the km on light green. */
+export const SUMMARY_COLOURS: SheetColours = { date: "#4f46e5", name: "#0284c7", side: "#e0e7ff", km: "#dcfce7" };
+
+/** The Table's, told apart from the Summary's: the dates on teal, the names on deep teal, light teal down the side, the km on light amber. */
+export const TABLE_COLOURS: SheetColours = { date: "#0f766e", name: "#134e4a", side: "#ccfbf1", km: "#fef3c7" };
+
+/** The Date and Name rows: the heading, white, the names bold. */
+const heading = (key: string, colours: SheetColours): CSSProperties => ({
+  background: key === "name" ? colours.name : colours.date,
   color: "#fff",
   fontWeight: key === "name" ? 700 : 600,
 });
-
-/** The field names down the side, on a light indigo. */
-const SIDE_TINT = "#e0e7ff";
-
-/** The Total Km row, its name and its values, on a light green. */
-const KM_TINT = "#dcfce7";
 
 /**
  * One line of a cell, in black; a place is a link, coloured as Excel colours
@@ -88,10 +96,12 @@ export default function DaySummarySheet({
   columns,
   rows = DAY_SUMMARY_ROWS,
   testId = "day-summary-sheet",
+  colours = SUMMARY_COLOURS,
 }: {
   columns: DayReportColumn[];
   rows?: DayReportRowSpec[];
   testId?: string;
+  colours?: SheetColours;
 }) {
   return (
     <div
@@ -102,7 +112,7 @@ export default function DaySummarySheet({
         <thead>
           {rows.slice(0, 2).map((spec, index) => (
             <tr key={spec.key}>
-              <th scope="row" style={{ ...labelCell, ...heading(spec.key), top: index * HEAD_H, zIndex: 3, height: HEAD_H }}>
+              <th scope="row" style={{ ...labelCell, ...heading(spec.key, colours), top: index * HEAD_H, zIndex: 3, height: HEAD_H }}>
                 {spec.label}
               </th>
               {columns.map((column) => (
@@ -110,7 +120,7 @@ export default function DaySummarySheet({
                   key={`${column.day}|${column.engineerId}`}
                   style={{
                     ...cellBase,
-                    ...heading(spec.key),
+                    ...heading(spec.key, colours),
                     position: "sticky",
                     top: index * HEAD_H,
                     zIndex: 2,
@@ -129,7 +139,7 @@ export default function DaySummarySheet({
         <tbody>
           {rows.slice(2).map((spec) => (
             <tr key={spec.key}>
-              <th scope="row" style={{ ...labelCell, background: spec.key === "km" ? KM_TINT : SIDE_TINT, top: "auto", zIndex: 1 }}>
+              <th scope="row" style={{ ...labelCell, background: spec.key === "km" ? colours.km : colours.side, top: "auto", zIndex: 1 }}>
                 {spec.label}
               </th>
               {columns.map((column) => {
@@ -139,7 +149,7 @@ export default function DaySummarySheet({
                     key={`${column.day}|${column.engineerId}`}
                     style={{
                       ...cellBase,
-                      background: spec.key === "km" ? KM_TINT : "#fff",
+                      background: spec.key === "km" ? colours.km : "#fff",
                       width: COLUMN_W,
                       minWidth: COLUMN_W,
                       maxWidth: COLUMN_W,

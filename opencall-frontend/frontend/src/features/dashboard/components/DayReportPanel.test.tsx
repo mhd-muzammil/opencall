@@ -197,19 +197,19 @@ describe("DayReportPanel", () => {
       .querySelector("a")!;
     expect(link.getAttribute("href")).toBe("https://maps.google.com/?q=12.700000,77.700000");
     expect(link.getAttribute("target")).toBe("_blank");
-    // Laid out as the Summary is: the Date row on indigo, the Name row on sky
-    // blue, the field names on light indigo, the values black on white and
-    // centred, the Total km row on light green -- and no group bands.
+    // Laid out as the Summary is, in its own colours: the Date row on teal, the
+    // Name row on deep teal, the field names on light teal, the values black
+    // on white and centred, the Total km row on light amber -- and no group bands.
     const grid = container.querySelector('[data-testid="day-report-grid"]')!;
     const looks = (selector: string) =>
       [...new Set(Array.from(grid.querySelectorAll<HTMLElement>(selector)).map((el) => `${el.style.background} / ${el.style.color}`))];
     expect(grid.querySelectorAll('[data-testid="day-report-band"]')).toHaveLength(0);
-    expect(looks("thead tr:first-child th")).toEqual(["rgb(79, 70, 229) / rgb(255, 255, 255)"]);
-    expect(looks("thead tr:last-child th")).toEqual(["rgb(2, 132, 199) / rgb(255, 255, 255)"]);
-    expect(looks("tbody tr:not(:last-child) th")).toEqual(["rgb(224, 231, 255) / rgb(0, 0, 0)"]);
+    expect(looks("thead tr:first-child th")).toEqual(["rgb(15, 118, 110) / rgb(255, 255, 255)"]);
+    expect(looks("thead tr:last-child th")).toEqual(["rgb(19, 78, 74) / rgb(255, 255, 255)"]);
+    expect(looks("tbody tr:not(:last-child) th")).toEqual(["rgb(204, 251, 241) / rgb(0, 0, 0)"]);
     expect(looks("tbody tr:not(:last-child) td")).toEqual(["rgb(255, 255, 255) / rgb(0, 0, 0)"]);
     expect(grid.querySelector("tbody tr:last-child th")!.textContent).toBe("Total km");
-    expect(looks("tbody tr:last-child th, tbody tr:last-child td")).toEqual(["rgb(220, 252, 231) / rgb(0, 0, 0)"]);
+    expect(looks("tbody tr:last-child th, tbody tr:last-child td")).toEqual(["rgb(254, 243, 199) / rgb(0, 0, 0)"]);
     expect([...new Set(Array.from(grid.querySelectorAll<HTMLElement>("tbody td")).map((td) => td.style.textAlign))]).toEqual([
       "center",
     ]);

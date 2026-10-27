@@ -334,7 +334,8 @@ describe("the short sheet", () => {
   });
 
   it("downloads under its own name", () => {
-    expect(dayReportFilename("Hosur", "2026-10-25", "2026-10-25", true)).toBe("Day_Summary_Hosur_2026-10-25.xlsx");
+    expect(dayReportFilename("Hosur", "2026-10-25", "2026-10-25", "summary")).toBe("Day_Summary_Hosur_2026-10-25.xlsx");
+    expect(dayReportFilename("Hosur", "2026-10-06", "2026-10-24", "km")).toBe("Day_KM_Hosur_2026-10-06_to_2026-10-24.xlsx");
   });
 
   it("as Excel: its eleven rows down, the FSE-days across", async () => {

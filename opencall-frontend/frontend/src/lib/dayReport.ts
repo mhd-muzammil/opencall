@@ -472,10 +472,16 @@ export function dayCount(from: string, to: string): number | null {
 
 /**
  * "Day_Report_Hosur_2026-10-01_to_2026-10-26.xlsx", one day named once; the
- * short sheet is "Day_Summary_...".
+ * short sheet is "Day_Summary_...", the Day-wise KM Report "Day_KM_...".
  */
-export function dayReportFilename(scope: string, from: string, to: string, summary = false): string {
+export function dayReportFilename(
+  scope: string,
+  from: string,
+  to: string,
+  kind: "report" | "summary" | "km" = "report",
+): string {
   const who = scope.trim().replace(/[^A-Za-z0-9]+/g, "_").replace(/^_+|_+$/g, "") || "All_Regions";
   const when = from === to ? from : `${from}_to_${to}`;
-  return `${summary ? "Day_Summary" : "Day_Report"}_${who}_${when}.xlsx`;
+  const what = kind === "summary" ? "Day_Summary" : kind === "km" ? "Day_KM" : "Day_Report";
+  return `${what}_${who}_${when}.xlsx`;
 }

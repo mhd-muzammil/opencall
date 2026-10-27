@@ -21,8 +21,10 @@ import {
   dayReportTotals,
   sheetDate,
 } from "../../../lib/dayReport";
-import { downloadDayReportExcel } from "../../../lib/dayReportExcel";
+import { downloadDayKmExcel, downloadDayReportExcel } from "../../../lib/dayReportExcel";
+import { buildDayKm } from "../../../lib/dayKmReport";
 import { todayIsoDate } from "../utils/dateUtils";
+import DayKmSheet from "./DayKmSheet";
 import DayReportCards from "./DayReportCards";
 import DaySummarySheet, { TABLE_COLOURS } from "./DaySummarySheet";
 
@@ -105,8 +107,9 @@ interface Asked {
   scope: string;
 }
 
-// Summary is the office's own short sheet (DAY_SUMMARY_ROWS).
-type View = "cards" | "table" | "summary";
+// Summary is the office's own short sheet (DAY_SUMMARY_ROWS); km, their
+// Day-wise KM Report.
+type View = "cards" | "table" | "summary" | "km";
 
 export interface DayReportPanelProps {
   token: string | null;
@@ -213,6 +216,10 @@ export default function DayReportPanel({ token }: DayReportPanelProps) {
   const error = asked && failed?.key === asked.key ? failed.message : null;
   const columns = useMemo(() => (answer ? dayReportColumns(answer, nameById) : []), [answer, nameById]);
   const totals = useMemo(() => dayReportTotals(columns), [columns]);
+  const kmReport = useMemo(
+    () => buildDayKm(columns, (id) => regionById.get(id), answer?.days),
+    [columns, regionById, answer],
+  );
   // The boxes, the search or the dates moved since the last Show.
   const changed = asked != null && asked.key !== key;
 
@@ -227,13 +234,18 @@ export default function DayReportPanel({ token }: DayReportPanelProps) {
     setDownloading(true);
     setDownloadError(null);
     try {
-      // Summary on screen downloads the short sheet; Cards and Table, the full one.
-      const summary = view === "summary";
-      await downloadDayReportExcel(
-        columns,
-        dayReportFilename(asked.scope, asked.from, asked.to, summary),
-        summary ? DAY_SUMMARY_ROWS : DAY_REPORT_ROWS,
-      );
+      // Summary on screen downloads the short sheet, Day-wise KM its report;
+      // Cards and Table, the full sheet.
+      if (view === "km") {
+        await downloadDayKmExcel(kmReport, dayReportFilename(asked.scope, asked.from, asked.to, "km"));
+      } else {
+        const summary = view === "summary";
+        await downloadDayReportExcel(
+          columns,
+          dayReportFilename(asked.scope, asked.from, asked.to, summary ? "summary" : "report"),
+          summary ? DAY_SUMMARY_ROWS : DAY_REPORT_ROWS,
+        );
+      }
     } catch (e) {
       setDownloadError(e instanceof Error ? e.message : "Could not make the Excel file");
     } finally {
@@ -428,13 +440,23 @@ export default function DayReportPanel({ token }: DayReportPanelProps) {
             <div
               role="group"
               aria-label="View"
-              style={{ marginLeft: "auto", display: "inline-flex", border: "1px solid #c7d2fe", borderRadius: 10, overflow: "hidden" }}
+              // Four views: on a narrow screen they wrap rather than hide.
+              style={{
+                marginLeft: "auto",
+                display: "inline-flex",
+                flexWrap: "wrap",
+                maxWidth: "100%",
+                border: "1px solid #c7d2fe",
+                borderRadius: 10,
+                overflow: "hidden",
+              }}
             >
               {(
                 [
                   ["cards", "Cards", LayoutGrid],
                   ["table", "Table", Table2],
                   ["summary", "Summary", ClipboardCheck],
+                  ["km", "Day-wise KM", Route],
                 ] as const
               ).map(([value, label, ViewIcon]) => {
                 const on = view === value;
@@ -510,6 +532,8 @@ export default function DayReportPanel({ token }: DayReportPanelProps) {
           <DayReportCards columns={columns} regionById={regionById} />
         ) : view === "summary" ? (
           <DaySummarySheet columns={columns} />
+        ) : view === "km" ? (
+          <DayKmSheet report={kmReport} />
         ) : (
           // The full rows, in the Summary's sheet, in its own colours.
           <DaySummarySheet columns={columns} rows={DAY_REPORT_ROWS} testId="day-report-grid" colours={TABLE_COLOURS} />

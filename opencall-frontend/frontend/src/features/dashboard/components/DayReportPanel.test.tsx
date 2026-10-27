@@ -22,8 +22,10 @@ vi.mock("../../../lib/payrollTrackingApiClient", () => ({
 }));
 
 const downloadDayReportExcel = vi.fn();
+const downloadDayKmExcel = vi.fn();
 vi.mock("../../../lib/dayReportExcel", () => ({
   downloadDayReportExcel: (...args: unknown[]) => downloadDayReportExcel(...args),
+  downloadDayKmExcel: (...args: unknown[]) => downloadDayKmExcel(...args),
 }));
 
 const TODAY = "2026-10-26";
@@ -87,6 +89,7 @@ beforeEach(() => {
   getRoster.mockResolvedValue(ROSTER);
   getDayReport.mockImplementation(answerFor);
   downloadDayReportExcel.mockResolvedValue(undefined);
+  downloadDayKmExcel.mockResolvedValue(undefined);
   container = document.createElement("div");
   document.body.appendChild(container);
 });
@@ -360,6 +363,40 @@ describe("DayReportPanel", () => {
     expect((columns as unknown[]).length).toBe(2);
     expect(filename).toBe(`Day_Summary_All_Regions_${TODAY}.xlsx`);
     expect(sheetRows).toBe(DAY_SUMMARY_ROWS);
+  });
+
+  it("the Day-wise KM view: the km per FSE and per location, and Download in it hands over that report", async () => {
+    await mount();
+    await click(button("Show"));
+    await click(button("Day-wise KM"));
+    expect(container.querySelector('[data-testid="day-report-cards"]')).toBeNull();
+    expect(container.querySelector('[data-testid="day-summary-sheet"]')).toBeNull();
+    const table = (testId: string) =>
+      Array.from(container.querySelectorAll(`[data-testid="${testId}"] tr`)).map((tr) =>
+        Array.from(tr.querySelectorAll("th, td")).map((cell) => cell.textContent),
+      );
+    expect(table("day-km-fses")).toEqual([
+      ["S.No", "Engineer", "Location", "26-10-2026", "Total KM", "Days Present", "Avg KM / Present Day"],
+      ["1", "Arun", "Chennai", "7.0", "7.0", "1", "7.0"],
+      ["2", "Bala", "Salem", "8.0", "8.0", "1", "8.0"],
+      ["", "Total KM (day)", "", "15.0", "15.0", "2", "7.5"],
+    ]);
+    expect(table("day-km-locations")).toEqual([
+      ["Location", "Engineers", "26-10-2026", "Total KM", "Days Present", "Avg KM / Present Day"],
+      ["Chennai", "1", "7.0", "7.0", "1", "7.0"],
+      ["Salem", "1", "8.0", "8.0", "1", "8.0"],
+      ["Total", "2", "15.0", "15.0", "2", "7.5"],
+    ]);
+    // The furthest day the deepest shade; a bar under each total, the longest the longest.
+    const days = Array.from(container.querySelectorAll<HTMLElement>('[data-testid="day-km-fses"] tbody tr:not(:last-child) td:nth-child(4)'));
+    expect(days.map((td) => td.style.background)).toEqual(["rgb(251, 218, 197)", "rgb(250, 213, 189)"]);
+    const bars = Array.from(container.querySelectorAll<HTMLElement>('[data-testid="day-km-fses"] [data-testid="day-km-bar"]'));
+    expect(bars.map((bar) => bar.style.width)).toEqual(["78.8%", "90%"]);
+    await click(button("Download Excel"));
+    expect(downloadDayReportExcel).not.toHaveBeenCalled();
+    const [report, filename] = downloadDayKmExcel.mock.calls[0]!;
+    expect((report as { fses: { name: string }[] }).fses.map((line) => line.name)).toEqual(["Arun", "Bala"]);
+    expect(filename).toBe(`Day_KM_All_Regions_${TODAY}.xlsx`);
   });
 
   it("refuses a period longer than 31 days, or one that runs backwards", async () => {

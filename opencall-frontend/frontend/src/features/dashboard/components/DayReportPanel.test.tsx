@@ -284,36 +284,49 @@ describe("DayReportPanel", () => {
     expect(downloadDayReportExcel.mock.calls[0]![2]).toBe(DAY_REPORT_ROWS);
   });
 
-  it("the Summary view is the short sheet, and Download in it hands over the short sheet", async () => {
+  it("the Summary view is the short sheet, plain as the office's, and Download in it hands over the short sheet", async () => {
     await mount();
     await click(button("Show"));
     await click(button("Summary"));
     expect(container.querySelector('[data-testid="day-report-cards"]')).toBeNull();
-    expect(headers()).toEqual([
+    expect(container.querySelector('[data-testid="day-report-grid"]')).toBeNull();
+    const sheet = container.querySelector('[data-testid="day-summary-sheet"]')!;
+    expect(
+      Array.from(sheet.querySelectorAll("thead tr")).map((tr) =>
+        Array.from(tr.querySelectorAll("th")).map((th) => th.textContent),
+      ),
+    ).toEqual([
       ["DATE", "26-10-2026", "26-10-2026"],
       ["NAME", "Arun", "Bala"],
     ]);
-    const rows = Array.from(container.querySelectorAll('[data-testid="day-report-grid"] tbody tr'));
+    const rows = Array.from(sheet.querySelectorAll("tbody tr"));
     expect(rows.map((tr) => tr.querySelector("th")?.textContent)).toEqual([
-      "In Time",
-      "In Time Location",
-      "Out Time",
-      "Out Time Location",
+      "Login Time",
+      "Login Location",
+      "Logout Time",
+      "Logout Location",
       "Assigned",
       "Attended",
       "Closed",
       "GPS Off Hrs",
       "Total Km",
     ]);
-    expect(container.querySelector('[data-testid="day-report-band"]')).toBeNull();
     const row = (label: string) =>
       Array.from(rows.find((tr) => tr.querySelector("th")?.textContent === label)!.querySelectorAll("td")).map(
         (td) => td.textContent,
       );
-    expect(row("In Time")).toEqual(["10:00 AM", "10:00 AM"]);
-    expect(row("Out Time")).toEqual(["On duty", "On duty"]);
+    expect(row("Login Time")).toEqual(["10:00 AM", "10:00 AM"]);
+    expect(row("Logout Time")).toEqual(["On duty", "On duty"]);
     expect(row("Closed")).toEqual(["1", "1"]);
     expect(row("Total Km")).toEqual(["7", "8"]);
+    // Black on white, the names left and the values centred; no colour for "On duty".
+    const onDuty = rows.find((tr) => tr.querySelector("th")?.textContent === "Logout Time")!.querySelector("td")!;
+    expect([onDuty.style.color, onDuty.style.textAlign, onDuty.innerHTML.includes("color")]).toEqual([
+      "rgb(0, 0, 0)",
+      "center",
+      false,
+    ]);
+    expect(rows[0]!.querySelector("th")!.style.textAlign).toBe("left");
     await click(button("Download Excel"));
     const [columns, filename, sheetRows] = downloadDayReportExcel.mock.calls[0]!;
     expect((columns as unknown[]).length).toBe(2);

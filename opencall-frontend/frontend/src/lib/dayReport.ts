@@ -285,20 +285,20 @@ export const DAY_SUMMARY_ROWS: DayReportRowSpec[] = [
   { key: "name", label: "NAME", group: "", lines: (c) => single(c.name) },
   {
     key: "in_time",
-    label: "In Time",
+    label: "Login Time",
     group: "",
     lines: (c) => (c.cell.logins[0] ? single(clockTime(c.cell.logins[0].at)) : []),
   },
   {
     key: "in_location",
-    label: "In Time Location",
+    label: "Login Location",
     group: "",
     list: true,
     lines: (c) => (c.cell.logins[0] ? [placeLine(c.cell.logins[0])] : []),
   },
   {
     key: "out_time",
-    label: "Out Time",
+    label: "Logout Time",
     group: "",
     lines: (c): DayReportLine[] => {
       if (c.cell.on_duty) return [{ text: "On duty", tone: "good" }];
@@ -312,7 +312,7 @@ export const DAY_SUMMARY_ROWS: DayReportRowSpec[] = [
   },
   {
     key: "out_location",
-    label: "Out Time Location",
+    label: "Logout Location",
     group: "",
     list: true,
     lines: (c) => {

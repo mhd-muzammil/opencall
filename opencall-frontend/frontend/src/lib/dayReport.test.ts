@@ -277,10 +277,10 @@ describe("the short sheet", () => {
     expect(DAY_SUMMARY_ROWS.map((row) => row.label)).toEqual([
       "DATE",
       "NAME",
-      "In Time",
-      "In Time Location",
-      "Out Time",
-      "Out Time Location",
+      "Login Time",
+      "Login Location",
+      "Logout Time",
+      "Logout Location",
       "Assigned",
       "Attended",
       "Closed",
@@ -294,10 +294,10 @@ describe("the short sheet", () => {
     expect(summaryOf(column())).toEqual({
       DATE: "10-10-2026",
       NAME: "PRASANTH",
-      "In Time": "10:00 AM",
-      "In Time Location": "https://maps.google.com/?q=12.700000,77.700000",
-      "Out Time": "6:30 PM",
-      "Out Time Location": "https://maps.google.com/?q=12.700000,77.700000",
+      "Login Time": "10:00 AM",
+      "Login Location": "https://maps.google.com/?q=12.700000,77.700000",
+      "Logout Time": "6:30 PM",
+      "Logout Location": "https://maps.google.com/?q=12.700000,77.700000",
       Assigned: "6",
       Attended: "3",
       Closed: "3",
@@ -310,23 +310,23 @@ describe("the short sheet", () => {
         logouts: [{ at: at("12:00"), auto: false, ...bare }, { at: at("19:15"), auto: false, ...here }],
       }),
     });
-    expect([summaryOf(two)["In Time"], summaryOf(two)["In Time Location"]]).toEqual(["9:00 AM", here.address]);
-    expect([summaryOf(two)["Out Time"], summaryOf(two)["Out Time Location"]]).toEqual(["7:15 PM", here.address]);
+    expect([summaryOf(two)["Login Time"], summaryOf(two)["Login Location"]]).toEqual(["9:00 AM", here.address]);
+    expect([summaryOf(two)["Logout Time"], summaryOf(two)["Logout Location"]]).toEqual(["7:15 PM", here.address]);
   });
 
   it("a duty still running, one the app closed, one past midnight, and a day with nothing", () => {
     const running = column({ cell: cell({ logins: [{ at: at("09:00"), ...bare }], on_duty: true }) });
-    expect([summaryOf(running)["Out Time"], summaryOf(running)["Out Time Location"]]).toEqual(["On duty", "-"]);
+    expect([summaryOf(running)["Logout Time"], summaryOf(running)["Logout Location"]]).toEqual(["On duty", "-"]);
     const auto = column({
       day: "2026-09-02",
       cell: cell({ logouts: [{ at: "2026-09-03T05:50:40+05:30", auto: true, ...bare }] }),
     });
-    expect(summaryOf(auto)["Out Time"]).toBe("5:50 AM (03-09-2026) (auto)");
+    expect(summaryOf(auto)["Logout Time"]).toBe("5:50 AM (03-09-2026) (auto)");
     expect(summaryOf(column({ cell: cell() }))).toMatchObject({
-      "In Time": "-",
-      "In Time Location": "-",
-      "Out Time": "-",
-      "Out Time Location": "-",
+      "Login Time": "-",
+      "Login Location": "-",
+      "Logout Time": "-",
+      "Logout Location": "-",
       Assigned: "-",
       "GPS Off Hrs": "-",
       "Total Km": "-",

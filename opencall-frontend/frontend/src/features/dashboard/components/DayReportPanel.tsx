@@ -25,6 +25,7 @@ import { downloadDayReportExcel } from "../../../lib/dayReportExcel";
 import { todayIsoDate } from "../utils/dateUtils";
 import DayReportCards from "./DayReportCards";
 import DayReportTable from "./DayReportTable";
+import DaySummarySheet from "./DaySummarySheet";
 
 /**
  * DAY REPORT: what the Live Tracking day panel says about each FSE-day -- Login,
@@ -508,8 +509,10 @@ export default function DayReportPanel({ token }: DayReportPanelProps) {
       {columns.length > 0 &&
         (view === "cards" ? (
           <DayReportCards columns={columns} regionById={regionById} />
+        ) : view === "summary" ? (
+          <DaySummarySheet columns={columns} />
         ) : (
-          <DayReportTable columns={columns} rows={view === "summary" ? DAY_SUMMARY_ROWS : DAY_REPORT_ROWS} />
+          <DayReportTable columns={columns} />
         ))}
     </div>
   );

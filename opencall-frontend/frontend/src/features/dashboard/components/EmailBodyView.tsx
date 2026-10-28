@@ -4,12 +4,7 @@ import {
   getCustomerEmailDetail,
   type EmailAttachment,
 } from "../../../lib/customerEmailApiClient";
-import {
-  applyInlineImages,
-  blockRemoteImages,
-  buildEmailSrcDoc,
-  restoreRemoteImages,
-} from "./emailHtmlView";
+import { applyInlineImages, buildEmailSrcDoc, referencedAttachmentIds } from "./emailHtmlView";
 
 /**
  * The message itself, shown the way the sender wrote it.
@@ -20,12 +15,12 @@ import {
  * measured, and it grants nothing on its own — without `allow-scripts` there is no code to
  * use it. Links open in a new tab with the referrer suppressed.
  *
- * Remote images start blocked, the same as Outlook and Gmail: loading one tells the sender
- * the address is live and that someone opened the mail. The sender's OWN attached pictures
- * are fetched with the session token and swapped in as blobs, so a signature logo appears
- * immediately without any request leaving for a third party.
+ * Pictures on the sender's own servers load straight away, as they do in the original mail
+ * — the office chose that over holding them back. The sender's ATTACHED pictures are
+ * fetched with the session token and swapped in as blobs.
  *
- * Plain-text mail is still rendered as plain text — no iframe, no images, nothing to block.
+ * A message stored before the reader kept plain-text mail as HTML still has only its text,
+ * which is shown as text.
  */
 export function EmailBodyView({
   token,
@@ -35,7 +30,6 @@ export function EmailBodyView({
   const [html, setHtml] = useState("");
   const [text, setText] = useState(fallbackText);
   const [attachments, setAttachments] = useState<EmailAttachment[]>([]);
-  const [showImages, setShowImages] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [frameHeight, setFrameHeight] = useState(320);
@@ -49,7 +43,6 @@ export function EmailBodyView({
     let cancelled = false;
     setLoading(true);
     setError(null);
-    setShowImages(false);
     setHtml("");
     setText(fallbackText);
     setAttachments([]);
@@ -67,23 +60,32 @@ export function EmailBodyView({
         if (cancelled) return;
 
         setText(detail.message.bodyText || fallbackText);
-        setAttachments(detail.attachments.filter((a) => !a.isInline));
+        // An inline picture the body never draws would otherwise be shown nowhere at all.
+        const drawn = referencedAttachmentIds(detail.message.bodyHtml);
+        setAttachments(detail.attachments.filter((a) => !a.isInline || !drawn.has(a.id)));
 
-        const inline = detail.attachments.filter((a) => a.isInline);
+        // Every file the body draws, whatever its part was marked: a ticketing system's logo
+        // often arrives as a plain attachment that the HTML still points at by cid:. Fetched
+        // together, so thirty signature pictures do not keep the mail waiting in a queue.
+        const pictures = detail.attachments.filter((a) => drawn.has(a.id));
         const blobByAttachmentId = new Map<string, string>();
-        for (const attachment of inline) {
-          try {
-            const url = await fetchAttachmentObjectUrl(token, emailId, attachment.id);
-            if (cancelled) {
-              URL.revokeObjectURL(url);
-              return;
+        await Promise.all(
+          pictures.map(async (attachment) => {
+            try {
+              const url = await fetchAttachmentObjectUrl(token, emailId, attachment.id);
+              // A picture that arrives after the reader moved on is released on its own,
+              // never into the next message's list.
+              if (cancelled) {
+                URL.revokeObjectURL(url);
+                return;
+              }
+              blobUrls.current.push(url);
+              blobByAttachmentId.set(attachment.id, url);
+            } catch {
+              // One picture that will not load is not worth failing the message over.
             }
-            blobUrls.current.push(url);
-            blobByAttachmentId.set(attachment.id, url);
-          } catch {
-            // One picture that will not load is not worth failing the message over.
-          }
-        }
+          }),
+        );
         if (cancelled) return;
         setHtml(applyInlineImages(detail.message.bodyHtml, blobByAttachmentId));
       } catch (caught) {
@@ -101,24 +103,71 @@ export function EmailBodyView({
     };
   }, [token, emailId, fallbackText]);
 
-  // A long HP thread is a lot of markup; without this it would be re-scanned on every
-  // render, including the one the height measurement itself causes.
-  const blocked = useMemo(
-    () => (html ? blockRemoteImages(html) : { html: "", blocked: 0 }),
-    [html],
-  );
-  const srcDoc = useMemo(
-    () => buildEmailSrcDoc(showImages ? restoreRemoteImages(blocked.html) : blocked.html),
-    [blocked.html, showImages],
-  );
+  // A long HP thread is a lot of markup; without this it would be rebuilt on every render,
+  // including the one the height measurement itself causes.
+  const srcDoc = useMemo(() => buildEmailSrcDoc(html), [html]);
 
-  // Grow the frame to its content so the pane scrolls as one, rather than trapping the mail
-  // in a small box with its own scrollbar.
+  // Size the frame to its content so the pane scrolls as one, rather than trapping the mail
+  // in a small box with its own scrollbar. Measured with the frame collapsed: a document is
+  // never shorter than the frame it sits in, so measuring at the current height could only
+  // ever keep it that tall. The document's height, not the body's, which leaves out the
+  // body's own margin. A long HP thread runs well past 4,000px, which used to cut it off
+  // into an inner scrollbar.
   const fitToContent = useCallback(() => {
-    const doc = frameRef.current?.contentDocument;
-    if (!doc?.body) return;
-    setFrameHeight(Math.min(Math.max(doc.body.scrollHeight + 16, 120), 4000));
+    const frame = frameRef.current;
+    const doc = frame?.contentDocument;
+    if (!frame || !doc?.documentElement || doc.URL === "about:blank") return;
+    // Collapsing the frame shrinks every scroller around it for a moment, which would throw
+    // a reader halfway down a long mail back to the top, so their positions are put back.
+    const scrolled: Array<[Element, number]> = [];
+    for (let el = frame.parentElement; el; el = el.parentElement) {
+      if (el.scrollTop > 0) scrolled.push([el, el.scrollTop]);
+    }
+    const pageY = window.scrollY;
+    frame.style.height = "0px";
+    let height = Math.min(Math.max(doc.documentElement.scrollHeight + 4, 120), 30000);
+    frame.style.height = `${height}px`;
+    // A mail wider than the pane scrolls sideways, and that scrollbar takes its height out
+    // of the frame; it is added back rather than hiding the last lines behind a second one.
+    const scrollbar = frame.clientHeight - doc.documentElement.clientHeight;
+    if (scrollbar > 0) {
+      height = Math.min(height + scrollbar, 30000);
+      frame.style.height = `${height}px`;
+    }
+    for (const [el, top] of scrolled) el.scrollTop = top;
+    if (window.scrollY !== pageY) window.scrollTo(window.scrollX, pageY);
+    setFrameHeight(height);
   }, []);
+
+  // The load event waits for every picture, and one slow picture host would keep the mail
+  // in its first 320px until then. The text is laid out long before that, so the frame is
+  // also fitted as soon as its document has been read, and again on load.
+  useEffect(() => {
+    if (!html) return;
+    const timers = [150, 600, 2000].map((ms) =>
+      window.setTimeout(() => {
+        const doc = frameRef.current?.contentDocument;
+        if (doc && doc.URL !== "about:blank" && doc.readyState !== "loading") fitToContent();
+      }, ms),
+    );
+    return () => timers.forEach((timer) => window.clearTimeout(timer));
+  }, [html, srcDoc, fitToContent]);
+
+  // A narrower or wider pane rewraps the mail, so its height changes with the width: a
+  // resized window, a rotated phone or a collapsed sidebar. Only a width change refits —
+  // the fit itself changes the height, and reacting to that would loop.
+  useEffect(() => {
+    const frame = frameRef.current;
+    if (!html || !frame || typeof ResizeObserver === "undefined") return;
+    let width = frame.clientWidth;
+    const observer = new ResizeObserver(() => {
+      if (frame.clientWidth === width) return;
+      width = frame.clientWidth;
+      fitToContent();
+    });
+    observer.observe(frame);
+    return () => observer.disconnect();
+  }, [html, fitToContent]);
 
   if (loading && !html) {
     return <div style={{ fontSize: "13px", color: "#94a3b8" }}>Loading the message…</div>;
@@ -129,47 +178,6 @@ export function EmailBodyView({
       {error ? (
         <div style={{ fontSize: "12px", color: "#b45309", marginBottom: "10px" }}>
           {error} — showing the plain-text copy.
-        </div>
-      ) : null}
-
-      {blocked.blocked > 0 && !showImages ? (
-        <div
-          style={{
-            display: "flex",
-            alignItems: "center",
-            gap: "10px",
-            flexWrap: "wrap",
-            padding: "8px 12px",
-            marginBottom: "12px",
-            borderRadius: "8px",
-            background: "#f1f5f9",
-            border: "1px solid #e2e8f0",
-            fontSize: "12px",
-            color: "#475569",
-          }}
-        >
-          <span>
-            {blocked.blocked} image{blocked.blocked === 1 ? "" : "s"} from the internet
-            {" "}blocked — loading them tells the sender you opened this.
-          </span>
-          <button
-            type="button"
-            onClick={() => setShowImages(true)}
-            style={{
-              marginLeft: "auto",
-              background: "#ffffff",
-              color: "#1e293b",
-              border: "1px solid #cbd5e1",
-              borderRadius: "6px",
-              padding: "4px 12px",
-              fontSize: "12px",
-              fontWeight: 600,
-              minHeight: "28px",
-              cursor: "pointer",
-            }}
-          >
-            Show images
-          </button>
         </div>
       ) : null}
 

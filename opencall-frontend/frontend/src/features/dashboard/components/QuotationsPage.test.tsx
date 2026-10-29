@@ -2,7 +2,7 @@
 import { createElement, act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { CreateQuotationInput, Quotation } from "../../../lib/quotationApiClient";
+import type { CreateQuotationInput, Quotation, QuotationDraft } from "../../../lib/quotationApiClient";
 
 /**
  * The Quotations section: Visit Quotation and Part Quotation as its two options, each its own
@@ -16,6 +16,9 @@ const api = vi.hoisted(() => ({
   autofillQuotation: vi.fn(),
   sendQuotation: vi.fn(),
   setQuotationPayment: vi.fn(),
+  listQuotationDrafts: vi.fn(),
+  approveQuotationDraft: vi.fn(),
+  removeQuotationDraft: vi.fn(),
 }));
 vi.mock("../../../lib/quotationApiClient", () => api);
 vi.mock("../../../lib/customerEmailApiClient", () => ({
@@ -75,6 +78,50 @@ const OLD_ROW = OLD_ROW_FIELDS as Quotation;
 const FRESH_START = "2026-10-28T18:30:00.000Z";
 const at = (q: Quotation) => Date.parse(q.createdAt.replace(" ", "T"));
 
+/** What the report raised and nobody has approved: no number, no amount. */
+const WAITING_VISIT: QuotationDraft = {
+  id: "0b6f3b0e-1d2c-4c6e-9a51-000000000001",
+  kind: "VISIT",
+  ticketId: "WO-036404653",
+  caseId: "5166159539",
+  flexStatus: "Visit Estimate",
+  workLocation: "VELLORE",
+  customerName: "Likhitha",
+  customerAddress: "12, Gandhi Road",
+  customerCity: "Vellore",
+  customerState: "Tamil Nadu",
+  customerPincode: "632001",
+  customerPhone: "9000000002",
+  customerEmail: "likhitha@example.com",
+  productDescription: "HP Smart Tank 581 All-in-One Printer",
+  modelNo: "4A8D4A",
+  serialNo: "CN43F65KWK",
+  part: "",
+  status: "WAITING",
+  createdAt: "2026-10-29 15:45:00.5+05:30",
+};
+const WAITING_VISIT_2: QuotationDraft = {
+  ...WAITING_VISIT,
+  id: "0b6f3b0e-1d2c-4c6e-9a51-000000000003",
+  ticketId: "WO-036394026",
+  customerName: "Muthu",
+};
+const WAITING_PART: QuotationDraft = {
+  ...WAITING_VISIT,
+  id: "0b6f3b0e-1d2c-4c6e-9a51-000000000002",
+  kind: "PART",
+  ticketId: "WO-036403359",
+  flexStatus: "Visit Quote To Customer",
+  customerName: "Dinesh",
+  part: "SPS-TOP COVER",
+};
+
+/** The server's waiting list: one kind, as the API filters. */
+function waiting(rows: QuotationDraft[], params: { kind?: string }) {
+  const items = rows.filter((d) => !params.kind || d.kind === params.kind);
+  return { items, total: items.length };
+}
+
 /** The server's answer: one kind, on one side of a moment, as the API filters. */
 function answer(rows: Quotation[], params: { kind?: string; createdFrom?: string; createdBefore?: string }) {
   const items = rows.filter(
@@ -95,6 +142,9 @@ beforeEach(() => {
   document.body.appendChild(container);
   api.listQuotations.mockImplementation(async (_token: string, params: { kind?: string }) =>
     answer([VISIT_ROW, PART_ROW, OLD_ROW], params),
+  );
+  api.listQuotationDrafts.mockImplementation(async (_token: string, params: { kind?: string }) =>
+    waiting([WAITING_VISIT, WAITING_VISIT_2, WAITING_PART], params),
   );
 });
 
@@ -333,5 +383,237 @@ describe("QuotationsPage", () => {
     expect(visit.textContent).toContain(
       "Saved as RTPL/26-27/QEN/81, but the server recorded it as a Part quotation",
     );
+  });
+});
+
+describe("Waiting Approval", () => {
+  const tiles = (scope: ParentNode) =>
+    Array.from(scope.querySelectorAll("button")).filter((b) => /^(Waiting Approval|Created|Sent)/.test(b.textContent ?? ""));
+  const waitingTile = (scope: ParentNode) =>
+    Array.from(scope.querySelectorAll("button")).find((b) => b.textContent?.startsWith("Waiting Approval"));
+  const fieldValue = (scope: ParentNode, label: string) => {
+    const lbl = Array.from(scope.querySelectorAll("label")).find((l) => l.textContent?.trim() === label);
+    return (lbl?.nextElementSibling as HTMLInputElement | null)?.value;
+  };
+
+  it("counts what the report raised in a box of its own, left of Created", async () => {
+    await mount();
+    const visit = panel("Visit Quotation")!;
+
+    expect(tiles(visit).map((b) => b.textContent)).toEqual([
+      "Waiting Approval2from the report",
+      "Created1not mailed yet",
+      expect.stringMatching(/^Sent0/),
+    ]);
+    // Asked for this tab's kind only.
+    expect(api.listQuotationDrafts).toHaveBeenCalledWith("t", { kind: "VISIT", search: "" });
+  });
+
+  it("lists them in place of the quotations when the box is clicked", async () => {
+    await mount();
+    const visit = panel("Visit Quotation")!;
+    await click(waitingTile(visit));
+
+    expect(visit.textContent).toContain("Showing waiting approval only.");
+    const table = visit.querySelector("table")!;
+    expect(table.textContent).toContain("WO-036404653");
+    expect(table.textContent).toContain("Likhitha");
+    expect(table.textContent).toContain("WO-036394026");
+    // Not numbered, so not in the quotations' table, and that table is not on screen.
+    expect(table.textContent).not.toContain("RTPL/26-27/QEV/1");
+    expect(button(table, "Approve")).toBeDefined();
+    expect(button(table, "Remove")).toBeDefined();
+    // A Visit quotation prices the visit, so the case's part is not a column here.
+    expect(Array.from(table.querySelectorAll("th")).map((th) => th.textContent)).not.toContain("Part");
+
+    await click(waitingTile(visit));
+    expect(visit.querySelector("table")!.textContent).toContain("RTPL/26-27/QEV/1");
+  });
+
+  it("approves one: the form opens filled in, the amount is typed, and the number comes back", async () => {
+    api.approveQuotationDraft.mockImplementation(async (_token: string, _id: string, input: CreateQuotationInput) => ({
+      ...VISIT_ROW,
+      id: "v-2",
+      quotationNo: "RTPL/26-27/QEV/2",
+      orderNumber: input.orderNumber,
+      customerName: input.customerName,
+    }));
+    await mount();
+    const visit = panel("Visit Quotation")!;
+    await click(waitingTile(visit));
+    await click(button(visit.querySelector("table")!, "Approve"));
+
+    expect(visit.textContent).toContain("Approving the waiting visit quotation for WO-036404653 (Flex Status: Visit Estimate)");
+    expect(fieldValue(visit, "Order Number (WO)")).toBe("WO-036404653");
+    expect(fieldValue(visit, "Customer Name *")).toBe("Likhitha");
+    expect(fieldValue(visit, "Address")).toBe("12, Gandhi Road");
+    expect(fieldValue(visit, "Model No")).toBe("4A8D4A");
+    expect(fieldValue(visit, "Amount (₹) *")).toBe("");
+
+    await fill(visit, "Amount (₹) *", "550");
+    await click(button(visit, "Approve & generate quotation"));
+
+    expect(api.createQuotation).not.toHaveBeenCalled();
+    expect(api.approveQuotationDraft).toHaveBeenCalledTimes(1);
+    const [, id, input] = api.approveQuotationDraft.mock.calls[0]! as [string, string, CreateQuotationInput];
+    expect(id).toBe(WAITING_VISIT.id);
+    expect(input).toMatchObject({
+      kind: "VISIT",
+      caseId: "5166159539",
+      orderNumber: "WO-036404653",
+      customerName: "Likhitha",
+      customerEmail: "likhitha@example.com",
+      lineItems: [
+        {
+          serviceDescription: "",
+          productDescription: "HP Smart Tank 581 All-in-One Printer",
+          modelNo: "4A8D4A",
+          serialNo: "CN43F65KWK",
+          baseAmount: 550,
+        },
+      ],
+    });
+    expect(container.textContent).toContain("Approved — RTPL/26-27/QEV/2 raised for WO-036404653.");
+    // The sheet opens, as it does for one raised by hand, and the lists are asked again.
+    expect(document.body.textContent).toContain("Service Charge of HP Printer having details as");
+    expect(api.listQuotationDrafts.mock.calls.length).toBeGreaterThan(1);
+  });
+
+  it("will not approve without an amount", async () => {
+    await mount();
+    const visit = panel("Visit Quotation")!;
+    await click(waitingTile(visit));
+    await click(button(visit.querySelector("table")!, "Approve"));
+    await click(button(visit, "Approve & generate quotation"));
+
+    expect(api.approveQuotationDraft).not.toHaveBeenCalled();
+    expect(visit.textContent).toContain("Enter an amount greater than 0 on at least one line item.");
+  });
+
+  it("says why when the server refuses the approval", async () => {
+    api.approveQuotationDraft.mockRejectedValue(new Error("WO-036404653 already has RTPL/26-27/QEV/5. Remove this one instead."));
+    await mount();
+    const visit = panel("Visit Quotation")!;
+    await click(waitingTile(visit));
+    await click(button(visit.querySelector("table")!, "Approve"));
+    await fill(visit, "Amount (₹) *", "550");
+    await click(button(visit, "Approve & generate quotation"));
+
+    expect(visit.textContent).toContain("WO-036404653 already has RTPL/26-27/QEV/5. Remove this one instead.");
+  });
+
+  it("removes one only after asking", async () => {
+    api.removeQuotationDraft.mockResolvedValue({ ...WAITING_VISIT, status: "REMOVED" });
+    const confirm = vi.spyOn(window, "confirm").mockReturnValueOnce(false).mockReturnValueOnce(true);
+    await mount();
+    const visit = panel("Visit Quotation")!;
+    await click(waitingTile(visit));
+
+    await click(button(visit.querySelector("table")!, "Remove"));
+    expect(api.removeQuotationDraft).not.toHaveBeenCalled();
+
+    await click(button(visit.querySelector("table")!, "Remove"));
+    expect(confirm).toHaveBeenLastCalledWith("Remove the waiting visit quotation for WO-036404653? It will not come back.");
+    expect(api.removeQuotationDraft).toHaveBeenCalledWith("t", WAITING_VISIT.id);
+    expect(visit.textContent).toContain("Removed the waiting visit quotation for WO-036404653.");
+    confirm.mockRestore();
+  });
+
+  it("shows the Part page its own waiting quotations, with the part each case needs", async () => {
+    await mount();
+    await click(tabs()[1]);
+    const part = panel("Part Quotation")!;
+
+    expect(waitingTile(part)?.textContent).toBe("Waiting Approval1from the report");
+    await click(waitingTile(part));
+    const table = part.querySelector("table")!;
+    expect(table.textContent).toContain("WO-036403359");
+    expect(table.textContent).toContain("SPS-TOP COVER");
+    expect(table.textContent).not.toContain("WO-036404653");
+  });
+
+  it("keeps the waiting one's WO while approving: fixed, and auto-fill looks it up by that alone", async () => {
+    // What an auto-fill by case could bring back: a sibling work order on the same case.
+    api.autofillQuotation.mockResolvedValue({
+      caseId: "5166159539",
+      orderNumber: "WO-036404999",
+      customerName: "Likhitha R",
+      customerAddress: "12, Gandhi Road",
+      customerCity: "Vellore",
+      customerState: "Tamil Nadu",
+      customerPincode: "632001",
+      customerPhone: "9000000002",
+      customerEmail: "likhitha@example.com",
+      productDescription: "HP Smart Tank 581 All-in-One Printer",
+      modelNo: "4A8D4A",
+      serialNo: "CN43F65KWK",
+    });
+    await mount();
+    const visit = panel("Visit Quotation")!;
+    await click(waitingTile(visit));
+    await click(button(visit.querySelector("table")!, "Approve"));
+
+    const wo = Array.from(visit.querySelectorAll("label"))
+      .find((l) => l.textContent?.trim() === "Order Number (WO)")
+      ?.nextElementSibling as HTMLInputElement;
+    expect(wo.readOnly).toBe(true);
+    await click(button(visit, "Auto-fill from case"));
+
+    expect(api.autofillQuotation).toHaveBeenCalledWith("t", { orderNumber: "WO-036404653" });
+    expect(fieldValue(visit, "Order Number (WO)")).toBe("WO-036404653");
+    expect(fieldValue(visit, "Customer Name *")).toBe("Likhitha R");
+  });
+
+  it("names the part in the form when approving a Part one", async () => {
+    await mount();
+    await click(tabs()[1]);
+    const part = panel("Part Quotation")!;
+    await click(waitingTile(part));
+    await click(button(part.querySelector("table")!, "Approve"));
+
+    expect(part.textContent).toContain(
+      "Approving the waiting part quotation for WO-036403359 (Flex Status: Visit Quote To Customer). Part: SPS-TOP COVER. Enter the amount",
+    );
+  });
+
+  it("shows the newest search's waiting list when an earlier search answers last", async () => {
+    await mount();
+    const visit = panel("Visit Quotation")!;
+    const pending: Array<{ search: string; resolve: (value: unknown) => void }> = [];
+    api.listQuotationDrafts.mockImplementation(
+      (_token: string, params: { search?: string }) =>
+        new Promise((resolve) => pending.push({ search: params.search ?? "", resolve })),
+    );
+    const box = visit.querySelector<HTMLInputElement>('input[type="search"]')!;
+    const type = async (value: string) => {
+      await act(async () => {
+        Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(box, value);
+        box.dispatchEvent(new Event("input", { bubbles: true }));
+      });
+    };
+    await type("WO-036");
+    await type("WO-0363940");
+
+    // The narrow search answers first, the wide one after it.
+    await act(async () => {
+      pending.find((p) => p.search === "WO-0363940")!.resolve(waiting([WAITING_VISIT_2], {}));
+    });
+    await act(async () => {
+      pending.find((p) => p.search === "WO-036")!.resolve(waiting([WAITING_VISIT, WAITING_VISIT_2], {}));
+    });
+    await flush();
+
+    expect(waitingTile(visit)?.textContent).toBe("Waiting Approval1from the report");
+  });
+
+  it("keeps the page working when the waiting list cannot be loaded", async () => {
+    api.listQuotationDrafts.mockRejectedValue(new Error("Request failed 500"));
+    await mount();
+    const visit = panel("Visit Quotation")!;
+
+    expect(waitingTile(visit)?.textContent).toBe("Waiting Approval—could not load");
+    expect(visit.textContent).toContain("RTPL/26-27/QEV/1");
+    await click(waitingTile(visit));
+    expect(visit.textContent).toContain("Could not load the waiting quotations: Request failed 500");
   });
 });

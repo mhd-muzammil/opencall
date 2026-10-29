@@ -1,5 +1,12 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { createQuotation, listQuotations, type CreateQuotationInput } from "./quotationApiClient";
+import {
+  approveQuotationDraft,
+  createQuotation,
+  listQuotationDrafts,
+  listQuotations,
+  removeQuotationDraft,
+  type CreateQuotationInput,
+} from "./quotationApiClient";
 
 /** What the client asked the server, as the URL and the body it sent. */
 function stubFetch() {
@@ -69,5 +76,48 @@ describe("createQuotation", () => {
     const init = (fetchMock.mock.calls[0] as unknown[])[1] as RequestInit;
     expect(init.method).toBe("POST");
     expect(JSON.parse(String(init.body)).kind).toBe("VISIT");
+  });
+});
+
+describe("the quotations waiting for approval", () => {
+  const ID = "0b6f3b0e-1d2c-4c6e-9a51-000000000001";
+
+  it("asks for one kind's waiting list", async () => {
+    const fetchMock = stubFetch();
+    await listQuotationDrafts("t", { kind: "PART", search: "dinesh" });
+    const url = new URL(String((fetchMock.mock.calls[0] as unknown[])[0]));
+    expect(url.pathname).toBe("/api/v1/quotations/drafts");
+    expect(url.searchParams.get("kind")).toBe("PART");
+    expect(url.searchParams.get("search")).toBe("dinesh");
+  });
+
+  it("approves with the form as the body, and removes with none", async () => {
+    const fetchMock = stubFetch();
+    await approveQuotationDraft("t", ID, {
+      kind: "VISIT",
+      quotationDate: "2026-10-29",
+      caseId: "5166159539",
+      orderNumber: "WO-036404653",
+      customerName: "Likhitha",
+      customerAddress: "",
+      customerCity: "",
+      customerState: "",
+      customerPincode: "",
+      customerPhone: "",
+      customerEmail: "",
+      lineItems: [{ serviceDescription: "", productDescription: "", modelNo: "", serialNo: "", baseAmount: 550 }],
+      sgstPercent: 9,
+      cgstPercent: 9,
+    });
+    await removeQuotationDraft("t", ID);
+
+    const [approveUrl, approveInit] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
+    expect(new URL(approveUrl).pathname).toBe(`/api/v1/quotations/drafts/${ID}/approve`);
+    expect(approveInit.method).toBe("POST");
+    expect(JSON.parse(String(approveInit.body)).lineItems[0].baseAmount).toBe(550);
+    const [removeUrl, removeInit] = fetchMock.mock.calls[1] as unknown as [string, RequestInit];
+    expect(new URL(removeUrl).pathname).toBe(`/api/v1/quotations/drafts/${ID}/remove`);
+    expect(removeInit.method).toBe("POST");
+    expect(removeInit.body).toBeUndefined();
   });
 });

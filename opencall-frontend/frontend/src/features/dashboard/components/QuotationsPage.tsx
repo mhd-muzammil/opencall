@@ -1,14 +1,18 @@
 import { Fragment, useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import {
+  approveQuotationDraft,
   autofillQuotation,
   createQuotation,
   updateQuotation,
   sendQuotation,
   setQuotationPayment,
   listQuotations,
+  listQuotationDrafts,
+  removeQuotationDraft,
   type CreateQuotationInput,
   type Quotation,
+  type QuotationDraft,
   type QuotationKind,
   type QuotationLineItem,
 } from "../../../lib/quotationApiClient";
@@ -76,6 +80,23 @@ const FRESH_START_LABEL = "29 Oct 2026";
 function raisedBefore(q: Quotation): boolean {
   const time = Date.parse(q.createdAt.replace(" ", "T").replace(/([+-]\d\d)$/, "$1:00"));
   return !Number.isNaN(time) && time < Date.parse(FRESH_START);
+}
+
+/**
+ * When the report raised a waiting quotation, on the India clock the office reads, e.g.
+ * "29 Oct, 3:45 pm". Postgres writes the moment as "2026-10-29 15:45:00.1+05:30".
+ */
+function formatRaisedAt(createdAt: string): string {
+  const time = Date.parse(createdAt.replace(" ", "T").replace(/([+-]\d\d)$/, "$1:00"));
+  if (Number.isNaN(time)) return createdAt;
+  return new Date(time).toLocaleString("en-IN", {
+    timeZone: "Asia/Kolkata",
+    day: "numeric",
+    month: "short",
+    hour: "numeric",
+    minute: "2-digit",
+    hour12: true,
+  });
 }
 
 /** Every page of a list, so the boxes count all of it rather than the newest page. */
@@ -266,11 +287,22 @@ function QuotationsOfKind({
   const [history, setHistory] = useState<Quotation[]>([]);
   const [showHistory, setShowHistory] = useState(false);
   const [search, setSearch] = useState("");
+  // The quotations the OpenCall report raised, waiting for approval (the Waiting Approval
+  // box). Kept apart from `items`: they are not quotations until approved, so none of the
+  // other boxes counts them.
+  const [drafts, setDrafts] = useState<QuotationDraft[]>([]);
+  const [draftsTotal, setDraftsTotal] = useState(0);
+  const [draftsError, setDraftsError] = useState<string | null>(null);
+  // The waiting quotation the form is open to approve, if that is what it is open for.
+  const [approving, setApproving] = useState<QuotationDraft | null>(null);
+  // Which load is the newest. Every keystroke in the search loads again, and an earlier,
+  // wider search can answer last; only the newest one's waiting list is shown.
+  const loadSeq = useRef(0);
   /**
    * The header box someone has clicked, if any. A number nobody can open is a number they
    * have to take on trust; clicking it shows the rows it counted.
    */
-  const [tileFilter, setTileFilter] = useState<TileKey | null>(null);
+  const [tileFilter, setTileFilter] = useState<TileKey | "WAITING" | null>(null);
   const [loading, setLoading] = useState(false);
   const [printing, setPrinting] = useState<Quotation | null>(null);
 
@@ -282,6 +314,24 @@ function QuotationsOfKind({
 
   const load = useCallback(async () => {
     setLoading(true);
+    // Asked alongside the quotations but answered on its own: a server without the waiting
+    // list (not deployed yet, or its table not created) costs the Waiting Approval box a
+    // number, never the rest of the page.
+    const seq = ++loadSeq.current;
+    const waiting = listQuotationDrafts(token, { kind, search }).then(
+      (res) => {
+        if (seq !== loadSeq.current) return;
+        setDrafts(res.items);
+        setDraftsTotal(res.total);
+        setDraftsError(null);
+      },
+      (error: unknown) => {
+        if (seq !== loadSeq.current) return;
+        setDrafts([]);
+        setDraftsTotal(0);
+        setDraftsError(error instanceof Error ? error.message : "Could not load them");
+      },
+    );
     try {
       const [current, earlier] = await Promise.all([
         listAll(token, { search, kind, createdFrom: FRESH_START }),
@@ -295,6 +345,7 @@ function QuotationsOfKind({
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Failed to load quotations");
     } finally {
+      await waiting;
       setLoading(false);
     }
   }, [token, search, kind]);
@@ -330,17 +381,21 @@ function QuotationsOfKind({
     setAutofilling(true);
     setMessage(null);
     try {
-      const data = await autofillQuotation(token, {
-        caseId: form.caseId,
-        orderNumber: form.orderNumber,
-      });
+      // A waiting quotation is for its own work order, so it is looked up by that alone: by
+      // case, the newest row could be a sibling work order on the same case.
+      const data = await autofillQuotation(
+        token,
+        approving
+          ? { orderNumber: form.orderNumber }
+          : { caseId: form.caseId, orderNumber: form.orderNumber },
+      );
       if (!data) {
         setMessage("No matching case found — you can fill the details manually.");
         return;
       }
       set({
         caseId: data.caseId || form.caseId,
-        orderNumber: data.orderNumber || form.orderNumber,
+        orderNumber: approving ? form.orderNumber : data.orderNumber || form.orderNumber,
         customerName: data.customerName,
         customerAddress: data.customerAddress,
         customerCity: data.customerCity,
@@ -405,6 +460,56 @@ function QuotationsOfKind({
     setMode("edit");
   }
 
+  /**
+   * Open the form on a waiting quotation: what the report knew is filled in, the amount is
+   * left to the person approving, and the number is given only when they approve.
+   */
+  function startApprove(draft: QuotationDraft) {
+    setEditing(null);
+    setApproving(draft);
+    setMessage(null);
+    setForm({
+      ...freshForm(kind),
+      caseId: draft.caseId,
+      orderNumber: draft.ticketId,
+      customerName: draft.customerName,
+      customerAddress: draft.customerAddress,
+      customerCity: draft.customerCity,
+      customerState: draft.customerState,
+      customerPincode: draft.customerPincode,
+      customerPhone: draft.customerPhone,
+      customerEmail: draft.customerEmail,
+      lineItems: [
+        {
+          ...EMPTY_LINE_ITEM,
+          productDescription: draft.productDescription,
+          modelNo: draft.modelNo,
+          serialNo: draft.serialNo,
+        },
+      ],
+    });
+    setMode("create");
+  }
+
+  /** Take a waiting quotation off the list for good — no report raises it again. */
+  async function handleRemoveDraft(draft: QuotationDraft) {
+    if (
+      !window.confirm(
+        `Remove the waiting ${title.toLowerCase()} for ${draft.ticketId}? It will not come back.`,
+      )
+    ) {
+      return;
+    }
+    setMessage(null);
+    try {
+      await removeQuotationDraft(token, draft.id);
+      setMessage(`Removed the waiting ${title.toLowerCase()} for ${draft.ticketId}.`);
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Could not remove it");
+    }
+    void load();
+  }
+
   async function handleSave() {
     if (!form.customerName.trim()) {
       setMessage("Customer name is required.");
@@ -419,17 +524,23 @@ function QuotationsOfKind({
     try {
       const saved = editing
         ? await updateQuotation(token, editing.id, form)
-        : await createQuotation(token, form);
+        : approving
+          ? await approveQuotationDraft(token, approving.id, form)
+          : await createQuotation(token, form);
       setForm(freshForm(kind));
       setEditing(null);
+      setApproving(null);
       setMode("list");
       // Reload so the list shows the corrected figures rather than the ones it fetched
-      // before the edit; creating does not need this because the list refetches anyway.
+      // before the edit; creating (or approving) does not need this because the list
+      // refetches anyway.
       if (editing) void load();
       setPrinting(saved); // open the print view straight away
-      // A server not yet updated for Visit quotations saves every new one as a Part one.
-      // Say so, rather than let a QEN number pass for a Visit quotation.
-      if (!editing && (saved.kind ?? "PART") !== form.kind) {
+      if (approving) {
+        setMessage(`Approved — ${saved.quotationNo} raised for ${approving.ticketId}.`);
+      } else if (!editing && (saved.kind ?? "PART") !== form.kind) {
+        // A server not yet updated for Visit quotations saves every new one as a Part one.
+        // Say so, rather than let a QEN number pass for a Visit quotation.
         setMessage(
           `Saved as ${saved.quotationNo}, but the server recorded it as a Part quotation — it has not been updated for Visit quotations yet.`,
         );
@@ -466,7 +577,8 @@ function QuotationsOfKind({
     {
       key: "current",
       rows: items,
-      test: (q) => !tileFilter || TILE_TESTS[tileFilter]!(q),
+      // The Waiting Approval box shows its own table in this one's place (below).
+      test: (q) => !tileFilter || tileFilter === "WAITING" || TILE_TESTS[tileFilter](q),
       emptyText:
         history.length > 0
           ? `No ${title.toLowerCase()}s since ${FRESH_START_LABEL}. The older ones are under History below.`
@@ -482,11 +594,11 @@ function QuotationsOfKind({
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "16px", flexWrap: "wrap", gap: "10px" }}>
         <h2 style={{ margin: 0, fontSize: "18px", fontWeight: 700 }}>{title}s</h2>
         {mode === "list" ? (
-          <button type="button" onClick={() => { setEditing(null); setForm(freshForm(kind)); setMode("create"); setMessage(null); }} style={primaryBtn}>
+          <button type="button" onClick={() => { setEditing(null); setApproving(null); setForm(freshForm(kind)); setMode("create"); setMessage(null); }} style={primaryBtn}>
             + New {title}
           </button>
         ) : (
-          <button type="button" onClick={() => { setEditing(null); setForm(freshForm(kind)); setMode("list"); setMessage(null); }} style={secondaryBtn}>
+          <button type="button" onClick={() => { setEditing(null); setApproving(null); setForm(freshForm(kind)); setMode("list"); setMessage(null); }} style={secondaryBtn}>
             ← Back to list
           </button>
         )}
@@ -521,12 +633,22 @@ function QuotationsOfKind({
             const rejected = tileCount(items, "REJECTED");
 
             const tiles: Array<{
-              key: TileKey;
+              key: TileKey | "WAITING";
               label: string;
               value: string;
               hint: string;
               fg: string;
             }> = [
+              // Before the funnel, not part of it: what the report raised and nobody has
+              // approved yet. These are not quotations — no number, no amount — so the
+              // arithmetic of the seven boxes after it never includes them.
+              {
+                key: "WAITING",
+                label: "Waiting Approval",
+                value: draftsError ? "—" : String(draftsTotal),
+                hint: draftsError ? "could not load" : "from the report",
+                fg: draftsTotal > 0 ? "#b45309" : "#94a3b8",
+              },
               { key: "CREATED", label: "Created", value: String(created), hint: "not mailed yet", fg: "#475569" },
               { key: "SENT", label: "Sent", value: String(sent), hint: "the customer has it", fg: "#1d4ed8" },
               { key: "REPLIED", label: "Replied", value: String(replied), hint: "of the sent, answered", fg: replied > 0 ? "#b91c1c" : "#94a3b8" },
@@ -600,7 +722,7 @@ function QuotationsOfKind({
             >
               <span>
                 Showing{" "}
-                <strong>{TILE_LABELS[tileFilter] ?? tileFilter}</strong>{" "}
+                <strong>{tileFilter === "WAITING" ? "waiting approval" : TILE_LABELS[tileFilter]}</strong>{" "}
                 only.
               </span>
               <button
@@ -646,7 +768,17 @@ function QuotationsOfKind({
                   </span>
                 </div>
               ) : null}
-              {section.key === "current" || showHistory ? (
+              {section.key === "current" && tileFilter === "WAITING" ? (
+                <WaitingTable
+                  drafts={drafts}
+                  total={draftsTotal}
+                  error={draftsError}
+                  loading={loading}
+                  kind={kind}
+                  onApprove={startApprove}
+                  onRemove={(draft) => void handleRemoveDraft(draft)}
+                />
+              ) : section.key === "current" || showHistory ? (
           <div
             style={{
               overflowX: "auto",
@@ -845,6 +977,34 @@ function QuotationsOfKind({
             </div>
           ) : null}
 
+          {/* What is being approved, and that nothing is numbered until it is. */}
+          {approving ? (
+            <div
+              style={{
+                marginBottom: "16px",
+                padding: "10px 14px",
+                borderRadius: "8px",
+                background: "#fffbeb",
+                border: "1px solid #fde68a",
+                fontSize: "13px",
+                color: "#92400e",
+              }}
+            >
+              Approving the waiting {title.toLowerCase()} for{" "}
+              <strong>{approving.ticketId}</strong>
+              {approving.flexStatus ? ` (Flex Status: ${approving.flexStatus})` : ""}.
+              {/* The part is what a Part quotation prices, and the list that showed it is off
+                  screen while the form is open. */}
+              {approving.kind === "PART" && approving.part ? (
+                <>
+                  {" "}Part: <strong>{approving.part}</strong>.
+                </>
+              ) : null}{" "}
+              Enter the amount and check the details — the quotation number is given when you
+              approve.
+            </div>
+          ) : null}
+
           {/* Auto-fill row */}
           <div style={{ display: "flex", gap: "10px", alignItems: "flex-end", flexWrap: "wrap", marginBottom: "16px" }}>
             <div style={{ flex: "1 1 200px" }}>
@@ -853,7 +1013,14 @@ function QuotationsOfKind({
             </div>
             <div style={{ flex: "1 1 200px" }}>
               <label style={label}>Order Number (WO)</label>
-              <input style={field} value={form.orderNumber} onChange={(e) => set({ orderNumber: e.target.value })} />
+              {/* Fixed while approving: the quotation is raised for the waiting one's own work
+                  order, whatever is typed here (the server holds it to that too). */}
+              <input
+                style={approving ? { ...field, background: "#f1f5f9" } : field}
+                value={form.orderNumber}
+                readOnly={Boolean(approving)}
+                onChange={(e) => set({ orderNumber: e.target.value })}
+              />
             </div>
             <button type="button" onClick={() => void handleAutofill()} disabled={autofilling} style={secondaryBtn}>
               {autofilling ? "Filling…" : "Auto-fill from case"}
@@ -1028,9 +1195,11 @@ function QuotationsOfKind({
                 ? "Saving…"
                 : editing
                   ? "Save changes"
-                  : "Save & generate quotation"}
+                  : approving
+                    ? "Approve & generate quotation"
+                    : "Save & generate quotation"}
             </button>
-            <button type="button" onClick={() => { setMode("list"); setMessage(null); }} style={secondaryBtn}>
+            <button type="button" onClick={() => { setApproving(null); setMode("list"); setMessage(null); }} style={secondaryBtn}>
               Cancel
             </button>
             {message && (
@@ -1157,6 +1326,114 @@ function Text({
         }}
       />
     </div>
+  );
+}
+
+/**
+ * The quotations the report raised, waiting for approval: which work order each is for, and
+ * the two things to do with it. Approve opens the form with the amount left to fill in;
+ * Remove takes it off the list for good.
+ */
+function WaitingTable({
+  drafts,
+  total,
+  error,
+  loading,
+  kind,
+  onApprove,
+  onRemove,
+}: Readonly<{
+  drafts: QuotationDraft[];
+  total: number;
+  error: string | null;
+  loading: boolean;
+  kind: QuotationKind;
+  onApprove: (draft: QuotationDraft) => void;
+  onRemove: (draft: QuotationDraft) => void;
+}>) {
+  // The part the case needs is what a Part quotation prices, so it is shown on that page.
+  const showPart = kind === "PART";
+  const columns = showPart ? 9 : 8;
+  const clipped: React.CSSProperties = { ...td, maxWidth: "220px", overflow: "hidden", textOverflow: "ellipsis" };
+  const note = (text: string) => (
+    <tr>
+      <td colSpan={columns} style={{ ...td, textAlign: "center", padding: "26px", color: "#6b7280" }}>
+        {text}
+      </td>
+    </tr>
+  );
+  return (
+    <>
+      {total > drafts.length ? (
+        <div style={{ fontSize: "12px", color: "#64748b", marginBottom: "8px" }}>
+          Showing the newest {drafts.length} of {total}.
+        </div>
+      ) : null}
+      <div
+        style={{
+          overflowX: "auto",
+          minWidth: 0,
+          maxWidth: "100%",
+          border: "1px solid var(--border-color, #e5e7eb)",
+          borderRadius: "8px",
+        }}
+      >
+        <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "13px" }}>
+          <thead>
+            <tr style={{ background: "var(--th-bg, #f3f4f6)" }}>
+              <th style={th}>WO</th>
+              <th style={th}>Case ID</th>
+              <th style={th}>Customer</th>
+              <th style={th}>Product</th>
+              <th style={th}>Serial No</th>
+              {showPart ? <th style={th}>Part</th> : null}
+              <th style={th}>Location</th>
+              <th style={th}>Raised</th>
+              <th style={{ ...th, ...stickyActions, background: "var(--th-bg, #f3f4f6)" }}>Action</th>
+            </tr>
+          </thead>
+          <tbody>
+            {loading
+              ? note("Loading…")
+              : error
+                ? note(`Could not load the waiting quotations: ${error}`)
+                : drafts.length === 0
+                  ? note("Nothing waiting for approval.")
+                  : drafts.map((draft) => (
+                      <tr key={draft.id}>
+                        <td style={{ ...td, fontWeight: 600 }}>{draft.ticketId}</td>
+                        <td style={td}>{draft.caseId || "-"}</td>
+                        <td style={td}>{draft.customerName || "-"}</td>
+                        <td style={clipped} title={draft.productDescription || undefined}>
+                          {draft.productDescription || "-"}
+                        </td>
+                        <td style={td}>{draft.serialNo || "-"}</td>
+                        {showPart ? (
+                          <td style={clipped} title={draft.part || undefined}>
+                            {draft.part || "-"}
+                          </td>
+                        ) : null}
+                        <td style={td}>{draft.workLocation || "-"}</td>
+                        <td style={td}>{formatRaisedAt(draft.createdAt)}</td>
+                        <td style={{ ...td, ...stickyActions }}>
+                          <button type="button" onClick={() => onApprove(draft)} style={linkBtn}>
+                            Approve
+                          </button>
+                          <span style={{ color: "#d1d5db", margin: "0 6px" }}>|</span>
+                          <button
+                            type="button"
+                            onClick={() => onRemove(draft)}
+                            style={{ ...linkBtn, color: "#b91c1c" }}
+                          >
+                            Remove
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+          </tbody>
+        </table>
+      </div>
+    </>
   );
 }
 

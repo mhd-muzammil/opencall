@@ -28,6 +28,16 @@ describe("listQuotations", () => {
     expect(url.searchParams.get("per_page")).toBe("50");
   });
 
+  it("asks for one side of a moment, for the page's History", async () => {
+    const fetchMock = stubFetch();
+    await listQuotations("t", { kind: "PART", createdBefore: "2026-10-28T18:30:00.000Z", page: 2, perPage: 100 });
+    const url = new URL(String((fetchMock.mock.calls[0] as unknown[])[0]));
+    // Encoded, so a "+05:30" style moment would survive the query string too.
+    expect(url.searchParams.get("created_before")).toBe("2026-10-28T18:30:00.000Z");
+    expect(url.searchParams.has("created_from")).toBe(false);
+    expect(url.searchParams.get("page")).toBe("2");
+  });
+
   it("asks for no kind when none is given, so both come back", async () => {
     const fetchMock = stubFetch();
     await listQuotations("t", { perPage: 50 });

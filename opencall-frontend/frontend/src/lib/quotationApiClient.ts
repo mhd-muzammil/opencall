@@ -213,11 +213,22 @@ export async function setQuotationPayment(
 
 export async function listQuotations(
   token: string,
-  params: { search?: string; kind?: QuotationKind; page?: number; perPage?: number } = {},
+  params: {
+    search?: string;
+    kind?: QuotationKind;
+    /** Raised at or after this ISO moment. */
+    createdFrom?: string;
+    /** Raised before this ISO moment. */
+    createdBefore?: string;
+    page?: number;
+    perPage?: number;
+  } = {},
 ): Promise<ListQuotationsResult> {
   const qs = new URLSearchParams();
   if (params.search) qs.set("search", params.search);
   if (params.kind) qs.set("kind", params.kind);
+  if (params.createdFrom) qs.set("created_from", params.createdFrom);
+  if (params.createdBefore) qs.set("created_before", params.createdBefore);
   if (params.page) qs.set("page", String(params.page));
   if (params.perPage) qs.set("per_page", String(params.perPage));
   const suffix = qs.toString() ? `?${qs.toString()}` : "";

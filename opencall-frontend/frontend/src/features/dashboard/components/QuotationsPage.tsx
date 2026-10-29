@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { Fragment, useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import {
   autofillQuotation,
@@ -62,6 +62,34 @@ function todayIso(): string {
 /** A blank form for a new quotation of this kind, dated today. */
 function freshForm(kind: QuotationKind): CreateQuotationInput {
   return { ...EMPTY_FORM, kind, quotationDate: todayIso(), lineItems: [{ ...EMPTY_LINE_ITEM }] };
+}
+
+/**
+ * Where the count boxes start. Quotations raised before this are the office's history: listed
+ * under History, closed until opened, never counted in the boxes, still open to Edit, Send and
+ * payment (the user, 29 Oct 2026).
+ */
+const FRESH_START = "2026-10-28T18:30:00.000Z"; // 29 Oct 2026, midnight in India
+const FRESH_START_LABEL = "29 Oct 2026";
+
+/** Raised before the fresh start. Postgres writes the moment as "2026-10-24 10:05:12.1+05:30". */
+function raisedBefore(q: Quotation): boolean {
+  const time = Date.parse(q.createdAt.replace(" ", "T").replace(/([+-]\d\d)$/, "$1:00"));
+  return !Number.isNaN(time) && time < Date.parse(FRESH_START);
+}
+
+/** Every page of a list, so the boxes count all of it rather than the newest page. */
+async function listAll(
+  token: string,
+  params: Omit<Parameters<typeof listQuotations>[1], "page" | "perPage">,
+): Promise<Quotation[]> {
+  const rows: Quotation[] = [];
+  for (let page = 1; page <= 20; page += 1) {
+    const res = await listQuotations(token, { ...params, page, perPage: 100 });
+    rows.push(...res.items);
+    if (page >= res.pages || res.items.length === 0) break;
+  }
+  return rows;
 }
 
 /** The two options of the section, in the order the office asked for them. */
@@ -233,8 +261,10 @@ function QuotationsOfKind({
     }
   }
 
-  // List state
+  // List state: the page's own quotations (the boxes count these), and its History.
   const [items, setItems] = useState<Quotation[]>([]);
+  const [history, setHistory] = useState<Quotation[]>([]);
+  const [showHistory, setShowHistory] = useState(false);
   const [search, setSearch] = useState("");
   /**
    * The header box someone has clicked, if any. A number nobody can open is a number they
@@ -253,10 +283,15 @@ function QuotationsOfKind({
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const res = await listQuotations(token, { search, kind, perPage: 50 });
-      // Kept to this tab's kind here too: a server from before Visit quotations ignores
-      // the filter and sends every row, and those are all Part quotations.
-      setItems(res.items.filter((q) => (q.kind ?? "PART") === kind));
+      const [current, earlier] = await Promise.all([
+        listAll(token, { search, kind, createdFrom: FRESH_START }),
+        listAll(token, { search, kind, createdBefore: FRESH_START }),
+      ]);
+      // Kept to this tab's kind, and to each side of the fresh start, here too: a server
+      // from before these filters ignores them and sends every row to both lists.
+      const ofKind = (q: Quotation) => (q.kind ?? "PART") === kind;
+      setItems(current.filter((q) => ofKind(q) && !raisedBefore(q)));
+      setHistory(earlier.filter((q) => ofKind(q) && raisedBefore(q)));
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Failed to load quotations");
     } finally {
@@ -425,6 +460,23 @@ function QuotationsOfKind({
   const label: React.CSSProperties = { fontSize: "12px", fontWeight: 600, marginBottom: "4px", display: "block" };
   const title = kind === "VISIT" ? "Visit Quotation" : "Part Quotation";
 
+  // The same table twice: the page's own quotations, narrowed by the box clicked, and below
+  // them the History, closed until someone opens it.
+  const sections: Array<{ key: "current" | "history"; rows: Quotation[]; test: (q: Quotation) => boolean; emptyText: string }> = [
+    {
+      key: "current",
+      rows: items,
+      test: (q) => !tileFilter || TILE_TESTS[tileFilter]!(q),
+      emptyText:
+        history.length > 0
+          ? `No ${title.toLowerCase()}s since ${FRESH_START_LABEL}. The older ones are under History below.`
+          : "No quotations yet.",
+    },
+    ...(history.length > 0
+      ? [{ key: "history" as const, rows: history, test: () => true, emptyText: "" }]
+      : []),
+  ];
+
   return (
     <div>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "16px", flexWrap: "wrap", gap: "10px" }}>
@@ -577,6 +629,24 @@ function QuotationsOfKind({
             placeholder="Search quotation no, customer, Case ID, WO…"
             style={{ ...field, maxWidth: "360px", marginBottom: "14px" }}
           />
+          {sections.map((section) => (
+            <Fragment key={section.key}>
+              {section.key === "history" ? (
+                <div style={{ display: "flex", alignItems: "center", gap: "10px", margin: "20px 0 10px", flexWrap: "wrap" }}>
+                  <button
+                    type="button"
+                    aria-expanded={showHistory}
+                    onClick={() => setShowHistory((open) => !open)}
+                    style={secondaryBtn}
+                  >
+                    {showHistory ? "▾" : "▸"} History ({history.length})
+                  </button>
+                  <span style={{ fontSize: "12px", color: "#94a3b8" }}>
+                    Raised before {FRESH_START_LABEL} · not counted in the boxes above
+                  </span>
+                </div>
+              ) : null}
+              {section.key === "current" || showHistory ? (
           <div
             style={{
               overflowX: "auto",
@@ -603,10 +673,10 @@ function QuotationsOfKind({
               <tbody>
                 {loading ? (
                   <tr><td colSpan={9} style={{ ...td, textAlign: "center", padding: "26px", color: "#6b7280" }}>Loading…</td></tr>
-                ) : items.length === 0 ? (
-                  <tr><td colSpan={9} style={{ ...td, textAlign: "center", padding: "26px", color: "#6b7280" }}>No quotations yet.</td></tr>
+                ) : section.rows.length === 0 ? (
+                  <tr><td colSpan={9} style={{ ...td, textAlign: "center", padding: "26px", color: "#6b7280" }}>{section.emptyText}</td></tr>
                 ) : (
-                  items.filter((q) => !tileFilter || TILE_TESTS[tileFilter]!(q)).map((q) => {
+                  section.rows.filter(section.test).map((q) => {
                     const t = q.baseAmount * (1 + (q.sgstPercent + q.cgstPercent) / 100);
                     return (
                       <tr key={q.id}>
@@ -743,6 +813,9 @@ function QuotationsOfKind({
               </tbody>
             </table>
           </div>
+              ) : null}
+            </Fragment>
+          ))}
         </>
       ) : (
         <div style={{ maxWidth: "820px" }}>

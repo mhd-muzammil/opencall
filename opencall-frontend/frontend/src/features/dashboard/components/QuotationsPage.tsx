@@ -13,6 +13,7 @@ import {
   type CreateQuotationInput,
   type Quotation,
   type QuotationDraft,
+  type QuotationDraftsReport,
   type QuotationKind,
   type QuotationLineItem,
 } from "../../../lib/quotationApiClient";
@@ -293,6 +294,9 @@ function QuotationsOfKind({
   const [drafts, setDrafts] = useState<QuotationDraft[]>([]);
   const [draftsTotal, setDraftsTotal] = useState(0);
   const [draftsError, setDraftsError] = useState<string | null>(null);
+  // How the Records page's count at this status splits — the work orders it shows that are
+  // not waiting here, and why — so the box's number can be checked against the page.
+  const [draftsReport, setDraftsReport] = useState<QuotationDraftsReport | null>(null);
   // The waiting quotation the form is open to approve, if that is what it is open for.
   const [approving, setApproving] = useState<QuotationDraft | null>(null);
   // Which load is the newest. Every keystroke in the search loads again, and an earlier,
@@ -323,12 +327,14 @@ function QuotationsOfKind({
         if (seq !== loadSeq.current) return;
         setDrafts(res.items);
         setDraftsTotal(res.total);
+        setDraftsReport(res.report ?? null);
         setDraftsError(null);
       },
       (error: unknown) => {
         if (seq !== loadSeq.current) return;
         setDrafts([]);
         setDraftsTotal(0);
+        setDraftsReport(null);
         setDraftsError(error instanceof Error ? error.message : "Could not load them");
       },
     );
@@ -646,7 +652,11 @@ function QuotationsOfKind({
                 key: "WAITING",
                 label: "Waiting Approval",
                 value: draftsError ? "—" : String(draftsTotal),
-                hint: draftsError ? "could not load" : "from the report",
+                hint: draftsError
+                  ? "could not load"
+                  : draftsReport && !search.trim()
+                    ? reportSplit(draftsReport)
+                    : "from the report",
                 fg: draftsTotal > 0 ? "#b45309" : "#94a3b8",
               },
               { key: "CREATED", label: "Created", value: String(created), hint: "not mailed yet", fg: "#475569" },
@@ -775,6 +785,7 @@ function QuotationsOfKind({
                   error={draftsError}
                   loading={loading}
                   kind={kind}
+                  report={search.trim() ? null : draftsReport}
                   onApprove={startApprove}
                   onRemove={(draft) => void handleRemoveDraft(draft)}
                 />
@@ -1329,10 +1340,30 @@ function Text({
   );
 }
 
+/** The Waiting Approval box's line under its number, e.g. "of 43 on the report · 4 already quoted". */
+function reportSplit(report: QuotationDraftsReport): string {
+  const count = (reason: QuotationDraftsReport["notWaiting"][number]["reason"]) =>
+    report.notWaiting.filter((entry) => entry.reason === reason).length;
+  const quoted = count("QUOTED");
+  const removed = count("REMOVED");
+  const notRaised = count("NOT_RAISED");
+  return [
+    `of ${report.onReport} on the report`,
+    quoted ? `${quoted} already quoted` : "",
+    removed ? `${removed} removed` : "",
+    notRaised ? `${notRaised} not raised yet` : "",
+  ]
+    .filter(Boolean)
+    .join(" · ");
+}
+
 /**
  * The quotations the report raised, waiting for approval: which work order each is for, and
  * the two things to do with it. Approve opens the form with the amount left to fill in;
  * Remove takes it off the list for good.
+ *
+ * Above them, the work orders the Records page shows at the same status that are not
+ * waiting here, and why — so the page's count and this list add up, one work order at a time.
  */
 function WaitingTable({
   drafts,
@@ -1340,6 +1371,7 @@ function WaitingTable({
   error,
   loading,
   kind,
+  report,
   onApprove,
   onRemove,
 }: Readonly<{
@@ -1348,6 +1380,8 @@ function WaitingTable({
   error: string | null;
   loading: boolean;
   kind: QuotationKind;
+  /** Null while searching: the search narrows the list, not the report. */
+  report: QuotationDraftsReport | null;
   onApprove: (draft: QuotationDraft) => void;
   onRemove: (draft: QuotationDraft) => void;
 }>) {
@@ -1362,8 +1396,52 @@ function WaitingTable({
       </td>
     </tr>
   );
+  const status = kind === "VISIT" ? "Visit Estimate" : "Visit Quote To Customer";
+  const listed = (reason: QuotationDraftsReport["notWaiting"][number]["reason"]) =>
+    (report?.notWaiting ?? []).filter((entry) => entry.reason === reason);
+  const quoted = listed("QUOTED");
+  const removed = listed("REMOVED");
+  const notRaised = listed("NOT_RAISED");
   return (
     <>
+      {report && !loading && !error ? (
+        <div
+          style={{
+            marginBottom: "10px",
+            padding: "8px 14px",
+            borderRadius: "8px",
+            background: "#fffbeb",
+            border: "1px solid #fde68a",
+            fontSize: "12px",
+            color: "#92400e",
+            display: "grid",
+            gap: "4px",
+          }}
+        >
+          <div>
+            The Records page shows <strong>{report.onReport}</strong> at Flex Status {status}{" "}
+            (01-Trade): <strong>{total}</strong> waiting below
+            {report.notWaiting.length > 0 ? `, ${report.notWaiting.length} not:` : "."}
+          </div>
+          {quoted.length > 0 ? (
+            <div>
+              Already quoted ({quoted.length}):{" "}
+              {quoted.map((entry) => `${entry.ticketId} (${entry.quotationNos.join(", ")})`).join(" · ")}
+            </div>
+          ) : null}
+          {removed.length > 0 ? (
+            <div>
+              Removed ({removed.length}): {removed.map((entry) => entry.ticketId).join(" · ")}
+            </div>
+          ) : null}
+          {notRaised.length > 0 ? (
+            <div>
+              Not raised yet — the next report refresh raises them ({notRaised.length}):{" "}
+              {notRaised.map((entry) => entry.ticketId).join(" · ")}
+            </div>
+          ) : null}
+        </div>
+      ) : null}
       {total > drafts.length ? (
         <div style={{ fontSize: "12px", color: "#64748b", marginBottom: "8px" }}>
           Showing the newest {drafts.length} of {total}.

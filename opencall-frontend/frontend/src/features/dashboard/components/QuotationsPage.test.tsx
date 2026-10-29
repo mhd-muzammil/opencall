@@ -606,6 +606,41 @@ describe("Waiting Approval", () => {
     expect(waitingTile(visit)?.textContent).toBe("Waiting Approval1from the report");
   });
 
+  it("adds up to the Records page's count: what waits, and why the rest does not", async () => {
+    api.listQuotationDrafts.mockImplementation(async (_token: string, params: { kind?: string; search?: string }) => ({
+      ...waiting([WAITING_VISIT, WAITING_VISIT_2, WAITING_PART], params),
+      report: {
+        onReport: 5,
+        notWaiting: [
+          { ticketId: "WO-035461827", reason: "QUOTED", quotationNos: ["RTPL/26-27/QEV/48"] },
+          { ticketId: "WO-035887044", reason: "QUOTED", quotationNos: ["RTPL/26-27/QEV/72", "RTPL/26-27/QEV/79"] },
+          { ticketId: "WO-036159873", reason: "REMOVED", quotationNos: [] },
+        ],
+      },
+    }));
+    await mount();
+    const visit = panel("Visit Quotation")!;
+
+    expect(waitingTile(visit)?.textContent).toBe("Waiting Approval2of 5 on the report · 2 already quoted · 1 removed");
+    await click(waitingTile(visit));
+    const text = visit.textContent ?? "";
+    expect(text).toContain("The Records page shows 5 at Flex Status Visit Estimate (01-Trade): 2 waiting below, 3 not:");
+    expect(text).toContain(
+      "Already quoted (2): WO-035461827 (RTPL/26-27/QEV/48) · WO-035887044 (RTPL/26-27/QEV/72, RTPL/26-27/QEV/79)",
+    );
+    expect(text).toContain("Removed (1): WO-036159873");
+
+    // A search narrows the list, not the report: the split is not offered against it.
+    const box = visit.querySelector<HTMLInputElement>('input[type="search"]')!;
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(box, "Likhitha");
+      box.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    await flush();
+    expect(waitingTile(visit)?.textContent).toBe("Waiting Approval2from the report");
+    expect(visit.textContent).not.toContain("The Records page shows");
+  });
+
   it("keeps the page working when the waiting list cannot be loaded", async () => {
     api.listQuotationDrafts.mockRejectedValue(new Error("Request failed 500"));
     await mount();

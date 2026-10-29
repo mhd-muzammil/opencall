@@ -151,9 +151,26 @@ export interface QuotationDraft {
   createdAt: string;
 }
 
+/**
+ * How the Records page's count at the status splits: every work order the page shows there is
+ * either waiting in the box or listed in `notWaiting` with the reason it is not.
+ */
+export interface QuotationDraftsReport {
+  /** Work orders the Records page shows at the status. */
+  onReport: number;
+  notWaiting: Array<{
+    ticketId: string;
+    /** QUOTED: already has a quotation of the kind. REMOVED: removed from the box. NOT_RAISED: not yet. */
+    reason: "QUOTED" | "REMOVED" | "NOT_RAISED";
+    quotationNos: string[];
+  }>;
+}
+
 export interface ListQuotationDraftsResult {
   items: QuotationDraft[];
   total: number;
+  /** For the whole report, whatever the search. Absent from a server that predates it. */
+  report?: QuotationDraftsReport;
 }
 
 function authHeaders(token: string): HeadersInit {

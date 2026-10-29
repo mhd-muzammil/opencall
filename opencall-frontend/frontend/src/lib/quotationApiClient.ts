@@ -10,8 +10,20 @@ export interface QuotationLineItem {
   baseAmount: number;
 }
 
+/**
+ * Which sheet a quotation is: a Visit quotation (the service charge before an engineer goes
+ * out, numbered RTPL/<FY>/QEV/<n>) or a Part quotation (the part estimate, RTPL/<FY>/QEN/<n>).
+ * The two are the two tabs of the one Quotations section.
+ */
+export type QuotationKind = "PART" | "VISIT";
+
 export interface Quotation {
   id: string;
+  /**
+   * Fixed when the quotation is raised, like its number. Absent only from a server that
+   * predates Visit quotations, where every quotation is a Part one — read it as PART.
+   */
+  kind?: QuotationKind;
   quotationNo: string;
   quotationDate: string;
   caseId: string;
@@ -81,6 +93,8 @@ export interface QuotationAutofill {
 }
 
 export interface CreateQuotationInput {
+  /** Picks the sheet and the number series. The server reads it on create only. */
+  kind: QuotationKind;
   quotationDate: string;
   caseId: string;
   orderNumber: string;
@@ -199,10 +213,11 @@ export async function setQuotationPayment(
 
 export async function listQuotations(
   token: string,
-  params: { search?: string; page?: number; perPage?: number } = {},
+  params: { search?: string; kind?: QuotationKind; page?: number; perPage?: number } = {},
 ): Promise<ListQuotationsResult> {
   const qs = new URLSearchParams();
   if (params.search) qs.set("search", params.search);
+  if (params.kind) qs.set("kind", params.kind);
   if (params.page) qs.set("page", String(params.page));
   if (params.perPage) qs.set("per_page", String(params.perPage));
   const suffix = qs.toString() ? `?${qs.toString()}` : "";

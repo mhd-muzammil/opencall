@@ -9,15 +9,20 @@ import {
 import { quotationTotals, resolveLineItems } from "../../../lib/quotationTotals";
 import {
   QUOTATION_LOGO_DATA_URL,
-  QUOTATION_QR_DATA_URL,
+  QUOTATION_PART_QR_DATA_URL,
   QUOTATION_SIGN_DATA_URL,
 } from "./quotationAssets";
+import { VisitQuotationPrint } from "./VisitQuotationPrint";
 
 /**
  * Print-exact quotation, matching the RENDERWAYS quotation PDF. Rendered inside a
  * fixed A4-width sheet; the parent hides everything else while printing so the browser's
  * "Save as PDF" produces the two-page document. Logo / QR / signature images are dropped
  * in via the *imageUrls* prop (data URLs) once supplied; until then their slots are blank.
+ *
+ * A Visit quotation prints its own sheet (VisitQuotationPrint); everything below is the Part
+ * quotation's, as on the office's sample RTPL_26-27_QEN_80.pdf. Both readers, desktop and
+ * phone, render this one component, so each kind prints the same everywhere.
  */
 export function QuotationPrint({
   q,
@@ -26,8 +31,12 @@ export function QuotationPrint({
   q: Quotation;
   images?: { logo?: string; qr?: string; sign?: string };
 }>) {
+  if (q.kind === "VISIT") {
+    return images ? <VisitQuotationPrint q={q} images={images} /> : <VisitQuotationPrint q={q} />;
+  }
+
   // Default to the embedded RENDERWAYS logo + QR + signature; a caller can override.
-  const qrUrl = images?.qr ?? QUOTATION_QR_DATA_URL;
+  const qrUrl = images?.qr ?? QUOTATION_PART_QR_DATA_URL;
   const signUrl = images?.sign ?? QUOTATION_SIGN_DATA_URL;
   const logoUrl = images?.logo ?? QUOTATION_LOGO_DATA_URL;
 
@@ -236,7 +245,8 @@ export function QuotationPrint({
         {qrUrl ? (
           <div style={{ marginTop: "14px" }}>
             <div style={{ fontWeight: 700, fontSize: "11px", marginBottom: "6px" }}>Scan QR Code</div>
-            <img src={qrUrl} alt="" style={{ width: "220px" }} />
+            {/* The Hp Care Chennai code, as wide as the Part sample prints it (67.7mm). */}
+            <img src={qrUrl} alt="" style={{ width: "256px" }} />
           </div>
         ) : null}
       </div>

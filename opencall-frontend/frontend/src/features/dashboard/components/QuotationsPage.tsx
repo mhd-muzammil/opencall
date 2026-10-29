@@ -9,6 +9,7 @@ import {
   listQuotations,
   type CreateQuotationInput,
   type Quotation,
+  type QuotationKind,
   type QuotationLineItem,
 } from "../../../lib/quotationApiClient";
 import { formatMoney } from "../../../lib/quotationFormat";
@@ -36,7 +37,7 @@ const EMPTY_LINE_ITEM: QuotationLineItem = {
   baseAmount: 0,
 };
 
-const EMPTY_FORM: CreateQuotationInput = {
+const EMPTY_FORM: Omit<CreateQuotationInput, "kind"> = {
   quotationDate: "",
   caseId: "",
   orderNumber: "",
@@ -58,10 +59,18 @@ function todayIso(): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 }
 
-export function QuotationsPage({
-  token,
-  onOpenMail,
-}: Readonly<{
+/** A blank form for a new quotation of this kind, dated today. */
+function freshForm(kind: QuotationKind): CreateQuotationInput {
+  return { ...EMPTY_FORM, kind, quotationDate: todayIso(), lineItems: [{ ...EMPTY_LINE_ITEM }] };
+}
+
+/** The two options of the section, in the order the office asked for them. */
+const KIND_TABS: { kind: QuotationKind; label: string }[] = [
+  { kind: "VISIT", label: "Visit Quotation" },
+  { kind: "PART", label: "Part Quotation" },
+];
+
+type QuotationsPageProps = Readonly<{
   token: string;
   /**
    * Open Customer Emails on this quotation's work order.
@@ -71,7 +80,81 @@ export function QuotationsPage({
    * there is no inbox to switch to — the link simply is not offered.
    */
   onOpenMail?: (ticketId: string) => void;
-}>) {
+}>;
+
+/**
+ * The Quotations section: Visit Quotation and Part Quotation, each its own page inside the
+ * one section, with its own list, numbers, form and sheet.
+ *
+ * A tab is mounted the first time it is opened and then kept, hidden while the other is on
+ * screen, so a half-typed quotation or a search survives a look at the other tab.
+ */
+export function QuotationsPage({ token, onOpenMail }: QuotationsPageProps) {
+  const [kind, setKind] = useState<QuotationKind>("VISIT");
+  const [opened, setOpened] = useState<QuotationKind[]>(["VISIT"]);
+
+  function openTab(next: QuotationKind) {
+    setKind(next);
+    setOpened((list) => (list.includes(next) ? list : [...list, next]));
+  }
+
+  return (
+    // `.panel` is a CSS grid whose items default to `min-width: auto`, so without an
+    // explicit `minWidth: 0` this section refuses to shrink below the table's intrinsic
+    // width — the panel widens instead and the WHOLE PAGE scrolls sideways (taking the
+    // page header with it) rather than the table's own scroll container. Same fix as
+    // RenewalPipelinePage, which has the other wide table in the app.
+    <section style={{ padding: "8px 4px", minWidth: 0, maxWidth: "100%" }}>
+      <div
+        role="tablist"
+        aria-label="Quotations"
+        style={{ display: "flex", gap: 4, borderBottom: "1px solid #e5e7eb", marginBottom: 16 }}
+      >
+        {KIND_TABS.map((tab) => {
+          const open = kind === tab.kind;
+          return (
+            <button
+              key={tab.kind}
+              type="button"
+              role="tab"
+              aria-selected={open}
+              onClick={() => openTab(tab.kind)}
+              style={{
+                // First, so the weight and size below are not reset by it.
+                font: "inherit",
+                padding: "8px 14px",
+                marginBottom: -1,
+                border: "none",
+                borderBottom: `2px solid ${open ? "#4f46e5" : "transparent"}`,
+                background: "none",
+                color: open ? "#4f46e5" : "#6b7280",
+                fontWeight: 600,
+                fontSize: 14,
+                cursor: "pointer",
+              }}
+            >
+              {tab.label}
+            </button>
+          );
+        })}
+      </div>
+      {KIND_TABS.map((tab) =>
+        opened.includes(tab.kind) ? (
+          <div key={tab.kind} role="tabpanel" aria-label={tab.label} hidden={kind !== tab.kind}>
+            <QuotationsOfKind kind={tab.kind} token={token} {...(onOpenMail ? { onOpenMail } : {})} />
+          </div>
+        ) : null,
+      )}
+    </section>
+  );
+}
+
+/** One kind's page: its list, its tiles, its form. */
+function QuotationsOfKind({
+  kind,
+  token,
+  onOpenMail,
+}: QuotationsPageProps & Readonly<{ kind: QuotationKind }>) {
   const [mode, setMode] = useState<"list" | "create" | "edit">("list");
   // The quotation being corrected. Its id is what the save goes to, and its number is
   // shown on the form so it is obvious the sheet is not being reissued under a new one.
@@ -162,7 +245,7 @@ export function QuotationsPage({
   const [printing, setPrinting] = useState<Quotation | null>(null);
 
   // Form state
-  const [form, setForm] = useState<CreateQuotationInput>({ ...EMPTY_FORM, quotationDate: todayIso() });
+  const [form, setForm] = useState<CreateQuotationInput>(() => freshForm(kind));
   const [autofilling, setAutofilling] = useState(false);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
@@ -170,14 +253,16 @@ export function QuotationsPage({
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const res = await listQuotations(token, { search, perPage: 50 });
-      setItems(res.items);
+      const res = await listQuotations(token, { search, kind, perPage: 50 });
+      // Kept to this tab's kind here too: a server from before Visit quotations ignores
+      // the filter and sends every row, and those are all Part quotations.
+      setItems(res.items.filter((q) => (q.kind ?? "PART") === kind));
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Failed to load quotations");
     } finally {
       setLoading(false);
     }
-  }, [token, search]);
+  }, [token, search, kind]);
 
   useEffect(() => {
     if (mode === "list") void load();
@@ -255,6 +340,8 @@ export function QuotationsPage({
     setEditing(q);
     setMessage(null);
     setForm({
+      // Shown and sent as raised; the server never changes a quotation's kind on an edit.
+      kind: q.kind ?? "PART",
       quotationDate: q.quotationDate,
       caseId: q.caseId,
       orderNumber: q.orderNumber,
@@ -298,13 +385,20 @@ export function QuotationsPage({
       const saved = editing
         ? await updateQuotation(token, editing.id, form)
         : await createQuotation(token, form);
-      setForm({ ...EMPTY_FORM, quotationDate: todayIso() });
+      setForm(freshForm(kind));
       setEditing(null);
       setMode("list");
       // Reload so the list shows the corrected figures rather than the ones it fetched
       // before the edit; creating does not need this because the list refetches anyway.
       if (editing) void load();
       setPrinting(saved); // open the print view straight away
+      // A server not yet updated for Visit quotations saves every new one as a Part one.
+      // Say so, rather than let a QEN number pass for a Visit quotation.
+      if (!editing && (saved.kind ?? "PART") !== form.kind) {
+        setMessage(
+          `Saved as ${saved.quotationNo}, but the server recorded it as a Part quotation — it has not been updated for Visit quotations yet.`,
+        );
+      }
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Save failed");
     } finally {
@@ -329,22 +423,18 @@ export function QuotationsPage({
     background: "var(--input-bg, #f9fafb)",
   };
   const label: React.CSSProperties = { fontSize: "12px", fontWeight: 600, marginBottom: "4px", display: "block" };
+  const title = kind === "VISIT" ? "Visit Quotation" : "Part Quotation";
 
   return (
-    // `.panel` is a CSS grid whose items default to `min-width: auto`, so without an
-    // explicit `minWidth: 0` this section refuses to shrink below the table's intrinsic
-    // width — the panel widens instead and the WHOLE PAGE scrolls sideways (taking the
-    // page header with it) rather than the table's own scroll container. Same fix as
-    // RenewalPipelinePage, which has the other wide table in the app.
-    <section style={{ padding: "8px 4px", minWidth: 0, maxWidth: "100%" }}>
+    <div>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "16px", flexWrap: "wrap", gap: "10px" }}>
-        <h2 style={{ margin: 0, fontSize: "18px", fontWeight: 700 }}>Quotations</h2>
+        <h2 style={{ margin: 0, fontSize: "18px", fontWeight: 700 }}>{title}s</h2>
         {mode === "list" ? (
-          <button type="button" onClick={() => { setEditing(null); setForm({ ...EMPTY_FORM, quotationDate: todayIso() }); setMode("create"); setMessage(null); }} style={primaryBtn}>
-            + New Quotation
+          <button type="button" onClick={() => { setEditing(null); setForm(freshForm(kind)); setMode("create"); setMessage(null); }} style={primaryBtn}>
+            + New {title}
           </button>
         ) : (
-          <button type="button" onClick={() => { setEditing(null); setForm({ ...EMPTY_FORM, quotationDate: todayIso() }); setMode("list"); setMessage(null); }} style={secondaryBtn}>
+          <button type="button" onClick={() => { setEditing(null); setForm(freshForm(kind)); setMode("list"); setMessage(null); }} style={secondaryBtn}>
             ← Back to list
           </button>
         )}
@@ -771,11 +861,15 @@ export function QuotationsPage({
               </div>
 
               <div style={grid2}>
-                <Text
-                  label="Service Description"
-                  value={item.serviceDescription}
-                  onChange={(v) => setLineItem(index, { serviceDescription: v })}
-                />
+                {/* A Visit sheet heads its units with its own fixed line, so a Visit row
+                    has no description of the service to type. */}
+                {form.kind !== "VISIT" ? (
+                  <Text
+                    label="Service Description"
+                    value={item.serviceDescription}
+                    onChange={(v) => setLineItem(index, { serviceDescription: v })}
+                  />
+                ) : null}
                 <Text
                   label="Product Description"
                   value={item.productDescription}
@@ -966,7 +1060,7 @@ export function QuotationsPage({
           </div>
         </div>
       ) : null}
-    </section>
+    </div>
   );
 }
 

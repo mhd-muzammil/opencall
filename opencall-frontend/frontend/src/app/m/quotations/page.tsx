@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { AppBar } from "../AppBar";
 import { canSeeMobileSection, isSuperAdminSession, useMobileSession } from "../session";
@@ -13,6 +13,7 @@ import {
   listQuotations,
   type CreateQuotationInput,
   type Quotation,
+  type QuotationKind,
   type QuotationLineItem,
 } from "../../../lib/quotationApiClient";
 import { formatMoney } from "../../../lib/quotationFormat";
@@ -29,7 +30,7 @@ const EMPTY_LINE_ITEM: QuotationLineItem = {
   baseAmount: 0,
 };
 
-const EMPTY_FORM: CreateQuotationInput = {
+const EMPTY_FORM: Omit<CreateQuotationInput, "kind"> = {
   quotationDate: "",
   caseId: "",
   orderNumber: "",
@@ -51,17 +52,30 @@ function todayIso(): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 }
 
+/** A blank form for a new quotation of this kind, dated today. */
+function freshForm(kind: QuotationKind): CreateQuotationInput {
+  return { ...EMPTY_FORM, kind, quotationDate: todayIso(), lineItems: [{ ...EMPTY_LINE_ITEM }] };
+}
+
+/** The two options of the section, in the order the desktop shows them. */
+const KINDS: { kind: QuotationKind; label: string }[] = [
+  { kind: "VISIT", label: "Visit Quotation" },
+  { kind: "PART", label: "Part Quotation" },
+];
+
 /**
  * Quotations — full parity with the desktop section: browse the saved history, create a
  * new quotation (with Case-ID auto-fill and the same validation), and open the identical
  * RENDERWAYS print sheet. The sheet component itself is reused, so the PDF is the same
- * document the web produces.
+ * document the web produces. Visit and Part quotations are the two options of the list,
+ * as they are the two tabs on the desktop.
  */
 export default function MobileQuotationsPage() {
   const { session } = useMobileSession();
   const allowed =
     isSuperAdminSession(session) || canSeeMobileSection(session, "quotations");
 
+  const [kind, setKind] = useState<QuotationKind>("VISIT");
   const [mode, setMode] = useState<"list" | "create" | "edit">("list");
   // The quotation being corrected. Its id is where the save goes; its number is shown on
   // the form because an edit does NOT reissue it.
@@ -127,10 +141,7 @@ export default function MobileQuotationsPage() {
   const [loading, setLoading] = useState(false);
   const [printing, setPrinting] = useState<Quotation | null>(null);
 
-  const [form, setForm] = useState<CreateQuotationInput>({
-    ...EMPTY_FORM,
-    quotationDate: todayIso(),
-  });
+  const [form, setForm] = useState<CreateQuotationInput>(() => freshForm("VISIT"));
   const [autofilling, setAutofilling] = useState(false);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
@@ -140,21 +151,31 @@ export default function MobileQuotationsPage() {
     return () => clearTimeout(id);
   }, [search]);
 
+  // Which load is the latest. Switching option while a load is in flight would otherwise let
+  // the slower, older answer land last and put the other kind's rows under this one's label.
+  const loadSeq = useRef(0);
+
   const load = useCallback(async () => {
     if (!session || !allowed) return;
+    const seq = ++loadSeq.current;
     setLoading(true);
     try {
       const res = await listQuotations(session.token, {
         ...(debounced ? { search: debounced } : {}),
+        kind,
         perPage: 50,
       });
-      setItems(res.items);
+      if (seq !== loadSeq.current) return;
+      // Kept to the open kind here too: a server from before Visit quotations ignores the
+      // filter and sends every row, and those are all Part quotations.
+      setItems(res.items.filter((q) => (q.kind ?? "PART") === kind));
     } catch (error) {
+      if (seq !== loadSeq.current) return;
       setMessage(error instanceof Error ? error.message : "Failed to load quotations");
     } finally {
-      setLoading(false);
+      if (seq === loadSeq.current) setLoading(false);
     }
-  }, [session, allowed, debounced]);
+  }, [session, allowed, debounced, kind]);
 
   useEffect(() => {
     if (mode === "list") void load();
@@ -231,6 +252,8 @@ export default function MobileQuotationsPage() {
     setEditing(q);
     setMessage(null);
     setForm({
+      // Shown and sent as raised; the server never changes a quotation's kind on an edit.
+      kind: q.kind ?? "PART",
       quotationDate: q.quotationDate,
       caseId: q.caseId,
       orderNumber: q.orderNumber,
@@ -275,10 +298,16 @@ export default function MobileQuotationsPage() {
       const saved = editing
         ? await updateQuotation(session.token, editing.id, form)
         : await createQuotation(session.token, form);
-      setForm({ ...EMPTY_FORM, quotationDate: todayIso() });
+      setForm(freshForm(kind));
       setEditing(null);
       setMode("list");
       setPrinting(saved); // open the print view straight away, same as the web
+      // A server not yet updated for Visit quotations saves every new one as a Part one.
+      if (!editing && (saved.kind ?? "PART") !== form.kind) {
+        setMessage(
+          `Saved as ${saved.quotationNo}, but the server recorded it as a Part quotation — it has not been updated for Visit quotations yet.`,
+        );
+      }
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Save failed");
     } finally {
@@ -311,18 +340,26 @@ export default function MobileQuotationsPage() {
     <>
       <AppBar
         title="Quotations"
-        subtitle={mode === "list" ? `${items.length} saved` : editing ? `Editing ${editing.quotationNo}` : "New quotation"}
+        subtitle={
+          mode === "list"
+            ? `${items.length} saved`
+            : editing
+              ? `Editing ${editing.quotationNo}`
+              : kind === "VISIT"
+                ? "New visit quotation"
+                : "New part quotation"
+        }
         back
         action={
           mode === "list" ? (
             <button
               type="button"
               className="mIconBtn"
-              aria-label="New quotation"
+              aria-label={kind === "VISIT" ? "New visit quotation" : "New part quotation"}
               onClick={() => {
                 setMessage(null);
                 setEditing(null);
-                setForm({ ...EMPTY_FORM, quotationDate: todayIso() });
+                setForm(freshForm(kind));
                 setMode("create");
               }}
             >
@@ -336,7 +373,7 @@ export default function MobileQuotationsPage() {
               onClick={() => {
                 setMessage(null);
                 setEditing(null);
-                setForm({ ...EMPTY_FORM, quotationDate: todayIso() });
+                setForm(freshForm(kind));
                 setMode("list");
               }}
             >
@@ -357,6 +394,25 @@ export default function MobileQuotationsPage() {
 
         {mode === "list" ? (
           <>
+            <div className="mSegment" role="tablist" aria-label="Quotations" style={{ marginBottom: 12 }}>
+              {KINDS.map((k) => (
+                <button
+                  key={k.kind}
+                  type="button"
+                  role="tab"
+                  aria-selected={kind === k.kind}
+                  className={`mSegment__btn${kind === k.kind ? " is-active" : ""}`}
+                  onClick={() => {
+                    if (k.kind === kind) return;
+                    // Cleared first, so the other kind's rows never show under this label.
+                    setItems([]);
+                    setKind(k.kind);
+                  }}
+                >
+                  {k.label}
+                </button>
+              ))}
+            </div>
             <input
               className="mSearch"
               type="search"
@@ -587,11 +643,14 @@ export default function MobileQuotationsPage() {
                     </button>
                   )}
                 </div>
-                <Text
-                  label="Service Description"
-                  value={item.serviceDescription}
-                  onChange={(v) => setLineItem(index, { serviceDescription: v })}
-                />
+                {/* A Visit sheet heads its units with its own fixed line. */}
+                {form.kind !== "VISIT" ? (
+                  <Text
+                    label="Service Description"
+                    value={item.serviceDescription}
+                    onChange={(v) => setLineItem(index, { serviceDescription: v })}
+                  />
+                ) : null}
                 <Text
                   label="Product Description"
                   value={item.productDescription}

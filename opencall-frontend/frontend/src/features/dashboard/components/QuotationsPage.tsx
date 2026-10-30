@@ -1,5 +1,6 @@
 import { Fragment, useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
+import { ASP_CODE_REGION_MAP } from "@opencall/shared";
 import {
   approveQuotationDraft,
   autofillQuotation,
@@ -98,6 +99,26 @@ function formatRaisedAt(createdAt: string): string {
     minute: "2-digit",
     hour12: true,
   });
+}
+
+/** The branches, in the order the Records page's region bar shows them. */
+const LOCATIONS = ["CHENNAI", "HOSUR", "KANCHIPURAM", "SALEM", "VELLORE"];
+
+/**
+ * The branch a waiting quotation's work order belongs to. The report stores the ASP code
+ * ("ASPS01461"); the branch name itself is read too, the way the inventory sync reads it.
+ * Anything else is OTHER, so the location cards always add up to the box.
+ */
+function locationOf(workLocation: string): string {
+  const value = workLocation.trim().toUpperCase();
+  const branch = ASP_CODE_REGION_MAP[value];
+  if (branch) return branch.toUpperCase();
+  return LOCATIONS.find((name) => value.includes(name)) ?? "OTHER";
+}
+
+/** "KANCHIPURAM" -> "Kanchipuram", the way the rest of the page writes a branch. */
+function locationLabel(location: string): string {
+  return location.charAt(0) + location.slice(1).toLowerCase();
 }
 
 /** Every page of a list, so the boxes count all of it rather than the newest page. */
@@ -307,6 +328,9 @@ function QuotationsOfKind({
    * have to take on trust; clicking it shows the rows it counted.
    */
   const [tileFilter, setTileFilter] = useState<TileKey | "WAITING" | null>(null);
+  // The location card clicked, if any: the waiting list narrowed to that branch. Only ever
+  // set together with the Waiting Approval box, and cleared by any other box.
+  const [locationFilter, setLocationFilter] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [printing, setPrinting] = useState<Quotation | null>(null);
 
@@ -616,6 +640,108 @@ function QuotationsOfKind({
 
       {mode === "list" ? (
         <>
+          {/* The waiting approvals by branch, above the boxes (the user, 30 Oct 2026): an All
+              locations card, then one card per location, counting the same list the Waiting
+              Approval box counts, so the cards add up to it. Clicking a branch lists that
+              branch's; clicking it again, or All locations, lists every branch's. */}
+          {(() => {
+            const counts = new Map<string, number>();
+            for (const draft of drafts) {
+              const location = locationOf(draft.workLocation);
+              counts.set(location, (counts.get(location) ?? 0) + 1);
+            }
+            const cards = counts.get("OTHER") ? [...LOCATIONS, "OTHER"] : LOCATIONS;
+            const allActive = tileFilter === "WAITING" && locationFilter === null;
+            const allFg = draftsTotal > 0 ? "#b45309" : "#94a3b8";
+            return (
+              <div
+                role="group"
+                aria-label="Waiting approval by location"
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))",
+                  gap: "10px",
+                  marginBottom: "10px",
+                }}
+              >
+                <button
+                  type="button"
+                  aria-pressed={allActive}
+                  onClick={() => {
+                    setLocationFilter(null);
+                    setTileFilter(allActive ? null : "WAITING");
+                  }}
+                  title={
+                    allActive
+                      ? "Showing every location — click to show the quotations again"
+                      : "Show the waiting approvals for every location"
+                  }
+                  style={{
+                    textAlign: "left",
+                    cursor: "pointer",
+                    padding: "8px 14px",
+                    borderRadius: "10px",
+                    border: `1px solid ${allActive ? allFg : "var(--border-color, #e5e7eb)"}`,
+                    boxShadow: allActive ? `inset 0 0 0 1px ${allFg}` : "none",
+                    background: allActive ? "#fffbeb" : "var(--card-bg, #ffffff)",
+                    minWidth: 0,
+                  }}
+                >
+                  <div style={{ fontSize: "11px", fontWeight: 700, color: "#64748b", textTransform: "uppercase", letterSpacing: "0.02em" }}>
+                    All locations
+                  </div>
+                  <div style={{ fontSize: "20px", fontWeight: 800, color: allFg, lineHeight: 1.2 }}>
+                    {draftsError ? "—" : draftsTotal}
+                  </div>
+                  <div style={{ fontSize: "11px", color: "#94a3b8" }}>waiting approval</div>
+                </button>
+                {cards.map((location) => {
+                  const count = counts.get(location) ?? 0;
+                  const active = tileFilter === "WAITING" && locationFilter === location;
+                  const fg = count > 0 ? "#b45309" : "#94a3b8";
+                  return (
+                    <button
+                      key={location}
+                      type="button"
+                      aria-pressed={active}
+                      onClick={() => {
+                        if (active) {
+                          setLocationFilter(null);
+                        } else {
+                          setTileFilter("WAITING");
+                          setLocationFilter(location);
+                        }
+                      }}
+                      title={
+                        active
+                          ? "Showing these — click to show every location"
+                          : `Show the waiting approvals for ${locationLabel(location)}`
+                      }
+                      style={{
+                        textAlign: "left",
+                        cursor: "pointer",
+                        padding: "8px 14px",
+                        borderRadius: "10px",
+                        border: `1px solid ${active ? fg : "var(--border-color, #e5e7eb)"}`,
+                        boxShadow: active ? `inset 0 0 0 1px ${fg}` : "none",
+                        background: active ? "#fffbeb" : "var(--card-bg, #ffffff)",
+                        minWidth: 0,
+                      }}
+                    >
+                      <div style={{ fontSize: "11px", fontWeight: 700, color: "#64748b", textTransform: "uppercase", letterSpacing: "0.02em" }}>
+                        {locationLabel(location)}
+                      </div>
+                      <div style={{ fontSize: "20px", fontWeight: 800, color: fg, lineHeight: 1.2 }}>
+                        {draftsError ? "—" : count}
+                      </div>
+                      <div style={{ fontSize: "11px", color: "#94a3b8" }}>waiting approval</div>
+                    </button>
+                  );
+                })}
+              </div>
+            );
+          })()}
+
           {/* What the section is actually for: not how many quotations exist, but how many
               are out with a customer, how many came back, and how many have gone quiet. */}
           {(() => {
@@ -683,9 +809,10 @@ function QuotationsOfKind({
                   <button
                     key={tile.label}
                     type="button"
-                    onClick={() =>
-                      setTileFilter((current) => (current === tile.key ? null : tile.key))
-                    }
+                    onClick={() => {
+                      setTileFilter((current) => (current === tile.key ? null : tile.key));
+                      setLocationFilter(null);
+                    }}
                     title={
                       tileFilter === tile.key
                         ? "Showing these — click to show all again"
@@ -732,12 +859,18 @@ function QuotationsOfKind({
             >
               <span>
                 Showing{" "}
-                <strong>{tileFilter === "WAITING" ? "waiting approval" : TILE_LABELS[tileFilter]}</strong>{" "}
+                <strong>
+                  {tileFilter === "WAITING" ? "waiting approval" : TILE_LABELS[tileFilter]}
+                  {tileFilter === "WAITING" && locationFilter ? ` · ${locationLabel(locationFilter)}` : ""}
+                </strong>{" "}
                 only.
               </span>
               <button
                 type="button"
-                onClick={() => setTileFilter(null)}
+                onClick={() => {
+                  setTileFilter(null);
+                  setLocationFilter(null);
+                }}
                 style={{
                   marginLeft: "auto",
                   background: "none",
@@ -780,12 +913,21 @@ function QuotationsOfKind({
               ) : null}
               {section.key === "current" && tileFilter === "WAITING" ? (
                 <WaitingTable
-                  drafts={drafts}
-                  total={draftsTotal}
+                  drafts={
+                    locationFilter
+                      ? drafts.filter((draft) => locationOf(draft.workLocation) === locationFilter)
+                      : drafts
+                  }
+                  total={
+                    locationFilter
+                      ? drafts.filter((draft) => locationOf(draft.workLocation) === locationFilter).length
+                      : draftsTotal
+                  }
                   error={draftsError}
                   loading={loading}
                   kind={kind}
-                  report={search.trim() ? null : draftsReport}
+                  // The split is the whole status's, so it is not set against one branch or a search.
+                  report={search.trim() || locationFilter ? null : draftsReport}
                   onApprove={startApprove}
                   onRemove={(draft) => void handleRemoveDraft(draft)}
                 />
@@ -1491,7 +1633,10 @@ function WaitingTable({
                             {draft.part || "-"}
                           </td>
                         ) : null}
-                        <td style={td}>{draft.workLocation || "-"}</td>
+                        {/* The branch, as the location cards name it; the ASP code on hover. */}
+                        <td style={td} title={draft.workLocation || undefined}>
+                          {draft.workLocation ? locationLabel(locationOf(draft.workLocation)) : "-"}
+                        </td>
                         <td style={td}>{formatRaisedAt(draft.createdAt)}</td>
                         <td style={{ ...td, ...stickyActions }}>
                           <button type="button" onClick={() => onApprove(draft)} style={linkBtn}>

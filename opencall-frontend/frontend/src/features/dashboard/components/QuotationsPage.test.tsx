@@ -641,6 +641,86 @@ describe("Waiting Approval", () => {
     expect(visit.textContent).not.toContain("The Records page shows");
   });
 
+  it("shows the waiting approvals by location above the boxes, and lists one branch's on a click", async () => {
+    const at = (id: string, ticketId: string, workLocation: string): QuotationDraft => ({
+      ...WAITING_VISIT,
+      id,
+      ticketId,
+      workLocation,
+    });
+    api.listQuotationDrafts.mockImplementation(async (_token: string, params: { kind?: string }) =>
+      waiting(
+        [
+          at("0b6f3b0e-1d2c-4c6e-9a51-0000000000a1", "WO-000000001", "ASPS01461"),
+          at("0b6f3b0e-1d2c-4c6e-9a51-0000000000a2", "WO-000000002", "ASPS01511"),
+          at("0b6f3b0e-1d2c-4c6e-9a51-0000000000a3", "WO-000000003", "ASPS01461"),
+          at("0b6f3b0e-1d2c-4c6e-9a51-0000000000a4", "WO-000000004", "VELLORE"),
+          at("0b6f3b0e-1d2c-4c6e-9a51-0000000000a5", "WO-000000005", "SOMEWHERE ELSE"),
+        ],
+        params,
+      ),
+    );
+    await mount();
+    const visit = panel("Visit Quotation")!;
+    const group = visit.querySelector('[role="group"][aria-label="Waiting approval by location"]')!;
+    const cards = Array.from(group.querySelectorAll("button"));
+
+    // All locations first, then one card per branch in the region bar's order, plus Other for
+    // a location none of them is.
+    expect(cards.map((c) => c.textContent)).toEqual([
+      "All locations5waiting approval",
+      "Chennai2waiting approval",
+      "Hosur1waiting approval",
+      "Kanchipuram0waiting approval",
+      "Salem0waiting approval",
+      "Vellore1waiting approval",
+      "Other1waiting approval",
+    ]);
+    // Above the boxes, and adding up to the Waiting Approval box.
+    expect(group.compareDocumentPosition(waitingTile(visit)!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(waitingTile(visit)?.textContent).toBe("Waiting Approval5from the report");
+
+    // All locations lists every branch's waiting approvals; a second click goes back.
+    await click(cards[0]);
+    expect(visit.textContent).toContain("Showing waiting approval only.");
+    expect(visit.querySelector("table")!.querySelectorAll("tbody tr")).toHaveLength(5);
+    expect(cards[0]!.getAttribute("aria-pressed")).toBe("true");
+    await click(cards[0]);
+    expect(visit.textContent).not.toContain("Showing waiting approval");
+    expect(cards[0]!.getAttribute("aria-pressed")).toBe("false");
+
+    const chennai = cards[1]!;
+    await click(chennai);
+    expect(visit.textContent).toContain("Showing waiting approval · Chennai only.");
+    let table = visit.querySelector("table")!;
+    expect(Array.from(table.querySelectorAll("tbody tr")).map((r) => r.querySelector("td")?.textContent)).toEqual([
+      "WO-000000001",
+      "WO-000000003",
+    ]);
+    // The branch's name in the list too, its ASP code on hover.
+    const location = Array.from(table.querySelectorAll("tbody td")).find((td) => td.textContent === "Chennai");
+    expect(location?.getAttribute("title")).toBe("ASPS01461");
+    expect(chennai.getAttribute("aria-pressed")).toBe("true");
+    expect(cards[0]!.getAttribute("aria-pressed")).toBe("false");
+
+    await click(chennai);
+    expect(visit.textContent).toContain("Showing waiting approval only.");
+    table = visit.querySelector("table")!;
+    expect(table.querySelectorAll("tbody tr")).toHaveLength(5);
+    expect(cards[0]!.getAttribute("aria-pressed")).toBe("true");
+
+    // All locations from a branch, and another box, both clear the branch.
+    await click(cards[2]);
+    expect(visit.textContent).toContain("Showing waiting approval · Hosur only.");
+    await click(cards[0]);
+    expect(visit.textContent).toContain("Showing waiting approval only.");
+    await click(cards[2]);
+    await click(Array.from(visit.querySelectorAll("button")).find((b) => b.textContent?.startsWith("Created")));
+    expect(visit.textContent).toContain("Showing created only.");
+    expect(visit.querySelector("table")!.textContent).toContain("RTPL/26-27/QEV/1");
+    expect(cards[2]!.getAttribute("aria-pressed")).toBe("false");
+  });
+
   it("keeps the page working when the waiting list cannot be loaded", async () => {
     api.listQuotationDrafts.mockRejectedValue(new Error("Request failed 500"));
     await mount();

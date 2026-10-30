@@ -21,13 +21,12 @@ import {
 } from "../../../lib/quotationApiClient";
 import { formatMoney } from "../../../lib/quotationFormat";
 import { quotationStage, daysSince } from "../../../lib/quotationStage";
-import { getCustomerEmails, type MailboxHealth } from "../../../lib/customerEmailApiClient";
 import { quotationTotals } from "../../../lib/quotationTotals";
 import { QuotationPrint } from "../../../features/dashboard/components/QuotationPrint";
 import { quotationPdf } from "../../../features/dashboard/components/quotationPdf";
 
-/** Every Visit quotation leaves from the trade desk, trade@renderways.in, whatever the branch. */
-const VISIT_FROM_MAILBOX = "TRADE";
+/** Every quotation leaves from the trade desk, trade@renderways.in, whatever the branch. */
+const DESK_FROM_MAILBOX = "TRADE";
 
 const EMPTY_LINE_ITEM: QuotationLineItem = {
   serviceDescription: "",
@@ -88,15 +87,12 @@ export default function MobileQuotationsPage() {
   // the form because an edit does NOT reissue it.
   const [editing, setEditing] = useState<Quotation | null>(null);
 
-  // Sending goes through the region mailbox Customer Emails uses, so a reply lands in the
-  // inbox the office already reads.
-  const [mailboxes, setMailboxes] = useState<MailboxHealth[]>([]);
+  // Every quotation, Visit or Part, goes out as the trade desk's own mail: from trade@,
+  // copied to the desk's two and the customer's branch, the sheet attached as a PDF. The
+  // server says what that comes to; the CC stays editable.
   const [sending, setSending] = useState<Quotation | null>(null);
-  const [sendRegion, setSendRegion] = useState("");
   const [sendTo, setSendTo] = useState("");
   const [sendBusy, setSendBusy] = useState(false);
-  // A Visit quotation's mail is the trade desk's: from trade@, copied by branch, the sheet
-  // attached. The server says what that comes to; the CC stays editable.
   const [sendDefaults, setSendDefaults] = useState<QuotationSendDefaults | null>(null);
   const [sendDefaultsFailed, setSendDefaultsFailed] = useState(false);
   const [sendCc, setSendCc] = useState("");
@@ -104,26 +100,16 @@ export default function MobileQuotationsPage() {
   // Said inside the sheet as well: the page's own message line is behind it.
   const [sendError, setSendError] = useState<string | null>(null);
 
-  useEffect(() => {
-    if (!session?.token) return;
-    void getCustomerEmails(session.token, { limit: 1 })
-      .then((res) => setMailboxes(res.mailboxes))
-      .catch(() => {
-        /* Send will ask for a mailbox */
-      });
-  }, [session?.token]);
-
   function startSend(q: Quotation) {
     setSending(q);
     setSendTo(q.customerEmail || "");
-    setSendRegion(mailboxes[0]?.regionCode ?? "");
     setSendDefaults(null);
     setSendDefaultsFailed(false);
     setSendCc("");
     setSendError(null);
     setMessage(null);
     const seq = ++sendDefaultsSeq.current;
-    if ((q.kind ?? "PART") !== "VISIT" || !session) return;
+    if (!session) return;
     void getQuotationSendDefaults(session.token, q.id)
       .then((defaults) => {
         if (seq !== sendDefaultsSeq.current) return;
@@ -138,44 +124,35 @@ export default function MobileQuotationsPage() {
 
   async function handleSend() {
     if (!sending || !session) return;
-    const visit = (sending.kind ?? "PART") === "VISIT";
     const refuse = (text: string) => {
       setMessage(text);
       setSendError(text);
     };
-    if (!visit && !sendRegion) return refuse("Choose which mailbox to send from.");
     if (!sendTo.trim()) return refuse("Enter the customer's email address.");
-    if (visit && sendDefaults?.canSend === false) {
-      setSendError(sendDefaults.blockedReason ?? "This login cannot send a Visit quotation.");
+    if (sendDefaults?.canSend === false) {
+      setSendError(sendDefaults.blockedReason ?? "This login cannot send quotations.");
       return;
     }
     setSendBusy(true);
     setMessage(null);
     setSendError(null);
     try {
-      if (visit) {
-        // The sheet goes with it as a PDF, made here from the same sheet Print shows — drawn
-        // from the quotation as it is on file now, not as this page loaded it. The server
-        // checks the two are the same.
-        const fresh = await getQuotation(session.token, sending.id);
-        const pdf = await quotationPdf(fresh);
-        await sendQuotation(
-          session.token,
-          sending.id,
-          {
-            regionCode: VISIT_FROM_MAILBOX,
-            to: sendTo.trim(),
-            ...(sendDefaults ? { cc: sendCc.trim() } : {}),
-            renderedVersion: fresh.updatedAt ?? fresh.createdAt,
-          },
-          { pdf, filename: sendDefaults?.attachmentName ?? "quotation.pdf" },
-        );
-      } else {
-        await sendQuotation(session.token, sending.id, {
-          regionCode: sendRegion,
+      // The sheet goes with it as a PDF, made here from the same sheet Print shows — drawn
+      // from the quotation as it is on file now, not as this page loaded it. The server
+      // checks the two are the same.
+      const fresh = await getQuotation(session.token, sending.id);
+      const pdf = await quotationPdf(fresh);
+      await sendQuotation(
+        session.token,
+        sending.id,
+        {
+          regionCode: DESK_FROM_MAILBOX,
           to: sendTo.trim(),
-        });
-      }
+          ...(sendDefaults ? { cc: sendCc.trim() } : {}),
+          renderedVersion: fresh.updatedAt ?? fresh.createdAt,
+        },
+        { pdf, filename: sendDefaults?.attachmentName ?? "quotation.pdf" },
+      );
       setSending(null);
       setMessage(`Sent to ${sendTo.trim()}.`);
       void load();
@@ -800,8 +777,8 @@ export default function MobileQuotationsPage() {
 
       {printing && <PrintOverlay q={printing} onClose={() => setPrinting(null)} />}
 
-      {/* Send. A sheet rather than a one-tap action: which mailbox it leaves from decides
-          where the reply lands, and the address may not be the one on the quotation. */}
+      {/* Send. A sheet rather than a one-tap action: the address may not be the one on the
+          quotation, and the CC may need a change. It always leaves from the trade desk. */}
       {sending ? (
         <div className="mSheetBackdrop" onClick={() => !sendBusy && setSending(null)}>
           <div className="mSheet" onClick={(e) => e.stopPropagation()}>
@@ -810,48 +787,25 @@ export default function MobileQuotationsPage() {
             <div className="mMuted" style={{ fontSize: 12.5, marginBottom: 12 }}>
               {sending.sentAt
                 ? `Already sent ${daysSince(sending.sentAt)}d ago. This sends it again.`
-                : (sending.kind ?? "PART") === "VISIT"
-                  ? "Goes out as the trade desk's Visit quotation mail, with the sheet attached as a PDF."
-                  : "Goes out as the body of the mail, from the region mailbox."}
+                : `Goes out as the trade desk's ${(sending.kind ?? "PART") === "VISIT" ? "Visit" : "Part"} quotation mail, with the sheet attached as a PDF.`}
             </div>
 
-            {(sending.kind ?? "PART") === "VISIT" ? (
-              <>
-                {/* Fixed: every Visit quotation leaves from the trade desk, whatever the branch. */}
-                <label className="mLabel">From</label>
-                <div className="mInput" style={{ marginBottom: 10 }}>
-                  {sendDefaults?.from ?? "trade@renderways.in"}
-                </div>
-                {sendDefaults && !sendDefaults.from ? (
-                  <div role="alert" style={{ fontSize: 12.5, color: "#b91c1c", marginBottom: 10 }}>
-                    trade@renderways.in is not set up as a mailbox in Customer Emails, so this send
-                    will fail.
-                  </div>
-                ) : null}
-                {sendDefaults?.canSend === false ? (
-                  <div role="alert" style={{ fontSize: 12.5, color: "#b91c1c", marginBottom: 10 }}>
-                    {sendDefaults.blockedReason}
-                  </div>
-                ) : null}
-              </>
-            ) : (
-              <>
-                <label className="mLabel">From mailbox</label>
-                <select
-                  className="mSelect"
-                  value={sendRegion}
-                  onChange={(e) => setSendRegion(e.target.value)}
-                  style={{ marginBottom: 10 }}
-                >
-                  <option value="">Choose a mailbox…</option>
-                  {mailboxes.map((m) => (
-                    <option key={m.email} value={m.regionCode}>
-                      {m.regionCode} — {m.email}
-                    </option>
-                  ))}
-                </select>
-              </>
-            )}
+            {/* Fixed: every quotation leaves from the trade desk, whatever the branch. */}
+            <label className="mLabel">From</label>
+            <div className="mInput" style={{ marginBottom: 10 }}>
+              {sendDefaults?.from ?? "trade@renderways.in"}
+            </div>
+            {sendDefaults && !sendDefaults.from ? (
+              <div role="alert" style={{ fontSize: 12.5, color: "#b91c1c", marginBottom: 10 }}>
+                trade@renderways.in is not set up as a mailbox in Customer Emails, so this send
+                will fail.
+              </div>
+            ) : null}
+            {sendDefaults?.canSend === false ? (
+              <div role="alert" style={{ fontSize: 12.5, color: "#b91c1c", marginBottom: 10 }}>
+                {sendDefaults.blockedReason}
+              </div>
+            ) : null}
 
             <label className="mLabel">To</label>
             <input
@@ -862,38 +816,34 @@ export default function MobileQuotationsPage() {
               style={{ marginBottom: 14 }}
             />
 
-            {(sending.kind ?? "PART") === "VISIT" ? (
-              <>
-                {/* The desk's two and the customer's branch, worked out by the server. */}
-                <label className="mLabel">CC</label>
-                <input
-                  aria-label="CC"
-                  className="mInput"
-                  value={sendCc}
-                  onChange={(e) => setSendCc(e.target.value)}
-                  disabled={!sendDefaults}
-                  placeholder={
-                    sendDefaults
-                      ? "Nobody copied"
-                      : sendDefaultsFailed
-                        ? "Could not load — the server will copy its usual list"
-                        : "Loading…"
-                  }
-                  style={{ marginBottom: 6 }}
-                />
-                <div className="mMuted" style={{ fontSize: 12, marginBottom: 14 }}>
-                  {sendDefaults ? (
-                    <>
-                      Subject: {sendDefaults.subject}
-                      <br />
-                      Attached: {sendDefaults.attachmentName}
-                    </>
-                  ) : (
-                    " "
-                  )}
-                </div>
-              </>
-            ) : null}
+            {/* The desk's two and the customer's branch, worked out by the server. */}
+            <label className="mLabel">CC</label>
+            <input
+              aria-label="CC"
+              className="mInput"
+              value={sendCc}
+              onChange={(e) => setSendCc(e.target.value)}
+              disabled={!sendDefaults}
+              placeholder={
+                sendDefaults
+                  ? "Nobody copied"
+                  : sendDefaultsFailed
+                    ? "Could not load — the server will copy its usual list"
+                    : "Loading…"
+              }
+              style={{ marginBottom: 6 }}
+            />
+            <div className="mMuted" style={{ fontSize: 12, marginBottom: 14 }}>
+              {sendDefaults ? (
+                <>
+                  Subject: {sendDefaults.subject}
+                  <br />
+                  Attached: {sendDefaults.attachmentName}
+                </>
+              ) : (
+                " "
+              )}
+            </div>
 
             {sendError ? (
               <div role="alert" style={{ fontSize: 12.5, color: "#b91c1c", marginBottom: 10 }}>
@@ -904,9 +854,7 @@ export default function MobileQuotationsPage() {
             <button
               type="button"
               className="mBtn"
-              disabled={
-                sendBusy || ((sending.kind ?? "PART") === "VISIT" && sendDefaults?.canSend === false)
-              }
+              disabled={sendBusy || sendDefaults?.canSend === false}
               onClick={() => void handleSend()}
             >
               {sendBusy ? "Sending…" : "Send to customer"}

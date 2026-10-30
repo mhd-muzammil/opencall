@@ -37,7 +37,6 @@ import {
   tileTotal,
   type TileKey,
 } from "../../../lib/quotationTiles";
-import { getCustomerEmails, type MailboxHealth } from "../../../lib/customerEmailApiClient";
 
 const EMPTY_LINE_ITEM: QuotationLineItem = {
   serviceDescription: "",
@@ -108,8 +107,8 @@ function formatRaisedAt(createdAt: string): string {
 /** The branches, in the order the Records page's region bar shows them. */
 const LOCATIONS = ["CHENNAI", "HOSUR", "KANCHIPURAM", "SALEM", "VELLORE"];
 
-/** Every Visit quotation leaves from the trade desk, trade@renderways.in, whatever the branch. */
-const VISIT_FROM_MAILBOX = "TRADE";
+/** Every quotation leaves from the trade desk, trade@renderways.in, whatever the branch. */
+const DESK_FROM_MAILBOX = "TRADE";
 
 /**
  * The branch a waiting quotation's work order belongs to. The report stores the ASP code
@@ -240,17 +239,13 @@ function QuotationsOfKind({
 
   // --- Sending, and what came back ------------------------------------------------------
   //
-  // The mailbox list comes from Customer Emails, because that is where the region mailboxes
-  // are configured and a quotation must go out from the same address the customer already
-  // corresponds with — a reply landing in an inbox nobody reads is worse than not sending.
-  const [mailboxes, setMailboxes] = useState<MailboxHealth[]>([]);
+  // Every quotation, Visit or Part, goes out as the trade desk's own mail: from trade@,
+  // copied to the desk's two and the customer's branch, the sheet attached as a PDF. The
+  // server says what that comes to for this quotation; the CC stays editable.
   const [sending, setSending] = useState<Quotation | null>(null);
   const [sendTo, setSendTo] = useState("");
-  const [sendRegion, setSendRegion] = useState("");
   const [sendNote, setSendNote] = useState("");
   const [sendBusy, setSendBusy] = useState(false);
-  // A Visit quotation's mail is the trade desk's: from trade@, copied by branch, the sheet
-  // attached. The server says what that comes to for this quotation; the CC stays editable.
   const [sendDefaults, setSendDefaults] = useState<QuotationSendDefaults | null>(null);
   const [sendDefaultsFailed, setSendDefaultsFailed] = useState(false);
   const [sendCc, setSendCc] = useState("");
@@ -259,28 +254,16 @@ function QuotationsOfKind({
   // Said inside the dialog as well: the page's own message line is behind it.
   const [sendError, setSendError] = useState<string | null>(null);
 
-  useEffect(() => {
-    // One row is enough — the mailboxes ride along with any page of the inbox, and there
-    // is no lighter endpoint for them. A failure just leaves Send asking for a mailbox.
-    void getCustomerEmails(token, { limit: 1 })
-      .then((res) => setMailboxes(res.mailboxes))
-      .catch(() => {
-        /* Send will say it needs a mailbox */
-      });
-  }, [token]);
-
   function startSend(q: Quotation) {
     setSending(q);
     setSendTo(q.customerEmail || "");
     setSendNote("");
-    setSendRegion(mailboxes[0]?.regionCode ?? "");
     setSendDefaults(null);
     setSendDefaultsFailed(false);
     setSendCc("");
     setSendError(null);
     setMessage(null);
     const seq = ++sendDefaultsSeq.current;
-    if ((q.kind ?? "PART") !== "VISIT") return;
     void getQuotationSendDefaults(token, q.id)
       .then((defaults) => {
         if (seq !== sendDefaultsSeq.current) return;
@@ -295,53 +278,39 @@ function QuotationsOfKind({
 
   async function handleSend() {
     if (!sending) return;
-    const visit = (sending.kind ?? "PART") === "VISIT";
-    if (!visit && !sendRegion) {
-      setMessage("Choose which mailbox to send from.");
-      setSendError("Choose which mailbox to send from.");
-      return;
-    }
     if (!sendTo.trim()) {
       setMessage("Enter the customer's email address.");
       setSendError("Enter the customer's email address.");
       return;
     }
-    if (visit && sendDefaults?.canSend === false) {
-      setSendError(sendDefaults.blockedReason ?? "This login cannot send a Visit quotation.");
+    if (sendDefaults?.canSend === false) {
+      setSendError(sendDefaults.blockedReason ?? "This login cannot send quotations.");
       return;
     }
     setSendBusy(true);
     setMessage(null);
     setSendError(null);
     try {
-      if (visit) {
-        // The sheet goes with it as a PDF, made here from the same sheet Print shows — drawn
-        // from the quotation as it is on file now, not as this page loaded it, since someone
-        // may have corrected it elsewhere since. The server checks the two are the same.
-        const fresh = await getQuotation(token, sending.id);
-        const pdf = await quotationPdf(fresh);
-        await sendQuotation(
-          token,
-          sending.id,
-          {
-            // The server sends every Visit quotation from the trade desk whatever this says.
-            regionCode: VISIT_FROM_MAILBOX,
-            to: sendTo.trim(),
-            note: sendNote.trim(),
-            // Until the defaults arrive the field is empty and not yet the sender's; leaving
-            // it out lets the server copy its own list rather than nobody.
-            ...(sendDefaults ? { cc: sendCc.trim() } : {}),
-            renderedVersion: fresh.updatedAt ?? fresh.createdAt,
-          },
-          { pdf, filename: sendDefaults?.attachmentName ?? "quotation.pdf" },
-        );
-      } else {
-        await sendQuotation(token, sending.id, {
-          regionCode: sendRegion,
+      // The sheet goes with it as a PDF, made here from the same sheet Print shows — drawn
+      // from the quotation as it is on file now, not as this page loaded it, since someone
+      // may have corrected it elsewhere since. The server checks the two are the same.
+      const fresh = await getQuotation(token, sending.id);
+      const pdf = await quotationPdf(fresh);
+      await sendQuotation(
+        token,
+        sending.id,
+        {
+          // The server sends every quotation from the trade desk whatever this says.
+          regionCode: DESK_FROM_MAILBOX,
           to: sendTo.trim(),
           note: sendNote.trim(),
-        });
-      }
+          // Until the defaults arrive the field is empty and not yet the sender's; leaving
+          // it out lets the server copy its own list rather than nobody.
+          ...(sendDefaults ? { cc: sendCc.trim() } : {}),
+          renderedVersion: fresh.updatedAt ?? fresh.createdAt,
+        },
+        { pdf, filename: sendDefaults?.attachmentName ?? "quotation.pdf" },
+      );
       setSending(null);
       setMessage(`Quotation sent to ${sendTo.trim()}.`);
       void load();
@@ -1464,9 +1433,9 @@ function QuotationsOfKind({
 
       {printing && <PrintOverlay q={printing} onClose={() => setPrinting(null)} />}
 
-      {/* Send. Shown as a small form rather than a one-click action because all three
-          fields matter: which mailbox it leaves from decides where the reply lands, the
-          address may not be the one on the sheet, and a covering line is usually wanted. */}
+      {/* Send. Shown as a small form rather than a one-click action: the address may not be
+          the one on the sheet, the CC may need a change, and a covering line is sometimes
+          wanted. Where it leaves from is fixed — the trade desk — and shown, not chosen. */}
       {sending ? (
         <div
           role="dialog"
@@ -1501,47 +1470,25 @@ function QuotationsOfKind({
             <p style={{ margin: "0 0 16px 0", fontSize: "12px", color: "#64748b" }}>
               {sending.sentAt
                 ? `Already sent ${daysSince(sending.sentAt)} day(s) ago${sending.sendCount && sending.sendCount > 1 ? ` · ${sending.sendCount} times` : ""}. This sends it again.`
-                : (sending.kind ?? "PART") === "VISIT"
-                  ? "Goes out as the trade desk's Visit quotation mail, with the sheet attached as a PDF."
-                  : "The quotation goes out as the body of the mail, from the region mailbox."}
+                : `Goes out as the trade desk's ${(sending.kind ?? "PART") === "VISIT" ? "Visit" : "Part"} quotation mail, with the sheet attached as a PDF.`}
             </p>
 
-            {(sending.kind ?? "PART") === "VISIT" ? (
-              <>
-                {/* Fixed: every Visit quotation leaves from the trade desk, whatever the branch. */}
-                <label style={label}>From</label>
-                <div style={{ ...field, marginBottom: "12px", background: "#f8fafc" }}>
-                  {sendDefaults?.from ?? "trade@renderways.in"}
-                </div>
-                {sendDefaults && !sendDefaults.from ? (
-                  <p role="alert" style={{ margin: "-6px 0 12px 0", fontSize: "12px", color: "#b91c1c" }}>
-                    trade@renderways.in is not set up as a mailbox in Customer Emails, so this send
-                    will fail.
-                  </p>
-                ) : null}
-                {sendDefaults?.canSend === false ? (
-                  <p role="alert" style={{ margin: "-6px 0 12px 0", fontSize: "12px", color: "#b91c1c" }}>
-                    {sendDefaults.blockedReason}
-                  </p>
-                ) : null}
-              </>
-            ) : (
-              <>
-                <label style={label}>From mailbox</label>
-                <select
-                  value={sendRegion}
-                  onChange={(e) => setSendRegion(e.target.value)}
-                  style={{ ...field, marginBottom: "12px" }}
-                >
-                  <option value="">Choose a mailbox…</option>
-                  {mailboxes.map((m) => (
-                    <option key={m.email} value={m.regionCode}>
-                      {m.regionCode} — {m.email}
-                    </option>
-                  ))}
-                </select>
-              </>
-            )}
+            {/* Fixed: every quotation leaves from the trade desk, whatever the branch. */}
+            <label style={label}>From</label>
+            <div style={{ ...field, marginBottom: "12px", background: "#f8fafc" }}>
+              {sendDefaults?.from ?? "trade@renderways.in"}
+            </div>
+            {sendDefaults && !sendDefaults.from ? (
+              <p role="alert" style={{ margin: "-6px 0 12px 0", fontSize: "12px", color: "#b91c1c" }}>
+                trade@renderways.in is not set up as a mailbox in Customer Emails, so this send
+                will fail.
+              </p>
+            ) : null}
+            {sendDefaults?.canSend === false ? (
+              <p role="alert" style={{ margin: "-6px 0 12px 0", fontSize: "12px", color: "#b91c1c" }}>
+                {sendDefaults.blockedReason}
+              </p>
+            ) : null}
 
             <label style={label}>To</label>
             <input
@@ -1551,37 +1498,34 @@ function QuotationsOfKind({
               placeholder="customer@example.com"
             />
 
-            {(sending.kind ?? "PART") === "VISIT" ? (
-              <>
-                {/* The desk's two and the customer's branch, worked out by the server. */}
-                <label style={label}>CC</label>
-                <input
-                  aria-label="CC"
-                  style={{ ...field, marginBottom: "6px" }}
-                  value={sendCc}
-                  onChange={(e) => setSendCc(e.target.value)}
-                  disabled={!sendDefaults}
-                  placeholder={
-                    sendDefaults
-                      ? "Nobody copied"
-                      : sendDefaultsFailed
-                        ? "Could not load — the server will copy its usual list"
-                        : "Loading…"
-                  }
-                />
-                <p style={{ margin: "0 0 12px 0", fontSize: "12px", color: "#64748b" }}>
-                  {sendDefaults ? (
-                    <>
-                      Subject: {sendDefaults.subject}
-                      <br />
-                      Attached: {sendDefaults.attachmentName} — the Visit sheet as a PDF
-                    </>
-                  ) : (
-                    " "
-                  )}
-                </p>
-              </>
-            ) : null}
+            {/* The desk's two and the customer's branch, worked out by the server. */}
+            <label style={label}>CC</label>
+            <input
+              aria-label="CC"
+              style={{ ...field, marginBottom: "6px" }}
+              value={sendCc}
+              onChange={(e) => setSendCc(e.target.value)}
+              disabled={!sendDefaults}
+              placeholder={
+                sendDefaults
+                  ? "Nobody copied"
+                  : sendDefaultsFailed
+                    ? "Could not load — the server will copy its usual list"
+                    : "Loading…"
+              }
+            />
+            <p style={{ margin: "0 0 12px 0", fontSize: "12px", color: "#64748b" }}>
+              {sendDefaults ? (
+                <>
+                  Subject: {sendDefaults.subject}
+                  <br />
+                  Attached: {sendDefaults.attachmentName} — the{" "}
+                  {(sending.kind ?? "PART") === "VISIT" ? "Visit" : "Part"} sheet as a PDF
+                </>
+              ) : (
+                " "
+              )}
+            </p>
 
             <label style={label}>Covering note (optional)</label>
             <textarea
@@ -1609,9 +1553,7 @@ function QuotationsOfKind({
               <button
                 type="button"
                 onClick={() => void handleSend()}
-                disabled={
-                  sendBusy || ((sending.kind ?? "PART") === "VISIT" && sendDefaults?.canSend === false)
-                }
+                disabled={sendBusy || sendDefaults?.canSend === false}
                 style={primaryBtn}
               >
                 {sendBusy ? "Sending…" : "Send to customer"}

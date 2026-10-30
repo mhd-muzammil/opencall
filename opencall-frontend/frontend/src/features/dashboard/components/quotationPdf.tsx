@@ -101,24 +101,38 @@ export async function sheetToPdf(sheet: HTMLElement, title: string): Promise<Blo
     .map((el) => el.getBoundingClientRect().top - box.top);
   const tops = pageTops(height, breaks, pageHeight);
 
+  // Drawn once, whole, then cut on whole pixel rows. Drawing each page separately from the
+  // picture resamples it at the cut, and the last sliver of a rule that ends at the break
+  // (the box closing page 1) bleeds a grey line onto the top of page 2.
   const image = await sheetImage(sheet, width, height);
+  const whole = document.createElement("canvas");
+  whole.width = Math.round(width * SCALE);
+  whole.height = Math.round(height * SCALE);
+  const context = whole.getContext("2d");
+  if (!context) throw new Error("The browser could not draw the quotation");
+  context.fillStyle = "#ffffff";
+  context.fillRect(0, 0, whole.width, whole.height);
+  context.drawImage(image, 0, 0, whole.width, whole.height);
+
+  const pageRows = Math.round(pageHeight * SCALE);
+  // A page starts on the first row wholly below its break, so a partly covered row stays
+  // with the page above.
+  const starts = tops.map((top) => Math.min(whole.height, Math.ceil(top * SCALE - 1e-6)));
   const pages: PdfPageImage[] = [];
-  for (const [index, top] of tops.entries()) {
-    const bottom = Math.min(tops[index + 1] ?? height, top + pageHeight, height);
-    const part = bottom - top;
-    const canvas = document.createElement("canvas");
-    canvas.width = Math.round(width * SCALE);
-    canvas.height = Math.max(1, Math.round(part * SCALE));
-    const context = canvas.getContext("2d");
-    if (!context) throw new Error("The browser could not draw the quotation");
-    context.fillStyle = "#ffffff";
-    context.fillRect(0, 0, canvas.width, canvas.height);
-    context.drawImage(image, 0, top, width, part, 0, 0, canvas.width, canvas.height);
+  for (const [index, start] of starts.entries()) {
+    const end = Math.min(starts[index + 1] ?? whole.height, start + pageRows, whole.height);
+    const rows = Math.max(1, end - start);
+    const page = document.createElement("canvas");
+    page.width = whole.width;
+    page.height = rows;
+    const pageContext = page.getContext("2d");
+    if (!pageContext) throw new Error("The browser could not draw the quotation");
+    pageContext.drawImage(whole, 0, start, whole.width, rows, 0, 0, whole.width, rows);
     pages.push({
-      jpeg: await canvasToJpeg(canvas),
-      widthPx: canvas.width,
-      heightPx: canvas.height,
-      heightShare: Math.min(1, part / pageHeight),
+      jpeg: await canvasToJpeg(page),
+      widthPx: page.width,
+      heightPx: rows,
+      heightShare: Math.min(1, rows / pageRows),
     });
   }
   return new Blob([buildImagePdf(pages, { ...A4_PT, title })], { type: "application/pdf" });

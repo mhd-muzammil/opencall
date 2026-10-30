@@ -863,9 +863,8 @@ describe("Waiting Approval", () => {
 });
 
 /**
- * Sending. A Visit quotation goes out as the trade desk's own mail — from trade@, copied to
- * the desk's two and the customer's branch, the sheet attached as a PDF. A Part quotation
- * keeps the send it has always had until its format is given.
+ * Sending. Every quotation, Visit or Part, goes out as the trade desk's own mail — from
+ * trade@, copied to the desk's two and the customer's branch, the sheet attached as a PDF.
  */
 describe("sending a quotation", () => {
   const DEFAULTS = {
@@ -998,24 +997,45 @@ describe("sending a quotation", () => {
     );
   });
 
-  it("keeps the Part send as it was: a mailbox to choose, no CC and no PDF", async () => {
-    vi.mocked(getCustomerEmails).mockResolvedValue({
-      mailboxes: [{ regionCode: "CHENNAI", email: "chennai@renderways.in" }],
-    } as never);
+  it("sends a Part quotation the same way, as the desk's Part mail with its own sheet", async () => {
+    const partDefaults = {
+      kind: "PART",
+      from: "trade@renderways.in",
+      subject: "Serial No- 1F3Y2A#ACJ- Righter with HP - Part Quote",
+      cc: ["radhika@renderways.in", "dinesh@renderways.in", "vellore@renderways.in"],
+      branch: "VELLORE",
+      attachmentName: "RTPL_26-27_QEN_81.pdf",
+      canSend: true,
+      blockedReason: null,
+    };
+    api.getQuotationSendDefaults.mockResolvedValue(partDefaults);
+    api.getQuotation.mockResolvedValue(PART_ROW);
     await mount();
     await click(tabs()[1]);
     await click(button(panel("Part Quotation")!, "Send"));
 
-    expect(dialog()?.querySelector("select")?.value).toBe("CHENNAI");
-    expect(ccField()).toBeNull();
-    expect(api.getQuotationSendDefaults).not.toHaveBeenCalled();
+    // From is fixed for a Part quotation too: no mailbox to choose.
+    expect(dialog()?.querySelector("select")).toBeNull();
+    expect(dialog()?.textContent).toContain("trade@renderways.in");
+    expect(dialog()?.textContent).toContain("trade desk's Part quotation mail");
+    expect(ccField()?.value).toBe("radhika@renderways.in, dinesh@renderways.in, vellore@renderways.in");
+    expect(dialog()?.textContent).toContain("Subject: Serial No- 1F3Y2A#ACJ- Righter with HP - Part Quote");
+    expect(dialog()?.textContent).toContain("Attached: RTPL_26-27_QEN_81.pdf — the Part sheet as a PDF");
 
     await click(button(dialog()!, "Send to customer"));
-    expect(pdf.quotationPdf).not.toHaveBeenCalled();
-    expect(api.sendQuotation).toHaveBeenCalledWith("t", "p-81", {
-      regionCode: "CHENNAI",
-      to: "customer@example.com",
-      note: "",
-    });
+    expect(api.getQuotationSendDefaults).toHaveBeenCalledWith("t", "p-81");
+    expect(pdf.quotationPdf).toHaveBeenCalledWith(PART_ROW);
+    expect(api.sendQuotation).toHaveBeenCalledWith(
+      "t",
+      "p-81",
+      {
+        regionCode: "TRADE",
+        to: "customer@example.com",
+        note: "",
+        cc: "radhika@renderways.in, dinesh@renderways.in, vellore@renderways.in",
+        renderedVersion: PART_ROW.createdAt,
+      },
+      { pdf: SHEET, filename: "RTPL_26-27_QEN_81.pdf" },
+    );
   });
 });

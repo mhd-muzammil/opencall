@@ -19,6 +19,10 @@ describe("pageTops", () => {
     expect(pageTops(3000, [700], PAGE)).toEqual([0, 700, 700 + PAGE, 700 + PAGE * 2]);
   });
 
+  it("keeps a break's fraction of a pixel, so page 1's last rule stays on page 1", () => {
+    expect(pageTops(1123, [733.97], PAGE)).toEqual([0, 733.97]);
+  });
+
   it("ignores a break at the very top or past the end, and a repeated one", () => {
     expect(pageTops(1123, [0, 700, 700.4, 5000], PAGE)).toEqual([0, 700]);
   });

@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   approveQuotationDraft,
   createQuotation,
+  getQuotation,
   getQuotationSendDefaults,
   listQuotationDrafts,
   listQuotations,
@@ -140,7 +141,13 @@ describe("sendQuotation", () => {
     await sendQuotation(
       "t",
       "v-1",
-      { regionCode: "TRADE", to: "c@example.com", note: "", cc: "radhika@renderways.in, hosur@renderways.in" },
+      {
+        regionCode: "TRADE",
+        to: "c@example.com",
+        note: "",
+        cc: "radhika@renderways.in, hosur@renderways.in",
+        renderedVersion: "2026-10-30 10:05:00.5+05:30",
+      },
       { pdf, filename: "5166159539.pdf" },
     );
     const [, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
@@ -149,6 +156,7 @@ describe("sendQuotation", () => {
     const form = init.body as FormData;
     expect(form.get("regionCode")).toBe("TRADE");
     expect(form.get("cc")).toBe("radhika@renderways.in, hosur@renderways.in");
+    expect(form.get("renderedVersion")).toBe("2026-10-30 10:05:00.5+05:30");
     const file = form.get("attachments") as File;
     expect(file.name).toBe("5166159539.pdf");
     expect(file.type).toBe("application/pdf");
@@ -168,5 +176,15 @@ describe("getQuotationSendDefaults", () => {
     await getQuotationSendDefaults("t", "v 1");
     const url = new URL(String((fetchMock.mock.calls[0] as unknown[])[0]));
     expect(url.pathname).toBe("/api/v1/quotations/v%201/send-defaults");
+  });
+});
+
+describe("getQuotation", () => {
+  it("asks for one quotation as it is on file, uncached", async () => {
+    const fetchMock = stubFetch();
+    await getQuotation("t", "v-1");
+    const [url, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
+    expect(new URL(url).pathname).toBe("/api/v1/quotations/v-1");
+    expect(init.cache).toBe("no-store");
   });
 });

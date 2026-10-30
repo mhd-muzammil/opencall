@@ -50,10 +50,17 @@ function canvasToJpeg(canvas: HTMLCanvasElement): Promise<Uint8Array> {
   });
 }
 
+/**
+ * Characters XML 1.0 does not allow anywhere, even escaped. A control character pasted into
+ * a customer's name is harmless on screen but makes the whole SVG unreadable, and the send
+ * would fail with "the source image cannot be decoded". They print as nothing, so they go.
+ */
+const NOT_XML = /[\u0000-\u0008\u000B\u000C\u000E-\u001F￾￿]/g;
+
 /** The sheet as an image the browser has laid out itself, at its own size in CSS pixels. */
 async function sheetImage(sheet: HTMLElement, width: number, height: number): Promise<HTMLImageElement> {
   // XMLSerializer writes the element as XHTML, which is what <foreignObject> requires.
-  const xhtml = new XMLSerializer().serializeToString(sheet);
+  const xhtml = new XMLSerializer().serializeToString(sheet).replace(NOT_XML, "");
   const svg =
     `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}">` +
     `<foreignObject x="0" y="0" width="${width}" height="${height}">${xhtml}</foreignObject></svg>`;
@@ -66,11 +73,15 @@ async function sheetImage(sheet: HTMLElement, width: number, height: number): Pr
 /**
  * Where printing starts a new page, in CSS pixels from the top of the sheet: before each
  * element that asks for a break, and at the foot of any stretch taller than a page.
+ *
+ * Kept to the fraction of a pixel. Rounded, a break at 733.4 would start page 2 at 733 and
+ * carry the last 0.4px of page 1 — the table's closing rule — onto its top edge.
  */
 export function pageTops(height: number, breaks: readonly number[], pageHeight: number): number[] {
-  const forced = [...new Set(breaks.map((top) => Math.round(top)))]
-    .filter((top) => top > 0 && top < height)
-    .sort((a, b) => a - b);
+  const forced = breaks
+    .filter((top) => top > 0.5 && top < height - 0.5)
+    .sort((a, b) => a - b)
+    .filter((top, index, all) => index === 0 || top - all[index - 1]! > 0.5);
   const tops: number[] = [];
   for (const [index, start] of [0, ...forced].entries()) {
     const end = forced[index] ?? height;
@@ -130,10 +141,12 @@ export async function quotationPdf(q: Quotation): Promise<Blob> {
     const doc = frame.contentDocument;
     if (!doc) throw new Error("The browser could not draw the quotation");
     // What the Print button writes, less @page: a blank document holding only the sheet.
+    // Text autosizing off, so a phone with enlarged text measures the layout it then draws.
     doc.open();
     doc.write(
-      '<!doctype html><html><head><meta charset="utf-8"><style>body{margin:0}</style></head>' +
-        "<body><div></div></body></html>",
+      '<!doctype html><html><head><meta charset="utf-8"><style>' +
+        "html{-webkit-text-size-adjust:100%;text-size-adjust:100%} body{margin:0}" +
+        "</style></head><body><div></div></body></html>",
     );
     doc.close();
     const host = doc.body.firstElementChild as HTMLElement;

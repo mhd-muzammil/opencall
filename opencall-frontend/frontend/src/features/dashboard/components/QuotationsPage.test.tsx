@@ -16,6 +16,7 @@ const api = vi.hoisted(() => ({
   autofillQuotation: vi.fn(),
   sendQuotation: vi.fn(),
   getQuotationSendDefaults: vi.fn(),
+  getQuotation: vi.fn(),
   setQuotationPayment: vi.fn(),
   listQuotationDrafts: vi.fn(),
   approveQuotationDraft: vi.fn(),
@@ -881,6 +882,7 @@ describe("sending a quotation", () => {
 
   beforeEach(() => {
     api.getQuotationSendDefaults.mockResolvedValue(DEFAULTS);
+    api.getQuotation.mockResolvedValue(VISIT_ROW);
     api.sendQuotation.mockResolvedValue({ ...VISIT_ROW, sentAt: "2026-10-30T10:00:00Z" });
     pdf.quotationPdf.mockResolvedValue(SHEET);
   });
@@ -903,6 +905,7 @@ describe("sending a quotation", () => {
 
     await click(button(dialog()!, "Send to customer"));
 
+    expect(api.getQuotation).toHaveBeenCalledWith("t", "v-1");
     expect(pdf.quotationPdf).toHaveBeenCalledWith(VISIT_ROW);
     expect(api.sendQuotation).toHaveBeenCalledWith(
       "t",
@@ -912,11 +915,45 @@ describe("sending a quotation", () => {
         to: "customer@example.com",
         note: "",
         cc: "radhika@renderways.in, dinesh@renderways.in, vellore@renderways.in",
+        renderedVersion: VISIT_ROW.createdAt,
       },
       { pdf: SHEET, filename: "5100000001.pdf" },
     );
     expect(dialog()).toBeNull();
     expect(container.textContent).toContain("Quotation sent to customer@example.com.");
+  });
+
+  it("draws the sheet from the quotation as it is on file now, and says which version that was", async () => {
+    // Corrected elsewhere after this page loaded: a new amount, and an edit time.
+    const corrected = {
+      ...VISIT_ROW,
+      updatedAt: "2026-10-30 10:05:00.5+05:30",
+      lineItems: [{ ...item, baseAmount: 650 }],
+    };
+    api.getQuotation.mockResolvedValue(corrected);
+    await mount();
+    await click(button(panel("Visit Quotation")!, "Send"));
+    await click(button(dialog()!, "Send to customer"));
+
+    expect(pdf.quotationPdf).toHaveBeenCalledWith(corrected);
+    expect(api.sendQuotation.mock.calls[0]![2]).toMatchObject({ renderedVersion: "2026-10-30 10:05:00.5+05:30" });
+  });
+
+  it("tells a login that cannot send a Visit quotation so, before any PDF is made", async () => {
+    api.getQuotationSendDefaults.mockResolvedValue({
+      ...DEFAULTS,
+      canSend: false,
+      blockedReason: "Visit quotations go out from trade@renderways.in, and only a Super Admin can send from it.",
+    });
+    await mount();
+    await click(button(panel("Visit Quotation")!, "Send"));
+
+    expect(dialog()?.querySelector('[role="alert"]')?.textContent).toContain("only a Super Admin can send");
+    const send = button(dialog()!, "Send to customer") as HTMLButtonElement;
+    expect(send.disabled).toBe(true);
+    await click(send);
+    expect(pdf.quotationPdf).not.toHaveBeenCalled();
+    expect(api.sendQuotation).not.toHaveBeenCalled();
   });
 
   it("copies whoever the sender leaves in the CC", async () => {
@@ -934,6 +971,7 @@ describe("sending a quotation", () => {
     await click(button(panel("Visit Quotation")!, "Send"));
 
     expect(ccField()?.disabled).toBe(true);
+    expect(ccField()?.placeholder).toContain("the server will copy its usual list");
     await click(button(dialog()!, "Send to customer"));
     expect(api.sendQuotation.mock.calls[0]![2]).not.toHaveProperty("cc");
     expect(api.sendQuotation.mock.calls[0]![3]).toEqual({ pdf: SHEET, filename: "quotation.pdf" });
@@ -954,7 +992,10 @@ describe("sending a quotation", () => {
     await click(button(dialog()!, "Send to customer"));
 
     expect(dialog()).not.toBeNull();
-    expect(container.textContent).toContain("The quotation PDF did not come with this send.");
+    // Inside the dialog, not only on the page behind it.
+    expect(dialog()?.querySelector('[role="alert"]')?.textContent).toContain(
+      "The quotation PDF did not come with this send.",
+    );
   });
 
   it("keeps the Part send as it was: a mailbox to choose, no CC and no PDF", async () => {

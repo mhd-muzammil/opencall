@@ -6,6 +6,7 @@ import {
   autofillQuotation,
   createQuotation,
   updateQuotation,
+  getQuotation,
   getQuotationSendDefaults,
   sendQuotation,
   setQuotationPayment,
@@ -251,9 +252,12 @@ function QuotationsOfKind({
   // A Visit quotation's mail is the trade desk's: from trade@, copied by branch, the sheet
   // attached. The server says what that comes to for this quotation; the CC stays editable.
   const [sendDefaults, setSendDefaults] = useState<QuotationSendDefaults | null>(null);
+  const [sendDefaultsFailed, setSendDefaultsFailed] = useState(false);
   const [sendCc, setSendCc] = useState("");
   // Only the newest dialog's answer is taken, should a slow one land after another opened.
   const sendDefaultsSeq = useRef(0);
+  // Said inside the dialog as well: the page's own message line is behind it.
+  const [sendError, setSendError] = useState<string | null>(null);
 
   useEffect(() => {
     // One row is enough — the mailboxes ride along with any page of the inbox, and there
@@ -271,7 +275,9 @@ function QuotationsOfKind({
     setSendNote("");
     setSendRegion(mailboxes[0]?.regionCode ?? "");
     setSendDefaults(null);
+    setSendDefaultsFailed(false);
     setSendCc("");
+    setSendError(null);
     setMessage(null);
     const seq = ++sendDefaultsSeq.current;
     if ((q.kind ?? "PART") !== "VISIT") return;
@@ -282,7 +288,8 @@ function QuotationsOfKind({
         setSendCc(defaults.cc.join(", "));
       })
       .catch(() => {
-        /* Sending still works: without a CC from here, the server copies its own list. */
+        // Sending still works: without a CC from here, the server copies its own list.
+        if (seq === sendDefaultsSeq.current) setSendDefaultsFailed(true);
       });
   }
 
@@ -291,18 +298,28 @@ function QuotationsOfKind({
     const visit = (sending.kind ?? "PART") === "VISIT";
     if (!visit && !sendRegion) {
       setMessage("Choose which mailbox to send from.");
+      setSendError("Choose which mailbox to send from.");
       return;
     }
     if (!sendTo.trim()) {
       setMessage("Enter the customer's email address.");
+      setSendError("Enter the customer's email address.");
+      return;
+    }
+    if (visit && sendDefaults?.canSend === false) {
+      setSendError(sendDefaults.blockedReason ?? "This login cannot send a Visit quotation.");
       return;
     }
     setSendBusy(true);
     setMessage(null);
+    setSendError(null);
     try {
       if (visit) {
-        // The sheet goes with it as a PDF, made here from the same sheet Print shows.
-        const pdf = await quotationPdf(sending);
+        // The sheet goes with it as a PDF, made here from the same sheet Print shows — drawn
+        // from the quotation as it is on file now, not as this page loaded it, since someone
+        // may have corrected it elsewhere since. The server checks the two are the same.
+        const fresh = await getQuotation(token, sending.id);
+        const pdf = await quotationPdf(fresh);
         await sendQuotation(
           token,
           sending.id,
@@ -314,6 +331,7 @@ function QuotationsOfKind({
             // Until the defaults arrive the field is empty and not yet the sender's; leaving
             // it out lets the server copy its own list rather than nobody.
             ...(sendDefaults ? { cc: sendCc.trim() } : {}),
+            renderedVersion: fresh.updatedAt ?? fresh.createdAt,
           },
           { pdf, filename: sendDefaults?.attachmentName ?? "quotation.pdf" },
         );
@@ -328,7 +346,9 @@ function QuotationsOfKind({
       setMessage(`Quotation sent to ${sendTo.trim()}.`);
       void load();
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : "Send failed");
+      const text = error instanceof Error ? error.message : "Send failed";
+      setMessage(text);
+      setSendError(text);
     } finally {
       setSendBusy(false);
     }
@@ -1499,6 +1519,11 @@ function QuotationsOfKind({
                     will fail.
                   </p>
                 ) : null}
+                {sendDefaults?.canSend === false ? (
+                  <p role="alert" style={{ margin: "-6px 0 12px 0", fontSize: "12px", color: "#b91c1c" }}>
+                    {sendDefaults.blockedReason}
+                  </p>
+                ) : null}
               </>
             ) : (
               <>
@@ -1536,7 +1561,13 @@ function QuotationsOfKind({
                   value={sendCc}
                   onChange={(e) => setSendCc(e.target.value)}
                   disabled={!sendDefaults}
-                  placeholder={sendDefaults ? "Nobody copied" : "Loading…"}
+                  placeholder={
+                    sendDefaults
+                      ? "Nobody copied"
+                      : sendDefaultsFailed
+                        ? "Could not load — the server will copy its usual list"
+                        : "Loading…"
+                  }
                 />
                 <p style={{ margin: "0 0 12px 0", fontSize: "12px", color: "#64748b" }}>
                   {sendDefaults ? (
@@ -1560,6 +1591,12 @@ function QuotationsOfKind({
               placeholder="Anything you want to say above the quotation…"
             />
 
+            {sendError ? (
+              <p role="alert" style={{ margin: "-6px 0 12px 0", fontSize: "12px", color: "#b91c1c" }}>
+                {sendError}
+              </p>
+            ) : null}
+
             <div style={{ display: "flex", gap: "10px", justifyContent: "flex-end" }}>
               <button
                 type="button"
@@ -1572,7 +1609,9 @@ function QuotationsOfKind({
               <button
                 type="button"
                 onClick={() => void handleSend()}
-                disabled={sendBusy}
+                disabled={
+                  sendBusy || ((sending.kind ?? "PART") === "VISIT" && sendDefaults?.canSend === false)
+                }
                 style={primaryBtn}
               >
                 {sendBusy ? "Sending…" : "Send to customer"}

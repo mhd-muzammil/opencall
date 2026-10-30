@@ -8,6 +8,7 @@ import {
   autofillQuotation,
   createQuotation,
   updateQuotation,
+  getQuotation,
   getQuotationSendDefaults,
   sendQuotation,
   setQuotationPayment,
@@ -97,8 +98,11 @@ export default function MobileQuotationsPage() {
   // A Visit quotation's mail is the trade desk's: from trade@, copied by branch, the sheet
   // attached. The server says what that comes to; the CC stays editable.
   const [sendDefaults, setSendDefaults] = useState<QuotationSendDefaults | null>(null);
+  const [sendDefaultsFailed, setSendDefaultsFailed] = useState(false);
   const [sendCc, setSendCc] = useState("");
   const sendDefaultsSeq = useRef(0);
+  // Said inside the sheet as well: the page's own message line is behind it.
+  const [sendError, setSendError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!session?.token) return;
@@ -114,7 +118,9 @@ export default function MobileQuotationsPage() {
     setSendTo(q.customerEmail || "");
     setSendRegion(mailboxes[0]?.regionCode ?? "");
     setSendDefaults(null);
+    setSendDefaultsFailed(false);
     setSendCc("");
+    setSendError(null);
     setMessage(null);
     const seq = ++sendDefaultsSeq.current;
     if ((q.kind ?? "PART") !== "VISIT" || !session) return;
@@ -125,21 +131,34 @@ export default function MobileQuotationsPage() {
         setSendCc(defaults.cc.join(", "));
       })
       .catch(() => {
-        /* Sending still works: without a CC from here, the server copies its own list. */
+        // Sending still works: without a CC from here, the server copies its own list.
+        if (seq === sendDefaultsSeq.current) setSendDefaultsFailed(true);
       });
   }
 
   async function handleSend() {
     if (!sending || !session) return;
     const visit = (sending.kind ?? "PART") === "VISIT";
-    if (!visit && !sendRegion) return setMessage("Choose which mailbox to send from.");
-    if (!sendTo.trim()) return setMessage("Enter the customer's email address.");
+    const refuse = (text: string) => {
+      setMessage(text);
+      setSendError(text);
+    };
+    if (!visit && !sendRegion) return refuse("Choose which mailbox to send from.");
+    if (!sendTo.trim()) return refuse("Enter the customer's email address.");
+    if (visit && sendDefaults?.canSend === false) {
+      setSendError(sendDefaults.blockedReason ?? "This login cannot send a Visit quotation.");
+      return;
+    }
     setSendBusy(true);
     setMessage(null);
+    setSendError(null);
     try {
       if (visit) {
-        // The sheet goes with it as a PDF, made here from the same sheet Print shows.
-        const pdf = await quotationPdf(sending);
+        // The sheet goes with it as a PDF, made here from the same sheet Print shows — drawn
+        // from the quotation as it is on file now, not as this page loaded it. The server
+        // checks the two are the same.
+        const fresh = await getQuotation(session.token, sending.id);
+        const pdf = await quotationPdf(fresh);
         await sendQuotation(
           session.token,
           sending.id,
@@ -147,6 +166,7 @@ export default function MobileQuotationsPage() {
             regionCode: VISIT_FROM_MAILBOX,
             to: sendTo.trim(),
             ...(sendDefaults ? { cc: sendCc.trim() } : {}),
+            renderedVersion: fresh.updatedAt ?? fresh.createdAt,
           },
           { pdf, filename: sendDefaults?.attachmentName ?? "quotation.pdf" },
         );
@@ -160,7 +180,7 @@ export default function MobileQuotationsPage() {
       setMessage(`Sent to ${sendTo.trim()}.`);
       void load();
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : "Send failed");
+      refuse(error instanceof Error ? error.message : "Send failed");
     } finally {
       setSendBusy(false);
     }
@@ -808,6 +828,11 @@ export default function MobileQuotationsPage() {
                     will fail.
                   </div>
                 ) : null}
+                {sendDefaults?.canSend === false ? (
+                  <div role="alert" style={{ fontSize: 12.5, color: "#b91c1c", marginBottom: 10 }}>
+                    {sendDefaults.blockedReason}
+                  </div>
+                ) : null}
               </>
             ) : (
               <>
@@ -847,7 +872,13 @@ export default function MobileQuotationsPage() {
                   value={sendCc}
                   onChange={(e) => setSendCc(e.target.value)}
                   disabled={!sendDefaults}
-                  placeholder={sendDefaults ? "Nobody copied" : "Loading…"}
+                  placeholder={
+                    sendDefaults
+                      ? "Nobody copied"
+                      : sendDefaultsFailed
+                        ? "Could not load — the server will copy its usual list"
+                        : "Loading…"
+                  }
                   style={{ marginBottom: 6 }}
                 />
                 <div className="mMuted" style={{ fontSize: 12, marginBottom: 14 }}>
@@ -864,10 +895,18 @@ export default function MobileQuotationsPage() {
               </>
             ) : null}
 
+            {sendError ? (
+              <div role="alert" style={{ fontSize: 12.5, color: "#b91c1c", marginBottom: 10 }}>
+                {sendError}
+              </div>
+            ) : null}
+
             <button
               type="button"
               className="mBtn"
-              disabled={sendBusy}
+              disabled={
+                sendBusy || ((sending.kind ?? "PART") === "VISIT" && sendDefaults?.canSend === false)
+              }
               onClick={() => void handleSend()}
             >
               {sendBusy ? "Sending…" : "Send to customer"}

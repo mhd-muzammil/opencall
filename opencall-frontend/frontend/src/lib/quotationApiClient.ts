@@ -247,7 +247,14 @@ export async function updateQuotation(
 export async function sendQuotation(
   token: string,
   id: string,
-  input: { regionCode: string; to?: string; note?: string; cc?: string },
+  input: {
+    regionCode: string;
+    to?: string;
+    note?: string;
+    cc?: string;
+    /** Visit: the updatedAt (or createdAt) of the quotation the attached sheet was drawn from. */
+    renderedVersion?: string;
+  },
   estimate?: { pdf: Blob; filename: string },
 ): Promise<Quotation> {
   const url = `${WEB_API_BASE_URL}/api/v1/quotations/${encodeURIComponent(id)}/send`;
@@ -284,6 +291,19 @@ export interface QuotationSendDefaults {
   branch: string | null;
   /** The attached sheet's file name; null when nothing is attached. */
   attachmentName: string | null;
+  /** False when this login may not send it — a branch login and a Visit quotation. */
+  canSend?: boolean;
+  /** Why not, in words, when it may not. */
+  blockedReason?: string | null;
+}
+
+/** One quotation as it is on file now — what a sheet must be drawn from. */
+export async function getQuotation(token: string, id: string): Promise<Quotation> {
+  const response = await fetch(`${WEB_API_BASE_URL}/api/v1/quotations/${encodeURIComponent(id)}`, {
+    headers: authHeaders(token),
+    cache: "no-store",
+  });
+  return readJson<Quotation>(response);
 }
 
 export async function getQuotationSendDefaults(

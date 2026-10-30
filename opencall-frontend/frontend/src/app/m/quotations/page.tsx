@@ -8,6 +8,7 @@ import {
   autofillQuotation,
   createQuotation,
   updateQuotation,
+  getQuotationSendDefaults,
   sendQuotation,
   setQuotationPayment,
   listQuotations,
@@ -15,12 +16,17 @@ import {
   type Quotation,
   type QuotationKind,
   type QuotationLineItem,
+  type QuotationSendDefaults,
 } from "../../../lib/quotationApiClient";
 import { formatMoney } from "../../../lib/quotationFormat";
 import { quotationStage, daysSince } from "../../../lib/quotationStage";
 import { getCustomerEmails, type MailboxHealth } from "../../../lib/customerEmailApiClient";
 import { quotationTotals } from "../../../lib/quotationTotals";
 import { QuotationPrint } from "../../../features/dashboard/components/QuotationPrint";
+import { quotationPdf } from "../../../features/dashboard/components/quotationPdf";
+
+/** Every Visit quotation leaves from the trade desk, trade@renderways.in, whatever the branch. */
+const VISIT_FROM_MAILBOX = "TRADE";
 
 const EMPTY_LINE_ITEM: QuotationLineItem = {
   serviceDescription: "",
@@ -88,6 +94,11 @@ export default function MobileQuotationsPage() {
   const [sendRegion, setSendRegion] = useState("");
   const [sendTo, setSendTo] = useState("");
   const [sendBusy, setSendBusy] = useState(false);
+  // A Visit quotation's mail is the trade desk's: from trade@, copied by branch, the sheet
+  // attached. The server says what that comes to; the CC stays editable.
+  const [sendDefaults, setSendDefaults] = useState<QuotationSendDefaults | null>(null);
+  const [sendCc, setSendCc] = useState("");
+  const sendDefaultsSeq = useRef(0);
 
   useEffect(() => {
     if (!session?.token) return;
@@ -102,20 +113,49 @@ export default function MobileQuotationsPage() {
     setSending(q);
     setSendTo(q.customerEmail || "");
     setSendRegion(mailboxes[0]?.regionCode ?? "");
+    setSendDefaults(null);
+    setSendCc("");
     setMessage(null);
+    const seq = ++sendDefaultsSeq.current;
+    if ((q.kind ?? "PART") !== "VISIT" || !session) return;
+    void getQuotationSendDefaults(session.token, q.id)
+      .then((defaults) => {
+        if (seq !== sendDefaultsSeq.current) return;
+        setSendDefaults(defaults);
+        setSendCc(defaults.cc.join(", "));
+      })
+      .catch(() => {
+        /* Sending still works: without a CC from here, the server copies its own list. */
+      });
   }
 
   async function handleSend() {
     if (!sending || !session) return;
-    if (!sendRegion) return setMessage("Choose which mailbox to send from.");
+    const visit = (sending.kind ?? "PART") === "VISIT";
+    if (!visit && !sendRegion) return setMessage("Choose which mailbox to send from.");
     if (!sendTo.trim()) return setMessage("Enter the customer's email address.");
     setSendBusy(true);
     setMessage(null);
     try {
-      await sendQuotation(session.token, sending.id, {
-        regionCode: sendRegion,
-        to: sendTo.trim(),
-      });
+      if (visit) {
+        // The sheet goes with it as a PDF, made here from the same sheet Print shows.
+        const pdf = await quotationPdf(sending);
+        await sendQuotation(
+          session.token,
+          sending.id,
+          {
+            regionCode: VISIT_FROM_MAILBOX,
+            to: sendTo.trim(),
+            ...(sendDefaults ? { cc: sendCc.trim() } : {}),
+          },
+          { pdf, filename: sendDefaults?.attachmentName ?? "quotation.pdf" },
+        );
+      } else {
+        await sendQuotation(session.token, sending.id, {
+          regionCode: sendRegion,
+          to: sendTo.trim(),
+        });
+      }
       setSending(null);
       setMessage(`Sent to ${sendTo.trim()}.`);
       void load();
@@ -750,23 +790,43 @@ export default function MobileQuotationsPage() {
             <div className="mMuted" style={{ fontSize: 12.5, marginBottom: 12 }}>
               {sending.sentAt
                 ? `Already sent ${daysSince(sending.sentAt)}d ago. This sends it again.`
-                : "Goes out as the body of the mail, from the region mailbox."}
+                : (sending.kind ?? "PART") === "VISIT"
+                  ? "Goes out as the trade desk's Visit quotation mail, with the sheet attached as a PDF."
+                  : "Goes out as the body of the mail, from the region mailbox."}
             </div>
 
-            <label className="mLabel">From mailbox</label>
-            <select
-              className="mSelect"
-              value={sendRegion}
-              onChange={(e) => setSendRegion(e.target.value)}
-              style={{ marginBottom: 10 }}
-            >
-              <option value="">Choose a mailbox…</option>
-              {mailboxes.map((m) => (
-                <option key={m.email} value={m.regionCode}>
-                  {m.regionCode} — {m.email}
-                </option>
-              ))}
-            </select>
+            {(sending.kind ?? "PART") === "VISIT" ? (
+              <>
+                {/* Fixed: every Visit quotation leaves from the trade desk, whatever the branch. */}
+                <label className="mLabel">From</label>
+                <div className="mInput" style={{ marginBottom: 10 }}>
+                  {sendDefaults?.from ?? "trade@renderways.in"}
+                </div>
+                {sendDefaults && !sendDefaults.from ? (
+                  <div role="alert" style={{ fontSize: 12.5, color: "#b91c1c", marginBottom: 10 }}>
+                    trade@renderways.in is not set up as a mailbox in Customer Emails, so this send
+                    will fail.
+                  </div>
+                ) : null}
+              </>
+            ) : (
+              <>
+                <label className="mLabel">From mailbox</label>
+                <select
+                  className="mSelect"
+                  value={sendRegion}
+                  onChange={(e) => setSendRegion(e.target.value)}
+                  style={{ marginBottom: 10 }}
+                >
+                  <option value="">Choose a mailbox…</option>
+                  {mailboxes.map((m) => (
+                    <option key={m.email} value={m.regionCode}>
+                      {m.regionCode} — {m.email}
+                    </option>
+                  ))}
+                </select>
+              </>
+            )}
 
             <label className="mLabel">To</label>
             <input
@@ -776,6 +836,33 @@ export default function MobileQuotationsPage() {
               placeholder="customer@example.com"
               style={{ marginBottom: 14 }}
             />
+
+            {(sending.kind ?? "PART") === "VISIT" ? (
+              <>
+                {/* The desk's two and the customer's branch, worked out by the server. */}
+                <label className="mLabel">CC</label>
+                <input
+                  aria-label="CC"
+                  className="mInput"
+                  value={sendCc}
+                  onChange={(e) => setSendCc(e.target.value)}
+                  disabled={!sendDefaults}
+                  placeholder={sendDefaults ? "Nobody copied" : "Loading…"}
+                  style={{ marginBottom: 6 }}
+                />
+                <div className="mMuted" style={{ fontSize: 12, marginBottom: 14 }}>
+                  {sendDefaults ? (
+                    <>
+                      Subject: {sendDefaults.subject}
+                      <br />
+                      Attached: {sendDefaults.attachmentName}
+                    </>
+                  ) : (
+                    " "
+                  )}
+                </div>
+              </>
+            ) : null}
 
             <button
               type="button"

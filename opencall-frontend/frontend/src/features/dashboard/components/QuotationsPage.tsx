@@ -6,6 +6,7 @@ import {
   autofillQuotation,
   createQuotation,
   updateQuotation,
+  getQuotationSendDefaults,
   sendQuotation,
   setQuotationPayment,
   listQuotations,
@@ -17,10 +18,12 @@ import {
   type QuotationDraftsReport,
   type QuotationKind,
   type QuotationLineItem,
+  type QuotationSendDefaults,
 } from "../../../lib/quotationApiClient";
 import { formatMoney } from "../../../lib/quotationFormat";
 import { quotationTotals } from "../../../lib/quotationTotals";
 import { QuotationPrint } from "./QuotationPrint";
+import { quotationPdf } from "./quotationPdf";
 import { quotationStage, daysSince, OVERDUE_DAYS } from "../../../lib/quotationStage";
 
 // What each box counts, and the money under it, live in one tested module — the counts have
@@ -103,6 +106,9 @@ function formatRaisedAt(createdAt: string): string {
 
 /** The branches, in the order the Records page's region bar shows them. */
 const LOCATIONS = ["CHENNAI", "HOSUR", "KANCHIPURAM", "SALEM", "VELLORE"];
+
+/** Every Visit quotation leaves from the trade desk, trade@renderways.in, whatever the branch. */
+const VISIT_FROM_MAILBOX = "TRADE";
 
 /**
  * The branch a waiting quotation's work order belongs to. The report stores the ASP code
@@ -242,6 +248,12 @@ function QuotationsOfKind({
   const [sendRegion, setSendRegion] = useState("");
   const [sendNote, setSendNote] = useState("");
   const [sendBusy, setSendBusy] = useState(false);
+  // A Visit quotation's mail is the trade desk's: from trade@, copied by branch, the sheet
+  // attached. The server says what that comes to for this quotation; the CC stays editable.
+  const [sendDefaults, setSendDefaults] = useState<QuotationSendDefaults | null>(null);
+  const [sendCc, setSendCc] = useState("");
+  // Only the newest dialog's answer is taken, should a slow one land after another opened.
+  const sendDefaultsSeq = useRef(0);
 
   useEffect(() => {
     // One row is enough — the mailboxes ride along with any page of the inbox, and there
@@ -258,12 +270,26 @@ function QuotationsOfKind({
     setSendTo(q.customerEmail || "");
     setSendNote("");
     setSendRegion(mailboxes[0]?.regionCode ?? "");
+    setSendDefaults(null);
+    setSendCc("");
     setMessage(null);
+    const seq = ++sendDefaultsSeq.current;
+    if ((q.kind ?? "PART") !== "VISIT") return;
+    void getQuotationSendDefaults(token, q.id)
+      .then((defaults) => {
+        if (seq !== sendDefaultsSeq.current) return;
+        setSendDefaults(defaults);
+        setSendCc(defaults.cc.join(", "));
+      })
+      .catch(() => {
+        /* Sending still works: without a CC from here, the server copies its own list. */
+      });
   }
 
   async function handleSend() {
     if (!sending) return;
-    if (!sendRegion) {
+    const visit = (sending.kind ?? "PART") === "VISIT";
+    if (!visit && !sendRegion) {
       setMessage("Choose which mailbox to send from.");
       return;
     }
@@ -274,11 +300,30 @@ function QuotationsOfKind({
     setSendBusy(true);
     setMessage(null);
     try {
-      await sendQuotation(token, sending.id, {
-        regionCode: sendRegion,
-        to: sendTo.trim(),
-        note: sendNote.trim(),
-      });
+      if (visit) {
+        // The sheet goes with it as a PDF, made here from the same sheet Print shows.
+        const pdf = await quotationPdf(sending);
+        await sendQuotation(
+          token,
+          sending.id,
+          {
+            // The server sends every Visit quotation from the trade desk whatever this says.
+            regionCode: VISIT_FROM_MAILBOX,
+            to: sendTo.trim(),
+            note: sendNote.trim(),
+            // Until the defaults arrive the field is empty and not yet the sender's; leaving
+            // it out lets the server copy its own list rather than nobody.
+            ...(sendDefaults ? { cc: sendCc.trim() } : {}),
+          },
+          { pdf, filename: sendDefaults?.attachmentName ?? "quotation.pdf" },
+        );
+      } else {
+        await sendQuotation(token, sending.id, {
+          regionCode: sendRegion,
+          to: sendTo.trim(),
+          note: sendNote.trim(),
+        });
+      }
       setSending(null);
       setMessage(`Quotation sent to ${sendTo.trim()}.`);
       void load();
@@ -1436,22 +1481,42 @@ function QuotationsOfKind({
             <p style={{ margin: "0 0 16px 0", fontSize: "12px", color: "#64748b" }}>
               {sending.sentAt
                 ? `Already sent ${daysSince(sending.sentAt)} day(s) ago${sending.sendCount && sending.sendCount > 1 ? ` · ${sending.sendCount} times` : ""}. This sends it again.`
-                : "The quotation goes out as the body of the mail, from the region mailbox."}
+                : (sending.kind ?? "PART") === "VISIT"
+                  ? "Goes out as the trade desk's Visit quotation mail, with the sheet attached as a PDF."
+                  : "The quotation goes out as the body of the mail, from the region mailbox."}
             </p>
 
-            <label style={label}>From mailbox</label>
-            <select
-              value={sendRegion}
-              onChange={(e) => setSendRegion(e.target.value)}
-              style={{ ...field, marginBottom: "12px" }}
-            >
-              <option value="">Choose a mailbox…</option>
-              {mailboxes.map((m) => (
-                <option key={m.email} value={m.regionCode}>
-                  {m.regionCode} — {m.email}
-                </option>
-              ))}
-            </select>
+            {(sending.kind ?? "PART") === "VISIT" ? (
+              <>
+                {/* Fixed: every Visit quotation leaves from the trade desk, whatever the branch. */}
+                <label style={label}>From</label>
+                <div style={{ ...field, marginBottom: "12px", background: "#f8fafc" }}>
+                  {sendDefaults?.from ?? "trade@renderways.in"}
+                </div>
+                {sendDefaults && !sendDefaults.from ? (
+                  <p role="alert" style={{ margin: "-6px 0 12px 0", fontSize: "12px", color: "#b91c1c" }}>
+                    trade@renderways.in is not set up as a mailbox in Customer Emails, so this send
+                    will fail.
+                  </p>
+                ) : null}
+              </>
+            ) : (
+              <>
+                <label style={label}>From mailbox</label>
+                <select
+                  value={sendRegion}
+                  onChange={(e) => setSendRegion(e.target.value)}
+                  style={{ ...field, marginBottom: "12px" }}
+                >
+                  <option value="">Choose a mailbox…</option>
+                  {mailboxes.map((m) => (
+                    <option key={m.email} value={m.regionCode}>
+                      {m.regionCode} — {m.email}
+                    </option>
+                  ))}
+                </select>
+              </>
+            )}
 
             <label style={label}>To</label>
             <input
@@ -1460,6 +1525,32 @@ function QuotationsOfKind({
               onChange={(e) => setSendTo(e.target.value)}
               placeholder="customer@example.com"
             />
+
+            {(sending.kind ?? "PART") === "VISIT" ? (
+              <>
+                {/* The desk's two and the customer's branch, worked out by the server. */}
+                <label style={label}>CC</label>
+                <input
+                  aria-label="CC"
+                  style={{ ...field, marginBottom: "6px" }}
+                  value={sendCc}
+                  onChange={(e) => setSendCc(e.target.value)}
+                  disabled={!sendDefaults}
+                  placeholder={sendDefaults ? "Nobody copied" : "Loading…"}
+                />
+                <p style={{ margin: "0 0 12px 0", fontSize: "12px", color: "#64748b" }}>
+                  {sendDefaults ? (
+                    <>
+                      Subject: {sendDefaults.subject}
+                      <br />
+                      Attached: {sendDefaults.attachmentName} — the Visit sheet as a PDF
+                    </>
+                  ) : (
+                    " "
+                  )}
+                </p>
+              </>
+            ) : null}
 
             <label style={label}>Covering note (optional)</label>
             <textarea

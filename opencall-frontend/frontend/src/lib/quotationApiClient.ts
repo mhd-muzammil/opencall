@@ -239,21 +239,62 @@ export async function updateQuotation(
  *
  * `to` is optional: absent means the address on the quotation. `note` rides above the sheet
  * in the same message, for the covering line someone wants to add.
+ *
+ * A Visit quotation carries its sheet as a PDF (`estimate`), so it goes as a form upload;
+ * `cc` is who the Visit mail is copied to, as the sender left it. Without an estimate the
+ * request is the JSON it has always been.
  */
 export async function sendQuotation(
   token: string,
   id: string,
-  input: { regionCode: string; to?: string; note?: string },
+  input: { regionCode: string; to?: string; note?: string; cc?: string },
+  estimate?: { pdf: Blob; filename: string },
 ): Promise<Quotation> {
-  const response = await fetch(
-    `${WEB_API_BASE_URL}/api/v1/quotations/${encodeURIComponent(id)}/send`,
-    {
+  const url = `${WEB_API_BASE_URL}/api/v1/quotations/${encodeURIComponent(id)}/send`;
+  if (!estimate) {
+    const response = await fetch(url, {
       method: "POST",
       headers: authHeaders(token),
       body: JSON.stringify(input),
-    },
-  );
+    });
+    return readJson<Quotation>(response);
+  }
+  const form = new FormData();
+  for (const [key, value] of Object.entries(input)) {
+    if (value !== undefined) form.append(key, value);
+  }
+  form.append("attachments", estimate.pdf, estimate.filename);
+  // No Content-Type here on purpose: the browser writes the multipart boundary itself.
+  const response = await fetch(url, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}` },
+    body: form,
+  });
   return readJson<Quotation>(response);
+}
+
+/** What a send will put on the wire, for the Send dialog to show before anything goes. */
+export interface QuotationSendDefaults {
+  kind: QuotationKind;
+  /** The address a Visit quotation always leaves from; null for Part, or when not set up. */
+  from: string | null;
+  subject: string;
+  /** Who a Visit quotation is copied to: the desk's two and the customer's branch. */
+  cc: string[];
+  branch: string | null;
+  /** The attached sheet's file name; null when nothing is attached. */
+  attachmentName: string | null;
+}
+
+export async function getQuotationSendDefaults(
+  token: string,
+  id: string,
+): Promise<QuotationSendDefaults> {
+  const response = await fetch(
+    `${WEB_API_BASE_URL}/api/v1/quotations/${encodeURIComponent(id)}/send-defaults`,
+    { headers: authHeaders(token), cache: "no-store" },
+  );
+  return readJson<QuotationSendDefaults>(response);
 }
 
 /** Record what the customer did about it. A person's call, never inferred from a reply. */

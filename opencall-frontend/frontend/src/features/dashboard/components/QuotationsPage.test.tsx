@@ -15,6 +15,7 @@ const api = vi.hoisted(() => ({
   updateQuotation: vi.fn(),
   autofillQuotation: vi.fn(),
   sendQuotation: vi.fn(),
+  getQuotationSendDefaults: vi.fn(),
   setQuotationPayment: vi.fn(),
   listQuotationDrafts: vi.fn(),
   approveQuotationDraft: vi.fn(),
@@ -24,7 +25,11 @@ vi.mock("../../../lib/quotationApiClient", () => api);
 vi.mock("../../../lib/customerEmailApiClient", () => ({
   getCustomerEmails: vi.fn().mockResolvedValue({ mailboxes: [] }),
 }));
+// The sheet as a PDF needs a real browser to draw it (checked in Chrome, not here).
+const pdf = vi.hoisted(() => ({ quotationPdf: vi.fn() }));
+vi.mock("./quotationPdf", () => pdf);
 
+import { getCustomerEmails } from "../../../lib/customerEmailApiClient";
 import { QuotationsPage } from "./QuotationsPage";
 
 const item = {
@@ -853,5 +858,123 @@ describe("Waiting Approval", () => {
     expect(visit.textContent).toContain("RTPL/26-27/QEV/1");
     await click(waitingTile(visit));
     expect(visit.textContent).toContain("Could not load the waiting quotations: Request failed 500");
+  });
+});
+
+/**
+ * Sending. A Visit quotation goes out as the trade desk's own mail — from trade@, copied to
+ * the desk's two and the customer's branch, the sheet attached as a PDF. A Part quotation
+ * keeps the send it has always had until its format is given.
+ */
+describe("sending a quotation", () => {
+  const DEFAULTS = {
+    kind: "VISIT",
+    from: "trade@renderways.in",
+    subject: "WO-000000001-5100000001- Trade",
+    cc: ["radhika@renderways.in", "dinesh@renderways.in", "vellore@renderways.in"],
+    branch: "VELLORE",
+    attachmentName: "5100000001.pdf",
+  };
+  const SHEET = new Blob(["%PDF-1.4"], { type: "application/pdf" });
+  const dialog = () => container.querySelector<HTMLElement>('[role="dialog"]');
+  const ccField = () => dialog()?.querySelector<HTMLInputElement>('input[aria-label="CC"]');
+
+  beforeEach(() => {
+    api.getQuotationSendDefaults.mockResolvedValue(DEFAULTS);
+    api.sendQuotation.mockResolvedValue({ ...VISIT_ROW, sentAt: "2026-10-30T10:00:00Z" });
+    pdf.quotationPdf.mockResolvedValue(SHEET);
+  });
+
+  afterEach(() => {
+    vi.mocked(getCustomerEmails).mockResolvedValue({ mailboxes: [] } as never);
+  });
+
+  it("sends a Visit quotation from trade@, copied by branch, with the sheet attached", async () => {
+    await mount();
+    await click(button(panel("Visit Quotation")!, "Send"));
+
+    expect(api.getQuotationSendDefaults).toHaveBeenCalledWith("t", "v-1");
+    // From is fixed, not a choice.
+    expect(dialog()?.querySelector("select")).toBeNull();
+    expect(dialog()?.textContent).toContain("trade@renderways.in");
+    expect(ccField()?.value).toBe("radhika@renderways.in, dinesh@renderways.in, vellore@renderways.in");
+    expect(dialog()?.textContent).toContain("Subject: WO-000000001-5100000001- Trade");
+    expect(dialog()?.textContent).toContain("Attached: 5100000001.pdf");
+
+    await click(button(dialog()!, "Send to customer"));
+
+    expect(pdf.quotationPdf).toHaveBeenCalledWith(VISIT_ROW);
+    expect(api.sendQuotation).toHaveBeenCalledWith(
+      "t",
+      "v-1",
+      {
+        regionCode: "TRADE",
+        to: "customer@example.com",
+        note: "",
+        cc: "radhika@renderways.in, dinesh@renderways.in, vellore@renderways.in",
+      },
+      { pdf: SHEET, filename: "5100000001.pdf" },
+    );
+    expect(dialog()).toBeNull();
+    expect(container.textContent).toContain("Quotation sent to customer@example.com.");
+  });
+
+  it("copies whoever the sender leaves in the CC", async () => {
+    await mount();
+    await click(button(panel("Visit Quotation")!, "Send"));
+    await fill(dialog()!, "CC", "radhika@renderways.in");
+    await click(button(dialog()!, "Send to customer"));
+
+    expect(api.sendQuotation.mock.calls[0]![2]).toMatchObject({ cc: "radhika@renderways.in" });
+  });
+
+  it("leaves the CC to the server when its defaults never came, rather than copying nobody", async () => {
+    api.getQuotationSendDefaults.mockRejectedValue(new Error("Request failed 500"));
+    await mount();
+    await click(button(panel("Visit Quotation")!, "Send"));
+
+    expect(ccField()?.disabled).toBe(true);
+    await click(button(dialog()!, "Send to customer"));
+    expect(api.sendQuotation.mock.calls[0]![2]).not.toHaveProperty("cc");
+    expect(api.sendQuotation.mock.calls[0]![3]).toEqual({ pdf: SHEET, filename: "quotation.pdf" });
+  });
+
+  it("warns when the trade desk's mailbox is not set up", async () => {
+    api.getQuotationSendDefaults.mockResolvedValue({ ...DEFAULTS, from: null });
+    await mount();
+    await click(button(panel("Visit Quotation")!, "Send"));
+
+    expect(dialog()?.querySelector('[role="alert"]')?.textContent).toContain("not set up");
+  });
+
+  it("says why when the send is refused, and keeps the dialog open", async () => {
+    api.sendQuotation.mockRejectedValue(new Error("The quotation PDF did not come with this send."));
+    await mount();
+    await click(button(panel("Visit Quotation")!, "Send"));
+    await click(button(dialog()!, "Send to customer"));
+
+    expect(dialog()).not.toBeNull();
+    expect(container.textContent).toContain("The quotation PDF did not come with this send.");
+  });
+
+  it("keeps the Part send as it was: a mailbox to choose, no CC and no PDF", async () => {
+    vi.mocked(getCustomerEmails).mockResolvedValue({
+      mailboxes: [{ regionCode: "CHENNAI", email: "chennai@renderways.in" }],
+    } as never);
+    await mount();
+    await click(tabs()[1]);
+    await click(button(panel("Part Quotation")!, "Send"));
+
+    expect(dialog()?.querySelector("select")?.value).toBe("CHENNAI");
+    expect(ccField()).toBeNull();
+    expect(api.getQuotationSendDefaults).not.toHaveBeenCalled();
+
+    await click(button(dialog()!, "Send to customer"));
+    expect(pdf.quotationPdf).not.toHaveBeenCalled();
+    expect(api.sendQuotation).toHaveBeenCalledWith("t", "p-81", {
+      regionCode: "CHENNAI",
+      to: "customer@example.com",
+      note: "",
+    });
   });
 });

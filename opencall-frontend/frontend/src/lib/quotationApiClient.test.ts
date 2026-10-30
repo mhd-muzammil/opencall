@@ -2,9 +2,11 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   approveQuotationDraft,
   createQuotation,
+  getQuotationSendDefaults,
   listQuotationDrafts,
   listQuotations,
   removeQuotationDraft,
+  sendQuotation,
   type CreateQuotationInput,
 } from "./quotationApiClient";
 
@@ -119,5 +121,52 @@ describe("the quotations waiting for approval", () => {
     expect(new URL(removeUrl).pathname).toBe(`/api/v1/quotations/drafts/${ID}/remove`);
     expect(removeInit.method).toBe("POST");
     expect(removeInit.body).toBeUndefined();
+  });
+});
+
+describe("sendQuotation", () => {
+  it("sends a Part quotation as the JSON it always has", async () => {
+    const fetchMock = stubFetch();
+    await sendQuotation("t", "p-1", { regionCode: "CHENNAI", to: "c@example.com", note: "" });
+    const [url, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
+    expect(new URL(url).pathname).toBe("/api/v1/quotations/p-1/send");
+    expect((init.headers as Record<string, string>)["Content-Type"]).toBe("application/json");
+    expect(JSON.parse(String(init.body))).toEqual({ regionCode: "CHENNAI", to: "c@example.com", note: "" });
+  });
+
+  it("uploads a Visit quotation's sheet with the fields, and lets the browser set the boundary", async () => {
+    const fetchMock = stubFetch();
+    const pdf = new Blob(["%PDF-1.4"], { type: "application/pdf" });
+    await sendQuotation(
+      "t",
+      "v-1",
+      { regionCode: "TRADE", to: "c@example.com", note: "", cc: "radhika@renderways.in, hosur@renderways.in" },
+      { pdf, filename: "5166159539.pdf" },
+    );
+    const [, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
+    const headers = init.headers as Record<string, string>;
+    expect(headers).toEqual({ Authorization: "Bearer t" });
+    const form = init.body as FormData;
+    expect(form.get("regionCode")).toBe("TRADE");
+    expect(form.get("cc")).toBe("radhika@renderways.in, hosur@renderways.in");
+    const file = form.get("attachments") as File;
+    expect(file.name).toBe("5166159539.pdf");
+    expect(file.type).toBe("application/pdf");
+  });
+
+  it("leaves out a CC it was not given, so the server copies its own list", async () => {
+    const fetchMock = stubFetch();
+    await sendQuotation("t", "v-1", { regionCode: "TRADE", to: "" }, { pdf: new Blob(["%PDF"]), filename: "x.pdf" });
+    const form = (fetchMock.mock.calls[0] as unknown as [string, RequestInit])[1].body as FormData;
+    expect(form.has("cc")).toBe(false);
+  });
+});
+
+describe("getQuotationSendDefaults", () => {
+  it("asks for what one quotation's send will be", async () => {
+    const fetchMock = stubFetch();
+    await getQuotationSendDefaults("t", "v 1");
+    const url = new URL(String((fetchMock.mock.calls[0] as unknown[])[0]));
+    expect(url.pathname).toBe("/api/v1/quotations/v%201/send-defaults");
   });
 });

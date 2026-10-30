@@ -601,16 +601,32 @@ function QuotationsOfKind({
   const label: React.CSSProperties = { fontSize: "12px", fontWeight: 600, marginBottom: "4px", display: "block" };
   const title = kind === "VISIT" ? "Visit Quotation" : "Part Quotation";
 
+  // The branch a location card narrowed the page to, if any (the user, 30 Oct 2026): every box
+  // under the cards, the list under the boxes and the waiting list count that branch's only.
+  // The History is left whole — it is not counted in the boxes.
+  const inLocation = (workLocation: string | undefined) =>
+    !locationFilter || locationOf(workLocation ?? "") === locationFilter;
+  // A server from before Quotation.workLocation sends none: narrowing on it would put every
+  // quotation outside every branch and zero the seven boxes, so they stay whole there.
+  const itemsHaveLocation = items.some((q) => q.workLocation !== undefined);
+  const regionItems =
+    locationFilter && itemsHaveLocation ? items.filter((q) => inLocation(q.workLocation)) : items;
+  const regionDrafts = locationFilter ? drafts.filter((d) => inLocation(d.workLocation)) : drafts;
+  const regionWaiting = locationFilter ? regionDrafts.length : draftsTotal;
+  // The split is the whole report's; a search narrows the list, not the report.
+  const regionReport = draftsReport && !search.trim() ? reportFor(draftsReport, locationFilter) : null;
+
   // The same table twice: the page's own quotations, narrowed by the box clicked, and below
   // them the History, closed until someone opens it.
   const sections: Array<{ key: "current" | "history"; rows: Quotation[]; test: (q: Quotation) => boolean; emptyText: string }> = [
     {
       key: "current",
-      rows: items,
+      rows: regionItems,
       // The Waiting Approval box shows its own table in this one's place (below).
       test: (q) => !tileFilter || tileFilter === "WAITING" || TILE_TESTS[tileFilter](q),
-      emptyText:
-        history.length > 0
+      emptyText: locationFilter && itemsHaveLocation
+        ? `No ${title.toLowerCase()}s for ${locationLabel(locationFilter)} since ${FRESH_START_LABEL}.`
+        : history.length > 0
           ? `No ${title.toLowerCase()}s since ${FRESH_START_LABEL}. The older ones are under History below.`
           : "No quotations yet.",
     },
@@ -642,17 +658,33 @@ function QuotationsOfKind({
         <>
           {/* The waiting approvals by branch, above the boxes (the user, 30 Oct 2026): an All
               locations card, then one card per location, counting the same list the Waiting
-              Approval box counts, so the cards add up to it. Clicking a branch lists that
-              branch's; clicking it again, or All locations, lists every branch's. */}
+              Approval box counts, so the cards add up to it — each with its branch's share of
+              the report under the number, the way the box shows the whole. Clicking a branch
+              narrows the whole page to it, boxes and lists alike; clicking it again, or All
+              locations, gives every branch back. */}
           {(() => {
             const counts = new Map<string, number>();
             for (const draft of drafts) {
               const location = locationOf(draft.workLocation);
               counts.set(location, (counts.get(location) ?? 0) + 1);
             }
-            const cards = counts.get("OTHER") ? [...LOCATIONS, "OTHER"] : LOCATIONS;
+            // Other is offered whenever anything the cards narrow belongs to no branch — a
+            // waiting row, a quotation with no WO (or one Flex never listed), a report row —
+            // so the branch cards always add up to All locations; and it stays while chosen,
+            // even once the last of them has been approved or removed.
+            const isOther = (workLocation: string | undefined) => locationOf(workLocation ?? "") === "OTHER";
+            const showOther =
+              counts.has("OTHER") ||
+              locationFilter === "OTHER" ||
+              items.some((q) => q.workLocation !== undefined && isOther(q.workLocation)) ||
+              Object.keys(draftsReport?.onReportByLocation ?? {}).some(isOther);
+            const cards = showOther ? [...LOCATIONS, "OTHER"] : LOCATIONS;
             const allActive = tileFilter === "WAITING" && locationFilter === null;
             const allFg = draftsTotal > 0 ? "#b45309" : "#94a3b8";
+            const splitFor = (location: string | null) => {
+              const part = draftsReport && !search.trim() ? reportFor(draftsReport, location) : null;
+              return part ? reportSplit(part) : "waiting approval";
+            };
             return (
               <div
                 role="group"
@@ -668,13 +700,20 @@ function QuotationsOfKind({
                   type="button"
                   aria-pressed={allActive}
                   onClick={() => {
-                    setLocationFilter(null);
-                    setTileFilter(allActive ? null : "WAITING");
+                    // From a branch: every branch back, on whatever box is open. Otherwise it
+                    // opens, or closes, every branch's waiting approvals.
+                    if (locationFilter) {
+                      setLocationFilter(null);
+                    } else {
+                      setTileFilter(allActive ? null : "WAITING");
+                    }
                   }}
                   title={
-                    allActive
-                      ? "Showing every location — click to show the quotations again"
-                      : "Show the waiting approvals for every location"
+                    locationFilter
+                      ? "Show every location again"
+                      : allActive
+                        ? "Showing every location — click to show the quotations again"
+                        : "Show the waiting approvals for every location"
                   }
                   style={{
                     textAlign: "left",
@@ -693,11 +732,11 @@ function QuotationsOfKind({
                   <div style={{ fontSize: "20px", fontWeight: 800, color: allFg, lineHeight: 1.2 }}>
                     {draftsError ? "—" : draftsTotal}
                   </div>
-                  <div style={{ fontSize: "11px", color: "#94a3b8" }}>waiting approval</div>
+                  <div style={{ fontSize: "11px", color: "#94a3b8" }}>{splitFor(null)}</div>
                 </button>
                 {cards.map((location) => {
                   const count = counts.get(location) ?? 0;
-                  const active = tileFilter === "WAITING" && locationFilter === location;
+                  const active = locationFilter === location;
                   const fg = count > 0 ? "#b45309" : "#94a3b8";
                   return (
                     <button
@@ -708,14 +747,16 @@ function QuotationsOfKind({
                         if (active) {
                           setLocationFilter(null);
                         } else {
-                          setTileFilter("WAITING");
                           setLocationFilter(location);
+                          // With no box open, the branch's waiting approvals are what its card
+                          // counts, so that is the list it opens on.
+                          if (!tileFilter) setTileFilter("WAITING");
                         }
                       }}
                       title={
                         active
-                          ? "Showing these — click to show every location"
-                          : `Show the waiting approvals for ${locationLabel(location)}`
+                          ? "Showing this location — click to show every location"
+                          : `Show ${locationLabel(location)} only`
                       }
                       style={{
                         textAlign: "left",
@@ -734,7 +775,7 @@ function QuotationsOfKind({
                       <div style={{ fontSize: "20px", fontWeight: 800, color: fg, lineHeight: 1.2 }}>
                         {draftsError ? "—" : count}
                       </div>
-                      <div style={{ fontSize: "11px", color: "#94a3b8" }}>waiting approval</div>
+                      <div style={{ fontSize: "11px", color: "#94a3b8" }}>{splitFor(location)}</div>
                     </button>
                   );
                 })}
@@ -753,16 +794,18 @@ function QuotationsOfKind({
             // Written separately, "₹83,789 outstanding" once described seven more
             // quotations than the 40 the box beside it was counting, and there was no way
             // to tell from the screen which of the two was lying.
-            const paidValue = tileTotal(items, "PAID");
-            const owedValue = tileTotal(items, "NOT_PAID");
+            //
+            // With a location card clicked, every box counts that branch's only.
+            const paidValue = tileTotal(regionItems, "PAID");
+            const owedValue = tileTotal(regionItems, "NOT_PAID");
 
-            const created = tileCount(items, "CREATED");
-            const sent = tileCount(items, "SENT");
-            const replied = tileCount(items, "REPLIED");
-            const noReply = tileCount(items, "NO_REPLY");
-            const paid = tileCount(items, "PAID");
-            const notPaid = tileCount(items, "NOT_PAID");
-            const rejected = tileCount(items, "REJECTED");
+            const created = tileCount(regionItems, "CREATED");
+            const sent = tileCount(regionItems, "SENT");
+            const replied = tileCount(regionItems, "REPLIED");
+            const noReply = tileCount(regionItems, "NO_REPLY");
+            const paid = tileCount(regionItems, "PAID");
+            const notPaid = tileCount(regionItems, "NOT_PAID");
+            const rejected = tileCount(regionItems, "REJECTED");
 
             const tiles: Array<{
               key: TileKey | "WAITING";
@@ -777,13 +820,9 @@ function QuotationsOfKind({
               {
                 key: "WAITING",
                 label: "Waiting Approval",
-                value: draftsError ? "—" : String(draftsTotal),
-                hint: draftsError
-                  ? "could not load"
-                  : draftsReport && !search.trim()
-                    ? reportSplit(draftsReport)
-                    : "from the report",
-                fg: draftsTotal > 0 ? "#b45309" : "#94a3b8",
+                value: draftsError ? "—" : String(regionWaiting),
+                hint: draftsError ? "could not load" : regionReport ? reportSplit(regionReport) : "from the report",
+                fg: regionWaiting > 0 ? "#b45309" : "#94a3b8",
               },
               { key: "CREATED", label: "Created", value: String(created), hint: "not mailed yet", fg: "#475569" },
               { key: "SENT", label: "Sent", value: String(sent), hint: "the customer has it", fg: "#1d4ed8" },
@@ -809,10 +848,10 @@ function QuotationsOfKind({
                   <button
                     key={tile.label}
                     type="button"
-                    onClick={() => {
-                      setTileFilter((current) => (current === tile.key ? null : tile.key));
-                      setLocationFilter(null);
-                    }}
+                    // The branch, if one is chosen, stays: a box opens that branch's rows.
+                    onClick={() =>
+                      setTileFilter((current) => (current === tile.key ? null : tile.key))
+                    }
                     title={
                       tileFilter === tile.key
                         ? "Showing these — click to show all again"
@@ -842,7 +881,7 @@ function QuotationsOfKind({
             );
           })()}
 
-          {tileFilter ? (
+          {tileFilter || locationFilter ? (
             <div
               style={{
                 display: "flex",
@@ -860,8 +899,12 @@ function QuotationsOfKind({
               <span>
                 Showing{" "}
                 <strong>
-                  {tileFilter === "WAITING" ? "waiting approval" : TILE_LABELS[tileFilter]}
-                  {tileFilter === "WAITING" && locationFilter ? ` · ${locationLabel(locationFilter)}` : ""}
+                  {[
+                    tileFilter === "WAITING" ? "waiting approval" : tileFilter ? TILE_LABELS[tileFilter] : "",
+                    locationFilter ? locationLabel(locationFilter) : "",
+                  ]
+                    .filter(Boolean)
+                    .join(" · ")}
                 </strong>{" "}
                 only.
               </span>
@@ -913,21 +956,13 @@ function QuotationsOfKind({
               ) : null}
               {section.key === "current" && tileFilter === "WAITING" ? (
                 <WaitingTable
-                  drafts={
-                    locationFilter
-                      ? drafts.filter((draft) => locationOf(draft.workLocation) === locationFilter)
-                      : drafts
-                  }
-                  total={
-                    locationFilter
-                      ? drafts.filter((draft) => locationOf(draft.workLocation) === locationFilter).length
-                      : draftsTotal
-                  }
+                  drafts={regionDrafts}
+                  total={regionWaiting}
                   error={draftsError}
                   loading={loading}
                   kind={kind}
-                  // The split is the whole status's, so it is not set against one branch or a search.
-                  report={search.trim() || locationFilter ? null : draftsReport}
+                  report={regionReport}
+                  location={locationFilter}
                   onApprove={startApprove}
                   onRemove={(draft) => void handleRemoveDraft(draft)}
                 />
@@ -1482,6 +1517,23 @@ function Text({
   );
 }
 
+/**
+ * The report's split for one branch, or the whole of it with none chosen. Null from a server
+ * that does not split it by location yet, so a branch never shows the whole report's numbers.
+ */
+function reportFor(report: QuotationDraftsReport, location: string | null): QuotationDraftsReport | null {
+  if (!location) return report;
+  if (!report.onReportByLocation) return null;
+  let onReport = 0;
+  for (const [workLocation, count] of Object.entries(report.onReportByLocation)) {
+    if (locationOf(workLocation) === location) onReport += count;
+  }
+  return {
+    onReport,
+    notWaiting: report.notWaiting.filter((entry) => locationOf(entry.workLocation ?? "") === location),
+  };
+}
+
 /** The Waiting Approval box's line under its number, e.g. "of 43 on the report · 4 already quoted". */
 function reportSplit(report: QuotationDraftsReport): string {
   const count = (reason: QuotationDraftsReport["notWaiting"][number]["reason"]) =>
@@ -1514,6 +1566,7 @@ function WaitingTable({
   loading,
   kind,
   report,
+  location,
   onApprove,
   onRemove,
 }: Readonly<{
@@ -1524,6 +1577,8 @@ function WaitingTable({
   kind: QuotationKind;
   /** Null while searching: the search narrows the list, not the report. */
   report: QuotationDraftsReport | null;
+  /** The branch a location card chose, which the list and `report` are both narrowed to. */
+  location: string | null;
   onApprove: (draft: QuotationDraft) => void;
   onRemove: (draft: QuotationDraft) => void;
 }>) {
@@ -1562,7 +1617,8 @@ function WaitingTable({
         >
           <div>
             The Records page shows <strong>{report.onReport}</strong> at Flex Status {status}{" "}
-            (01-Trade): <strong>{total}</strong> waiting below
+            (01-Trade){location ? ` in ${locationLabel(location)}` : ""}: <strong>{total}</strong>{" "}
+            waiting below
             {report.notWaiting.length > 0 ? `, ${report.notWaiting.length} not:` : "."}
           </div>
           {quoted.length > 0 ? (

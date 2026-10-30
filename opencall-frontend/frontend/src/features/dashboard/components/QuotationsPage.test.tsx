@@ -709,16 +709,139 @@ describe("Waiting Approval", () => {
     expect(table.querySelectorAll("tbody tr")).toHaveLength(5);
     expect(cards[0]!.getAttribute("aria-pressed")).toBe("true");
 
-    // All locations from a branch, and another box, both clear the branch.
+    // All locations from a branch gives every branch back; another box keeps the branch.
     await click(cards[2]);
     expect(visit.textContent).toContain("Showing waiting approval · Hosur only.");
     await click(cards[0]);
     expect(visit.textContent).toContain("Showing waiting approval only.");
     await click(cards[2]);
     await click(Array.from(visit.querySelectorAll("button")).find((b) => b.textContent?.startsWith("Created")));
-    expect(visit.textContent).toContain("Showing created only.");
-    expect(visit.querySelector("table")!.textContent).toContain("RTPL/26-27/QEV/1");
-    expect(cards[2]!.getAttribute("aria-pressed")).toBe("false");
+    expect(visit.textContent).toContain("Showing created · Hosur only.");
+    expect(cards[2]!.getAttribute("aria-pressed")).toBe("true");
+  });
+
+  it("narrows every box and list to the branch a location card chose", async () => {
+    // A Chennai quotation not mailed yet, and a Hosur one the customer has.
+    const chennai: Quotation = { ...VISIT_ROW, id: "v-c", quotationNo: "RTPL/26-27/QEV/2", workLocation: "ASPS01461" };
+    const hosur: Quotation = {
+      ...VISIT_ROW,
+      id: "v-h",
+      quotationNo: "RTPL/26-27/QEV/3",
+      workLocation: "ASPS01511",
+      sentAt: "2026-10-29 16:00:00+05:30",
+    };
+    api.listQuotations.mockImplementation(async (_token: string, params: { kind?: string }) =>
+      answer([chennai, hosur, PART_ROW, OLD_ROW], params),
+    );
+    api.listQuotationDrafts.mockImplementation(async (_token: string, params: { kind?: string }) => ({
+      ...waiting(
+        [
+          { ...WAITING_VISIT, workLocation: "ASPS01461" },
+          { ...WAITING_VISIT_2, workLocation: "ASPS01461" },
+          { ...WAITING_PART, workLocation: "ASPS01511" },
+        ],
+        params,
+      ),
+      report: {
+        onReport: 4,
+        onReportByLocation: { ASPS01461: 3, ASPS01511: 1 },
+        notWaiting: [
+          { ticketId: "WO-035461827", workLocation: "ASPS01461", reason: "QUOTED", quotationNos: ["RTPL/26-27/QEV/48"] },
+          { ticketId: "WO-036000001", workLocation: "ASPS01511", reason: "QUOTED", quotationNos: ["RTPL/26-27/QEV/50"] },
+        ],
+      },
+    }));
+    await mount();
+    const visit = panel("Visit Quotation")!;
+    const group = visit.querySelector('[role="group"][aria-label="Waiting approval by location"]')!;
+    const card = (name: string) =>
+      Array.from(group.querySelectorAll("button")).find((b) => b.textContent?.startsWith(name))!;
+    const box = (name: string) =>
+      Array.from(visit.querySelectorAll("button")).find((b) => b.parentElement !== group && b.textContent?.startsWith(name))!;
+
+    // Each card carries its branch's share of the report, the way the box carries the whole.
+    expect(card("All locations").textContent).toBe("All locations2of 4 on the report · 2 already quoted");
+    expect(card("Chennai").textContent).toBe("Chennai2of 3 on the report · 1 already quoted");
+    expect(card("Hosur").textContent).toBe("Hosur0of 1 on the report · 1 already quoted");
+    expect(box("Created").textContent).toBe("Created1not mailed yet");
+    expect(box("Sent").textContent).toMatch(/^Sent1/);
+
+    await click(card("Hosur"));
+    expect(box("Waiting Approval").textContent).toBe("Waiting Approval0of 1 on the report · 1 already quoted");
+    expect(box("Created").textContent).toBe("Created0not mailed yet");
+    expect(box("Sent").textContent).toMatch(/^Sent1/);
+    await click(box("Sent"));
+    expect(visit.textContent).toContain("Showing sent · Hosur only.");
+    const rows = visit.querySelector("table")!.textContent ?? "";
+    expect(rows).toContain("RTPL/26-27/QEV/3");
+    expect(rows).not.toContain("RTPL/26-27/QEV/2");
+
+    await click(card("Chennai"));
+    expect(box("Created").textContent).toBe("Created1not mailed yet");
+    expect(box("Sent").textContent).toMatch(/^Sent0/);
+    expect(visit.textContent).toContain("Showing sent · Chennai only.");
+
+    await click(card("All locations"));
+    expect(visit.textContent).toContain("Showing sent only.");
+    expect(box("Created").textContent).toBe("Created1not mailed yet");
+    expect(box("Sent").textContent).toMatch(/^Sent1/);
+    expect(box("Waiting Approval").textContent).toBe("Waiting Approval2of 4 on the report · 2 already quoted");
+  });
+
+  it("offers Other for a quotation in no branch, so the branch cards add up to All locations", async () => {
+    // Raised by hand with no WO: Flex cannot place it, and no waiting row is Other.
+    const chennai: Quotation = { ...VISIT_ROW, id: "v-c", quotationNo: "RTPL/26-27/QEV/2", workLocation: "ASPS01461" };
+    const nowhere: Quotation = { ...VISIT_ROW, id: "v-n", quotationNo: "RTPL/26-27/QEV/4", orderNumber: "", workLocation: "" };
+    api.listQuotations.mockImplementation(async (_token: string, params: { kind?: string }) =>
+      answer([chennai, nowhere], params),
+    );
+    api.listQuotationDrafts.mockImplementation(async (_token: string, params: { kind?: string }) =>
+      waiting([{ ...WAITING_VISIT, workLocation: "ASPS01461" }], params),
+    );
+    await mount();
+    const visit = panel("Visit Quotation")!;
+    const group = visit.querySelector('[role="group"][aria-label="Waiting approval by location"]')!;
+    const card = (name: string) =>
+      Array.from(group.querySelectorAll("button")).find((b) => b.textContent?.startsWith(name));
+    const created = () =>
+      Number(
+        Array.from(visit.querySelectorAll("button"))
+          .find((b) => b.parentElement !== group && b.textContent?.startsWith("Created"))!
+          .textContent!.replace("Created", "")
+          .replace("not mailed yet", ""),
+      );
+
+    expect(card("Other")?.textContent).toBe("Other0waiting approval");
+    expect(created()).toBe(2);
+    let sum = 0;
+    for (const name of ["Chennai", "Hosur", "Kanchipuram", "Salem", "Vellore", "Other"]) {
+      await click(card(name));
+      sum += created();
+      await click(card(name));
+    }
+    expect(sum).toBe(2);
+
+    // Chosen, it stays on screen even with nothing left in it to wait.
+    await click(card("Other"));
+    expect(card("Other")?.getAttribute("aria-pressed")).toBe("true");
+    expect(visit.textContent).toContain("Showing waiting approval · Other only.");
+  });
+
+  it("keeps the boxes whole with a server that sends no locations for quotations", async () => {
+    // What a server from before Quotation.workLocation sends: no workLocation at all.
+    api.listQuotationDrafts.mockImplementation(async (_token: string, params: { kind?: string }) =>
+      waiting([{ ...WAITING_VISIT, workLocation: "ASPS01461" }], params),
+    );
+    await mount();
+    const visit = panel("Visit Quotation")!;
+    const group = visit.querySelector('[role="group"][aria-label="Waiting approval by location"]')!;
+    const chennai = Array.from(group.querySelectorAll("button")).find((b) => b.textContent?.startsWith("Chennai"))!;
+    const createdBox = () =>
+      Array.from(visit.querySelectorAll("button")).find((b) => b.parentElement !== group && b.textContent?.startsWith("Created"));
+
+    expect(createdBox()?.textContent).toBe("Created1not mailed yet");
+    await click(chennai);
+    expect(createdBox()?.textContent).toBe("Created1not mailed yet");
   });
 
   it("keeps the page working when the waiting list cannot be loaded", async () => {

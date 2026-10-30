@@ -75,6 +75,11 @@ export interface Quotation {
   paymentSignalReasons?: string;
   /** Every priced row, in entry order. This is what the form and the printed sheet read. */
   lineItems: QuotationLineItem[];
+  /**
+   * Its work order's ASP work location ("ASPS01461"), so the page can count by branch. Filled
+   * by the list; empty for a quotation with no WO, absent from a server that predates it.
+   */
+  workLocation?: string;
 }
 
 export interface QuotationAutofill {
@@ -158,8 +163,12 @@ export interface QuotationDraft {
 export interface QuotationDraftsReport {
   /** Work orders the Records page shows at the status. */
   onReport: number;
+  /** The same by work location (ASP code). Absent from a server that predates it. */
+  onReportByLocation?: Record<string, number>;
   notWaiting: Array<{
     ticketId: string;
+    /** Its work location on the report (ASP code). */
+    workLocation?: string;
     /** QUOTED: already has a quotation of the kind. REMOVED: removed from the box. NOT_RAISED: not yet. */
     reason: "QUOTED" | "REMOVED" | "NOT_RAISED";
     quotationNos: string[];

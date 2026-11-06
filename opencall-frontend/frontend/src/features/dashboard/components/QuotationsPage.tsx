@@ -13,12 +13,18 @@ import {
   listQuotations,
   listQuotationDrafts,
   removeQuotationDraft,
+  listQuotationRemarks,
+  setQuotationRemark,
+  setQuotationDraftRemark,
+  QUOTATION_REMARK_MAX_LENGTH,
   type CreateQuotationInput,
   type Quotation,
   type QuotationDraft,
   type QuotationDraftsReport,
   type QuotationKind,
   type QuotationLineItem,
+  type QuotationRemark,
+  type QuotationRemarks,
   type QuotationSendDefaults,
 } from "../../../lib/quotationApiClient";
 import { formatMoney } from "../../../lib/quotationFormat";
@@ -354,6 +360,11 @@ function QuotationsOfKind({
   const [draftsReport, setDraftsReport] = useState<QuotationDraftsReport | null>(null);
   // The waiting quotation the form is open to approve, if that is what it is open for.
   const [approving, setApproving] = useState<QuotationDraft | null>(null);
+  // The tables' Remark column (the user, 5 Nov 2026): what the office typed against each row.
+  // Loaded on its own, like the waiting list: a server without remarks costs the column a dash,
+  // never the rest of the page.
+  const [remarks, setRemarks] = useState<QuotationRemarks | null>(null);
+  const [remarksError, setRemarksError] = useState<string | null>(null);
   // Which load is the newest. Every keystroke in the search loads again, and an earlier,
   // wider search can answer last; only the newest one's waiting list is shown.
   const loadSeq = useRef(0);
@@ -396,6 +407,20 @@ function QuotationsOfKind({
         setDraftsError(error instanceof Error ? error.message : "Could not load them");
       },
     );
+    const remarksLoad = Promise.resolve()
+      .then(() => listQuotationRemarks(token))
+      .then(
+        (res) => {
+          if (seq !== loadSeq.current) return;
+          setRemarks(res);
+          setRemarksError(null);
+        },
+        (error: unknown) => {
+          if (seq !== loadSeq.current) return;
+          setRemarks(null);
+          setRemarksError(error instanceof Error ? error.message : "Could not load them");
+        },
+      );
     try {
       const [current, earlier] = await Promise.all([
         listAll(token, { search, kind, createdFrom: FRESH_START }),
@@ -410,6 +435,7 @@ function QuotationsOfKind({
       setMessage(error instanceof Error ? error.message : "Failed to load quotations");
     } finally {
       await waiting;
+      await remarksLoad;
       setLoading(false);
     }
   }, [token, search, kind]);
@@ -574,6 +600,40 @@ function QuotationsOfKind({
     void load();
   }
 
+  /**
+   * Write a row's remark — a quotation's, or a waiting one's — and put what the server kept in
+   * the column. Resolves to null when saved, or to why not, for the cell to show beside what was
+   * typed. Nothing else on the page is reloaded: a remark changes no box and no row.
+   */
+  async function saveRemark(
+    target: { quotationId: string } | { draftId: string },
+    text: string,
+  ): Promise<string | null> {
+    try {
+      if ("quotationId" in target) {
+        const saved = await setQuotationRemark(token, target.quotationId, text);
+        setRemarks((current) =>
+          current ? { ...current, quotations: { ...current.quotations, [target.quotationId]: saved } } : current,
+        );
+      } else {
+        const saved = await setQuotationDraftRemark(token, target.draftId, text);
+        setRemarks((current) =>
+          current ? { ...current, drafts: { ...current.drafts, [target.draftId]: saved } } : current,
+        );
+      }
+      return null;
+    } catch (error) {
+      const why = error instanceof Error ? error.message : "Could not save the remark";
+      // Approved or removed by someone else meanwhile: the waiting list is out of date, and the
+      // row is about to leave it, so the reason goes where it stays in view.
+      if (error instanceof Error && (error as Error & { status?: number }).status === 409) {
+        setMessage(why);
+        void load();
+      }
+      return why;
+    }
+  }
+
   async function handleSave() {
     if (!form.customerName.trim()) {
       setMessage("Customer name is required.");
@@ -649,6 +709,13 @@ function QuotationsOfKind({
   const regionWaiting = locationFilter ? regionDrafts.length : draftsTotal;
   // The split is the whole report's; a search narrows the list, not the report.
   const regionReport = draftsReport && !search.trim() ? reportFor(draftsReport, locationFilter) : null;
+
+  // Why the Remark column shows a dash rather than the remarks, or null when it has them.
+  const remarksUnavailable = remarks
+    ? null
+    : remarksError
+      ? `Remarks could not be loaded: ${remarksError}`
+      : "Remarks are loading";
 
   // The same table twice: the page's own quotations, narrowed by the box clicked, and below
   // them the History, closed until someone opens it.
@@ -999,6 +1066,9 @@ function QuotationsOfKind({
                   location={locationFilter}
                   onApprove={startApprove}
                   onRemove={(draft) => void handleRemoveDraft(draft)}
+                  remarks={remarks?.drafts ?? {}}
+                  remarksUnavailable={remarksUnavailable}
+                  onSaveRemark={(draft, text) => saveRemark({ draftId: draft.id }, text)}
                 />
               ) : section.key === "current" || showHistory ? (
           <div
@@ -1021,14 +1091,15 @@ function QuotationsOfKind({
                   <th style={th}>WO</th>
                   <th style={th}>Total</th>
                   <th style={th}>Status</th>
+                  <th style={th}>Remark</th>
                   <th style={{ ...th, ...stickyActions, background: "var(--th-bg, #f3f4f6)" }}>PDF</th>
                 </tr>
               </thead>
               <tbody>
                 {loading ? (
-                  <tr><td colSpan={9} style={{ ...td, textAlign: "center", padding: "26px", color: "#6b7280" }}>Loading…</td></tr>
+                  <tr><td colSpan={10} style={{ ...td, textAlign: "center", padding: "26px", color: "#6b7280" }}>Loading…</td></tr>
                 ) : section.rows.length === 0 ? (
-                  <tr><td colSpan={9} style={{ ...td, textAlign: "center", padding: "26px", color: "#6b7280" }}>{section.emptyText}</td></tr>
+                  <tr><td colSpan={10} style={{ ...td, textAlign: "center", padding: "26px", color: "#6b7280" }}>{section.emptyText}</td></tr>
                 ) : (
                   section.rows.filter(section.test).map((q) => {
                     const t = q.baseAmount * (1 + (q.sgstPercent + q.cgstPercent) / 100);
@@ -1126,6 +1197,11 @@ function QuotationsOfKind({
                             );
                           })()}
                         </td>
+                        <RemarkCell
+                          remark={remarks?.quotations[q.id]}
+                          unavailable={remarksUnavailable}
+                          onSave={(text) => saveRemark({ quotationId: q.id }, text)}
+                        />
                         <td style={{ ...td, ...stickyActions }}>
                           <button type="button" onClick={() => setPrinting(q)} style={linkBtn}>View / Print</button>
                           <span style={{ color: "#d1d5db", margin: "0 6px" }}>|</span>
@@ -1641,6 +1717,9 @@ function WaitingTable({
   location,
   onApprove,
   onRemove,
+  remarks,
+  remarksUnavailable,
+  onSaveRemark,
 }: Readonly<{
   drafts: QuotationDraft[];
   total: number;
@@ -1653,10 +1732,15 @@ function WaitingTable({
   location: string | null;
   onApprove: (draft: QuotationDraft) => void;
   onRemove: (draft: QuotationDraft) => void;
+  /** The waiting quotations' remarks, by id. */
+  remarks: Record<string, QuotationRemark>;
+  /** Why the Remark column has a dash rather than the remarks, or null when it has them. */
+  remarksUnavailable: string | null;
+  onSaveRemark: (draft: QuotationDraft, text: string) => Promise<string | null>;
 }>) {
   // The part the case needs is what a Part quotation prices, so it is shown on that page.
   const showPart = kind === "PART";
-  const columns = showPart ? 9 : 8;
+  const columns = showPart ? 10 : 9;
   const clipped: React.CSSProperties = { ...td, maxWidth: "220px", overflow: "hidden", textOverflow: "ellipsis" };
   const note = (text: string) => (
     <tr>
@@ -1737,6 +1821,7 @@ function WaitingTable({
               {showPart ? <th style={th}>Part</th> : null}
               <th style={th}>Location</th>
               <th style={th}>Raised</th>
+              <th style={th}>Remark</th>
               <th style={{ ...th, ...stickyActions, background: "var(--th-bg, #f3f4f6)" }}>Action</th>
             </tr>
           </thead>
@@ -1766,6 +1851,11 @@ function WaitingTable({
                           {draft.workLocation ? locationLabel(locationOf(draft.workLocation)) : "-"}
                         </td>
                         <td style={td}>{formatRaisedAt(draft.createdAt)}</td>
+                        <RemarkCell
+                          remark={remarks[draft.id]}
+                          unavailable={remarksUnavailable}
+                          onSave={(text) => onSaveRemark(draft, text)}
+                        />
                         <td style={{ ...td, ...stickyActions }}>
                           <button type="button" onClick={() => onApprove(draft)} style={linkBtn}>
                             Approve
@@ -1785,6 +1875,144 @@ function WaitingTable({
         </table>
       </div>
     </>
+  );
+}
+
+/**
+ * A row's remark (the user, 5 Nov 2026): what the office typed against it, shown in the table
+ * and nowhere else. Clicking it opens it to write or change; Enter, or clicking away, saves and
+ * Esc puts it back. A refused save keeps what was typed and says why beside it.
+ *
+ * A dash when the remarks could not be loaded, so an empty cell never claims there is none.
+ */
+function RemarkCell({
+  remark,
+  unavailable,
+  onSave,
+}: Readonly<{
+  remark: QuotationRemark | undefined;
+  /** Why the remarks are not here, or null when they are. */
+  unavailable: string | null;
+  /** Saves the text; resolves to null once saved, or to why it was not. */
+  onSave: (text: string) => Promise<string | null>;
+}>) {
+  const text = remark?.remark ?? "";
+  const [editing, setEditing] = useState(false);
+  const [value, setValue] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  // Set once this edit is saved or put back, so the blur that follows Enter or Esc does not
+  // save it a second time; and while a save is out, so a blur mid-save does not send another.
+  const settled = useRef(false);
+  const busy = useRef(false);
+  // The field goes disabled while it saves, and that takes the cursor out of it. When a save
+  // sent with Enter is refused, the cursor goes back in, so Enter can try again and Esc can put
+  // it back. Not after a click elsewhere: the person has moved on, and the cursor stays there.
+  const field = useRef<HTMLInputElement | null>(null);
+  const refocus = useRef(false);
+  useEffect(() => {
+    if (!saving && refocus.current) {
+      refocus.current = false;
+      field.current?.focus();
+    }
+  }, [saving]);
+
+  if (unavailable !== null) {
+    return (
+      <td style={{ ...td, color: "#94a3b8" }} title={unavailable}>
+        —
+      </td>
+    );
+  }
+
+  function open() {
+    settled.current = false;
+    setValue(text);
+    setError(null);
+    setEditing(true);
+  }
+
+  function close() {
+    settled.current = true;
+    setError(null);
+    setEditing(false);
+  }
+
+  async function commit(fromKeyboard: boolean) {
+    if (settled.current || busy.current) return;
+    const next = value.trim();
+    if (next === text) {
+      close();
+      return;
+    }
+    busy.current = true;
+    setSaving(true);
+    const refused = await onSave(next);
+    busy.current = false;
+    if (refused === null) {
+      setSaving(false);
+      close();
+    } else {
+      refocus.current = fromKeyboard;
+      setError(refused);
+      setSaving(false);
+    }
+  }
+
+  if (editing) {
+    return (
+      <td style={{ ...td, verticalAlign: "top" }}>
+        <input
+          ref={field}
+          type="text"
+          aria-label="Remark"
+          autoFocus
+          value={value}
+          maxLength={QUOTATION_REMARK_MAX_LENGTH}
+          disabled={saving}
+          placeholder="Type a remark"
+          onChange={(e) => setValue(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") {
+              e.preventDefault();
+              void commit(true);
+            } else if (e.key === "Escape") {
+              e.preventDefault();
+              close();
+            }
+          }}
+          onBlur={() => void commit(false)}
+          style={{
+            width: "220px",
+            padding: "4px 8px",
+            fontSize: "12px",
+            borderRadius: "6px",
+            border: `1px solid ${error ? "#b91c1c" : "#a5b4fc"}`,
+            background: "var(--input-bg, #ffffff)",
+          }}
+        />
+        {saving ? <span style={{ marginLeft: "6px", fontSize: "11px", color: "#64748b" }}>Saving…</span> : null}
+        {error ? (
+          <div role="alert" style={{ marginTop: "2px", maxWidth: "260px", whiteSpace: "normal", fontSize: "11px", color: "#b91c1c" }}>
+            {error}
+          </div>
+        ) : null}
+      </td>
+    );
+  }
+
+  return (
+    <td style={td}>
+      {text ? (
+        <button type="button" onClick={open} title={text} style={remarkText}>
+          {text}
+        </button>
+      ) : (
+        <button type="button" onClick={open} style={addRemark}>
+          + Add remark
+        </button>
+      )}
+    </td>
   );
 }
 
@@ -1868,6 +2096,27 @@ const stickyActions: React.CSSProperties = {
   background: "var(--card-bg, #ffffff)",
   boxShadow: "-6px 0 6px -6px rgba(15, 23, 42, 0.18)",
 };
+
+/**
+ * A remark in its cell: one line, clipped like the email cell, the whole of it on hover. It is
+ * the button that opens it for editing, so it reads as text rather than as a link.
+ */
+const remarkText: React.CSSProperties = {
+  display: "block",
+  maxWidth: "220px",
+  overflow: "hidden",
+  textOverflow: "ellipsis",
+  whiteSpace: "nowrap",
+  padding: 0,
+  margin: 0,
+  border: "none",
+  background: "none",
+  font: "inherit",
+  color: "inherit",
+  textAlign: "left",
+  cursor: "pointer",
+};
+const addRemark: React.CSSProperties = { ...remarkText, fontSize: "12px", color: "#94a3b8" };
 
 const primaryBtn: React.CSSProperties = { padding: "9px 16px", fontSize: "13px", fontWeight: 600, borderRadius: "8px", border: "none", background: "#4f46e5", color: "#fff", cursor: "pointer" };
 const secondaryBtn: React.CSSProperties = { padding: "9px 16px", fontSize: "13px", fontWeight: 600, borderRadius: "8px", border: "1px solid #d1d5db", background: "#f9fafb", color: "#374151", cursor: "pointer" };

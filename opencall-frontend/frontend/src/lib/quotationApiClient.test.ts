@@ -5,9 +5,12 @@ import {
   getQuotation,
   getQuotationSendDefaults,
   listQuotationDrafts,
+  listQuotationRemarks,
   listQuotations,
   removeQuotationDraft,
   sendQuotation,
+  setQuotationDraftRemark,
+  setQuotationRemark,
   type CreateQuotationInput,
 } from "./quotationApiClient";
 
@@ -186,5 +189,31 @@ describe("getQuotation", () => {
     const [url, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
     expect(new URL(url).pathname).toBe("/api/v1/quotations/v-1");
     expect(init.cache).toBe("no-store");
+  });
+});
+
+describe("remarks", () => {
+  it("asks for every remark, uncached", async () => {
+    const fetchMock = stubFetch();
+    await listQuotationRemarks("t");
+    const [url, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
+    expect(new URL(url).pathname).toBe("/api/v1/quotations/remarks");
+    expect(init.cache).toBe("no-store");
+  });
+
+  it("writes a quotation's remark, and a waiting one's, as the text alone", async () => {
+    const fetchMock = stubFetch();
+    await setQuotationRemark("t", "6d1c1e2a-7b3f-4a51-9c0d-000000000001", "Will pay on Monday");
+    await setQuotationDraftRemark("t", "0b6f3b0e-1d2c-4c6e-9a51-000000000001", "Called twice");
+
+    const [quotationUrl, quotationInit] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
+    expect(new URL(quotationUrl).pathname).toBe("/api/v1/quotations/6d1c1e2a-7b3f-4a51-9c0d-000000000001/remark");
+    expect(quotationInit.method).toBe("PUT");
+    expect(JSON.parse(String(quotationInit.body))).toEqual({ remark: "Will pay on Monday" });
+
+    const [draftUrl, draftInit] = fetchMock.mock.calls[1] as unknown as [string, RequestInit];
+    expect(new URL(draftUrl).pathname).toBe("/api/v1/quotations/drafts/0b6f3b0e-1d2c-4c6e-9a51-000000000001/remark");
+    expect(draftInit.method).toBe("PUT");
+    expect(JSON.parse(String(draftInit.body))).toEqual({ remark: "Called twice" });
   });
 });

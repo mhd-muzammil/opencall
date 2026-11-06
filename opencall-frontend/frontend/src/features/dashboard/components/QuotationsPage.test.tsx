@@ -21,6 +21,10 @@ const api = vi.hoisted(() => ({
   listQuotationDrafts: vi.fn(),
   approveQuotationDraft: vi.fn(),
   removeQuotationDraft: vi.fn(),
+  listQuotationRemarks: vi.fn(),
+  setQuotationRemark: vi.fn(),
+  setQuotationDraftRemark: vi.fn(),
+  QUOTATION_REMARK_MAX_LENGTH: 500,
 }));
 vi.mock("../../../lib/quotationApiClient", () => api);
 vi.mock("../../../lib/customerEmailApiClient", () => ({
@@ -152,6 +156,7 @@ beforeEach(() => {
   api.listQuotationDrafts.mockImplementation(async (_token: string, params: { kind?: string }) =>
     waiting([WAITING_VISIT, WAITING_VISIT_2, WAITING_PART], params),
   );
+  api.listQuotationRemarks.mockResolvedValue({ quotations: {}, drafts: {} });
 });
 
 afterEach(async () => {
@@ -1037,5 +1042,251 @@ describe("sending a quotation", () => {
       },
       { pdf: SHEET, filename: "RTPL_26-27_QEN_81.pdf" },
     );
+  });
+});
+
+describe("Remark column", () => {
+  const remark = (text: string) => ({ remark: text, updatedAt: "2026-11-05 15:00:00+05:30", updatedBy: "office" });
+  const headers = (table: Element) => Array.from(table.querySelectorAll("th")).map((th) => th.textContent);
+  /** The row of the table that shows this text. */
+  const row = (scope: ParentNode, text: string) =>
+    Array.from(scope.querySelectorAll("tbody tr")).find((tr) => tr.textContent?.includes(text));
+  const remarkInput = (scope: ParentNode) => scope.querySelector<HTMLInputElement>('input[aria-label="Remark"]');
+  const waitingTile = (scope: ParentNode) =>
+    Array.from(scope.querySelectorAll("button")).find((b) => b.textContent?.startsWith("Waiting Approval"));
+
+  beforeEach(() => {
+    api.setQuotationRemark.mockReset();
+    api.setQuotationDraftRemark.mockReset();
+  });
+
+  async function type(input: HTMLInputElement, value: string) {
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(input, value);
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+  }
+  async function press(input: HTMLInputElement, key: string) {
+    await act(async () => {
+      input.dispatchEvent(new KeyboardEvent("keydown", { key, bubbles: true }));
+    });
+    await flush();
+  }
+  /**
+   * Clicking away: the cursor goes to something else on the page, and React hears the focusout.
+   * (Something else, not blur(): jsdom will not blur a disabled field, where Chrome drops it.)
+   */
+  let elsewhere: HTMLButtonElement;
+  beforeEach(() => {
+    elsewhere = document.createElement("button");
+    document.body.appendChild(elsewhere);
+  });
+  afterEach(() => {
+    elsewhere.remove();
+  });
+  async function leave(input: HTMLInputElement) {
+    await act(async () => {
+      let heard = false;
+      const hear = () => {
+        heard = true;
+      };
+      input.addEventListener("focusout", hear);
+      elsewhere.focus();
+      input.removeEventListener("focusout", hear);
+      if (!heard) input.dispatchEvent(new FocusEvent("focusout", { bubbles: true }));
+    });
+    await flush();
+  }
+
+  it("shows each quotation's remark before the actions, and offers one where there is none", async () => {
+    api.listQuotationRemarks.mockResolvedValue({ quotations: { "v-1": remark("Will pay on Monday") }, drafts: {} });
+    await mount();
+    const visit = panel("Visit Quotation")!;
+    const table = visit.querySelector("table")!;
+
+    expect(headers(table).slice(-2)).toEqual(["Remark", "PDF"]);
+    const cell = row(table, "RTPL/26-27/QEV/1")!.children[8]!;
+    expect(cell.textContent).toBe("Will pay on Monday");
+    expect(cell.querySelector("button")?.title).toBe("Will pay on Monday");
+
+    await click(tabs()[1]);
+    const part = panel("Part Quotation")!;
+    expect(button(row(part, "RTPL/26-27/QEN/81")!, "+ Add remark")).toBeDefined();
+    // The History has the column too.
+    await click(Array.from(part.querySelectorAll("button")).find((b) => b.textContent?.includes("History (1)")));
+    expect(button(row(part, "RTPL/26-27/QEN/80")!, "+ Add remark")).toBeDefined();
+    // Asked once per load, alongside the lists.
+    expect(api.listQuotationRemarks).toHaveBeenCalledWith("t");
+  });
+
+  it("writes one: typed, Enter, saved trimmed and shown — with nothing else asked again", async () => {
+    api.setQuotationRemark.mockImplementation(async (_t: string, _id: string, text: string) => remark(text));
+    await mount();
+    await click(tabs()[1]);
+    const part = panel("Part Quotation")!;
+    const lists = api.listQuotations.mock.calls.length;
+    const waits = api.listQuotationDrafts.mock.calls.length;
+
+    await click(button(row(part, "RTPL/26-27/QEN/81")!, "+ Add remark"));
+    const input = remarkInput(part)!;
+    expect(document.activeElement).toBe(input);
+    await type(input, "  Customer will pay on Monday  ");
+    await press(input, "Enter");
+
+    expect(api.setQuotationRemark).toHaveBeenCalledTimes(1);
+    expect(api.setQuotationRemark).toHaveBeenCalledWith("t", "p-81", "Customer will pay on Monday");
+    expect(remarkInput(part)).toBeNull();
+    expect(row(part, "RTPL/26-27/QEN/81")!.textContent).toContain("Customer will pay on Monday");
+    expect(api.listQuotations.mock.calls.length).toBe(lists);
+    expect(api.listQuotationDrafts.mock.calls.length).toBe(waits);
+  });
+
+  it("changes one already there, and saves on clicking away", async () => {
+    api.listQuotationRemarks.mockResolvedValue({ quotations: { "v-1": remark("Will pay on Monday") }, drafts: {} });
+    api.setQuotationRemark.mockImplementation(async (_t: string, _id: string, text: string) => remark(text));
+    await mount();
+    const visit = panel("Visit Quotation")!;
+
+    await click(button(row(visit, "RTPL/26-27/QEV/1")!, "Will pay on Monday"));
+    const input = remarkInput(visit)!;
+    expect(input.value).toBe("Will pay on Monday");
+    await type(input, "Paid by cash at the branch");
+    await leave(input);
+
+    expect(api.setQuotationRemark).toHaveBeenCalledWith("t", "v-1", "Paid by cash at the branch");
+    expect(row(visit, "RTPL/26-27/QEV/1")!.textContent).toContain("Paid by cash at the branch");
+  });
+
+  it("puts it back on Esc, and saves nothing when nothing changed", async () => {
+    api.listQuotationRemarks.mockResolvedValue({ quotations: { "v-1": remark("Will pay on Monday") }, drafts: {} });
+    await mount();
+    const visit = panel("Visit Quotation")!;
+
+    await click(button(row(visit, "RTPL/26-27/QEV/1")!, "Will pay on Monday"));
+    await type(remarkInput(visit)!, "Something else");
+    await press(remarkInput(visit)!, "Escape");
+    expect(remarkInput(visit)).toBeNull();
+    expect(row(visit, "RTPL/26-27/QEV/1")!.textContent).toContain("Will pay on Monday");
+
+    await click(button(row(visit, "RTPL/26-27/QEV/1")!, "Will pay on Monday"));
+    await leave(remarkInput(visit)!);
+    expect(remarkInput(visit)).toBeNull();
+    expect(api.setQuotationRemark).not.toHaveBeenCalled();
+  });
+
+  it("sends one save at a time, and keeps what was typed and says why when it is refused", async () => {
+    let refuse: (error: Error) => void = () => undefined;
+    api.setQuotationRemark.mockImplementation(
+      () => new Promise((_resolve, reject) => {
+        refuse = reject;
+      }),
+    );
+    await mount();
+    await click(tabs()[1]);
+    const part = panel("Part Quotation")!;
+
+    await click(button(row(part, "RTPL/26-27/QEN/81")!, "+ Add remark"));
+    await type(remarkInput(part)!, "Customer will pay on Monday");
+    await press(remarkInput(part)!, "Enter");
+    expect(remarkInput(part)?.disabled).toBe(true);
+    expect(part.textContent).toContain("Saving…");
+    // The field loses the cursor while it saves; that blur must not send it a second time.
+    await leave(remarkInput(part)!);
+    expect(document.activeElement).not.toBe(remarkInput(part));
+    expect(api.setQuotationRemark).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      refuse(new Error("Could not reach the server"));
+    });
+    await flush();
+
+    expect(remarkInput(part)?.value).toBe("Customer will pay on Monday");
+    expect(remarkInput(part)?.disabled).toBe(false);
+    expect(part.querySelector('[role="alert"]')?.textContent).toBe("Could not reach the server");
+    expect(api.setQuotationRemark).toHaveBeenCalledTimes(1);
+    // Sent with Enter, so the cursor is back in the field: Enter tries again.
+    expect(document.activeElement).toBe(remarkInput(part));
+    api.setQuotationRemark.mockImplementation(async (_t: string, _id: string, text: string) => remark(text));
+    await press(remarkInput(part)!, "Enter");
+    expect(api.setQuotationRemark).toHaveBeenCalledTimes(2);
+    expect(remarkInput(part)).toBeNull();
+    expect(row(part, "RTPL/26-27/QEN/81")!.textContent).toContain("Customer will pay on Monday");
+  });
+
+  it("after a refused save from clicking away, leaves the cursor where it went, and Esc still puts it back", async () => {
+    api.setQuotationRemark.mockRejectedValue(new Error("Could not reach the server"));
+    await mount();
+    await click(tabs()[1]);
+    const part = panel("Part Quotation")!;
+
+    await click(button(row(part, "RTPL/26-27/QEN/81")!, "+ Add remark"));
+    await type(remarkInput(part)!, "Customer will pay on Monday");
+    await leave(remarkInput(part)!);
+
+    expect(part.querySelector('[role="alert"]')?.textContent).toBe("Could not reach the server");
+    expect(document.activeElement).not.toBe(remarkInput(part));
+    await act(async () => {
+      remarkInput(part)!.focus();
+    });
+    await press(remarkInput(part)!, "Escape");
+    expect(remarkInput(part)).toBeNull();
+    expect(button(row(part, "RTPL/26-27/QEN/81")!, "+ Add remark")).toBeDefined();
+    expect(api.setQuotationRemark).toHaveBeenCalledTimes(1);
+  });
+
+  it("writes a waiting quotation's remark in the Waiting Approval list", async () => {
+    api.listQuotationRemarks.mockResolvedValue({
+      quotations: {},
+      drafts: { [WAITING_VISIT_2.id]: remark("Called twice, no answer") },
+    });
+    api.setQuotationDraftRemark.mockImplementation(async (_t: string, _id: string, text: string) => remark(text));
+    await mount();
+    const visit = panel("Visit Quotation")!;
+    await click(waitingTile(visit));
+    const table = visit.querySelector("table")!;
+
+    expect(headers(table).slice(-2)).toEqual(["Remark", "Action"]);
+    expect(row(table, "WO-036394026")!.textContent).toContain("Called twice, no answer");
+
+    await click(button(row(table, "WO-036404653")!, "+ Add remark"));
+    await type(remarkInput(visit)!, "Customer asked for a call first");
+    await press(remarkInput(visit)!, "Enter");
+
+    expect(api.setQuotationDraftRemark).toHaveBeenCalledWith("t", WAITING_VISIT.id, "Customer asked for a call first");
+    expect(api.setQuotationRemark).not.toHaveBeenCalled();
+    expect(row(visit.querySelector("table")!, "WO-036404653")!.textContent).toContain("Customer asked for a call first");
+  });
+
+  it("brings the list up to date when the waiting one was approved elsewhere meanwhile", async () => {
+    api.setQuotationDraftRemark.mockRejectedValue(
+      Object.assign(new Error("The quotation for WO-036404653 has already been approved."), { status: 409 }),
+    );
+    await mount();
+    const visit = panel("Visit Quotation")!;
+    await click(waitingTile(visit));
+    const waits = api.listQuotationDrafts.mock.calls.length;
+
+    await click(button(row(visit.querySelector("table")!, "WO-036404653")!, "+ Add remark"));
+    await type(remarkInput(visit)!, "Note");
+    await press(remarkInput(visit)!, "Enter");
+
+    expect(visit.textContent).toContain("The quotation for WO-036404653 has already been approved.");
+    expect(api.listQuotationDrafts.mock.calls.length).toBeGreaterThan(waits);
+  });
+
+  it("shows a dash, and the rest of the page as before, when the remarks cannot be loaded", async () => {
+    api.listQuotationRemarks.mockRejectedValue(new Error("Request failed with status 500"));
+    await mount();
+    const visit = panel("Visit Quotation")!;
+    const table = visit.querySelector("table")!;
+
+    const cell = row(table, "RTPL/26-27/QEV/1")!.children[8]!;
+    expect(cell.textContent).toBe("—");
+    expect((cell as HTMLElement).title).toBe("Remarks could not be loaded: Request failed with status 500");
+    expect(button(table, "+ Add remark")).toBeUndefined();
+    // Everything else as it was: the row, its actions, the boxes.
+    expect(button(row(table, "RTPL/26-27/QEV/1")!, "Edit")).toBeDefined();
+    expect(visit.textContent).toContain("Created1not mailed yet");
+    expect(visit.textContent).toContain("Waiting Approval2");
   });
 });

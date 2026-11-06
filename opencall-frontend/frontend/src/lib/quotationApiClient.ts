@@ -182,6 +182,30 @@ export interface ListQuotationDraftsResult {
   report?: QuotationDraftsReport;
 }
 
+/** The longest remark the server takes (REMARK_MAX_LENGTH there). */
+export const QUOTATION_REMARK_MAX_LENGTH = 500;
+
+/**
+ * A line the office typed against a quotation, or a waiting one, in the table's Remark column.
+ * Only the table shows it: never the sheet, the mail or a box.
+ */
+export interface QuotationRemark {
+  /** Trimmed. Empty once somebody clears it. */
+  remark: string;
+  updatedAt: string;
+  updatedBy: string;
+}
+
+export interface QuotationRemarks {
+  /**
+   * By quotation id. A quotation raised by approving a waiting one shows that one's remark until
+   * it is given its own.
+   */
+  quotations: Record<string, QuotationRemark>;
+  /** By waiting quotation id. */
+  drafts: Record<string, QuotationRemark>;
+}
+
 function authHeaders(token: string): HeadersInit {
   return { Authorization: `Bearer ${token}`, "Content-Type": "application/json" };
 }
@@ -405,4 +429,39 @@ export async function removeQuotationDraft(token: string, id: string): Promise<Q
     { method: "POST", headers: authHeaders(token) },
   );
   return readJson<QuotationDraft>(response);
+}
+
+/** Every remark, by quotation id and by waiting quotation id. */
+export async function listQuotationRemarks(token: string): Promise<QuotationRemarks> {
+  const response = await fetch(`${WEB_API_BASE_URL}/api/v1/quotations/remarks`, {
+    headers: authHeaders(token),
+    cache: "no-store",
+  });
+  return readJson<QuotationRemarks>(response);
+}
+
+/** Write a quotation's remark, replacing any it had. Empty clears it. */
+export async function setQuotationRemark(
+  token: string,
+  id: string,
+  remark: string,
+): Promise<QuotationRemark> {
+  const response = await fetch(
+    `${WEB_API_BASE_URL}/api/v1/quotations/${encodeURIComponent(id)}/remark`,
+    { method: "PUT", headers: authHeaders(token), body: JSON.stringify({ remark }) },
+  );
+  return readJson<QuotationRemark>(response);
+}
+
+/** Write a waiting quotation's remark, while it waits. */
+export async function setQuotationDraftRemark(
+  token: string,
+  id: string,
+  remark: string,
+): Promise<QuotationRemark> {
+  const response = await fetch(
+    `${WEB_API_BASE_URL}/api/v1/quotations/drafts/${encodeURIComponent(id)}/remark`,
+    { method: "PUT", headers: authHeaders(token), body: JSON.stringify({ remark }) },
+  );
+  return readJson<QuotationRemark>(response);
 }

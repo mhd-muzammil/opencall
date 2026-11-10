@@ -19,9 +19,10 @@ import { VirtualTbody } from "../components/VirtualTbody";
 import {
   LayoutGrid, FolderCheck, LineChart, Activity, Timer, Layers, Map as MapIcon, Zap, TrendingUp,
   Table, Wrench, FileText, Users, UserPlus, ShieldCheck, Tag, Upload, ScrollText,
-  RefreshCw, LogOut, MapPin, Truck, Cctv,
+  RefreshCw, LogOut, MapPin, Truck, Cctv, FileSpreadsheet,
 } from "lucide-react";
 import LiveTrackingSection from "../features/dashboard/components/LiveTrackingSection";
+import ReportsPage from "../features/reports/ReportsPage";
 import { canSeeDeliveryChallans } from "../lib/deliveryChallanAccess";
 import { useColumnFilters } from "../lib/useColumnFilters";
 import { findFinalSessionForDay } from "../lib/dayReportSession";
@@ -277,6 +278,7 @@ const WORKSPACE_VIEWS = [
   "vendor-dashboard",
   "live-tracking",
   "camera-monitoring",
+  "reports",
 ] as const;
 type WorkspaceView = (typeof WORKSPACE_VIEWS)[number];
 
@@ -4933,6 +4935,24 @@ export default function DashboardPage() {
             </button>
           )}
 
+          {/* Reports — every report in one place (Petrol, Engineer Productivity,
+              Attendance, Pay, All-in-One). SUPER_ADMIN only: it carries Payroll's
+              salary figures. Read-only; the screens they came from are unchanged. */}
+          {isSuperAdmin && (
+            <>
+              <div className="sidebarSection">Reports</div>
+              <button
+                type="button"
+                className={`sidebarItem ${workspaceView === "reports" ? "active" : ""}`}
+                onClick={() => setWorkspaceView("reports")}
+              >
+                <span className="sidebarIcon">
+                  <FileSpreadsheet size={18} strokeWidth={2} /> <span className="sidebarText">Reports</span>
+                </span>
+              </button>
+            </>
+          )}
+
           <div className="sidebarSection">Utilities & System</div>
 
           {(session.user.role === "SUPER_ADMIN" || session.user.role === "REGION_ADMIN") && (
@@ -5212,6 +5232,13 @@ export default function DashboardPage() {
                 </section>
               ) : null}
 
+              {/* Reports — SUPER_ADMIN only, like its sidebar entry. */}
+              {workspaceView === "reports" && isSuperAdmin ? (
+                <section style={{ minWidth: 0 }}>
+                  <ReportsPage token={session.token} />
+                </section>
+              ) : null}
+
               {report &&
               workspaceView !== "warranty" &&
               workspaceView !== "renewal-pipeline" &&
@@ -5220,7 +5247,8 @@ export default function DashboardPage() {
               workspaceView !== "quotations" &&
               workspaceView !== "delivery-challans" &&
               workspaceView !== "live-tracking" &&
-              workspaceView !== "camera-monitoring" ? (
+              workspaceView !== "camera-monitoring" &&
+              workspaceView !== "reports" ? (
                 <section className="panel reportPanel">
                   <div className="overviewReportContent">
                     {workspaceView === "overview" && (

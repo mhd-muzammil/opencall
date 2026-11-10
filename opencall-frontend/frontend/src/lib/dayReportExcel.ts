@@ -9,7 +9,7 @@ import { kmPerPresentDay, type DayKmLine, type DayKmReport } from "./dayKmReport
 // Loaded at download time, as the other exports load it, so it stays out of
 // the page's first bundle. The CJS module surfaces under `.default` depending
 // on the bundler.
-const loadExcelJs = async (): Promise<typeof ExcelJSNS> => {
+export const loadExcelJs = async (): Promise<typeof ExcelJSNS> => {
   const mod = (await import("exceljs")) as typeof ExcelJSNS & { default?: typeof ExcelJSNS };
   return mod.default ?? mod;
 };
@@ -26,8 +26,22 @@ export async function buildDayReportWorkbook(
 ): Promise<Uint8Array> {
   const ExcelJS = await loadExcelJs();
   const workbook = new ExcelJS.Workbook();
+  addDayReportSheet(workbook, columns, rows);
+  return new Uint8Array(await workbook.xlsx.writeBuffer());
+}
+
+/**
+ * The Day Report's sheet, added to `workbook` under `name` -- the download
+ * above, and the Reports section's Petrol Report and All-in-One workbook.
+ */
+export function addDayReportSheet(
+  workbook: ExcelJSNS.Workbook,
+  columns: DayReportColumn[],
+  rows: DayReportRowSpec[] = DAY_REPORT_ROWS,
+  name = "Day Report",
+): void {
   // The field names and the Date and Name rows stay in view while scrolling.
-  const sheet = workbook.addWorksheet("Day Report", {
+  const sheet = workbook.addWorksheet(name, {
     views: [{ state: "frozen", xSplit: 1, ySplit: 2 }],
   });
   sheet.getColumn(1).width = 22;
@@ -49,8 +63,6 @@ export async function buildDayReportWorkbook(
       cell.alignment = { vertical: "top", horizontal: spec.list ? "left" : "center", wrapText: true };
     });
   });
-
-  return new Uint8Array(await workbook.xlsx.writeBuffer());
 }
 
 /** Builds the sheet and hands it to the browser as a download. */
@@ -230,7 +242,7 @@ export async function downloadDayKmExcel(report: DayKmReport, filename: string):
 }
 
 /** Hands a workbook's bytes to the browser as a download. */
-function saveXlsx(bytes: Uint8Array, filename: string): void {
+export function saveXlsx(bytes: Uint8Array, filename: string): void {
   const blob = new Blob([new Uint8Array(bytes)], { type: XLSX_MIME });
   const link = document.createElement("a");
   link.href = URL.createObjectURL(blob);

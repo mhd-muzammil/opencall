@@ -7,7 +7,18 @@ import { readJson } from "./api/http";
  * observed user / special-access login never sees any of this.
  */
 
+/** "gps" = the device's own fix (street-level); "ip" = IP geolocation (city-level guess). */
+export type LocationSource = "gps" | "ip";
+/** What the browser said about its position for that action. null = old client / not sent. */
+export type GpsStatus = "ok" | "denied" | "unavailable" | null;
+
 export interface LoginLocationInfo {
+  /** Absent on responses from a backend older than the GPS change — treat as "ip". */
+  source?: LocationSource;
+  /** GPS only: accuracy radius in metres. */
+  accuracyM?: number | null;
+  /** GPS only: when the device took the fix. */
+  capturedAt?: string | null;
   label: string;
   city: string | null;
   region: string | null;
@@ -26,6 +37,10 @@ export interface LoginLocationSummaryItem {
   eventType: string;
   ip: string | null;
   location: LoginLocationInfo | null;
+  gpsStatus?: GpsStatus;
+  /** Case edits: the ticket, and the RTPL status move when the status changed. */
+  ticketId?: string | null;
+  statusChange?: { fromStatus: string | null; toStatus: string | null } | null;
 }
 
 export interface LoginLocationEntry {
@@ -34,6 +49,10 @@ export interface LoginLocationEntry {
   ip: string | null;
   userAgent: string | null;
   location: LoginLocationInfo | null;
+  gpsStatus?: GpsStatus;
+  /** Case edits: the ticket, and the RTPL status move when the status changed. */
+  ticketId?: string | null;
+  statusChange?: { fromStatus: string | null; toStatus: string | null } | null;
 }
 
 function url(path: string): string {

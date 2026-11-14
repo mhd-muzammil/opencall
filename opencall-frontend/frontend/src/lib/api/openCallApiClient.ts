@@ -163,7 +163,9 @@ const inFlightGenerations = new Map<string, Promise<GeneratedReportResponse>>();
 
 export function createOpenCallApiClient({
   baseUrl,
-  fetchImpl = fetch,
+  // Resolved per call, not captured at construction: `webApiClient` is built at import
+  // time, before ClientLocationWatcher wraps window.fetch to add X-Client-Location.
+  fetchImpl = (input, init) => fetch(input, init),
 }: OpenCallApiClientOptions): OpenCallApiClient {
   const normalizedBaseUrl = baseUrl.replace(/\/+$/, "");
   const url = (path: string) => `${normalizedBaseUrl}${path}`;

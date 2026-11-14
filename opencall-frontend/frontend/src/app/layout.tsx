@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import "./globals.css";
+import { ClientLocationWatcher } from "../components/ClientLocationWatcher";
 
 export const metadata: Metadata = {
   title: "OpenCall Daily Call Plan",
@@ -13,7 +14,10 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en" suppressHydrationWarning>
-      <body suppressHydrationWarning>{children}</body>
+      <body suppressHydrationWarning>
+        <ClientLocationWatcher />
+        {children}
+      </body>
     </html>
   );
 }

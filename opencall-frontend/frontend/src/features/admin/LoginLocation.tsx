@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import type {
+  GpsStatus,
   LoginLocationEntry,
   LoginLocationInfo,
   LoginLocationSummaryItem,
@@ -74,20 +75,64 @@ function displayIp(ip: string): string {
   return /^\d{1,3}(\.\d{1,3}){3}$/.test(rest) ? rest : ip;
 }
 
+/** "Edited a case · WO-036564635: Scheduled → Closed" for status changes; plain label otherwise. */
+export function describeAction(entry: {
+  eventType: string;
+  ticketId?: string | null | undefined;
+  statusChange?: { fromStatus: string | null; toStatus: string | null } | null | undefined;
+}): string {
+  const base = describeEvent(entry.eventType);
+  if (entry.statusChange) {
+    const from = entry.statusChange.fromStatus || "—";
+    const to = entry.statusChange.toStatus || "—";
+    return `Changed status${entry.ticketId ? ` of ${entry.ticketId}` : ""}: ${from} → ${to}`;
+  }
+  return entry.ticketId ? `${base} · ${entry.ticketId}` : base;
+}
+
+function isGps(info: LoginLocationInfo | null): boolean {
+  return info?.source === "gps";
+}
+
+/** Why there is no GPS for this action, in words an admin can act on. */
+function gpsAbsenceNote(gpsStatus: GpsStatus | undefined): string | null {
+  if (gpsStatus === "denied") return "Location not shared by user";
+  if (gpsStatus === "unavailable") return "No GPS fix from device";
+  return null;
+}
+
 function LocationLabel({
   info,
   ip,
+  gpsStatus,
 }: {
   info: LoginLocationInfo | null;
   ip: string | null;
+  gpsStatus?: GpsStatus | undefined;
 }): React.JSX.Element {
+  if (isGps(info)) {
+    return (
+      <span>
+        <span style={{ fontWeight: 600, color: "#111827" }}>📍 {info!.label}</span>
+        <br />
+        <small style={{ color: "#047857" }}>
+          GPS{info!.accuracyM != null ? ` · ±${formatAccuracy(info!.accuracyM)}` : ""}
+        </small>
+      </span>
+    );
+  }
+
   const label = info?.label ?? (ip ? "Unknown location" : "—");
-  const pin = info?.isPrivate ? "🖧" : "📍";
+  const pin = info?.isPrivate ? "🖧" : "🌐";
+  const absence = gpsAbsenceNote(gpsStatus);
   return (
     <span>
       <span style={{ fontWeight: 600, color: "#111827" }}>
         {label !== "—" ? `${pin} ${label}` : "—"}
       </span>
+      {label !== "—" && !info?.isPrivate && (
+        <small className="muted"> (approx., from IP)</small>
+      )}
       {ip && (
         <>
           <br />
@@ -97,8 +142,30 @@ function LocationLabel({
           </small>
         </>
       )}
+      {absence && (
+        <>
+          <br />
+          <small style={{ color: "#b45309" }}>{absence}</small>
+        </>
+      )}
     </span>
   );
+}
+
+/**
+ * Admin tables inherit `white-space: nowrap`, which is right for dates and badges but lets a
+ * street address or a "Changed status of WO-…: A → B" line push the table far past its
+ * container. These cells wrap instead, at a width that keeps the row readable.
+ */
+const WRAP_CELL: React.CSSProperties = {
+  whiteSpace: "normal",
+  overflowWrap: "anywhere",
+  minWidth: 160,
+  maxWidth: 240,
+};
+
+function formatAccuracy(metres: number): string {
+  return metres >= 1000 ? `${(metres / 1000).toFixed(1)} km` : `${Math.round(metres)} m`;
 }
 
 /**
@@ -130,20 +197,26 @@ export function LoginLocationCell({
         cursor: "pointer",
         font: "inherit",
         color: "inherit",
+        whiteSpace: "normal",
+        overflowWrap: "anywhere",
+        minWidth: 180,
+        maxWidth: 280,
       }}
     >
-      <LocationLabel info={summary.location} ip={summary.ip} />
+      <LocationLabel info={summary.location} ip={summary.ip} gpsStatus={summary.gpsStatus} />
       <br />
       <small className="muted">
-        {describeEvent(summary.eventType)} · {formatWhen(summary.lastSeenAt)} ›
+        {describeAction(summary)} · {formatWhen(summary.lastSeenAt)} ›
       </small>
     </button>
   );
 }
 
 /** OpenStreetMap embed centred on a point with a marker — no API key, no dependency. */
-function osmEmbedUrl(lat: number, lon: number): string {
-  const d = 0.05; // ~5 km half-box → city-level zoom
+function osmEmbedUrl(lat: number, lon: number, precise: boolean): string {
+  // GPS: ~500 m half-box (street level). IP: ~5 km (city level) — zooming an IP guess
+  // to street level would imply a precision it does not have.
+  const d = precise ? 0.005 : 0.05;
   const bbox = `${lon - d},${lat - d},${lon + d},${lat + d}`;
   return `https://www.openstreetmap.org/export/embed.html?bbox=${bbox}&layer=mapnik&marker=${lat},${lon}`;
 }
@@ -173,7 +246,7 @@ function LocationMap({
         <>
           <iframe
             title="Login location map"
-            src={osmEmbedUrl(info.lat as number, info.lon as number)}
+            src={osmEmbedUrl(info.lat as number, info.lon as number, isGps(info))}
             style={{ width: "100%", height: 300, border: 0, borderRadius: 8 }}
             loading="lazy"
           />
@@ -206,7 +279,9 @@ function LocationMap({
             </a>
           </div>
           <p className="muted" style={{ fontSize: 12, margin: "6px 0 0" }}>
-            Approximate location from IP (city-level) — not exact GPS.
+            {isGps(info)
+              ? `Device GPS location${info?.accuracyM != null ? `, accurate to about ±${formatAccuracy(info.accuracyM)}` : ""}.`
+              : "Approximate location from IP (city-level) — not exact GPS."}
           </p>
         </>
       ) : (
@@ -356,9 +431,9 @@ export function LoginHistoryModal({
                         <td style={{ whiteSpace: "nowrap" }}>
                           {formatWhen(e.occurredAt)}
                         </td>
-                        <td>{describeEvent(e.eventType)}</td>
-                        <td>
-                          <LocationLabel info={e.location} ip={e.ip} />
+                        <td style={WRAP_CELL}>{describeAction(e)}</td>
+                        <td style={WRAP_CELL}>
+                          <LocationLabel info={e.location} ip={e.ip} gpsStatus={e.gpsStatus} />
                         </td>
                         <td>
                           <small className="muted">

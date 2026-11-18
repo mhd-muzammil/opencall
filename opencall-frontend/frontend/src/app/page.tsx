@@ -215,6 +215,14 @@ import {
 } from "../lib/reportDashboardAnalytics";
 import { getLatestCompletedReportSession } from "../lib/reportHistorySelection";
 import { applyStatusBuckets } from "../lib/statusBucketsClient";
+import { AcerCallsPasteModal } from "../features/brandCalls/AcerCallsPasteModal";
+import { AcerCallsManager } from "../features/brandCalls/AcerCallsManager";
+import {
+  ACER_RECORD_COLUMNS,
+  reportForBrand,
+  rowBrand,
+  type RecordsBrand,
+} from "../features/brandCalls/brandRecords";
 import {
   closeSpecialAccessRegionEod,
   fetchSpecialAccessReport,
@@ -735,6 +743,16 @@ export default function DashboardPage() {
   // Whether the stale-Flex-Status "View all" details modal is open.
   const [isStaleModalOpen, setIsStaleModalOpen] = useState(false);
   const [workspaceView, setWorkspaceView] = useState<WorkspaceView>("overview");
+  // Records shows one brand at a time: HP (the Flex calls) or Acer (calls a
+  // SUPER_ADMIN pastes in). See features/brandCalls.
+  const [recordsBrand, setRecordsBrand] = useState<RecordsBrand>("HP");
+  const [isAcerPasteOpen, setIsAcerPasteOpen] = useState(false);
+  const [brandNotice, setBrandNotice] = useState<string | null>(null);
+  const isAcerRecords = workspaceView === "records" && recordsBrand === "ACER";
+  // The Acer tab shows either today's open calls (the records table) or every Acer
+  // call ever entered, open and closed, with Reopen / Edit / Delete.
+  const [acerView, setAcerView] = useState<"open" | "all">("open");
+  const recordsSubView: "open" | "all" = recordsBrand === "ACER" ? acerView : "open";
 
   // --- Mail against a work order -------------------------------------------------------
   //
@@ -1029,6 +1047,26 @@ export default function DashboardPage() {
     workspaceView === "sla-tat" || workspaceView === "records",
   );
 
+  // HP and Acer calls share the report. Records shows the chosen tab's brand;
+  // Engineer Productivity takes both (it splits them itself); every other view —
+  // the dashboards, RTPL, pivots, Flex — is about HP and sees HP rows only.
+  const brandScopedReport = useMemo(
+    () =>
+      reportForBrand(
+        report,
+        workspaceView === "records" ? recordsBrand : workspaceView === "productivity" ? null : "HP",
+      ),
+    [report, workspaceView, recordsBrand],
+  );
+  // Open calls per brand, for the tab labels.
+  const brandRowCounts = useMemo(() => {
+    const counts: Record<RecordsBrand, number> = { HP: 0, ACER: 0 };
+    for (const row of report?.rows ?? []) {
+      if (isRecordsPageVisibleRow(row)) counts[rowBrand(row)] += 1;
+    }
+    return counts;
+  }, [report]);
+
   // Phase 5: record row-set memos moved to features/dashboard/hooks/useRecordRowSets.
   const {
     activeRows,
@@ -1048,7 +1086,7 @@ export default function DashboardPage() {
     regionFilteredRows,
     searchScopeRows,
   } = useRecordRowSets({
-    report,
+    report: brandScopedReport,
     showClosedOnly,
     showConsumerOnly,
     showCommercialOnly,
@@ -1418,11 +1456,18 @@ export default function DashboardPage() {
   // the SAME list, or the picker offers a tick-box for a column that can never
   // appear.
   const availableColumns = useMemo<string[]>(
-    () => withDistanceAvailability([...DAILY_CALL_PLAN_COLUMNS], reportHasDistance),
-    [reportHasDistance],
+    () =>
+      isAcerRecords
+        ? [...ACER_RECORD_COLUMNS]
+        : withDistanceAvailability([...DAILY_CALL_PLAN_COLUMNS], reportHasDistance),
+    [reportHasDistance, isAcerRecords],
   );
 
   const visibleColumns = useMemo<string[]>(() => {
+    // The Acer tab has its own fixed set: the saved layout is an HP layout.
+    if (isAcerRecords) {
+      return ACER_RECORD_COLUMNS.filter((c) => !hiddenColumns.has(c));
+    }
     const base: string[] =
       recordLayout && recordLayout.length > 0
         ? recordLayout
@@ -1432,7 +1477,7 @@ export default function DashboardPage() {
     return withDistanceAvailability(base, reportHasDistance).filter(
       (c) => !hiddenColumns.has(c),
     );
-  }, [recordLayout, hiddenColumns, reportHasDistance]);
+  }, [recordLayout, hiddenColumns, reportHasDistance, isAcerRecords]);
 
   // A column is "standard" if it is one of the report's mapped columns; anything
   // else is a raw Excel header rendered read-only from the row's raw Flex data.
@@ -1910,8 +1955,20 @@ export default function DashboardPage() {
     if (rtplAnalyticsDate && rtplEffectiveReport.reportDate !== rtplAnalyticsDate) {
       return [];
     }
-    return rtplEffectiveReport.rows.filter(isRecordsPageVisibleRow);
-  }, [rtplEffectiveReport, rtplAnalyticsDate]);
+    // HP's RTPL views count HP calls; on Records' Acer tab the same panel is the
+    // Acer RTPL summary, fed Acer rows.
+    const brand: RecordsBrand = isAcerRecords ? "ACER" : "HP";
+    return rtplEffectiveReport.rows.filter(
+      (row) => isRecordsPageVisibleRow(row) && rowBrand(row) === brand,
+    );
+  }, [rtplEffectiveReport, rtplAnalyticsDate, isAcerRecords]);
+  // Status-change history for the RTPL time cards, same brand split.
+  const brandRtplStatusChanges = useMemo(() => {
+    const brand: RecordsBrand = isAcerRecords ? "ACER" : "HP";
+    return rtplStatusChanges.filter(
+      (change) => rowBrand({ output: { "Ticket ID": change.ticketId ?? "" } }) === brand,
+    );
+  }, [rtplStatusChanges, isAcerRecords]);
 
   const {
     rtplRowsForSelectedScope,
@@ -1929,7 +1986,7 @@ export default function DashboardPage() {
     selectedRtplRegion,
     activeRegionBreakdown,
     report: rtplEffectiveReport,
-    rtplStatusChanges,
+    rtplStatusChanges: brandRtplStatusChanges,
     selectedRtplTimeCardId,
     bodFixedTime,
   });
@@ -3425,7 +3482,9 @@ export default function DashboardPage() {
       exportRows = filteredRows;
     }
 
-    const rowsToExport = exportRows ?? report.rows;
+    // Unfiltered = the whole brand on screen: Acer's calls on the Acer tab, HP's
+    // everywhere else — never the two mixed.
+    const rowsToExport = exportRows ?? (brandScopedReport ?? report).rows;
 
     if (rowsToExport.length === 0) {
       setMessage("Export skipped: the active filters do not contain any records.");
@@ -3444,7 +3503,7 @@ export default function DashboardPage() {
       return;
     }
 
-    download(exportRows ? reportWithRows(report, rowsToExport) : report);
+    download(rowsToExport === report.rows ? report : reportWithRows(report, rowsToExport));
   }
 
   // One workbook, one button: the exact old pivot export (native PivotTable)
@@ -3553,6 +3612,14 @@ export default function DashboardPage() {
      */
     reportDate?: string | null;
   }>) {
+    // A drill-down onto specific tickets (Engineer Productivity) opens the tab
+    // their brand is on; any other drill-down is about HP calls.
+    setRecordsBrand(
+      ticketIds && ticketIds.length > 0 &&
+        ticketIds.every((id) => rowBrand({ output: { "Ticket ID": id } }) === "ACER")
+        ? "ACER"
+        : "HP",
+    );
     // Before any filter is set, because restoring swaps the rows the filter is
     // about to be applied to.
     if (reportDate && report?.reportDate !== reportDate) {
@@ -5668,6 +5735,63 @@ export default function DashboardPage() {
 
                   {workspaceView === "records" && (
                     <div className="recordsArea" ref={recordsAreaRef}>
+                      <div className="brandTabsRow">
+                        <div className="brandTabs" role="tablist" aria-label="Brand">
+                          {(["HP", "ACER"] as const).map((brand) => (
+                            <button
+                              key={brand}
+                              type="button"
+                              role="tab"
+                              aria-selected={recordsBrand === brand}
+                              className={`brandTab ${recordsBrand === brand ? "active" : ""}`}
+                              onClick={() => {
+                                setRecordsBrand(brand);
+                                setBrandNotice(null);
+                              }}
+                            >
+                              {brand === "HP" ? "HP" : "Acer"}
+                              <span className="brandTabCount">{formatNumber(brandRowCounts[brand])}</span>
+                            </button>
+                          ))}
+                        </div>
+                        {recordsBrand === "ACER" ? (
+                          <div className="brandTabsActions">
+                            {!isSpecialAccess ? (
+                              <div className="brandTabs" role="tablist" aria-label="Acer view">
+                                {(["open", "all"] as const).map((view) => (
+                                  <button
+                                    key={view}
+                                    type="button"
+                                    role="tab"
+                                    aria-selected={acerView === view}
+                                    className={`brandTab ${acerView === view ? "active" : ""}`}
+                                    onClick={() => setAcerView(view)}
+                                  >
+                                    {view === "open" ? "Today's calls" : "All calls (open & closed)"}
+                                  </button>
+                                ))}
+                              </div>
+                            ) : null}
+                            {brandNotice ? (
+                              <span className="brandNotice success" role="status">{brandNotice}</span>
+                            ) : null}
+                            {isSuperAdmin && !isSpecialAccess && session ? (
+                              <button
+                                type="button"
+                                className="premiumActionBtn primary"
+                                onClick={() => {
+                                  setBrandNotice(null);
+                                  setIsAcerPasteOpen(true);
+                                }}
+                              >
+                                + Add Acer calls
+                              </button>
+                            ) : null}
+                          </div>
+                        ) : null}
+                      </div>
+                      {/* RTPL status summary: HP's calls on the HP tab, Acer's on the Acer tab. */}
+                      {recordsSubView === "open" ? (
                       <RTPLDashboard
                         woMail={woMail}
                         rtplAnalyticsDate={rtplAnalyticsDate}
@@ -5690,6 +5814,20 @@ export default function DashboardPage() {
                         hideTimeCards={true}
                         loading={rtplDayLoading}
                       />
+                      ) : null}
+                      {recordsSubView === "all" && session ? (
+                        <AcerCallsManager
+                          token={session.token}
+                          isSuperAdmin={isSuperAdmin}
+                          onChanged={(message) => {
+                            setBrandNotice(message);
+                            // Reopen / edit / delete change what today's report lists.
+                            void handleRefreshWorkspace().then(() => setBrandNotice(message));
+                          }}
+                        />
+                      ) : null}
+                      {recordsSubView === "open" ? (
+                      <>
                       {/* Per-region Final EOD: closing a region's day freezes
                           these records, so the control belongs with them. The
                           multi-region bar is for SUPER_ADMIN and for a special-access
@@ -5707,6 +5845,7 @@ export default function DashboardPage() {
                           onReopenRegionEod={handleReopenRegionEod}
                         />
                       )}
+                      {recordsBrand === "HP" ? (
                       <div className="recordsScopeRow">
                         {/* Active category breakdown grid layout */}
                         <div className="recordsScopeCard">
@@ -5801,6 +5940,7 @@ export default function DashboardPage() {
                           </div>
                         </div>
                       </div>
+                      ) : null}
                       <div className="downloadActions recordsToolbar">
                         {/* Download Excel / Download CSV / View Engineer Productivity
                             hidden per employee request (2026-07): exports run from the
@@ -5972,6 +6112,8 @@ export default function DashboardPage() {
                       )}
 
                       {renderDetailedRecordsTable(filteredRows)}
+                      </>
+                      ) : null}
                     </div>
                   )}
                 </section>
@@ -6096,6 +6238,28 @@ export default function DashboardPage() {
       )}
 
       {/* Full details for stale Flex Status tickets — opened from "View all". */}
+      {isAcerPasteOpen && session ? (
+        <AcerCallsPasteModal
+          token={session.token}
+          onClose={() => setIsAcerPasteOpen(false)}
+          onSaved={(result) => {
+            setIsAcerPasteOpen(false);
+            const added = result.created.length;
+            const reopened = result.reopened.length;
+            const skipped = result.skippedExisting.length;
+            const summary =
+              `${added} Acer call${added === 1 ? "" : "s"} added` +
+              (reopened > 0 ? `, ${reopened} reopened` : "") +
+              (skipped > 0 ? `, ${skipped} already open` : "");
+            setBrandNotice(`${summary}. Refreshing the list…`);
+            setAcerView("open");
+            setRecordsBrand("ACER");
+            // The calls join the report when it is generated; do that now.
+            void handleRefreshWorkspace().then(() => setBrandNotice(`${summary}.`));
+          }}
+        />
+      ) : null}
+
       {isStaleModalOpen && staleFlexRows.length > 0 && (
         <div className="modalOverlay" onClick={() => setIsStaleModalOpen(false)}>
           <div

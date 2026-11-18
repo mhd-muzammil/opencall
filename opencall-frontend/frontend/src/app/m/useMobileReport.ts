@@ -1,6 +1,8 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import type { CallBrand } from "@opencall/shared";
+import { reportForBrand } from "../../features/brandCalls/brandRecords";
 import { getReportHistory, generateReport, getRtplStatusesDropdown } from "../../lib/apiClient";
 import { getLatestCompletedReportSession } from "../../lib/reportHistorySelection";
 import {
@@ -23,8 +25,16 @@ export interface MobileReportState {
   reload: () => void;
 }
 
-export function useMobileReport(session: ClientSession | null): MobileReportState {
-  const [report, setReport] = useState<GeneratedReportResponse | null>(null);
+/**
+ * `brand` picks whose calls the screen sees: HP by default — every mobile screen but
+ * Records and Productivity is about HP's calls — "ACER" for Acer's, null for both.
+ */
+export function useMobileReport(
+  session: ClientSession | null,
+  brand: CallBrand | null = "HP",
+): MobileReportState {
+  const [fullReport, setReport] = useState<GeneratedReportResponse | null>(null);
+  const report = useMemo(() => reportForBrand(fullReport, brand), [fullReport, brand]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [tick, setTick] = useState(0);

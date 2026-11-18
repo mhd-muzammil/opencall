@@ -12,7 +12,7 @@ import { useProductivityAnalytics } from "../../../features/dashboard/hooks/useP
  */
 export default function MobileProductivityPage() {
   const { session } = useMobileSession();
-  const { report, loading, error, reload } = useMobileReport(session);
+  const { report, loading, error, reload } = useMobileReport(session, null);
 
   const [region, setRegion] = useState<string>("ALL");
   const [expanded, setExpanded] = useState<string | null>(null);

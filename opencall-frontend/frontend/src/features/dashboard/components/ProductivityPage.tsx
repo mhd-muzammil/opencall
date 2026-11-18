@@ -8,6 +8,11 @@ import { downloadEngineerProductivityExcel } from "../../../lib/excelExport";
 import { ProductivityCallDaysModal } from "./ProductivityCallDaysModal";
 import { EngineerTargetTab } from "./EngineerTargetTab";
 import { LocationPerformancePanel } from "./LocationPerformancePanel";
+import {
+  hasBrandCalls,
+  listForBrand,
+  type ProductivityBrandView,
+} from "../../brandCalls/productivityByBrand";
 import type { BillCycle } from "../utils/billCycle";
 import type { ProductivityCallDayDetail, ProductivityBucket } from "@opencall/shared";
 
@@ -124,16 +129,28 @@ export function ProductivityPage({
   const [activeTab, setActiveTab] = useState<"productivity" | "target">("productivity");
 
 
+  // HP and Acer calls separately, or both. Counts come from each engineer's ticket
+  // lists (see productivityByBrand), so frozen days split too.
+  const [brandView, setBrandView] = useState<ProductivityBrandView>("ALL");
+  const periodHasAcer = useMemo(
+    () => hasBrandCalls(engineerProductivityMetrics.list, "ACER"),
+    [engineerProductivityMetrics.list],
+  );
+  const brandList = useMemo(
+    () => listForBrand(engineerProductivityMetrics.list, periodHasAcer ? brandView : "ALL"),
+    [engineerProductivityMetrics.list, brandView, periodHasAcer],
+  );
+
   // Filter list locally by search query (checks engineer name or region name)
   const filteredList = useMemo(() => {
     const query = searchQuery.trim().toLowerCase();
-    if (!query) return engineerProductivityMetrics.list;
-    return engineerProductivityMetrics.list.filter(item =>
+    if (!query) return brandList;
+    return brandList.filter(item =>
       item.name.toLowerCase().includes(query) ||
       (item.regionName && item.regionName.toLowerCase().includes(query)) ||
       (item.regionCode && item.regionCode.toLowerCase().includes(query))
     );
-  }, [engineerProductivityMetrics.list, searchQuery]);
+  }, [brandList, searchQuery]);
 
   // Recalculate KPIs based on filtered results
   const filteredTotalAttended = useMemo(() => {
@@ -586,6 +603,28 @@ export function ProductivityPage({
                   <option key={r.aspCode} value={r.aspCode}>{r.regionName} ({r.aspCode})</option>
                 ))}
               </select>
+            </div>
+          )}
+
+          {/* Brand: HP calls, Acer calls, or both. Shown once the period has an Acer call. */}
+          {periodHasAcer && (
+            <div style={{ display: "flex", gap: "6px", alignItems: "center" }}>
+              <span style={{ fontSize: "13px", fontWeight: "600", color: "#475569" }}>Brand:</span>
+              <div className="brandTabs" role="tablist" aria-label="Brand">
+                {(["ALL", "HP", "ACER"] as const).map((view) => (
+                  <button
+                    key={view}
+                    type="button"
+                    role="tab"
+                    aria-selected={brandView === view}
+                    className={`brandTab ${brandView === view ? "active" : ""}`}
+                    style={{ minHeight: "28px", padding: "0 12px" }}
+                    onClick={() => setBrandView(view)}
+                  >
+                    {view === "ALL" ? "All" : view === "HP" ? "HP" : "Acer"}
+                  </button>
+                ))}
+              </div>
             </div>
           )}
 

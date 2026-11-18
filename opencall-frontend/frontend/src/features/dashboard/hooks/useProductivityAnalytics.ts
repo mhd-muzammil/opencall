@@ -5,6 +5,7 @@
 // read the values this hook returns (e.g. regionDateMetadata, engineerProductivityMetrics).
 // kpiBaseRows lives here (deferred from useKpiMetrics) because tnFilteredRows/
 // eodBodFilteredRows derive from it.
+import { rowBrand } from "../../brandCalls/brandRecords";
 import { useMemo } from "react";
 import { useStatusBucketVersion } from "../../../lib/statusBucketsClient";
 import {
@@ -182,6 +183,8 @@ export function useProductivityAnalytics(params: {
     if (!report) return [];
     const filtered = report.rows.filter((row) => {
       if (hasRequestToCancelFlexStatus(row)) return false;
+      // TN View and the BOD/EOD tables are HP's; Acer calls have their own tab.
+      if (rowBrand(row) !== "HP") return false;
       const rowRegion = String(row.output["Work Location"] ?? "").trim().toUpperCase();
       const targetRegion = String(selectedRegion ?? "").trim().toUpperCase();
       const matchRegion = selectedRegion === "ALL" || !selectedRegion || rowRegion === targetRegion;

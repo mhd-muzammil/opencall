@@ -10566,3 +10566,396 @@ td {
     grid-template-columns: 1fr;
   }
 }
+
+/* ── Brand tabs on Records (HP / Acer) and the Acer paste dialog ─────────────── */
+.brandTabsRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.brandTabs {
+  display: inline-flex;
+  gap: 4px;
+  padding: 4px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: #f8fafc;
+}
+
+.brandTabs .brandTab {
+  min-height: 34px;
+  padding: 0 18px;
+  border: none;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--muted);
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.brandTabs .brandTab:hover:not(.active) {
+  color: var(--text);
+}
+
+.brandTabs .brandTab.active {
+  background: #ffffff;
+  color: var(--accent-strong, var(--accent));
+  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.12);
+}
+
+.brandTabCount {
+  margin-left: 6px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--muted);
+}
+
+.brandTabsActions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.brandNotice {
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.brandNotice.success {
+  color: #166534;
+}
+
+.acerPasteCard {
+  width: min(1280px, 96vw);
+}
+
+.acerPasteHint {
+  margin: 0;
+  font-size: 13.5px;
+  color: var(--muted);
+  line-height: 1.5;
+}
+
+.acerPasteTextarea {
+  min-height: 260px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 12.5px;
+  white-space: pre;
+}
+
+.acerPasteSummary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 18px;
+  font-size: 13.5px;
+  color: var(--muted);
+}
+
+.acerPasteSummary strong {
+  color: var(--text);
+}
+
+.acerPreviewScroll {
+  overflow: auto;
+  max-height: 52vh;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+}
+
+.acerPreviewTable {
+  border-collapse: collapse;
+  font-size: 12.5px;
+  min-width: 100%;
+}
+
+.acerPreviewTable th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: #f1f5f9;
+  text-align: left;
+  font-weight: 700;
+  padding: 8px;
+  border-bottom: 1px solid var(--border);
+  white-space: nowrap;
+}
+
+.acerPreviewTable td {
+  padding: 4px 6px;
+  border-bottom: 1px solid var(--border);
+  vertical-align: middle;
+}
+
+.acerPreviewTable input[type="text"],
+.acerPreviewTable select {
+  width: 100%;
+  min-height: 30px;
+  padding: 4px 6px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: transparent;
+  font: inherit;
+  color: var(--text);
+}
+
+.acerPreviewTable input[type="text"]:hover:not(:disabled),
+.acerPreviewTable input[type="text"]:focus,
+.acerPreviewTable select {
+  border-color: var(--border);
+  background: #ffffff;
+}
+
+.acerPreviewTable input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+  min-height: 0;
+  margin: 0;
+  accent-color: var(--accent);
+}
+
+.acerPreviewTable tr.hasError td {
+  background: #fef2f2;
+}
+
+.acerPreviewTable tr.excluded td {
+  opacity: 0.5;
+}
+
+.acerPreviewLine {
+  white-space: nowrap;
+  color: var(--muted);
+}
+
+.acerPreviewNote {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  margin-left: 6px;
+  border-radius: 50%;
+  background: #f59e0b;
+  color: #ffffff;
+  font-size: 11px;
+  font-weight: 800;
+  cursor: help;
+}
+
+.acerPasteProblems,
+.acerPasteError ul {
+  margin: 0;
+  padding-left: 18px;
+  font-size: 13px;
+  color: #b91c1c;
+}
+
+.acerPasteError {
+  padding: 12px 14px;
+  border: 1px solid #fecaca;
+  border-radius: 10px;
+  background: #fef2f2;
+  color: #b91c1c;
+  font-size: 13.5px;
+}
+
+/* ── Acer: All calls (open + closed) list and the edit dialog ─────────────────── */
+.acerManager {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.acerManagerBar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+}
+
+.acerManagerSearch {
+  flex: 1 1 260px;
+  min-height: 38px;
+  padding: 0 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  font: inherit;
+  font-size: 13.5px;
+  background: #ffffff;
+}
+
+.acerManagerCount {
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.acerManagerScroll {
+  overflow: auto;
+  max-height: 70vh;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: #ffffff;
+}
+
+.acerManagerTable {
+  width: 100%;
+  min-width: 1500px;
+  table-layout: auto !important;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.acerManagerTable th,
+.acerManagerTable td {
+  width: auto !important;
+  max-width: none;
+  white-space: normal !important;
+  overflow: visible !important;
+  text-overflow: clip !important;
+  overflow-wrap: anywhere;
+}
+
+.acerManagerTable th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: #f1f5f9;
+  text-align: left;
+  font-size: 11.5px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  padding: 10px;
+  border-bottom: 1px solid var(--border);
+  white-space: nowrap;
+}
+
+.acerManagerTable td {
+  padding: 9px 10px;
+  border-bottom: 1px solid var(--border);
+  vertical-align: top;
+  color: var(--text);
+}
+
+.acerManagerTable td span:not(.acerState):not(.acerDeleteConfirm) {
+  display: block;
+  margin-top: 2px;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.acerManagerCase {
+  white-space: nowrap;
+}
+
+.acerManagerWide {
+  min-width: 220px;
+  max-width: 320px;
+}
+
+.acerManagerEmpty {
+  text-align: center;
+  color: var(--muted);
+  padding: 28px !important;
+}
+
+.acerState {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.acerState.open {
+  background: #dcfce7;
+  color: #166534;
+}
+
+.acerState.closed {
+  background: #f1f5f9;
+  color: #334155;
+}
+
+.acerManagerActions {
+  white-space: nowrap;
+}
+
+.acerManagerActions button {
+  min-height: 30px;
+  padding: 0 10px;
+  margin-right: 6px;
+  font-size: 12.5px;
+  font-weight: 700;
+  border-radius: 7px;
+}
+
+.acerManagerActions .acerDeleteButton {
+  color: #b91c1c;
+}
+
+.acerDeleteConfirm {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12.5px;
+  color: #b91c1c;
+  font-weight: 600;
+}
+
+.acerManagerActions .dangerButton {
+  background: #dc2626;
+  color: #ffffff;
+  border: 1px solid #dc2626;
+}
+
+.acerEditGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 12px;
+}
+
+.acerEditField {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--muted);
+}
+
+.acerEditField.wide {
+  grid-column: 1 / -1;
+}
+
+.acerEditField input,
+.acerEditField select {
+  min-height: 38px;
+  padding: 6px 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  font: inherit;
+  font-size: 13.5px;
+  font-weight: 500;
+  color: var(--text);
+  background: #ffffff;
+}
+
+/* Acer All-calls: keep Reopen / Edit / Delete in view however wide the table is. */
+.acerManagerTable th:last-child,
+.acerManagerTable td.acerManagerActions {
+  position: sticky;
+  right: 0;
+  z-index: 2;
+  background: #ffffff;
+  box-shadow: -6px 0 8px -6px rgba(15, 23, 42, 0.18);
+}
+
+.acerManagerTable th:last-child {
+  z-index: 3;
+  background: #f1f5f9;
+}

@@ -2031,7 +2031,15 @@ export default function DashboardPage() {
     } catch { /* non-fatal */ }
 
     // Capture the current RTPL status of every analytics row as the frozen BOD baseline.
+    // The panel shows one brand at a time (HP, or Acer on Records' Acer tab), so
+    // only that brand's baseline is replaced; the other brand's stays as it was.
+    const brandOnScreen: RecordsBrand = isAcerRecords ? "ACER" : "HP";
     const snapshot: Record<string, string> = {};
+    for (const [ticketId, status] of Object.entries(bodSnapshot ?? {})) {
+      if (rowBrand({ output: { "Ticket ID": ticketId } }) !== brandOnScreen) {
+        snapshot[ticketId] = status;
+      }
+    }
     for (const row of rtplAnalyticsRows) {
       const ticketId = String(row.output["Ticket ID"] ?? "").trim();
       const status = String(row.output["RTPL status"] ?? "").trim();
@@ -3765,6 +3773,30 @@ export default function DashboardPage() {
       setPivotActiveWipAging(targetWip);
     }
   }
+
+  // Switching Records between HP and Acer starts the other brand clean: HP's
+  // category cards (Warranty, Consumer, Closed only…), WO OTC chip, column filters
+  // and search would otherwise stay applied, invisibly, and could empty the Acer
+  // table. The region choice is kept — it means the same branch on both tabs.
+  const switchRecordsBrand = (brand: RecordsBrand) => {
+    if (brand === recordsBrand) return;
+    setRecordsBrand(brand);
+    setBrandNotice(null);
+    setSelectedWoOtcCode(null);
+    setShowClosedOnly(false);
+    setShowConsumerOnly(false);
+    setShowCommercialOnly(false);
+    setShowWarrantyOnly(false);
+    setShowNonWarrantyOnly(false);
+    setShowCissOnly(false);
+    setShowRcaOnly(false);
+    setShowTradeOnly(false);
+    setShowPcOnly(false);
+    setPrintCaseFilter(null);
+    setRecordsSearchQuery("");
+    setSelectedRtplCaseScope("overall");
+    colFilters.resetAll();
+  };
 
   const onShowAllRegions = () => {
     setSelectedRegion(null);
@@ -5744,10 +5776,7 @@ export default function DashboardPage() {
                               role="tab"
                               aria-selected={recordsBrand === brand}
                               className={`brandTab ${recordsBrand === brand ? "active" : ""}`}
-                              onClick={() => {
-                                setRecordsBrand(brand);
-                                setBrandNotice(null);
-                              }}
+                              onClick={() => switchRecordsBrand(brand)}
                             >
                               {brand === "HP" ? "HP" : "Acer"}
                               <span className="brandTabCount">{formatNumber(brandRowCounts[brand])}</span>

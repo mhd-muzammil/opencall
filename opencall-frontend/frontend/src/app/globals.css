@@ -10721,8 +10721,71 @@ td {
   background: #fef2f2;
 }
 
-.acerPreviewTable tr.excluded td {
+/* The action and status stay readable on an unticked row: they say why it is unticked. */
+.acerPreviewTable tr.excluded td:not(.acerActionCell):not(.acerStatusCell) {
   opacity: 0.5;
+}
+
+.acerAction {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-weight: 600;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.acerAction:has(input:disabled) {
+  color: var(--muted);
+  cursor: default;
+}
+
+.acerStatusCell {
+  min-width: 260px;
+}
+
+.acerStatusTag {
+  display: inline-block;
+  margin-right: 8px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 11.5px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.acerStatusTag.new {
+  background: #dcfce7;
+  color: #166534;
+}
+
+.acerStatusTag.open {
+  background: #e2e8f0;
+  color: #334155;
+}
+
+.acerStatusTag.closed {
+  background: #fef3c7;
+  color: #92400e;
+}
+
+.acerStatusTag.deleted {
+  background: #fee2e2;
+  color: #991b1b;
+}
+
+.acerStatusText {
+  color: var(--text);
+}
+
+.acerPasteExplain {
+  padding: 10px 14px;
+  border: 1px solid #fde68a;
+  border-radius: 10px;
+  background: #fffbeb;
+  color: #78350f;
+  font-size: 13.5px;
+  line-height: 1.5;
 }
 
 .acerPreviewLine {

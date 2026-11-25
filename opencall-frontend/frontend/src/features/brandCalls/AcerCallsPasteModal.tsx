@@ -40,21 +40,81 @@ interface DraftCall extends AcerCallPreview {
   include: boolean;
 }
 
-/** On file and still open: saving it again would change nothing, so it cannot be ticked. */
-function isOpenOnFile(call: AcerCallPreview): boolean {
-  return call.existing !== null && !call.existing.closedAt && !call.existing.deletedAt;
+/**
+ * What a pasted call is, against what is already on file -- said on the row itself, in
+ * words the office uses. It used to be a "!" with a hover note and a summary reading
+ * "closed or deleted before — tick to reopen", which nobody could act on (25 Nov 2026).
+ */
+export type OnFileKind = "new" | "open" | "closed" | "deleted";
+
+export function onFileKind(call: AcerCallPreview): OnFileKind {
+  if (!call.existing) return "new";
+  if (call.existing.deletedAt) return "deleted";
+  if (call.existing.closedAt) return "closed";
+  return "open";
 }
 
-/** What the row's note says about a case already on file. */
-function existingNote(call: AcerCallPreview): string | null {
-  if (!call.existing) return null;
-  if (call.existing.deletedAt) {
-    return `Deleted on ${formatDate(call.existing.deletedAt)} — tick it to add it back.`;
+/** On file and still open: saving it again would change nothing, so it cannot be ticked. */
+function isOpenOnFile(call: AcerCallPreview): boolean {
+  return onFileKind(call) === "open";
+}
+
+/** The row's status: a short tag, and one sentence saying what saving will do. */
+export function onFileStatus(
+  call: AcerCallPreview,
+  ticked: boolean,
+): { tag: string; text: string } {
+  const existing = call.existing;
+  switch (onFileKind(call)) {
+    case "open":
+      return {
+        tag: "Already added",
+        text: `Added on ${formatDate(existing!.createdAt)} and still open. Nothing to do.`,
+      };
+    case "closed":
+      return ticked
+        ? { tag: "Closed", text: "Will be reopened with these details." }
+        : {
+            tag: "Closed",
+            text: `Closed on ${formatDate(existing!.closedAt!)}. Tick Reopen only if the customer needs another visit.`,
+          };
+    case "deleted":
+      return ticked
+        ? { tag: "Deleted", text: "Will be added back with these details." }
+        : {
+            tag: "Deleted",
+            text: `Deleted on ${formatDate(existing!.deletedAt!)}. Tick Add back to add it again.`,
+          };
+    default:
+      return ticked
+        ? { tag: "New", text: "Will be added." }
+        : { tag: "New", text: "Not ticked, so it will not be added." };
   }
-  if (call.existing.closedAt) {
-    return `Closed on ${formatDate(call.existing.closedAt)} — tick it to reopen the call with these details.`;
+}
+
+/** The word beside the row's tick box: what ticking it does. */
+export function actionLabel(kind: OnFileKind): string {
+  switch (kind) {
+    case "closed":
+      return "Reopen";
+    case "deleted":
+      return "Add back";
+    case "open":
+      return "Skip";
+    default:
+      return "Add";
   }
-  return `Already open (added ${formatDate(call.existing.createdAt)}) — it will be skipped.`;
+}
+
+/** The save button: what it will actually do, e.g. "Add 2 · Reopen 1". */
+export function saveButtonLabel(calls: readonly { include: boolean; kind: OnFileKind }[]): string {
+  const count = (kind: OnFileKind) => calls.filter((call) => call.include && call.kind === kind).length;
+  const parts = [
+    count("new") > 0 ? `Add ${count("new")}` : null,
+    count("closed") > 0 ? `Reopen ${count("closed")}` : null,
+    count("deleted") > 0 ? `Add back ${count("deleted")}` : null,
+  ].filter(Boolean);
+  return parts.length > 0 ? parts.join(" · ") : "Nothing to save";
 }
 
 function formatDate(iso: string): string {
@@ -133,6 +193,7 @@ export function AcerCallsPasteModal({
   }, [drafts]);
 
   const includedCount = drafts.filter((call) => call.include).length;
+  const kindCount = (kind: OnFileKind) => drafts.filter((call) => onFileKind(call) === kind).length;
   const blockedCount = problemsByRow.filter((problems) => problems.length > 0).length;
 
   const save = async () => {
@@ -214,18 +275,20 @@ export function AcerCallsPasteModal({
                 <span>
                   <strong>{drafts.length}</strong> call{drafts.length === 1 ? "" : "s"} read
                 </span>
-                <span>
-                  <strong>{includedCount}</strong> to save
-                </span>
-                {drafts.some(isOpenOnFile) ? (
+                {kindCount("new") > 0 ? (
                   <span>
-                    <strong>{drafts.filter(isOpenOnFile).length}</strong> already open (skipped)
+                    <strong>{kindCount("new")}</strong> new
                   </span>
                 ) : null}
-                {drafts.some((call) => call.existing && !isOpenOnFile(call)) ? (
+                {kindCount("open") > 0 ? (
                   <span>
-                    <strong>{drafts.filter((call) => call.existing && !isOpenOnFile(call)).length}</strong>{" "}
-                    closed or deleted before — tick to reopen
+                    <strong>{kindCount("open")}</strong> already added and still open (skipped)
+                  </span>
+                ) : null}
+                {kindCount("closed") + kindCount("deleted") > 0 ? (
+                  <span>
+                    <strong>{kindCount("closed") + kindCount("deleted")}</strong> added before, then
+                    closed or deleted
                   </span>
                 ) : null}
                 {preview.ignoredLines.length > 0 ? (
@@ -235,11 +298,21 @@ export function AcerCallsPasteModal({
                 ) : null}
               </div>
 
+              {kindCount("closed") + kindCount("deleted") > 0 ? (
+                <div className="acerPasteExplain" role="note">
+                  <strong>Some of these calls were added before.</strong> They are marked{" "}
+                  <em>Closed</em> or <em>Deleted</em> below and are <strong>not saved</strong> unless
+                  you tick <em>Reopen</em> (or <em>Add back</em>) on that row. Reopen a call only if
+                  the customer needs another visit for the same case.
+                </div>
+              ) : null}
+
               <div className="acerPreviewScroll">
                 <table className="acerPreviewTable">
                   <thead>
                     <tr>
-                      <th style={{ width: 44 }}>Save</th>
+                      <th style={{ width: 96 }}>Action</th>
+                      <th style={{ minWidth: 260 }}>Status</th>
                       <th style={{ width: 60 }}>Line</th>
                       <th style={{ width: 170 }}>Branch</th>
                       {FIELD_COLUMNS.map((column) => (
@@ -252,12 +325,10 @@ export function AcerCallsPasteModal({
                   <tbody>
                     {drafts.map((call, index) => {
                       const problems = problemsByRow[index] ?? [];
-                      const onFileNote = existingNote(call);
-                      const notes = [
-                        ...(onFileNote ? [onFileNote] : []),
-                        ...problems,
-                        ...call.warnings,
-                      ];
+                      const kind = onFileKind(call);
+                      const status = onFileStatus(call, call.include);
+                      const action = actionLabel(kind);
+                      const notes = [...problems, ...call.warnings];
                       return (
                         <tr
                           key={`${call.lineNumber}-${index}`}
@@ -266,14 +337,21 @@ export function AcerCallsPasteModal({
                             problems.length > 0 ? "hasError" : "",
                           ].join(" ")}
                         >
-                          <td>
-                            <input
-                              type="checkbox"
-                              aria-label={`Save case ${call.caseId}`}
-                              checked={call.include}
-                              disabled={isOpenOnFile(call)}
-                              onChange={(event) => updateDraft(index, { include: event.target.checked })}
-                            />
+                          <td className="acerActionCell">
+                            <label className="acerAction">
+                              <input
+                                type="checkbox"
+                                aria-label={`${action} case ${call.caseId}`}
+                                checked={call.include}
+                                disabled={isOpenOnFile(call)}
+                                onChange={(event) => updateDraft(index, { include: event.target.checked })}
+                              />
+                              <span>{action}</span>
+                            </label>
+                          </td>
+                          <td className="acerStatusCell">
+                            <span className={`acerStatusTag ${kind}`}>{status.tag}</span>
+                            <span className="acerStatusText">{status.text}</span>
                           </td>
                           <td className="acerPreviewLine">
                             {call.lineNumber}
@@ -372,7 +450,9 @@ export function AcerCallsPasteModal({
                 disabled={busy !== null || includedCount === 0 || blockedCount > 0}
                 onClick={() => void save()}
               >
-                {busy === "saving" ? "Saving…" : `Save ${includedCount} call${includedCount === 1 ? "" : "s"}`}
+                {busy === "saving"
+                  ? "Saving…"
+                  : saveButtonLabel(drafts.map((call) => ({ include: call.include, kind: onFileKind(call) })))}
               </button>
             ) : (
               <button
